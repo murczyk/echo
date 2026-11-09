@@ -1,5 +1,6 @@
 use super::{core, model};
 use crate::devices::analytics::types::TagFilter;
+use crate::devices::files::sorting::FileListingSort;
 use crate::devices::files::{
     map_database_error, DirectoryScope, EntryQueryScope, EntrySortKey,
     FilesystemError, KeysetPage, KeysetPageRequest, TreeEntry,
@@ -20,14 +21,27 @@ pub(in crate::devices::files) async fn list_children(
     db: &impl ConnectionTrait,
     scope: &DirectoryScope,
     page: KeysetPageRequest<EntrySortKey>,
+    sort: FileListingSort,
 ) -> Result<KeysetPage<TreeEntry, EntrySortKey>, FilesystemError> {
-    let entries = children_query(scope, page.after())
-        .limit(page.limit() + 1)
-        .all(db)
-        .await
-        .map_err(|error| {
-            map_database_error(anyhow::Error::new(error).context(h!()))
-        })?
+    let query = if sort == FileListingSort::default() {
+        children_query(scope, page.after())
+    } else {
+        let scope = EntryQueryScope::Browse(scope);
+        sort.apply(
+            core::apply_entry_scope(file_entry::Entity::find(), &scope),
+            page.after(),
+        )
+    };
+    let mut entries =
+        query
+            .limit(page.limit() + 1)
+            .all(db)
+            .await
+            .map_err(|error| {
+                map_database_error(anyhow::Error::new(error).context(h!()))
+            })?;
+    super::dates::hydrate(db, &mut entries).await?;
+    let entries = entries
         .into_iter()
         .map(model::map_tree_model)
         .collect::<Result<Vec<_>, _>>()?;
@@ -175,13 +189,11 @@ fn children_strict_after_condition(
     Condition::all().add(
         Expr::tuple([
             Expr::col((file_entry::Entity, file_entry::Column::ParentId)),
-            Expr::col((file_entry::Entity, file_entry::Column::Kind)),
             Expr::col((file_entry::Entity, file_entry::Column::Name)),
             Expr::col((file_entry::Entity, file_entry::Column::Id)),
         ])
         .gt(Expr::tuple([
             Expr::val(parent_id),
-            ActiveEnum::as_enum(&after.kind()),
             Expr::val(after.name()),
             Expr::val(after.entry_id()),
         ])),

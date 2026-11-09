@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   adjustQueryDateRangeForDirectMessage,
+  analysisQueryStateUrlKey,
   createInitialQueryState,
   emptyQueryState,
-  hasQueryStateInWindow,
   parseQueryStateFromWindow,
+  pushQueryStateToUrl,
   readAnalysisGroupScopeFromUrl,
   writeAnalysisGroupScopeToUrl,
+  writeMessagesPageIndexToWindowUrl,
 } from '../helpers';
 import type { AnalysisQueryState } from '../types';
 
@@ -23,6 +25,34 @@ function createQueryState(overrides: Partial<AnalysisQueryState> = {}): Analysis
 }
 
 describe('rer-analysis-neo URL state', () => {
+  it('keeps an open overlay history layer while rewriting feed URL state', () => {
+    const replaceState = vi.fn();
+    const state = { __echoBrowserBackOverlayIds: ['echo-overlay-1'] };
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: { href: 'https://example.test/rer-analysis-neo?messagesPage=2' },
+        history: { replaceState, state },
+      },
+    });
+
+    writeMessagesPageIndexToWindowUrl(4);
+    pushQueryStateToUrl(createQueryState());
+
+    expect(replaceState).toHaveBeenCalledTimes(2);
+    expect(replaceState.mock.calls.map(([data]) => data)).toEqual([state, state]);
+    delete (globalThis as { window?: Window }).window;
+  });
+
+  it('matches query states by the filter params they write to the URL', () => {
+    expect(analysisQueryStateUrlKey(createQueryState({ freqsSelected: ['2', '1'] }))).toBe(
+      analysisQueryStateUrlKey(createQueryState({ freqsSelected: ['2', '1'] })),
+    );
+    expect(analysisQueryStateUrlKey(createQueryState())).not.toBe(
+      analysisQueryStateUrlKey(createQueryState({ search: 'other' })),
+    );
+  });
+
   it('round-trips a dedicated group separately from the aggregate filter state', () => {
     const pushState = vi.fn();
     Object.defineProperty(globalThis, 'window', {
@@ -69,18 +99,6 @@ describe('rer-analysis-neo URL state', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
-  it('treats the media-only URL parameter as authoritative', () => {
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: {
-        location: { href: 'https://example.test/rer-analysis-neo?only_with_media=true' },
-      },
-    });
-
-    expect(hasQueryStateInWindow()).toBe(true);
-
-    delete (globalThis as { window?: Window }).window;
-  });
   it('ignores unsupported legacy state parameters when managed URL parameters are absent', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,

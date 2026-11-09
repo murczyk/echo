@@ -25,6 +25,7 @@ trap cleanup EXIT
 SSH_ARGS=(
   -o BatchMode=yes
   -o StrictHostKeyChecking=accept-new
+  -o ServerAliveInterval=30
 )
 
 if [[ -n "${ECHO_BUILD_MAIN_SSH_KEY:-}" ]]; then

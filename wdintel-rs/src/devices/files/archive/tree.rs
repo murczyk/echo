@@ -44,11 +44,12 @@ pub(in crate::devices::files) async fn browse(
             body: serde_json::json!({"code":"invalid_request"}),
         });
     }
-    let mut scope = serde_json::to_value(body).c(h!())?;
-    scope.as_object_mut().c(h!())?.remove("cursor");
-    scope.as_object_mut().c(h!())?.remove("limit");
-    let scope =
-        format!("archive:{}:{}", job.id, sha256::digest(scope.to_string()));
+    let scope = format!(
+        "archive:{}:{}",
+        job.id,
+        super::super::sessions::read::browse_scope_key("browse", body)
+            .c(h!())?
+    );
     let boundary: Option<Uuid> = body
         .cursor
         .as_ref()
@@ -62,12 +63,20 @@ pub(in crate::devices::files) async fn browse(
     )
     .await
     .c(h!())?;
+    let order = super::super::sorting::FileListingSort::new(
+        body.sort_by,
+        body.sort_direction,
+    )
+    .order_sql("snapshot");
+    let dates = query::dates::aggregate_revision_sql("e", "r.revision");
+    let size = query::sizes::value_sql("e", "r.revision");
     let rows=db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-        "select e.id,e.device_id,e.parent_id,e.kind::text,r.name,r.absolute_path,e.hierarchy_path::text,r.mime_type,r.extension,
-                r.file_metadata_created_at::timestamp,r.file_metadata_modified_at::timestamp,e.created_at,r.created_at::timestamp as updated_at,c.object_key as content_path,r.revision,r.sync_id,
-                r.source_file_state::text,r.source_file_state_settled_at,r.source_file_state_settled_by,r.analysis_input_revision,null::uuid as current_analysis_run_id,r.is_archive,e.archive_file_id,e.archive_relative_path
+        format!("select snapshot.* from (select e.id,e.device_id,e.parent_id,e.kind::text,r.name,r.absolute_path,e.hierarchy_path::text,r.mime_type,r.extension,
+                case when e.kind='directory' then dates.created_at else r.file_metadata_created_at at time zone 'UTC' end as file_metadata_created_at,case when e.kind='directory' then dates.modified_at else r.file_metadata_modified_at at time zone 'UTC' end as file_metadata_modified_at,e.created_at,r.created_at::timestamp as updated_at,c.object_key as content_path,r.revision,r.sync_id,
+                r.source_file_state::text,r.source_file_state_settled_at,r.source_file_state_settled_by,r.analysis_input_revision,null::uuid as current_analysis_run_id,r.is_archive,e.archive_file_id,e.archive_relative_path,{size} as size_bytes
          from file_revision r join file_entry e on e.id=r.id left join file_content c on c.file_id=r.id and c.revision=r.revision
-         where r.origin_archive_id=$1 and e.parent_id=$2 order by e.kind,convert_to(r.name,'UTF8'),e.id",
+         left join lateral (select aggregate.* from ({dates}) aggregate where e.kind='directory') dates on true
+         where r.origin_archive_id=$1 and e.parent_id=$2) snapshot order by {order}"),
         [job.id.into(),parent.into()])).await.c(h!())?;
     let models = rows
         .iter()
@@ -121,6 +130,7 @@ pub(in crate::devices::files) async fn browse(
         db,
         device,
         &entry,
+        job.source_revision,
         body.include_breadcrumbs.unwrap_or(true),
     )
     .await?;
@@ -134,6 +144,11 @@ pub(in crate::devices::files) async fn browse(
             .await
             .c(h!())?,
     })?;
+    response.archive_source = Some(super::types::DeviceFileContentRef {
+        device_id: device,
+        file_id: job.source_file_id,
+        revision: job.source_revision,
+    });
     super::hydrate::tree(db, device, &mut response.entries)
         .await
         .c(h!())?;
@@ -178,10 +193,34 @@ async fn selected_revision(
     Ok(revision)
 }
 
-struct Snapshot {
-    device: Uuid,
-    entry: file_entry::Model,
-    job: file_archive::Model,
+pub(in crate::devices::files) struct Snapshot {
+    pub(in crate::devices::files) device: Uuid,
+    pub(in crate::devices::files) entry: file_entry::Model,
+    pub(in crate::devices::files) job: file_archive::Model,
+}
+
+pub(in crate::devices::files) async fn search_snapshot(
+    main: &DatabaseConnection,
+    files: &FileRegistryDb,
+    login: &login::Model,
+    body: &SearchDeviceFilesReq,
+) -> Result<Option<Snapshot>, AppError> {
+    if body.archive_revision.is_none() {
+        return Ok(None);
+    }
+    if body.global_search.unwrap_or(false) {
+        return Err(AppError::BadRequestJson {
+            body: serde_json::json!({"code":"invalid_request"}),
+        });
+    }
+    let scope = serde_json::from_value(serde_json::json!({
+        "device_id": body.device_id,
+        "parent_entry_id": body.scope_entry_id,
+        "archive_revision": body.archive_revision,
+        "sync_id": body.sync_id,
+    }))
+    .c(h!())?;
+    Ok(resolve_context(main, files, login, &scope).await.c(h!())?)
 }
 
 async fn resolve_context(
@@ -299,14 +338,18 @@ async fn breadcrumbs(
     db: &DatabaseConnection,
     device: Uuid,
     entry: &file_entry::Model,
+    revision: i64,
     include: bool,
 ) -> Result<Vec<Breadcrumb>, AppError> {
     let breadcrumbs = if include {
         let rows=db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-            "select a.id,a.name from file_entry a where a.device_id=$1 and a.hierarchy_path @> $2::ltree order by nlevel(a.hierarchy_path)",[device.into(),entry.hierarchy_path.clone().into()])).await.c(h!())?;
+            "select a.id,a.name,case when a.kind='file' or a.archive_file_id is not null then $3::bigint end as archive_revision from file_entry a where a.device_id=$1 and a.hierarchy_path @> $2::ltree order by nlevel(a.hierarchy_path)",[device.into(),entry.hierarchy_path.clone().into(),revision.into()])).await.c(h!())?;
         rows.iter()
             .map(|row| {
                 Ok(Breadcrumb {
+                    archive_revision: row
+                        .try_get("", "archive_revision")
+                        .c(h!())?,
                     entry_id: row.try_get("", "id").c(h!())?,
                     name: row.try_get("", "name").c(h!())?,
                 })

@@ -517,7 +517,11 @@ export function buildNetworkUnitFilterFields(params: {
       : params.selectedUnitLabel;
 
   return {
-    filterUnit: normalizeUnitFilterValue(selectedUnitLabel),
+    filterUnit:
+      params.selectedSidebarUnitFilter?.kind === 'leaf' &&
+      params.selectedSidebarUnitFilter.unitId !== undefined
+        ? null
+        : normalizeUnitFilterValue(selectedUnitLabel),
     filterUnitArmyRegion: null,
     filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
@@ -606,7 +610,11 @@ export function buildNetworksListReq(params: {
 
   return {
     filterFreq,
-    filterUnitId: params.unitId ?? null,
+    filterUnitId:
+      params.unitId ??
+      (params.selectedSidebarUnitFilter?.kind === 'leaf'
+        ? (params.selectedSidebarUnitFilter.unitId ?? null)
+        : null),
     ...unitFilterFields,
     filterText: params.searchText.trim() === '' ? null : params.searchText.trim(),
     filterName,
@@ -657,7 +665,11 @@ export function buildNetworksStatusCountsReq(params: {
   });
   return {
     filterFreq,
-    filterUnitId: params.unitId ?? null,
+    filterUnitId:
+      params.unitId ??
+      (params.selectedSidebarUnitFilter?.kind === 'leaf'
+        ? (params.selectedSidebarUnitFilter.unitId ?? null)
+        : null),
     ...unitFilterFields,
     filterText: params.searchText.trim() === '' ? null : params.searchText.trim(),
     filterName,

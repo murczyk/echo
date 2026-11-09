@@ -1,34 +1,24 @@
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Box,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Paper,
-  Stack,
   Typography,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDeviceFileErrorNotification } from '../../device-files/use-device-file-error-notification';
 
-import type { DeviceAnalyticsSummaryRsp } from '../../../../../Bindings';
+import type {
+  DeviceAnalyticsSummaryItem,
+  DeviceAnalyticsSummaryRsp,
+} from '../../../../../Bindings';
 import { redirectToLogin } from '../../../auth-redirect';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
-import { PowerIconButton } from '../../../components/PowerIconButton';
 import { isAbortError, isUnauthorizedError } from '../../../services/api/client';
-import {
-  getDeviceAnalyticsSummary,
-  reanalyzeDevice,
-  rebuildDeviceStats,
-} from '../../../services/api/devices';
+import { getDeviceAnalyticsSummary, reanalyzeDevice } from '../../../services/api/devices';
 import { DeviceStatsViews } from '../../devices/components/DeviceStatsViews';
 import {
   countDeviceFileTypes,
@@ -36,13 +26,14 @@ import {
   formatDeviceCount,
   isDeviceStatsIncomplete,
 } from '../../devices/device-activity';
-import { DeviceAnalyticsTagFilterControls } from '../../device-files/components/DeviceAnalyticsTagFilterControls';
 import { toDeviceFileLoadError } from '../../device-files/helpers';
-import type { DeviceAnalyticsTagFilter, DeviceFileLoadError } from '../../device-files/types';
+import type { DeviceFileLoadError } from '../../device-files/types';
 import type { DeviceAnalyticsTagsState } from '../../device-files/use-device-analytics-tags';
 import { useDeviceMobileLayout } from '../../devices/use-device-mobile-layout';
 
-import { DeviceAnalyticsTagWidget, type AnalyticsWidgetSummary } from './DeviceAnalyticsTagWidget';
+import { useDeviceAudioActivity } from '../use-device-audio-activity';
+import { DeviceAudioActivityView } from './DeviceAudioActivityView';
+import { DeviceAnalyticsTagWidget } from './DeviceAnalyticsTagWidget';
 
 const fileCountFormatter = new Intl.NumberFormat('uk-UA');
 
@@ -53,8 +44,6 @@ export function DeviceAnalyticsPanel({
   refreshVersion = 0,
   isAdmin,
   tagsState,
-  tagFilter,
-  onTagFilterChange,
 }: {
   deviceId: string;
   syncId?: string | null;
@@ -62,11 +51,9 @@ export function DeviceAnalyticsPanel({
   refreshVersion?: number;
   isAdmin: boolean;
   tagsState: DeviceAnalyticsTagsState;
-  tagFilter: DeviceAnalyticsTagFilter;
-  onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
   const mobile = useDeviceMobileLayout();
-  const [summaryVersion, setSummaryVersion] = useState(0);
+  const audio = useDeviceAudioActivity(deviceId, enabled, refreshVersion);
   const [summary, setSummary] = useState<DeviceAnalyticsSummaryRsp | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<DeviceFileLoadError | null>(null);
@@ -76,12 +63,6 @@ export function DeviceAnalyticsPanel({
   const [reanalysisError, setReanalysisError] = useState<string | null>(null);
   useDeviceFileErrorNotification(reanalysisError);
   const [reanalysisDialogOpen, setReanalysisDialogOpen] = useState(false);
-  const [rebuildingStats, setRebuildingStats] = useState(false);
-  const [statsRebuildMessage, setStatsRebuildMessage] = useState<string | null>(null);
-  const [statsRebuildError, setStatsRebuildError] = useState<string | null>(null);
-  useDeviceFileErrorNotification(statsRebuildError);
-  const [statsRebuildDialogOpen, setStatsRebuildDialogOpen] = useState(false);
-  const [statsExpanded, setStatsExpanded] = useState(true);
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -100,7 +81,6 @@ export function DeviceAnalyticsPanel({
       );
       if (requestSeqRef.current !== seq || controller.signal.aborted) return;
       setSummary(rsp);
-      setSummaryVersion((value) => value + 1);
     } catch (loadError) {
       if (requestSeqRef.current !== seq || controller.signal.aborted || isAbortError(loadError)) {
         return;
@@ -124,15 +104,13 @@ export function DeviceAnalyticsPanel({
     setLoading(enabled);
     setReanalysisMessage(null);
     setReanalysisDialogOpen(false);
-    setStatsRebuildMessage(null);
-    setStatsRebuildDialogOpen(false);
     if (enabled) void loadSummary();
     return () => abortRef.current?.abort();
   }, [deviceId, syncId, enabled, loadSummary, refreshVersion]);
 
   const summaries = useMemo(() => {
     const summaryByTagId = new Map((summary?.items ?? []).map((item) => [item.tag.id, item]));
-    const visibleSummaries: AnalyticsWidgetSummary[] = [];
+    const visibleSummaries: DeviceAnalyticsSummaryItem[] = [];
 
     for (const tag of tagsState.tags) {
       const item = summaryByTagId.get(tag.id);
@@ -167,38 +145,10 @@ export function DeviceAnalyticsPanel({
     }
   };
 
-  const rebuildStats = async () => {
-    setStatsRebuildDialogOpen(false);
-    setRebuildingStats(true);
-    setStatsRebuildError(null);
-    setStatsRebuildMessage(null);
-    try {
-      const rsp = await rebuildDeviceStats({ deviceId });
-      setStatsRebuildMessage(
-        `Статистику перераховано: ${formatDeviceCount(BigInt(rsp.contentCount))} завантажень, ` +
-          `${formatDeviceBytes(BigInt(rsp.contentBytes))}; ` +
-          `${formatDeviceCount(BigInt(rsp.fileCount))} файлів, ` +
-          `${formatDeviceCount(BigInt(rsp.directoryCount))} тек.`,
-      );
-      void loadSummary();
-    } catch (rebuildError) {
-      const message = toDeviceFileLoadError(
-        rebuildError,
-        'Не вдалося перерахувати статистику',
-      ).message;
-      setStatsRebuildError(message);
-      setStatsRebuildMessage(message);
-    } finally {
-      setRebuildingStats(false);
-    }
-  };
+  const loadError = error ?? tagsState.error;
 
   return (
-    <Box
-      component="section"
-      aria-labelledby="device-analytics-title"
-      sx={{ p: 2, height: '100%', minHeight: 0, overflow: 'auto' }}
-    >
+    <section aria-label="Відомості пристрою" className="min-w-0 pb-echo-lg">
       <Dialog open={reanalysisDialogOpen} onClose={() => setReanalysisDialogOpen(false)}>
         <DialogTitle>Запустити повторний аналіз пристрою?</DialogTitle>
         <DialogContent>
@@ -225,88 +175,20 @@ export function DeviceAnalyticsPanel({
           </PowerButton>
         </DialogActions>
       </Dialog>
-      <Dialog open={statsRebuildDialogOpen} onClose={() => setStatsRebuildDialogOpen(false)}>
-        <DialogTitle>Перерахувати статистику пристрою?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Статистику завантажень буде обнулено й перераховано з усіх файлів пристрою. Поки
-            перерахунок триває, показники будуть неповними. Нові завантаження не блокуються.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions
-          className={mobile ? '!flex-col-reverse !items-stretch gap-echo-sm !p-echo-lg' : undefined}
-        >
-          <PowerButton
-            className={mobile ? '!m-0 !min-h-echo-control-lg' : undefined}
-            onClick={() => setStatsRebuildDialogOpen(false)}
-          >
-            Скасувати
-          </PowerButton>
-          <PowerButton
-            className={mobile ? '!m-0 !min-h-echo-control-lg' : undefined}
-            variant="contained"
-            onClick={() => void rebuildStats()}
-          >
-            Перерахувати
-          </PowerButton>
-        </DialogActions>
-      </Dialog>
-      <Stack spacing={2}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          useFlexGap
-          flexWrap="wrap"
-          justifyContent="space-between"
-        >
-          <Box>
-            <Typography id="device-analytics-title" variant="h6">
-              Аналітика файлів
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Динамічні теги синхронізованих файлів
-            </Typography>
-          </Box>
-          <Stack
-            direction="row"
-            spacing={0.5}
-            alignItems="center"
-            sx={{ minWidth: 0, maxWidth: '100%' }}
-          >
-            <PowerIconButton
-              aria-label="Оновити аналітичні відомості"
-              disabled={loading}
-              onClick={() => void loadSummary()}
+      <div className="flex flex-col gap-echo-lg">
+        {isAdmin ? (
+          <div className="flex justify-end">
+            <PowerButton
+              size="small"
+              variant="outlined"
+              style={{ whiteSpace: 'normal' }}
+              disabled={reanalyzing}
+              onClick={() => setReanalysisDialogOpen(true)}
             >
-              <RefreshIcon fontSize="small" />
-            </PowerIconButton>
-            {isAdmin ? (
-              <Stack spacing={0.5} alignItems="stretch">
-                <PowerButton
-                  size="small"
-                  variant="outlined"
-                  style={{ whiteSpace: 'normal' }}
-                  disabled={reanalyzing}
-                  onClick={() => setReanalysisDialogOpen(true)}
-                >
-                  {reanalyzing ? 'Запуск…' : 'Запустити повторний аналіз пристрою'}
-                </PowerButton>
-                <PowerButton
-                  size="small"
-                  variant="outlined"
-                  style={{ whiteSpace: 'normal' }}
-                  disabled={rebuildingStats}
-                  startIcon={
-                    rebuildingStats ? <CircularProgress size={14} color="inherit" /> : undefined
-                  }
-                  onClick={() => setStatsRebuildDialogOpen(true)}
-                >
-                  {rebuildingStats ? 'Перерахунок…' : 'Перерахувати статистику пристрою'}
-                </PowerButton>
-              </Stack>
-            ) : null}
-          </Stack>
-        </Stack>
+              {reanalyzing ? 'Запуск…' : 'Запустити повторний аналіз пристрою'}
+            </PowerButton>
+          </div>
+        ) : null}
 
         {reanalysisMessage !== null ? (
           <PowerAlert severity="info" autoHideDuration={null}>
@@ -314,131 +196,130 @@ export function DeviceAnalyticsPanel({
           </PowerAlert>
         ) : null}
 
-        {statsRebuildMessage !== null ? (
-          <PowerAlert
-            severity={statsRebuildError === null ? 'success' : 'error'}
-            autoHideDuration={null}
-          >
-            {statsRebuildMessage}
-          </PowerAlert>
-        ) : null}
-
-        {summary !== null ? (
-          <Stack
-            data-testid="device-analytics-progress"
-            direction="row"
-            spacing={1}
-            useFlexGap
-            flexWrap="wrap"
-          >
-            <Paper variant="outlined" sx={{ flex: '1 1 140px', minWidth: 0, px: 2, py: 1.5 }}>
-              <Typography variant="caption" color="text.secondary">
-                Файлів з контентом / усього
-              </Typography>
-              <Typography variant="h6">
-                {fileCountFormatter.format(summary.filesWithContentCount)}/
-                {fileCountFormatter.format(summary.totalFileCount)}
-              </Typography>
-            </Paper>
-            <Paper variant="outlined" sx={{ flex: '1 1 140px', minWidth: 0, px: 2, py: 1.5 }}>
-              <Typography variant="caption" color="text.secondary">
-                Проаналізовано файлів
-              </Typography>
-              <Typography variant="h6">
-                {fileCountFormatter.format(summary.analyzedFileCount)}
-              </Typography>
-            </Paper>
-          </Stack>
-        ) : null}
-
-        {summary?.stats ? (
-          <Accordion
-            expanded={statsExpanded}
-            onChange={(_, nextExpanded) => setStatsExpanded(nextExpanded)}
-            disableGutters
-            variant="outlined"
-            data-testid="device-analytics-activity"
-            sx={{ minWidth: 0, '&:before': { display: 'none' } }}
-          >
-            <AccordionSummary
-              expandIcon={<ExpandMoreIcon />}
-              aria-controls="device-analytics-stats-content"
-              id="device-analytics-stats-header"
+        <div className="grid min-w-0 items-start gap-echo-lg echo-xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+          {summary !== null ? (
+            <section
+              aria-labelledby="device-analytics-stats-header"
+              data-testid="device-analytics-activity"
+              className="flex min-w-0 flex-col gap-echo-lg rounded-echo-lg border border-echo-divider-subtle bg-echo-surface p-echo-lg"
             >
-              <Stack
-                direction={{ xs: 'column', sm: 'row' }}
-                spacing={1}
-                useFlexGap
-                flexWrap="wrap"
-                alignItems={{ sm: 'center' }}
-                sx={{ minWidth: 0, width: '100%', pr: 1 }}
-              >
-                <Typography fontWeight={600}>Статистика завантажень</Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ ml: { sm: 'auto' }, textAlign: { sm: 'right' } }}
-                >
-                  Тек: <b>{formatDeviceCount(BigInt(summary.stats.directoryCount))}</b> · Файлів:{' '}
-                  <b>{formatDeviceCount(BigInt(summary.filesWithContentCount))}</b> · Типів:{' '}
-                  <b>{countDeviceFileTypes(summary.stats)}</b> · Розмір:{' '}
-                  <b>{formatDeviceBytes(BigInt(summary.stats.contentBytes))}</b>
-                  {isDeviceStatsIncomplete(summary.stats, summary.totalFileCount)
-                    ? ' · статистика неповна'
-                    : ''}
+              <header className="flex flex-col gap-echo-xs">
+                <Typography component="h2" variant="h6" id="device-analytics-stats-header">
+                  Статистика завантажень
                 </Typography>
-              </Stack>
-            </AccordionSummary>
-            <AccordionDetails id="device-analytics-stats-content" sx={{ pt: 0 }}>
-              <DeviceStatsViews stats={summary.stats} />
-            </AccordionDetails>
-          </Accordion>
-        ) : null}
-
-        <DeviceAnalyticsTagFilterControls
-          tagsState={tagsState}
-          filter={tagFilter}
-          onChange={onTagFilterChange}
-        />
-
-        {error !== null ? (
-          <PowerAlert
-            severity="error"
-            autoHideDuration={null}
-            action={
-              <PowerButton size="small" color="inherit" onClick={() => void loadSummary()}>
-                Повторити
-              </PowerButton>
-            }
-          >
-            {error.message}
-          </PowerAlert>
-        ) : loading || tagsState.loading ? (
-          <Box sx={{ minHeight: 160, display: 'grid', placeItems: 'center' }}>
-            <CircularProgress size={28} aria-label="Завантаження аналітичних відомостей" />
-          </Box>
-        ) : summaries.length === 0 ? (
-          <PowerAlert severity="info" autoHideDuration={null}>
-            {tagsState.tags.length === 0
-              ? 'Активних аналітичних тегів ще немає.'
-              : 'Файлів з активними аналітичними тегами ще немає.'}
-          </PowerAlert>
-        ) : (
-          <Stack spacing={1}>
-            {summaries.map((summary) => (
-              <DeviceAnalyticsTagWidget
-                key={`${summary.tag.id}:${summaryVersion}`}
-                deviceId={deviceId}
-                syncId={syncId}
-                summary={summary}
-                onUseAsFilter={(tagId) =>
-                  onTagFilterChange({ tagIds: [tagId], tagMatch: 'any', untagged: false })
-                }
+                <Typography variant="body2" color="text.secondary">
+                  {summary.stats ? (
+                    <>
+                      Тек: {formatDeviceCount(BigInt(summary.stats.directoryCount))} · Типів:{' '}
+                      {countDeviceFileTypes(summary.stats)} · Розмір:{' '}
+                      {formatDeviceBytes(BigInt(summary.stats.contentBytes))}
+                      {isDeviceStatsIncomplete(summary.stats, summary.totalFileCount)
+                        ? ' · статистика неповна'
+                        : ''}
+                    </>
+                  ) : (
+                    'Аудіо за весь час'
+                  )}
+                </Typography>
+              </header>
+              <dl
+                data-testid="device-analytics-progress"
+                className="m-0 grid grid-cols-1 gap-echo-lg border-b border-echo-divider-subtle pb-echo-lg echo-sm:grid-cols-2"
+              >
+                <div className="min-w-0">
+                  <dt>
+                    <Typography variant="body2" color="text.secondary">
+                      Файлів з контентом / усього
+                    </Typography>
+                  </dt>
+                  <Typography component="dd" variant="h5" className="!m-0 tabular-nums">
+                    {fileCountFormatter.format(summary.filesWithContentCount)}/
+                    {fileCountFormatter.format(summary.totalFileCount)}
+                  </Typography>
+                </div>
+                <div className="min-w-0">
+                  <dt>
+                    <Typography variant="body2" color="text.secondary">
+                      Завантажено аудіо
+                    </Typography>
+                  </dt>
+                  <Typography component="dd" variant="h5" className="!m-0 tabular-nums">
+                    {audio.loading ? (
+                      <CircularProgress size={18} aria-label="Завантаження кількості аудіо" />
+                    ) : audio.value ? (
+                      fileCountFormatter.format(audio.value.uploadedCount)
+                    ) : (
+                      '—'
+                    )}
+                    {audio.error ? (
+                      <PowerButton size="small" onClick={audio.reload}>
+                        Повторити
+                      </PowerButton>
+                    ) : null}
+                  </Typography>
+                </div>
+              </dl>
+              <DeviceStatsViews
+                stats={summary.stats ?? null}
+                highlightSelection
+                audio={<DeviceAudioActivityView activity={audio} />}
               />
-            ))}
-          </Stack>
-        )}
-      </Stack>
-    </Box>
+            </section>
+          ) : null}
+          <section
+            aria-labelledby="device-analytics-tags-header"
+            className="min-w-0 rounded-echo-lg border border-echo-divider-subtle bg-echo-surface p-echo-lg"
+          >
+            <Typography
+              component="h2"
+              variant="h6"
+              id="device-analytics-tags-header"
+              className="mb-echo-md!"
+            >
+              Аналітичні теги
+            </Typography>
+            {loadError !== null ? (
+              <PowerAlert
+                severity="error"
+                autoHideDuration={null}
+                action={
+                  <PowerButton
+                    size="small"
+                    color="inherit"
+                    onClick={() => {
+                      if (error !== null) void loadSummary();
+                      if (tagsState.error !== null) void tagsState.reload();
+                    }}
+                  >
+                    Повторити
+                  </PowerButton>
+                }
+              >
+                {loadError.message}
+              </PowerAlert>
+            ) : loading || tagsState.loading ? (
+              <div className="grid min-h-echo-control-lg place-items-center p-echo-xl">
+                <CircularProgress size={28} aria-label="Завантаження аналітичних відомостей" />
+              </div>
+            ) : summaries.length === 0 ? (
+              <PowerAlert severity="info" autoHideDuration={null}>
+                {tagsState.tags.length === 0
+                  ? 'Активних аналітичних тегів ще немає.'
+                  : 'Файлів з активними аналітичними тегами ще немає.'}
+              </PowerAlert>
+            ) : (
+              <ul
+                aria-label="Аналітичні теги"
+                className="m-0 list-none divide-y divide-echo-divider-subtle p-0"
+              >
+                {summaries.map((summary) => (
+                  <DeviceAnalyticsTagWidget key={summary.tag.id} summary={summary} />
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
+    </section>
   );
 }

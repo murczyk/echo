@@ -1424,6 +1424,14 @@ fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
             .denied_units
             .as_ref()
             .is_some_and(|units| !units.is_empty())
+        || req
+            .selected_unit_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
+        || req
+            .denied_unit_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
 }
 
 fn effective_inbox_groups(
@@ -1603,7 +1611,23 @@ async fn query_inbox_digest(
     db: DatabaseConnection,
     query: String,
 ) -> Result<InboxDigest, AppError> {
-    let query_res = crate::read_query::connection(&db)
+    read_inbox_digest(crate::read_query::connection(&db), query).await
+}
+
+/// Counts the analytics fresh tail without taking a shared SQL slot.
+async fn query_fresh_tail_inbox_digest(
+    db: DatabaseConnection,
+    query: String,
+) -> Result<InboxDigest, AppError> {
+    read_inbox_digest(crate::read_query::fresh_tail_connection(&db), query)
+        .await
+}
+
+async fn read_inbox_digest(
+    connection: crate::read_query::ReadConnection<'_>,
+    query: String,
+) -> Result<InboxDigest, AppError> {
+    let query_res = connection
         .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, query))
         .await
         .c(h!())?
@@ -1928,16 +1952,23 @@ async fn query_rer_duty_inbox_digest_with_fresh_tail(
     let analytics_env = env.clone();
     let analytics_req = req.clone();
     let postgres_tail_db = env.dbx.clone();
+    let postgres_tail_bounded = fresh_tail_inbox_digest_is_bounded(&req);
     let postgres_fallback_db = env.dbx.clone();
     Ok(with_analytics_read_fallback(
         env.get_ref(),
         "rer duty inbox messages count",
         true,
         |db| async move {
-            let postgres_tail =
-                query_inbox_digest(postgres_tail_db, postgres_tail_query)
-                    .await
-                    .context(h!())?;
+            let postgres_tail = if postgres_tail_bounded {
+                query_fresh_tail_inbox_digest(
+                    postgres_tail_db,
+                    postgres_tail_query,
+                )
+                .await
+            } else {
+                query_inbox_digest(postgres_tail_db, postgres_tail_query).await
+            }
+            .context(h!())?;
             let Some(historical) = load_analytics_inbox_digest(
                 &login,
                 &analytics_env,
@@ -1974,6 +2005,182 @@ fn merge_inbox_digests(
         (None, None) => None,
     };
     Ok((count, first_element_ts))
+}
+
+#[derive(FromQueryResult)]
+struct InboxUnitStatsRow {
+    unit_id: i64,
+    name: String,
+    count: i64,
+}
+
+async fn query_inbox_unit_stats(
+    connection: crate::read_query::ReadConnection<'_>,
+    query: String,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let rows = InboxUnitStatsRow::find_by_statement(Statement::from_string(
+        DbBackend::Postgres,
+        query,
+    ))
+    .all(&connection)
+    .await
+    .c(h!())?;
+    Ok(rows
+        .into_iter()
+        .filter(|row| row.count > 0)
+        .map(|row| AnalysisStatsUnit {
+            unit_id: row.unit_id,
+            name: row.name,
+            count: row.count,
+        })
+        .collect())
+}
+
+async fn load_inbox_unit_stats(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    analytics_db: Option<&DatabaseConnection>,
+    created_at_lower_bound: Option<NaiveDateTime>,
+    created_at_upper_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let Some(query) = build_inbox_unit_stats_query_with_created_at_bounds(
+        login,
+        env,
+        req,
+        analytics_db,
+        created_at_lower_bound,
+        created_at_upper_bound,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(Vec::new());
+    };
+    let db = analytics_db.unwrap_or(&env.dbx);
+    // Without analytics, a lower bound selects the fresh tail. Its message-first
+    // query reads only those minutes, so it skips the shared SQL slots.
+    let connection =
+        if analytics_db.is_none() && created_at_lower_bound.is_some() {
+            crate::read_query::fresh_tail_connection(db)
+        } else {
+            crate::read_query::connection(db)
+        };
+    query_inbox_unit_stats(connection, query).await.c(h!())
+}
+
+async fn load_fallback_inbox_unit_stats(
+    login: &Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    policy_req: &InboxMessagesReq,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let lower_bound =
+        rer_duty_neo_adaptive_lower_bound(login, env, policy_req).await;
+    let mut req = req.clone();
+    if let Some(lower_bound) = lower_bound {
+        req.since_date_inclusive_ms =
+            Some(lower_bound.and_utc().timestamp_millis());
+        req.sort_by = Some(InboxMessagesSortBy::IMSCreatedAt);
+    }
+    load_inbox_unit_stats(login, env, &req, None, None, None)
+        .await
+        .c(h!())
+}
+
+fn merge_inbox_unit_stats(
+    historical: Vec<AnalysisStatsUnit>,
+    fresh_tail: Vec<AnalysisStatsUnit>,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let mut units = historical
+        .into_iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect::<BTreeMap<_, _>>();
+    for unit in fresh_tail {
+        if let Some(previous) = units.get_mut(&unit.unit_id) {
+            previous.count =
+                previous.count.checked_add(unit.count).context(h!())?;
+            previous.name = unit.name;
+        } else {
+            units.insert(unit.unit_id, unit);
+        }
+    }
+    Ok(units.into_values().collect())
+}
+
+#[post("/api/rer-importer/get-inbox-unit-stats")]
+async fn inbox_unit_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxMessagesReq>,
+) -> Result<Json<UnitStatsRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    let mut req = req.into_inner();
+    require_device_filters(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
+    let fallback_req = req.clone();
+    req.selected_units = None;
+    req.selected_unit_ids = None;
+    req.denied_units = None;
+    req.denied_unit_ids = None;
+    req.since_id_noninclusive = None;
+    req.before_id_noninclusive = None;
+    req.around_message_ref = None;
+    req.load_latest = Some(true);
+    let analytics_env = &env;
+    let analytics_req = &req;
+    let fresh_tail_lower_bound = analytics_fresh_tail_lower_bound(
+        Utc::now().naive_utc(),
+        analytics_freshness_max_age_ms(&env),
+        RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES,
+    );
+    let units = with_analytics_read_fallback(
+        env.get_ref(),
+        "inbox unit stats",
+        analytics_inbox_request_supported(&req),
+        |db| async move {
+            let historical = load_inbox_unit_stats(
+                &login,
+                analytics_env,
+                analytics_req,
+                Some(&db),
+                None,
+                Some(fresh_tail_lower_bound),
+            )
+            .await
+            .c(h!())?;
+            let fresh_tail = load_inbox_unit_stats(
+                &login,
+                analytics_env,
+                analytics_req,
+                None,
+                Some(fresh_tail_lower_bound),
+                None,
+            )
+            .await
+            .c(h!())?;
+            Ok(merge_inbox_unit_stats(historical, fresh_tail).c(h!())?)
+        },
+        |_db| async move {
+            Ok(load_fallback_inbox_unit_stats(
+                &login,
+                analytics_env,
+                analytics_req,
+                &fallback_req,
+            )
+            .await
+            .c(h!())?)
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(
+        crate::rer_importer::unit_stats::enrich(&env, units)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/rer-importer/get-inbox-count")]
@@ -2311,6 +2518,7 @@ fn generic_submit_item_to_inbox_message(
         checked: true,
         important: false,
         ai_important: false,
+        important_by_my_organism: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         created_at: None,
@@ -2325,6 +2533,7 @@ fn generic_submit_item_to_inbox_message(
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),
+        unit_display: None,
         unit_ids: vec![],
         callsign_tokens: None,
         signal_tokens: None,
@@ -2697,18 +2906,41 @@ async fn update_submit_signal_message(
     timestamp: Option<NaiveDateTime>,
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
+    source_group_master_key: Option<&str>,
 ) -> Result<signal_message::Model, AppError> {
-    let datasource_group_id = groups.first().map(|(_, id)| *id);
+    let destination_group_id = groups.first().map(|(_, id)| *id);
     let signal_message = SignalMessage::find_by_id(signal_message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(txn)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    let unchanged_source_group =
+        source_group_master_key.is_some_and(|source| {
+            Some(source) == groups.first().map(|(key, _)| key.as_str())
+        });
+    let datasource_group_id = if unchanged_source_group {
+        signal_message.datasource_group_id.or(destination_group_id)
+    } else {
+        destination_group_id
+    };
+    let preserve_existing_group = unchanged_source_group
+        && signal_message
+            .datasource_group_id
+            .is_some_and(|id| Some(id) != destination_group_id);
     prepare_message_network_activity_change(
         txn,
         signal_message.id,
         &format!("updated submitted inbox message {}", signal_message.id),
+    )
+    .await
+    .c(h!())?;
+    let destination_group_exists = replace_submit_signal_message_group(
+        txn,
+        &signal_message,
+        login_id,
+        groups.first(),
+        source_group_master_key,
     )
     .await
     .c(h!())?;
@@ -2729,8 +2961,175 @@ async fn update_submit_signal_message(
         ensure_signal_message_model_uid(txn, config, signal_message)
             .await
             .c(h!())?;
-    ensure_submit_signal_message_groups(txn, &signal_message, groups).await?;
+    if !destination_group_exists && !preserve_existing_group {
+        ensure_submit_signal_message_groups(txn, &signal_message, groups)
+            .await
+            .c(h!())?;
+    }
     Ok(signal_message)
+}
+
+pub(crate) async fn find_submit_signal_message_group_key(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    login: &Uuid,
+) -> anyhow::Result<Option<String>> {
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(txn, login)
+            .await
+            .c(h!())?;
+    signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey.is_in(allowed_groups),
+        )
+        .order_by_asc(signal_message_group::Column::Id)
+        .select_only()
+        .column(signal_message_group::Column::GroupMasterKey)
+        .into_tuple::<String>()
+        .one(txn)
+        .await
+        .c(h!())
+}
+
+async fn replace_submit_signal_message_group(
+    txn: &DatabaseTransaction,
+    signal_message: &signal_message::Model,
+    login: &Uuid,
+    destination_group: Option<&(String, i64)>,
+    source_group_master_key: Option<&str>,
+) -> anyhow::Result<bool> {
+    let Some(old_group) = submit_signal_message_group_to_replace(
+        txn,
+        signal_message,
+        login,
+        destination_group,
+        source_group_master_key,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(false);
+    };
+    let destination_group_exists = match destination_group {
+        Some((master_key, _)) => signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(signal_message.id),
+            )
+            .filter(signal_message_group::Column::GroupMasterKey.eq(master_key))
+            .select_only()
+            .column(signal_message_group::Column::Id)
+            .into_tuple::<i64>()
+            .one(txn)
+            .await
+            .c(h!())?
+            .is_some(),
+        None => false,
+    };
+    if let Some((master_key, id)) =
+        destination_group.filter(|_| !destination_group_exists)
+    {
+        let source_group_to_move = signal_message_group::Entity::find()
+            .select_only()
+            .column(signal_message_group::Column::Id)
+            .filter(old_group.clone())
+            .order_by_asc(signal_message_group::Column::Id)
+            .limit(1)
+            .into_query();
+        signal_message_group::Entity::update_many()
+            .col_expr(
+                signal_message_group::Column::DatasourceGroupId,
+                Expr::value(*id),
+            )
+            .col_expr(
+                signal_message_group::Column::GroupMasterKey,
+                Expr::value(master_key.clone()),
+            )
+            .filter(
+                signal_message_group::Column::Id
+                    .in_subquery(source_group_to_move),
+            )
+            .exec(txn)
+            .await
+            .c(h!())?;
+    }
+    signal_message_group::Entity::delete_many()
+        .filter(old_group)
+        .exec(txn)
+        .await
+        .c(h!())?;
+    crate::battle_line::settlement_queue::requeue_item_settlements(
+        txn,
+        signal_message.id,
+    )
+    .await
+    .c(h!())?;
+    Ok(destination_group_exists)
+}
+
+async fn submit_signal_message_group_to_replace(
+    txn: &DatabaseTransaction,
+    signal_message: &signal_message::Model,
+    login: &Uuid,
+    destination_group: Option<&(String, i64)>,
+    source_group_master_key: Option<&str>,
+) -> anyhow::Result<Option<sea_orm::sea_query::SimpleExpr>> {
+    let old_group = if let Some(key) = source_group_master_key {
+        if Some(key) == destination_group.map(|(key, _)| key.as_str()) {
+            return Ok(None);
+        }
+        signal_message_group::Column::GroupMasterKey.eq(key)
+    } else {
+        match signal_message.datasource_group_id {
+            Some(old_group_id) => {
+                if Some(old_group_id) == destination_group.map(|(_, id)| *id) {
+                    return Ok(None);
+                }
+                let old_group_key =
+                    datasource_group::Entity::find_by_id(old_group_id)
+                        .select_only()
+                        .column(datasource_group::Column::GroupMasterKey)
+                        .into_tuple::<String>()
+                        .one(txn)
+                        .await
+                        .c(h!())?;
+                let old_group = signal_message_group::Column::DatasourceGroupId
+                    .eq(old_group_id);
+                match old_group_key {
+                    Some(key) => old_group
+                        .or(signal_message_group::Column::GroupMasterKey
+                            .eq(key)),
+                    None => old_group,
+                }
+            }
+            None => {
+                let Some(old_group) = find_submit_signal_message_group_key(
+                    txn,
+                    signal_message.id,
+                    login,
+                )
+                .await
+                .c(h!())?
+                else {
+                    return Ok(None);
+                };
+                if Some(old_group.as_str())
+                    == destination_group.map(|(key, _)| key.as_str())
+                {
+                    return Ok(None);
+                }
+                signal_message_group::Column::GroupMasterKey.eq(old_group)
+            }
+        }
+    };
+    Ok(Some(
+        signal_message_group::Column::SignalMessageId
+            .eq(signal_message.id)
+            .and(old_group),
+    ))
 }
 
 async fn upsert_submit_signal_message_inner(
@@ -5841,6 +6240,26 @@ mod tests {
         assert_eq!(cached, (7, None));
     }
 
+    #[test]
+    fn fresh_tail_digest_keeps_slots_for_period_unit_filters_3978() {
+        let now = Utc::now();
+        let mut req = InboxMessagesReq {
+            page_id: Some("rer-duty-neo".to_string()),
+            since_date_inclusive_ms: Some(
+                (now - Duration::days(30)).timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(now.timestamp_millis()),
+            ..Default::default()
+        };
+        assert!(fresh_tail_inbox_digest_is_bounded(&req));
+        // Period unit matching scans the whole requested period.
+        req.selected_units = Some(vec!["unit".to_string()]);
+        assert!(!fresh_tail_inbox_digest_is_bounded(&req));
+        // Without a period the unit filter is correlated to tail rows.
+        req.sort_by = Some(InboxMessagesSortBy::IMSTimestamp);
+        assert!(fresh_tail_inbox_digest_is_bounded(&req));
+    }
+
     #[serial]
     #[tokio::test]
     async fn inbox_digest_accepts_timestamp_with_time_zone() {
@@ -5899,6 +6318,235 @@ mod tests {
             highlight_points: Some(true),
             ..Default::default()
         }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn inbox_unit_counts_respect_duty_exclusions_3527() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Duty count unit".to_string()),
+                army: Set("6 А".to_string()),
+                brigade: Set("27 омсбр".to_string()),
+                company: Set("1 мср".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let deleted_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Deleted duty count unit".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let boundary = Utc::now().naive_utc();
+        for (index, (freq, linked)) in
+            [("111", true), ("222", true), ("111", false)]
+                .into_iter()
+                .enumerate()
+        {
+            let message = mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    created_at: Set(if index == 0 {
+                        boundary - Duration::days(15)
+                    } else {
+                        boundary
+                    }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(Some(
+                        datasource_group.group_master_key.clone(),
+                    )),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    freq: Set(Some(freq.to_string())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            sigint_inbox_item_unit::Entity::insert(
+                sigint_inbox_item_unit::ActiveModel {
+                    item_id: Set(message.id),
+                    unit_id: Set(deleted_unit.id),
+                    kind: Set(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed),
+                    ..Default::default()
+                },
+            ).exec(&env.dbx).await.unwrap();
+            if linked {
+                use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
+                for kind in [
+                    SigintInboxItemUnitKind::Parsed,
+                    SigintInboxItemUnitKind::Network,
+                ] {
+                    sigint_inbox_item_unit::Entity::insert(
+                        sigint_inbox_item_unit::ActiveModel {
+                            item_id: Set(message.id),
+                            unit_id: Set(unit.id),
+                            kind: Set(kind),
+                            ..Default::default()
+                        },
+                    )
+                    .exec(&env.dbx)
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+        let req: InboxMessagesReq = serde_json::from_value(serde_json::json!({
+            "load_latest": true,
+            "denied_freqs": ["222"],
+            "sort_by": "IMSCreatedAt"
+        }))
+        .unwrap();
+        let query = build_inbox_unit_stats_query_with_created_at_bounds(
+            &login.id, &env, &req, None, None, None,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let units = query_inbox_unit_stats(
+            crate::read_query::connection(&env.dbx),
+            query,
+        )
+        .await
+        .unwrap();
+        assert_eq!(units.len(), 2);
+        assert_eq!(
+            units
+                .iter()
+                .find(|row| row.unit_id == unit.id)
+                .unwrap()
+                .count,
+            1
+        );
+        assert_eq!(
+            units
+                .iter()
+                .find(|row| row.unit_id == ANALYSIS_STATS_UNDEFINED_UNIT_ID)
+                .unwrap()
+                .count,
+            1
+        );
+        let historical = load_inbox_unit_stats(
+            &login.id,
+            &env,
+            &req,
+            None,
+            None,
+            Some(boundary),
+        )
+        .await
+        .unwrap();
+        let fresh_tail = load_inbox_unit_stats(
+            &login.id,
+            &env,
+            &req,
+            None,
+            Some(boundary),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(historical.len(), 1);
+        assert_eq!(historical[0].unit_id, unit.id);
+        assert_eq!(fresh_tail.len(), 1);
+        assert_eq!(fresh_tail[0].unit_id, ANALYSIS_STATS_UNDEFINED_UNIT_ID);
+        let merged = merge_inbox_unit_stats(historical, fresh_tail).unwrap();
+        assert_eq!(merged.iter().map(|unit| unit.count).sum::<i64>(), 2);
+        crate::sigint::unit::hierarchy::mark_dirty(&mut env.redis.clone())
+            .await
+            .unwrap();
+        let enriched = crate::rer_importer::unit_stats::enrich(&env, merged)
+            .await
+            .unwrap();
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(|option| option.label == "27 омсбр")
+                .unwrap()
+                .count,
+            1
+        );
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(|option| option.label == "6 А")
+                .unwrap()
+                .count,
+            1
+        );
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(
+                    |option| option.label == ANALYSIS_STATS_UNDEFINED_UNIT_NAME
+                )
+                .unwrap()
+                .value,
+            ANALYSIS_STATS_UNDEFINED_UNIT_NAME
+        );
+        let policy_req = InboxMessagesReq {
+            selected_unit_ids: Some(vec![unit.id]),
+            page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+            ..req.clone()
+        };
+        let fallback =
+            load_fallback_inbox_unit_stats(&login.id, &env, &req, &policy_req)
+                .await
+                .unwrap();
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0].unit_id, ANALYSIS_STATS_UNDEFINED_UNIT_ID);
+        let ids = (0..20_001)
+            .map(|index| i64::MAX - index)
+            .chain(std::iter::once(unit.id))
+            .collect::<Vec<_>>();
+        let selected = crate::rer_importer::analysis::filter_selected_unit_ids(
+            sigint_inbox_item::Entity::find(),
+            &Some(ids.clone()),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(selected.len(), 2);
+        let denied = crate::rer_importer::analysis::filter_denied_unit_ids(
+            sigint_inbox_item::Entity::find(),
+            &Some(ids),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(denied.len(), 1);
     }
 
     #[serial]
@@ -6900,6 +7548,7 @@ mod tests {
             Some(new_timestamp),
             None,
             &[],
+            None,
         )
         .await
         .unwrap();
@@ -8380,6 +9029,54 @@ mod tests {
         }
     }
 
+    // Regression: https://github.com/echoua/echo/issues/4073
+    #[serial]
+    #[tokio::test]
+    async fn echo_4073_inbox_scopes_importance_to_my_organism() {
+        let env = cleanup().await.unwrap();
+        let viewer = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let colleague = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let outsider = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let logins = vec![viewer.id, colleague.id];
+        let mut marked = vec![];
+        for (label, marker) in [
+            ("colleague", Some(colleague.id)),
+            ("outsider", Some(outsider.id)),
+            ("system", None),
+        ] {
+            let message =
+                seed_message_with_media(&env, &datasource_group, None, label)
+                    .await
+                    .unwrap();
+            mk_sigint_important(
+                &env.dbx,
+                sigint_important::ActiveModel {
+                    login_id: Set(marker),
+                    signal_message_id: Set(message.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            marked.push(message.id);
+        }
+
+        let messages =
+            get_inbox_messages_by_ids(&viewer.id, &logins, &env, &marked)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<HashMap<_, _>>();
+
+        assert_eq!(messages.len(), 3);
+        assert!(marked.iter().all(|id| messages[id].important));
+        assert!(messages[&marked[0]].important_by_my_organism);
+        assert!(!messages[&marked[1]].important_by_my_organism);
+        assert!(!messages[&marked[2]].important_by_my_organism);
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_get_inbox_messages_filters_only_with_media() {
@@ -8971,6 +9668,24 @@ mod tests {
             .all(|entry| entry.model.is_none()));
     }
 
+    async fn unit_metadata_for_message(
+        env: &Env,
+        login: uuid::Uuid,
+        message_id: i64,
+    ) -> InboxMessage {
+        messages_by_id_bl(
+            &login,
+            &vec![login],
+            env,
+            &[message_id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap()
+        .remove(0)
+        .1
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_messages_by_id_includes_distinct_unit_ids() {
@@ -8982,10 +9697,33 @@ mod tests {
             seed_message_with_media(&env, &datasource_group, None, "units")
                 .await
                 .unwrap();
-        let first_unit =
-            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
-        let second_unit =
-            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            unit_v2: Set(Some("Stored unit name".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let first_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("First current unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Second current unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let network = mk_sigint_network(&env.dbx, Default::default())
             .await
             .unwrap();
@@ -9025,20 +9763,77 @@ mod tests {
             .unwrap();
         }
 
-        let logins = vec![login.id];
-        let messages = messages_by_id_bl(
-            &login.id,
-            &logins,
-            &env,
-            &[message.id],
-            &messages_by_id_default_req(),
-        )
-        .await
-        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
         let mut expected_unit_ids = vec![first_unit.id, second_unit.id];
         expected_unit_ids.sort_unstable();
 
-        assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
+        assert_eq!(response.unit_ids, expected_unit_ids);
+        assert_eq!(
+            response.unit_display.as_deref(),
+            Some("First current unit, Second current unit")
+        );
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_unit::ActiveModel {
+            id: Set(second_unit.id),
+            name: Set(first_unit.name.clone()),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert_eq!(response.unit_ids, expected_unit_ids);
+        assert_eq!(
+            response.unit_display.as_deref(),
+            Some("First current unit")
+        );
+
+        for (unit_id, deleted) in
+            [(second_unit.id, true), (first_unit.id, false)]
+        {
+            sigint_unit::ActiveModel {
+                id: Set(unit_id),
+                name: Set("Renamed unit".to_string()),
+                deleted: Set(deleted),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert_eq!(response.unit_ids, vec![first_unit.id]);
+        assert_eq!(response.unit_display.as_deref(), Some("Renamed unit"));
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_unit::ActiveModel {
+            id: Set(first_unit.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert!(response.unit_ids.is_empty());
+        assert!(response.unit_display.is_none());
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_inbox_item_unit::Entity::delete_many()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(message.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert!(response.unit_ids.is_empty());
+        assert!(response.unit_display.is_none());
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
     }
 
     #[serial]
@@ -9694,6 +10489,25 @@ mod tests {
             selected_senders: None,
             ..matching_sender_req.clone()
         };
+        for selected_senders in [None, Some(vec!["sender-c".to_string()])] {
+            let unmatched_group_req = InboxMessagesReq {
+                selected_groups: Some(vec!["DEVOPS".to_string()]),
+                selected_senders,
+                ..all_groups_req.clone()
+            };
+            assert!(
+                get_inbox_messages(
+                    &login.id,
+                    &logins,
+                    &env,
+                    &unmatched_group_req
+                )
+                .await
+                .unwrap()
+                .is_empty(),
+                "a selection matching no group must not widen to all groups"
+            );
+        }
         let all_groups_messages =
             get_inbox_messages(&login.id, &logins, &env, &all_groups_req)
                 .await

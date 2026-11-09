@@ -117,6 +117,13 @@ for (const fixture of DEVICE_FILE_PREVIEW_FIXTURES.filter(
       await expect(
         dialog.getByRole('heading', { name: fixture.fileName, exact: true }),
       ).toBeVisible();
+      if (extensionOnlyMpeg) {
+        await expect(
+          dialog.locator('[data-audio-preview-content] custom-audio-player'),
+        ).toBeVisible();
+        await expect(dialog.locator('video')).toHaveCount(0);
+        await expect(dialog.locator('[data-attachment-preview-video-controls]')).toHaveCount(0);
+      }
       const player = dialog.locator('video, custom-audio-player');
       await expect
         .poll(

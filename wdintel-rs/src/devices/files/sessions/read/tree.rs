@@ -5,6 +5,12 @@ struct TreePage {
     paths: Vec<Vec<String>>,
     next_cursor: Option<String>,
     tags: BTreeMap<Uuid, Vec<AnalyticsTag>>,
+    sizes: std::collections::HashMap<String, Option<i64>>,
+}
+
+enum TreePageOrder {
+    Listing(crate::devices::files::sorting::FileListingSort),
+    Relevance { term: String, path: String },
 }
 
 async fn load_page(
@@ -14,25 +20,50 @@ async fn load_page(
     limit: u64,
     value: Option<&str>,
     scope: &str,
+    sort: TreePageOrder,
 ) -> Result<TreePage, AppError> {
+    let order = match &sort {
+        TreePageOrder::Listing(sort) => sort.order_sql("entry"),
+        TreePageOrder::Relevance { term, path } => {
+            let term = query.bind(term.clone());
+            let path = query.bind(path.clone());
+            query::search_ranking::key_sql("entry", &term, &path)
+        }
+    };
     if let Some(value) = value {
         let (kind, name, id): (String, String, Uuid) =
             cursor::decode(value, scope).c(h!())?;
         if kind != "directory" && kind != "file" {
             return Err(cursor::invalid("cursor"));
         }
-        let kind = query.bind(kind);
         let name = query.bind(name);
         let id = query.bind(id);
-        predicate.push_str(&format!(" and (entry.kind::text, convert_to(entry.name, 'UTF8'), entry.id) > ({kind}, convert_to({name}, 'UTF8'), {id})"));
+        let after = match &sort {
+            TreePageOrder::Listing(sort) => {
+                sort.after_sql("entry", "session_entries", &name, &id)
+            }
+            TreePageOrder::Relevance { .. } => {
+                let boundary = order.replace("entry.", "boundary.");
+                format!("row({order}) > (select {boundary} from session_entries boundary where boundary.id={id} and boundary.name={name} order by boundary.revision desc nulls last limit 1)")
+            }
+        };
+        predicate.push_str(&format!(" and {after}"));
     }
     let cap = query.bind((limit + 1) as i64);
     let mut rows = query.all(files.connection(), &format!(
-        "select entry.* from session_entries entry where {predicate} order by entry.kind::text, convert_to(entry.name, 'UTF8'), entry.id limit {cap}"
+        "select entry.* from session_entries entry where {predicate} order by {order} limit {cap}"
     )).await.c(h!())?;
     let more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
     let tags = tags_from_rows(&rows).c(h!())?;
+    let sizes = rows
+        .iter()
+        .map(|row| {
+            let id: Uuid = row.try_get("", "id").c(h!())?;
+            Ok((id.to_string(), row.try_get("", "size_bytes").c(h!())?))
+        })
+        .collect::<anyhow::Result<_>>()
+        .c(h!())?;
     let next_cursor = if more {
         rows.last()
             .map(|row| {
@@ -60,15 +91,20 @@ async fn load_page(
         })
         .collect::<anyhow::Result<Vec<_>>>()
         .c(h!())?;
-    let paths = query::load_path_components(files, &entries)
-        .await
-        .map_err(bl::map_read_error)
-        .c(h!())?;
+    let paths = query::ancestors::load_path_components_with_root(
+        files.connection(),
+        &entries,
+        matches!(sort, TreePageOrder::Relevance { .. }),
+    )
+    .await
+    .map_err(bl::map_read_error)
+    .c(h!())?;
     Ok(TreePage {
         entries,
         paths,
         next_cursor,
         tags,
+        sizes,
     })
 }
 
@@ -87,7 +123,7 @@ pub(in crate::devices) async fn browse(
     )
     .await
     .c(h!())?;
-    let scope_key = scope_key("browse", &body).c(h!())?;
+    let scope_key = browse_scope_key("browse", &body).c(h!())?;
     let limit = page_limit(body.limit).c(h!())?;
     let filter = normalize_tag_filter(
         files.connection(),
@@ -122,6 +158,12 @@ pub(in crate::devices) async fn browse(
         limit,
         body.cursor.as_deref(),
         &scope_key,
+        TreePageOrder::Listing(
+            crate::devices::files::sorting::FileListingSort::new(
+                body.sort_by,
+                body.sort_direction,
+            ),
+        ),
     )
     .await
     .c(h!())?;
@@ -133,13 +175,16 @@ pub(in crate::devices) async fn browse(
     } else {
         Vec::new()
     };
-    bl::map_browse(BrowseFilesResult {
+    let mut response = bl::map_browse(BrowseFilesResult {
         breadcrumbs,
         entries: page.entries,
         entry_path_components: page.paths,
         next_cursor: page.next_cursor,
         tags_by_file: page.tags,
     })
+    .c(h!())?;
+    query::sizes::apply(&mut response.entries, &page.sizes);
+    Ok(response)
 }
 
 pub(in crate::devices) async fn search(
@@ -157,7 +202,35 @@ pub(in crate::devices) async fn search(
     )
     .await
     .c(h!())?;
-    let scope_key = scope_key("search", &body).c(h!())?;
+    let scope = query::find_search_scope(
+        files,
+        device_id,
+        parse_uuid(&body.scope_entry_id),
+    )
+    .await
+    .map_err(bl::map_read_error)
+    .c(h!())?;
+    let query = SessionQuery::new(device_id, vec![sync_id]).include_archives();
+    let cursor_scope = scope_key("search", &body).c(h!())?;
+    Ok(search_snapshot(
+        files,
+        body,
+        query,
+        scope.hierarchy_path(),
+        &cursor_scope,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(in crate::devices::files) async fn search_snapshot(
+    files: &FileRegistryDb,
+    body: SearchDeviceFilesReq,
+    mut query: SessionQuery,
+    scope_path: &str,
+    cursor_scope: &str,
+) -> Result<SearchDeviceFilesRsp, AppError> {
+    let filters = search_filters(&body).c(h!())?;
     let limit = page_limit(body.limit).c(h!())?;
     let filter = normalize_tag_filter(
         files.connection(),
@@ -167,20 +240,13 @@ pub(in crate::devices) async fn search(
     )
     .await
     .c(h!())?;
-    let scope = query::find_directory_scope(
-        files,
-        device_id,
-        parse_uuid(&body.scope_entry_id),
-    )
-    .await
-    .map_err(bl::map_read_error)
-    .c(h!())?;
-    let filters = search_filters(&body).c(h!())?;
-    let mut query =
-        SessionQuery::new(device_id, vec![sync_id]).include_archives();
-    let path = query.bind(scope.hierarchy_path().to_owned());
-    let id = query.bind(scope.entry_id());
-    let mut predicate = format!("entry.parent_id is not null and entry.hierarchy_path::ltree <@ {path}::ltree and entry.id <> {id}");
+    let path = query.bind(scope_path.to_owned());
+    let id = query.bind(parse_uuid(&body.scope_entry_id));
+    let mut predicate = if body.global_search.unwrap_or(false) {
+        "entry.parent_id is not null".to_owned()
+    } else {
+        format!("entry.parent_id is not null and entry.hierarchy_path::ltree <@ {path}::ltree and entry.id <> {id}")
+    };
     append_filters(&mut query, &mut predicate, &filters);
     let tags = query.tag_filter("entry", filter.as_ref());
     predicate.push_str(&format!(" and {tags}"));
@@ -190,11 +256,24 @@ pub(in crate::devices) async fn search(
         predicate,
         limit,
         body.cursor.as_deref(),
-        &scope_key,
+        cursor_scope,
+        if body.rank_by_relevance.unwrap_or(false) {
+            TreePageOrder::Relevance {
+                term: filters.name_query().unwrap_or_default().to_owned(),
+                path: scope_path.to_owned(),
+            }
+        } else {
+            TreePageOrder::Listing(
+                crate::devices::files::sorting::FileListingSort::new(
+                    body.sort_by,
+                    body.sort_direction,
+                ),
+            )
+        },
     )
     .await
     .c(h!())?;
-    Ok(bl::map_search(SearchFilesResult {
+    let mut response = bl::map_search(SearchFilesResult {
         entries: page
             .entries
             .into_iter()
@@ -206,7 +285,9 @@ pub(in crate::devices) async fn search(
             .collect(),
         next_cursor: page.next_cursor,
         tags_by_file: page.tags,
-    }))
+    });
+    query::sizes::apply(&mut response.entries, &page.sizes);
+    Ok(response)
 }
 
 fn search_filters(

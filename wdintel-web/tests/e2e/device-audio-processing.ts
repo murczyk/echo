@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Page } from '@playwright/test';
 import type { CustomAudioPlayer } from '@echoua/echo-audio-player';
 import type { DeviceAudio, SetDeviceAudioProcessingRsp, User } from '../../src/Bindings';
@@ -149,7 +150,7 @@ test.describe('@regression real device audio processing reader matrix', () => {
       const reader = await backend.login(role);
       await context.addCookies((await reader.storageState()).cookies);
       await page.goto(`/devices/${device.id}`);
-      await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+      await openDeviceSection(page, 'Аудіо');
       await expect(page.locator('[data-audio-id]')).toHaveCount(50);
       const expected = [...rows].reverse().map((row) => row.id);
       expect(await allVisible(page)).toEqual(expected);
@@ -217,7 +218,7 @@ test.describe('@regression real device audio processing reader matrix', () => {
       try {
         const fresh = await again.newPage();
         await fresh.goto(`/devices/${device.id}`);
-        await fresh.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+        await openDeviceSection(fresh, 'Аудіо');
         await selectAudio(fresh, rows[99].id);
         await expect(field(fresh)).toHaveValue(`workflow ${role}`);
         await expect(panel(fresh)).toContainText('Статус: Необроблене');
@@ -243,7 +244,7 @@ test.describe('@regression real device audio processing reader matrix', () => {
     const reader = await backend.login('parent-cyber');
     await context.addCookies((await reader.storageState()).cookies);
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await filter(page, true);
     expect(await allVisible(page)).toHaveLength(60);
     const selected = rows[45];
@@ -280,7 +281,7 @@ test.describe('@regression real device audio processing reader matrix', () => {
     const reader = await backend.login('parent-cyber');
     await context.addCookies((await reader.storageState()).cookies);
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await allVisible(page);
     await selectAudio(page, rows[39].id);
     await filter(page, true);
@@ -346,7 +347,7 @@ test.describe('@regression real device audio processing races', () => {
     );
     await context.addCookies((await backend.reader.storageState()).cookies);
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await selectAudio(page, first.id);
     await expect(field(page)).toHaveValue('');
   });

@@ -36,6 +36,7 @@ import {
 } from './notifications';
 import type { DutyNotificationPollCycle } from './notifications';
 import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
+import { useUnitHierarchyCatalog } from '../shared/use-unit-children-filter';
 import { useRerDutyReferenceData } from './useRerDutyReferenceData';
 import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
 import { useRerDutyShortState } from './useRerDutyShortState';
@@ -116,7 +117,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         ((feed.filter.freqsSelected?.length ?? 0) > 0 ||
           (feed.filter.freqsDenied?.length ?? 0) > 0),
     );
-  const effectiveFiltersReady = deps.freqsReady || !needsFrequencyCatalog;
+  const frequencyFiltersReady = deps.freqsReady || !needsFrequencyCatalog;
   const {
     error,
     errorNotificationVersion,
@@ -230,6 +231,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     deps.hideNetworks === true || deps.networkVisibilityReady === false,
   );
 
+  const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
+    true,
+    setError,
+  );
+  const isFeedReady = useCallback(
+    (feed: MessageFeedState) =>
+      unitHierarchy !== null ||
+      (feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) === 0,
+    [unitHierarchy],
+  );
+  const effectiveFiltersReady = frequencyFiltersReady;
+
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
     if (arrowResultTimeoutsRef.current[key]) clearTimeout(arrowResultTimeoutsRef.current[key]);
@@ -323,6 +336,23 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       previous.map((feed) => (emptyFeedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
     );
   }, [markFeedReloadRequested]);
+  const previousUnitHierarchyRef = useRef(unitHierarchy);
+  useEffect(() => {
+    if (previousUnitHierarchyRef.current === unitHierarchy) return;
+    previousUnitHierarchyRef.current = unitHierarchy;
+    const feedIds = new Set(
+      messageFeedsRef.current
+        .filter(
+          (feed) =>
+            (feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) > 0,
+        )
+        .map((feed) => feed.id),
+    );
+    feedIds.forEach((feedId) => markFeedReloadRequested(feedId));
+    setMessageFeeds((previous) =>
+      previous.map((feed) => (feedIds.has(feed.id) ? { ...feed, loading: true } : feed)),
+    );
+  }, [markFeedReloadRequested, unitHierarchy]);
   const reloadFeeds = useCallback(() => {
     const feedIds = Array.from(new Set(messageFeedsRef.current.map((feed) => feed.id)));
     if (feedIds.length === 0) return;
@@ -624,6 +654,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               postsDenied: [],
               includePelengLocations: false,
             },
+        unitsIncludeChildren: feed.unitsIncludeChildren,
+        unitHierarchy,
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
@@ -635,7 +667,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : { kind: 'all' },
       );
     },
-    [deviceAccess.status, freqs, radioFeaturesAllowed],
+    [deviceAccess.status, freqs, radioFeaturesAllowed, unitHierarchy],
   );
 
   useEffect(() => {
@@ -791,6 +823,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setMessageFeeds,
     setError,
     buildReqForFeed,
+    isFeedReady,
     getFeedLoadGeneration,
     mergeInboxCallsigns,
     setProfiles,
@@ -1249,6 +1282,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useRerDutyInitialLoadTrigger({
     messageFeeds,
+    isFeedReady,
     shortStateReady,
     hasShortState: Boolean(shortStateIdRef.current),
     pendingReloadFeedIdsRef,
@@ -1355,6 +1389,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     createMessageFeed: crud.createMessageFeed,
     removeMessageFeed: crud.removeMessageFeed,
     buildReqForFeed,
+    pollIntervalMs,
+    unitHierarchy,
+    isFeedReady,
+    unitHierarchyLoading,
+    persistStateToUrl,
     getFeedLoadGeneration,
     networkDisplayMap,
     networkMap,

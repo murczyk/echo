@@ -133,6 +133,7 @@ function Harness({
     reloadGeneration: { current: 0 },
     currentNetworkIdRef: { current: null },
     loadCallsigns: vi.fn(),
+    loadNetworkCallsignStats: vi.fn(),
   });
 
   return null;

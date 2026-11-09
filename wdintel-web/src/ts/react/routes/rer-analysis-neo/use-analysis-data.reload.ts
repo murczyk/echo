@@ -37,7 +37,6 @@ import { isAbortError } from '../../services/api/client';
 import { getGroupInfosBatch } from '../../services/api/inbox-reference-data';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
-import { getUnitIdFilterValue } from '../../utils/unit-search';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
   buildAnalysisReq,
@@ -342,7 +341,7 @@ export function filterSectionsForInitialLoad(
   additionalSections: AnalysisFilterSectionId[] = [],
 ): AnalysisFilterSectionId[] {
   const sections = new Set<AnalysisFilterSectionId>(
-    includeDefaultSections ? ['tags', 'groups', 'senders'] : [],
+    includeDefaultSections ? ['tags', 'groups', 'senders', 'units'] : [],
   );
   filterSectionsForQueryState(queryState).forEach((section) => {
     sections.add(section);
@@ -546,11 +545,10 @@ export async function loadFilterSectionData(
       if (isStale() || isAborted()) return;
       context.setOptions((current) => ({
         ...current,
-        units: toFilterOptions(
-          unitsRsp.units,
-          (item) => getUnitIdFilterValue(item.unitId),
-          (item) => item.name,
-          (item) => item.count,
+        units: unitsRsp.options,
+        unitParentCount: Math.max(
+          0,
+          unitsRsp.options.length - unitsRsp.units.filter((unit) => unit.count > 0).length,
         ),
       }));
       return;
@@ -827,7 +825,7 @@ type ReloadParams = {
   rightSidebarVisible?: boolean;
   rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
   newestFirst: boolean;
-  onError: (message: string) => void;
+  onError: (message: string, critical?: boolean) => void;
   onUnauthorized: (error: unknown) => boolean;
   optionsFreqsRef: React.MutableRefObject<string[]>;
   queryState: AnalysisQueryState;
@@ -1340,7 +1338,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       return;
     }
     abortActiveCountsLoad();
-    if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+    if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError), true);
     return;
   } finally {
     if (!isStaleReload() && !params.signal?.aborted) {

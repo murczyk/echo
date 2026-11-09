@@ -1,14 +1,19 @@
-import EditIcon from '@mui/icons-material/Edit';
-import { CircularProgress, Link, MenuItem, Skeleton, TextField } from '@mui/material';
+import { Link, MenuItem, Skeleton, TextField } from '@mui/material';
 import type { MRT_TableInstance } from 'material-react-table';
 
 import { AuthorLabel } from '../../../components/AuthorLabel';
-import { PowerButton } from '../../../components/PowerButton';
-import { PowerChip } from '../../../components/PowerChip';
-import { PowerIconButton } from '../../../components/PowerIconButton';
+import { DeviceRowActions } from './DeviceRowActions';
+import { DeviceStatusIcon } from './DeviceStatusIcon';
+import { DeviceRating } from './DeviceRating';
+import { DeviceTagsCell } from './DeviceTagsCell';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
-import type { DeviceRowView } from '../helpers';
+import {
+  customFieldColumnId,
+  DEVICES_LOADING_PLACEHOLDER_COUNT,
+  type DeviceRowView,
+} from '../helpers';
+import { useDeviceAutoLoad } from '../use-device-auto-load';
 import { DeviceRecentActivityCell } from './DeviceRecentActivityCell';
 import { DeviceSizeLabel } from './DeviceSizeLabel';
 
@@ -19,8 +24,12 @@ export function DeviceMobileList({
   refreshing,
   loadingMore,
   hasMore,
-  total,
+  startOffset,
+  scrollResetKey,
+  autoLoadBlocked,
   canEdit,
+  canRate,
+  onRate,
   mutatingDeviceId,
   hasFilters,
   onEdit,
@@ -33,18 +42,33 @@ export function DeviceMobileList({
   refreshing: boolean;
   loadingMore: boolean;
   hasMore: boolean;
-  total: number;
+  startOffset: number;
+  scrollResetKey: string;
+  autoLoadBlocked: boolean;
   canEdit: boolean;
+  canRate: boolean;
+  onRate: (deviceId: string, rating: number) => void;
   mutatingDeviceId: string | null;
   hasFilters: boolean;
   onEdit: (id: string) => void;
   onLoadMore: () => Promise<void>;
   onClearFilters: () => void;
 }) {
+  const scroll = useDeviceAutoLoad<HTMLElement>({
+    hasMore,
+    blocked: autoLoadBlocked || loading || refreshing || loadingMore || mutatingDeviceId !== null,
+    resetKey: scrollResetKey,
+    onLoadMore,
+  });
   const sorting = table.getState().sorting[0];
   const visible = (id: string) => table.getColumn(id)?.getIsVisible() !== false;
+  const customFieldVisible = (key: string) =>
+    table.getColumn(customFieldColumnId(key))?.getIsVisible() === true;
   return (
     <section
+      ref={scroll.containerRef}
+      onScroll={scroll.onScroll}
+      data-testid="devices-mobile-scroll"
       aria-label="Пристрої"
       aria-busy={loading || refreshing || loadingMore}
       className="flex min-h-0 flex-1 flex-col gap-echo-md overflow-y-auto pt-echo-sm"
@@ -59,15 +83,17 @@ export function DeviceMobileList({
           table.setSorting(id ? [{ id, desc: direction === 'desc' }] : []);
         }}
       >
-        <MenuItem value="">Без сортування</MenuItem>
-        {['name', 'createdAt'].flatMap((id) => [
-          <MenuItem key={`${id}:asc`} value={`${id}:asc`}>
-            {table.getColumn(id)?.columnDef.header} ↑
-          </MenuItem>,
-          <MenuItem key={`${id}:desc`} value={`${id}:desc`}>
-            {table.getColumn(id)?.columnDef.header} ↓
-          </MenuItem>,
-        ])}
+        <MenuItem value="">За замовчуванням (активність ↓)</MenuItem>
+        {['name', 'rating', 'aors', 'unit', 'createdBy', 'createdAt', 'activity', 'size'].flatMap(
+          (id) => [
+            <MenuItem key={`${id}:asc`} value={`${id}:asc`}>
+              {table.getColumn(id)?.columnDef.header} ↑
+            </MenuItem>,
+            <MenuItem key={`${id}:desc`} value={`${id}:desc`}>
+              {table.getColumn(id)?.columnDef.header} ↓
+            </MenuItem>,
+          ],
+        )}
       </TextField>
       {loading && rows.length === 0 ? (
         <Skeleton variant="rounded" height={160} />
@@ -85,39 +111,40 @@ export function DeviceMobileList({
             className="min-w-0 rounded-echo-md border border-echo-border bg-echo-surface p-echo-md"
           >
             <div className="flex min-w-0 items-center gap-echo-sm">
+              <DeviceStatusIcon archived={row.archived} />
               <Link
+                variant="body2"
                 href={`/devices/${row.id}`}
                 onClick={(event) => handleNavigateWithinSpaClick(event, `/devices/${row.id}`)}
                 className="min-w-0 flex-1 py-echo-sm font-semibold [overflow-wrap:anywhere]"
               >
                 {row.name ?? 'Без назви'}
               </Link>
-              {canEdit && !row.archived ? (
-                <PowerIconButton
-                  className="!size-echo-control-lg shrink-0"
-                  aria-label={`Редагувати ${row.name ?? 'пристрій'}`}
+              {canEdit ? (
+                <DeviceRowActions
+                  row={row}
+                  canEdit={canEdit}
                   disabled={mutatingDeviceId !== null}
-                  onClick={() => onEdit(row.id)}
-                >
-                  <EditIcon fontSize="small" />
-                </PowerIconButton>
+                  onEdit={onEdit}
+                />
               ) : null}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-echo-sm py-echo-sm">
               {visible('unit') ? (
-                <span className="min-w-0 text-[length:var(--echo-typography-font-size-sm)] [overflow-wrap:anywhere]">
+                <span className="min-w-0 text-[length:var(--echo-typography-font-size-base)] [overflow-wrap:anywhere]">
                   {row.unitLabel}
                 </span>
               ) : null}
-              {visible('lifecycle') ? (
-                <PowerChip
-                  label={row.archived ? 'Архівний' : 'Активний'}
-                  color={row.archived ? 'warning' : 'success'}
-                  selected
-                  interactive={false}
+              {visible('rating') ? (
+                <DeviceRating
+                  row={row}
+                  canRate={canRate}
+                  disabled={mutatingDeviceId !== null}
+                  onRate={onRate}
                 />
               ) : null}
             </div>
+            {visible('tags') ? <DeviceTagsCell tags={row.tags} /> : null}
             {visible('size') ? (
               <p className="m-0 text-[length:var(--echo-typography-font-size-xs)] text-echo-text/70">
                 Розмір: <DeviceSizeLabel row={row} />
@@ -125,17 +152,20 @@ export function DeviceMobileList({
             ) : null}
             {visible('activity') && row.activity !== null ? (
               <div className="py-echo-sm">
-                <DeviceRecentActivityCell activity={row.activity} />
+                <DeviceRecentActivityCell
+                  activity={row.activity}
+                  splitFilesAudio={row.activitySplitFilesAudio}
+                />
               </div>
             ) : null}
-            <details className="mt-echo-sm text-[length:var(--echo-typography-font-size-sm)]">
+            <details className="mt-echo-sm text-[length:var(--echo-typography-font-size-base)]">
               <summary className="min-h-echo-control-lg cursor-pointer py-echo-md text-echo-primary">
                 Деталі
               </summary>
               <dl className="m-0 grid min-w-0 gap-echo-sm [overflow-wrap:anywhere]">
                 <div>
                   <dt>№</dt>
-                  <dd className="m-0">{index + 1}</dd>
+                  <dd className="m-0">{startOffset + index + 1}</dd>
                 </div>
                 {visible('aors') ? (
                   <div>
@@ -147,7 +177,7 @@ export function DeviceMobileList({
                   <div>
                     <dt>Створив</dt>
                     <dd className="m-0">
-                      <AuthorLabel login={row.createdBy} />
+                      <AuthorLabel login={row.createdBy} interactive={false} />
                     </dd>
                   </div>
                 ) : null}
@@ -157,29 +187,35 @@ export function DeviceMobileList({
                     <dd className="m-0">{row.createdAtLabel}</dd>
                   </div>
                 ) : null}
+                {visible('description') && row.description ? (
+                  <div>
+                    <dt>Опис</dt>
+                    <dd className="m-0 whitespace-pre-line">{row.description}</dd>
+                  </div>
+                ) : null}
+                {Object.entries(row.customFields)
+                  .filter(([key, value]) => value && customFieldVisible(key))
+                  .map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key}</dt>
+                      <dd className="m-0">{value}</dd>
+                    </div>
+                  ))}
               </dl>
             </details>
           </li>
         ))}
       </ul>
-      {rows.length > 0 ? (
-        <p
+      {loadingMore ? (
+        <div
           role="status"
-          className="m-0 text-center text-[length:var(--echo-typography-font-size-sm)]"
+          aria-label="Завантаження пристроїв"
+          className="flex shrink-0 flex-col gap-echo-md"
         >
-          Показано {rows.length} з {total}
-        </p>
-      ) : null}
-      {hasMore ? (
-        <PowerButton
-          variant="outlined"
-          className="!min-h-echo-control-lg shrink-0"
-          disabled={loadingMore || loading || refreshing}
-          onClick={() => void onLoadMore()}
-          startIcon={loadingMore ? <CircularProgress size={16} /> : null}
-        >
-          Завантажити ще
-        </PowerButton>
+          {Array.from({ length: DEVICES_LOADING_PLACEHOLDER_COUNT }, (_, index) => (
+            <Skeleton key={index} animation="wave" variant="rounded" height={160} aria-hidden />
+          ))}
+        </div>
       ) : null}
     </section>
   );

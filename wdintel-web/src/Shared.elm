@@ -56,6 +56,16 @@ decoder =
 
 loadSharedLookupData : Route.Path.Path -> Effect Msg
 loadSharedLookupData path =
+    case path of
+        Route.Path.Devices_Id__Files _ ->
+            E.none
+
+        _ ->
+            loadSharedLookups
+
+
+loadSharedLookups : Effect Msg
+loadSharedLookups =
     E.batch
         [ E.getUnits MasterUnitsLoadedByApi
             { sortBy = Nothing
@@ -223,11 +233,14 @@ update req msg model =
                 | user = Just user
                 , userLoaded = True
                 , systemSettingsLoaded = False
+                , masterUnits = NotAsked
+                , networks = NotAsked
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
             , E.batch
                 [ E.pushRoute { path = Route.Path.Home_, query = Dict.empty, hash = Nothing }
+                , E.getSystemSettings GotSystemSettings
                 , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
                 ]
             )
@@ -253,6 +266,18 @@ update req msg model =
             ( { model
                 | user = Just user
                 , userLoaded = True
+                , masterUnits =
+                    if Maybe.map .id model.user == Just user.id then
+                        model.masterUnits
+
+                    else
+                        NotAsked
+                , networks =
+                    if Maybe.map .id model.user == Just user.id then
+                        model.networks
+
+                    else
+                        NotAsked
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
@@ -265,7 +290,6 @@ update req msg model =
 
                   else
                     E.none
-                , loadSharedLookupData req.path
                 , E.getSystemSettings GotSystemSettings
                 , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
                 ]
@@ -568,12 +592,12 @@ update req msg model =
 
         ShowToast error ->
             ( model
-            , E.sendCmd <| Shared.Components.Toast.addError ToastMsg error
+            , E.sendCmd <| showErrorNotification req.path Nothing error
             )
 
         ShowToastWithDetails title content ->
             ( model
-            , E.sendCmd <| Shared.Components.Toast.addErrorV2 ToastMsg title content
+            , E.sendCmd <| showErrorNotification req.path (Just title) content
             )
 
         ShowLoggedResponseDecodeError error ->
@@ -585,7 +609,7 @@ update req msg model =
             ( model
             , E.sendCmd <|
                 Cmd.batch
-                    [ Shared.Components.Toast.addErrorV2 ToastMsg error.title ("Помилка обробки відповіді, код " ++ errorId)
+                    [ showErrorNotification req.path (Just error.title) ("Помилка обробки відповіді, код " ++ errorId)
                     , Api.logError ("Response decode error id=" ++ errorId ++ " title=" ++ error.title ++ " details=" ++ error.message) LoggedResponseDecodeError
                     ]
             )
@@ -601,7 +625,15 @@ update req msg model =
                 ( model, E.none )
 
         EventServiceStartPolling ->
-            if (model.eventService.isPolling && model.eventService.flavor == eventServiceFlavor req.path) || not model.userLoaded || model.user == Nothing then
+            if model.userLoaded && model.user /= Nothing && needsSharedLookups req.path && (model.masterUnits == NotAsked || model.networks == NotAsked) then
+                ( { model | masterUnits = Loading, networks = Loading }
+                , E.batch
+                    [ loadSharedLookupData req.path
+                    , E.sendSharedMsg EventServiceStartPolling
+                    ]
+                )
+
+            else if (model.eventService.isPolling && model.eventService.flavor == eventServiceFlavor req.path) || not model.userLoaded || model.user == Nothing then
                 ( model, E.none )
 
             else
@@ -776,6 +808,22 @@ update req msg model =
             )
 
 
+showErrorNotification : Route.Path.Path -> Maybe String -> String -> Cmd Msg
+showErrorNotification path title content =
+    case path of
+        Route.Path.RerAnalysisNeo ->
+            Ports.shared_showAnalysisError
+                { title = Maybe.withDefault "Помилка" title, content = content }
+
+        _ ->
+            case title of
+                Just errorTitle ->
+                    Shared.Components.Toast.addErrorV2 ToastMsg errorTitle content
+
+                Nothing ->
+                    Shared.Components.Toast.addError ToastMsg content
+
+
 extractInboxChangedEvents : List B.EventMsg -> List { messageId : Int, origin : Maybe String, intelligenceReport : Bool }
 extractInboxChangedEvents events =
     let
@@ -824,18 +872,28 @@ isRerNetworkDetailsPath path =
 
 
 subscriptions : Route () -> Model -> Sub Msg
-subscriptions _ model =
+subscriptions route model =
     Sub.batch
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
         , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
         , Ports.shared_loadRerNetworkDetailsPreferredViewRes RerNetworkDetailsPreferredViewLoaded
-        , if model.userLoaded && model.user /= Nothing then
+        , if model.userLoaded && model.user /= Nothing && needsSharedLookups route.path then
             Time.every Config.sharedLookupReconciliationIntervalMs (\_ -> ReconcileSharedLookups)
 
           else
             Sub.none
         ]
+
+
+needsSharedLookups : Route.Path.Path -> Bool
+needsSharedLookups path =
+    case path of
+        Route.Path.Devices_Id__Files _ ->
+            False
+
+        _ ->
+            True
 
 
 preserveLookupOnRefreshError : ApiError -> RemoteData ApiError a -> RemoteData ApiError a
@@ -961,6 +1019,15 @@ shouldRedirectUnauthorizedPage path user =
             not (Core.Auth.canReadDevices user)
 
         Route.Path.Devices_Id_ _ ->
+            not (Core.Auth.canReadDevices user)
+
+        Route.Path.Devices_Id__Files _ ->
+            not (Core.Auth.canReadDevices user)
+
+        Route.Path.Devices_Id__Journal _ ->
+            not (Core.Auth.canReadDevices user)
+
+        Route.Path.Devices_Id__Audio _ ->
             not (Core.Auth.canReadDevices user)
 
         _ ->

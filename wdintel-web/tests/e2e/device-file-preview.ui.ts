@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, type Page } from '@playwright/test';
 import {
   localFilePreviewBackend,
@@ -90,26 +91,61 @@ export async function openDeviceFilePreviewEntry(
   fileId: string,
   fileName: string,
 ) {
-  const reader = await backend.login('reader');
-  await page.context().addCookies((await reader.storageState()).cookies);
-  await page.goto(`/devices/${backend.fixtures.deviceId}`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('tab', { name: 'Файли', exact: true }).click();
-  await page
-    .getByRole('button', { name: /Вибрати каталог C:/ })
-    .first()
-    .click();
-  await page.getByRole('button', { name: 'Показати пошук файлів', exact: true }).click();
+  await openDeviceFilesRoot(page, backend);
   return selectDeviceFilePreviewEntry(page, fileId, fileName);
 }
 
-export async function selectDeviceFilePreviewEntry(page: Page, fileId: string, fileName: string) {
-  await page.getByRole('textbox', { name: 'Назва містить', exact: true }).fill(fileName);
-  await page.getByRole('button', { name: 'Знайти', exact: true }).click();
+async function openDeviceFilesRoot(page: Page, backend: FilePreviewBackend) {
+  const reader = await backend.login('reader');
+  await page.context().addCookies((await reader.storageState()).cookies);
+  await page.goto(`/devices/${backend.fixtures.deviceId}`, { waitUntil: 'domcontentloaded' });
+  await openDeviceSection(page, 'Файли');
+  await page
+    .getByRole('region', { name: 'Вміст папки', exact: true })
+    .getByRole('button', { name: /^Відкрити папку C:/ })
+    .click();
+}
+
+async function clickDeviceFileEntry(page: Page, fileId: string, fileName: string) {
+  const search = page.getByRole('textbox', { name: 'Пошук файлів за назвою', exact: true });
+  await search.fill(fileName);
+  await search.press('Enter');
   const row = page
-    .getByRole('region', { name: 'Результати пошуку файлів' })
+    .getByRole('table', { name: 'Результати пошуку', exact: true })
     .locator(`[data-entry-id="${fileId}"]`);
-  await row.getByRole('button', { name: fileName, exact: true }).click();
+  await row
+    .getByRole('button', {
+      name: fileName,
+      exact: true,
+    })
+    .click();
+}
+
+export async function selectDeviceFilePreviewEntry(page: Page, fileId: string, fileName: string) {
+  await clickDeviceFileEntry(page, fileId, fileName);
   const pane = page.getByTestId('device-file-content-pane');
   await expect(pane.locator('#device-file-content-title')).toContainText(fileName);
   return pane;
+}
+
+export async function openDeviceArchiveFolder(
+  page: Page,
+  backend: FilePreviewBackend,
+  fixtureId: string,
+) {
+  const entry = backend.fixtures.seeded.find((entry) => entry.fixtureId === fixtureId);
+  const fixture = DEVICE_FILE_PREVIEW_FIXTURES.find((fixture) => fixture.id === fixtureId);
+  if (!entry || !fixture) throw new Error(`Missing seeded archive: ${fixtureId}`);
+  await openDeviceFilesRoot(page, backend);
+  await clickDeviceFileEntry(page, entry.file.fileId, fixture.fileName);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('directory'))
+    .toBe(entry.file.fileId);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('directory_revision'))
+    .toBe(String(entry.file.revision));
+  const folder = page.getByRole('region', { name: 'Вміст папки', exact: true });
+  await expect(folder).toBeVisible();
+  await expect(page.getByTestId('device-file-content-pane')).toHaveCount(0);
+  return { folder, fixture, entry };
 }

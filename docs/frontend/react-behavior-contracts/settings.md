@@ -46,7 +46,7 @@
 ## System-setting persistence
 
 - **Behavior ID:** `react-system-settings-persistence`
-- **Expected observable result:** disabling the Duty minus menu or 2FA persists through save and the next load reflects the disabled state.
+- **Expected observable result:** disabling the Duty minus menu, the Duty selected-groups indicator, or 2FA persists through save and the next load reflects the disabled state.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
 
@@ -99,7 +99,7 @@
 - **Behavior ID:** `react-user-settings-compatibility-defaults`
 - **Status:** operational compatibility
 - **Affected route/component:** user-settings API boundary
-- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
+- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `importantOnlyMyOrganism: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/user-settings.ts`
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 
@@ -237,3 +237,35 @@
 - **Source implementation:** `SettingsMyReportsSection.tsx`
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded
+
+## Report administration
+
+- Administrators manage report chunking, size restrictions, and concurrency in
+  `/admin/system-settings-neo#reports`. Defaults are 4 globally, 1 per non-Etalonka
+  kind, and 2 for Etalonka. New limits apply to subsequent claims; running jobs
+  finish normally. Etalonka jobs remain sequential for each user.
+- The independent RER block retains its enable toggle, eligible-user list,
+  metadata editor, retry behavior, and existing report visibility rules. Saving
+  the general settings after toggling RER must preserve the RER toggle.
+- All Reports displays report history. Legacy `?tab=rer-report` links navigate to
+  Reports settings while retaining metadata filters.
+- Restart requires confirmation and invokes only the administrator endpoint
+  `/api/admin/restart-report-worker`. It restarts the report service and shows
+  failures without reporting success.
+- Coverage: `wdintel-web/tests/e2e/report-settings.spec.ts`,
+  `wdintel-web/tests/e2e/rer-report-admin.spec.ts`,
+  `wdintel-web/src/ts/react/routes/admin-all-reports/__tests__/index.spec.tsx`, and
+  `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/RerReportSettings.spec.tsx`.
+
+## Monitoring administration
+
+- Administrators enable SigNoz metrics export and set its OTLP gRPC address in
+  `/admin/system-settings-neo#monitoring`. The values are part of the versioned
+  system settings, replace the `config.toml` keys, and apply only after Echo
+  and the report worker restart; the tab says so and links to the Echo restart
+  on the Control tab and the report worker restart on the Reports tab.
+- Saving always sends the switch and the trimmed address, empty as `null`.
+  Enabling without an address, or entering an address that is not an http(s) URL
+  with a host, shows an error without saving; the backend rejects the same input.
+- Coverage: `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`.
+- Original Echo issue: [#4034](https://github.com/echoua/echo/issues/4034)

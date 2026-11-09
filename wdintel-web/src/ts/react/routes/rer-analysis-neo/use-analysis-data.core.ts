@@ -785,6 +785,7 @@ export function useAnalysisData({
       };
       const candidateMessageIds = normalizeMessageIds(changedMessageIds);
       if (candidateMessageIds.length === 0) return;
+      if (queryState.unitsSelected.length > 0 && !queryState.unitHierarchy) return;
       const retryForLatestMessageWindow = () => {
         if (!isMessageWindowStale()) return false;
         const retryMessageIds = candidateMessageIds.filter(shouldApply);

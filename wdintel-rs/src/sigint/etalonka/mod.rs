@@ -628,6 +628,7 @@ async fn collect_etalonka_entry(
         network_id: network.id,
         sort_by: None,
         period: None,
+        include_activity_info: None,
     };
     let current_net_callsigns = if options.is_extended_report {
         bl_get_network_callsigns_list_without_activity(

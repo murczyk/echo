@@ -64,6 +64,8 @@ async fn fixture(env: &Env) -> (login::Model, Uuid, Vec<String>) {
             NativeGroupCreateReq {
                 request_id: Uuid::new_v4().to_string(),
                 settings: NativeGroupSettings {
+                    is_sigint_unit_mandatory: None,
+                    is_device_mandatory: None,
                     name: format!("Forwarding {}", Uuid::new_v4()),
                     color_key: None,
                     short_note: None,
@@ -307,12 +309,22 @@ async fn deliveries(env: &Env, audio: Uuid) -> Vec<worker::Delivery> {
         "select audio_id,group_master_key,device_name,unit_id,actor_id,$2::uuid as lease_token from device_audio_forwarding_outbox where audio_id=$1 order by group_master_key", [audio.into(), Uuid::new_v4().into()])).all(env.device_audio.file_database().unwrap()).await.unwrap()
 }
 
-// #3646: durable admission, independent group messages and shared storage/ASR.
+// #3646, #3935: durable forwarding bypasses interactive group requirements.
 #[actix_web::test]
 #[serial_test::serial]
 async fn forwarding_delivery_replay_shares_audio_and_completed_transcription() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let (actor, device, groups) = fixture(&env).await;
+    for key in &groups {
+        crate::messenger::group::requirements::set(
+            &env.dbx,
+            key,
+            Some(true),
+            Some(true),
+        )
+        .await
+        .unwrap();
+    }
     let old = receive(&env, actor.id, device).await;
     configure(&env, &actor, device, true, groups.clone(), vec![])
         .await

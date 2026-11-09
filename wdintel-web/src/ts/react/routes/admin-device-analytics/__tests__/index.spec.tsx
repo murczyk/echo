@@ -127,7 +127,10 @@ beforeEach(async () => {
   mocks.archiveTag.mockResolvedValue({ ...createdTag, archivedAt: NOW });
   mocks.restoreTag.mockResolvedValue(createdTag);
   mocks.reanalyzeAll.mockResolvedValue({ definitionId: 'definition-1', createdRunCount: 42 });
-  mocks.updateDeviceSettings.mockResolvedValue({ hasMattermostWebhook: false });
+  mocks.updateDeviceSettings.mockResolvedValue({
+    hasMattermostWebhook: false,
+    activitySplitFilesAudio: false,
+  });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -160,6 +163,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(buttonWithText('Створити тег')).toHaveProperty('disabled', true);
   });
   it('replaces the masked device webhook and clears it only through the explicit action', async () => {
+    mocks.updateDeviceSettings.mockClear();
     const input = container.querySelector<HTMLInputElement>('input[type="password"]');
     expect(input).not.toBeNull();
 
@@ -168,7 +172,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     await act(async () => buttonWithText('Зберегти webhook')?.click());
     await flush();
 
-    expect(mocks.updateDeviceSettings).toHaveBeenNthCalledWith(2, {
+    expect(mocks.updateDeviceSettings).toHaveBeenCalledExactlyOnceWith({
       mattermostWebhookUrl: 'https://mattermost.example/hooks/device-secret',
     });
     expect(container.textContent).toContain('Webhook налаштовано. Поточний URL приховано.');
@@ -178,11 +182,12 @@ describe('AdminDeviceAnalyticsPage', () => {
       message: 'Mattermost webhook для пристроїв збережено.',
     });
 
+    mocks.updateDeviceSettings.mockClear();
     mocks.updateDeviceSettings.mockResolvedValueOnce({ hasMattermostWebhook: false });
     await act(async () => buttonWithText('Видалити webhook')?.click());
     await flush();
 
-    expect(mocks.updateDeviceSettings).toHaveBeenNthCalledWith(3, {
+    expect(mocks.updateDeviceSettings).toHaveBeenCalledExactlyOnceWith({
       clearMattermostWebhook: true,
     });
     expect(container.textContent).toContain('Webhook ще не налаштовано.');

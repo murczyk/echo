@@ -13,6 +13,7 @@ pub mod creation;
 pub mod handlers;
 pub mod native;
 pub mod oneoff;
+pub mod requirements;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
@@ -140,6 +141,10 @@ pub async fn collect_groups(
                     .ai_transcript_analysis_enabled
                     .unwrap_or(false),
                 fetch_new_messages: g.fetch_new_messages.unwrap_or(true),
+                is_sigint_unit_mandatory: g
+                    .is_sigint_unit_mandatory
+                    .unwrap_or(false),
+                is_device_mandatory: g.is_device_mandatory.unwrap_or(false),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -184,6 +189,8 @@ pub async fn collect_groups(
             is_aviation_group: false,
             ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
+            is_sigint_unit_mandatory: false,
+            is_device_mandatory: false,
             group_stats: stats,
             admin_data,
             areas_of_responsibility: aors,
@@ -196,6 +203,7 @@ pub async fn collect_groups(
 pub async fn collect_groups_f2(
     keys: Vec<String>,
     env: &Env,
+    opts: CollectGroupsOpts,
 ) -> Result<Vec<types::SignalGroupEntryF2>, AppError> {
     #[derive(FromQueryResult, Eq, PartialEq, Hash)]
     struct GroupRow {
@@ -227,10 +235,13 @@ pub async fn collect_groups_f2(
         .context(h!())?
         .into_iter()
         .collect::<HashSet<_>>();
-    let group_stats =
+    let group_stats = if opts.skip_group_stats {
+        Default::default()
+    } else {
         crate::rer_importer::analysis::read_group_activity(env, keys.clone())
             .await
-            .context(h!())?;
+            .context(h!())?
+    };
     let data: Vec<types::SignalGroupEntryF2> = signal_groups
         .into_iter()
         .map(|group| {
@@ -590,6 +601,8 @@ where
 
     let saved = match signal_group {
         None => signal_group::ActiveModel {
+            is_sigint_unit_mandatory: sea_orm::NotSet,
+            is_device_mandatory: sea_orm::NotSet,
             master_key: Set(master_key),
             name: Set(group_name),
             datasource_id: Set(Some(datasource_id)),

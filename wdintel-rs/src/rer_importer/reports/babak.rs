@@ -106,6 +106,7 @@ pub async fn collect_babak_report_data(
         selected_networks: inbox_req.selected_networks,
         without_network: inbox_req.without_network,
         only_with_network: inbox_req.only_with_network,
+        only_for_rer_report: inbox_req.only_for_rer_report,
         metadata_cc: inbox_req.metadata_cc,
         metadata_sender: inbox_req.metadata_sender,
         metadata_receiver: inbox_req.metadata_receiver,

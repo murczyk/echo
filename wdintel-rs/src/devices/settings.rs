@@ -34,6 +34,7 @@ use std::time::Duration;
 pub struct DeviceSettingsReq {
     pub mattermost_webhook_url: Option<String>,
     pub clear_mattermost_webhook: bool,
+    pub activity_split_files_audio: Option<bool>,
 }
 
 #[derive(
@@ -50,6 +51,7 @@ pub struct DeviceSettingsReq {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DeviceSettingsItem {
     pub has_mattermost_webhook: bool,
+    pub activity_split_files_audio: bool,
 }
 
 #[post("/api/admin/device/settings")]
@@ -81,7 +83,10 @@ pub async fn update(
         .await
         .context(h!())?;
     }
-    if !req.clear_mattermost_webhook && replacement.is_none() {
+    if !req.clear_mattermost_webhook
+        && replacement.is_none()
+        && req.activity_split_files_audio.is_none()
+    {
         return Ok(Json(settings_item(&env.dbx).await.context(h!())?));
     }
 
@@ -94,13 +99,21 @@ pub async fn update(
         .ok_or(AppError::NotFound)
         .context(h!())?;
     let mut settings = settings.into_active_model();
-    settings.mattermost_webhook_url = Set(replacement.map(str::to_string));
+    if req.clear_mattermost_webhook || replacement.is_some() {
+        settings.mattermost_webhook_url = Set(replacement.map(str::to_string));
+    }
+    if let Some(enabled) = req.activity_split_files_audio {
+        settings.activity_split_files_audio = Set(Some(enabled));
+    }
     settings.updated_at = Set(Utc::now().naive_utc());
     let settings = settings.update(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
 
     Ok(Json(DeviceSettingsItem {
         has_mattermost_webhook: settings.mattermost_webhook_url.is_some(),
+        activity_split_files_audio: settings
+            .activity_split_files_audio
+            .unwrap_or(false),
     }))
 }
 
@@ -116,12 +129,23 @@ pub(crate) async fn mattermost_webhook_url(
 async fn settings_item(
     dbx: &DatabaseConnection,
 ) -> Result<DeviceSettingsItem, AppError> {
+    let settings = load_settings(dbx).await.context(h!())?;
     Ok(DeviceSettingsItem {
-        has_mattermost_webhook: mattermost_webhook_url(dbx)
-            .await
-            .context(h!())?
-            .is_some(),
+        has_mattermost_webhook: settings.mattermost_webhook_url.is_some(),
+        activity_split_files_audio: settings
+            .activity_split_files_audio
+            .unwrap_or(false),
     })
+}
+
+pub(in crate::devices) async fn activity_split_files_audio(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<bool> {
+    Ok(load_settings(dbx)
+        .await
+        .c(h!())?
+        .activity_split_files_audio
+        .unwrap_or(false))
 }
 
 async fn load_settings(

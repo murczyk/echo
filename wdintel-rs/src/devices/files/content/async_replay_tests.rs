@@ -112,7 +112,22 @@ async fn phase6_file_twenty_admissions_and_mixed_replays_share_one_job() {
     let mut responses = responses.into_iter();
     drop(responses.next().unwrap());
     let mut accepted_job = None;
-    for response in responses {
+    for mut response in responses {
+        // A contender can outwait the source-lock budget while the holder
+        // commits the job; it then gets the documented busy answer and a
+        // retry replays the committed job.
+        if response.status() == StatusCode::SERVICE_UNAVAILABLE {
+            assert!(response.headers().contains_key(header::RETRY_AFTER));
+            assert_eq!(
+                test::read_body_json::<Value, _>(response).await["code"],
+                "upload_busy"
+            );
+            response = test::call_service(
+                &app,
+                complete_request(&upload, &cookie, true).to_request(),
+            )
+            .await;
+        }
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         assert_eq!(response.headers().get(header::RETRY_AFTER).unwrap(), "1");
         let body: Value = test::read_body_json(response).await;

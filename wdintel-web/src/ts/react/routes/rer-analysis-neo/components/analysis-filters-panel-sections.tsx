@@ -1,3 +1,4 @@
+import { isUnitParentValue } from '../../shared/unit-children-filter';
 import { useRadioFeatures } from '../../shared/RadioFeatures';
 import {
   Box,
@@ -488,7 +489,9 @@ export function AnalysisFiltersPanelSections({
             preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
-          {queryState.unitsSelected.some((value) => !isCanonicalUnitIdValue(value)) ? (
+          {queryState.unitsSelected.some(
+            (value) => !isCanonicalUnitIdValue(value) && !isUnitParentValue(value),
+          ) ? (
             <FormControlLabel
               control={
                 <Checkbox
@@ -712,7 +715,6 @@ export function AnalysisFiltersPanelSections({
                   onChange={(_event, value) =>
                     updateQueryState({
                       onlyWithNetwork: value,
-                      withoutNetwork: value ? false : queryState.withoutNetwork,
                     })
                   }
                 />

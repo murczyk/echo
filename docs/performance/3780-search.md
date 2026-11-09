@@ -23,6 +23,11 @@ repeatable-read transaction. The transaction ends before secondary enrichment.
 Unlimited reads keep their existing behavior. This prevents the planner from
 aggregating tags and metadata for the entire requested period before filtering.
 
+Source inbox pages using indexed Fuzzy match sets allow PostgreSQL to reorder
+the message/inbox join. Forcing a date-first lateral message lookup can place
+global text-match aggregation inside the per-message loop. Correlated,
+date-scoped, literal and non-text reads retain their existing join strategy.
+
 PostgreSQL fresh-tail pages and counts correlate text predicates to the outer
 message IDs, including filename and attachment branches. Their creation-time
 lower bound limits candidate messages before text checks; they do not construct
@@ -62,6 +67,21 @@ than interleaving every facet until all expire. SQL permits are released after e
 query; count-operation admission is separate from ordinary reads. Their admission and identical-count queue
 waits can use the remaining whole-request budget; acquiring a pooled connection
 still has a ten-second bound.
+
+Analytics-backed counts read the fresh tail, the last five minutes that
+analytics may not have replicated yet, from PostgreSQL (#3978). A fresh-tail
+digest starts from messages, so `created_at` drives the creation-time index;
+the inbox-first indexed shape visited every inbox item in the requested period
+first (on echo-skhid up to 10 s per tail, versus about 10 ms now). These reads
+skip the SQL slots, so heavy PostgreSQL-only searches cannot reject them; they
+keep the ten-second pool wait, statement timeout and cancellation, and log
+`stage=source_admission outcome=skipped`. A Duty count tail with period unit
+filters keeps the slots, because its unit matching covers the whole requested
+period.
+A local limit that rejects a source read inside an analytics attempt (SQL
+slots, pool wait, count queue, fallback capacity or a source statement timeout)
+is `reason=source_saturated`: the request returns 503 without a PostgreSQL
+retry and the analytics circuit stays closed, because analytics did not fail.
 
 The existing eight fallback-operation slots, limited to two per login, cover
 ordinary fallbacks and query-policy source routes. Search counts use the SQL
@@ -215,8 +235,17 @@ transactions that remain open longer than the freshness window. After one comple
 replication freshness window of tracking, at most 1,001 pending or recent IDs are read.
 More than 1,000 forces full source fallback. Otherwise, relevant changes are
 checked against the request's dates and permitted groups in both source and
-analytics rows. Checking both catches newly imported backdated messages and
-stale former owners without depending on analytics ID optimization bounds.
+analytics rows. A change is relevant only when that message also has an
+attachment chunk text, member, summary, media file name or audio file name
+matching any search term, including negated terms, in the same database.
+Media-presence filters (`only_with_media`) treat every in-scope change as
+relevant. Only the current source and analytics states are compared. One
+residual race is accepted: two committed edits inside the window, where only
+the intermediate version matches a term, can surface that version if CDC
+applies it between the check and the query. The response is then at most one
+freshness window stale for that message. Checking both catches newly
+imported backdated messages, stale former owners, and removed or renamed
+matches without depending on analytics ID optimization bounds.
 Relevant changes use PostgreSQL for the complete operation; unrelated changes
 allow analytics. Results/counts are not merged between databases.
 
@@ -230,7 +259,8 @@ deleted directly, keeping cleanup seeks bounded even with a large expired backlo
 Both tracking tables stay excluded from CDC.
 History coverage and replication health checks remain required. Coverage logs
 distinguish `tracking_incomplete`, `retention_window`, `history_incomplete`,
-`change_limit` and `recent_message_change`.
+`change_limit` and `recent_message_change`. `recent_message_change` is expected
+routing and logs at INFO; the other reasons log at WARN.
 
 Body, filename, attachment-content, frequency, UID, prefix, quoted, and negative
 search semantics are unchanged. Existing freshness checks, source tails,

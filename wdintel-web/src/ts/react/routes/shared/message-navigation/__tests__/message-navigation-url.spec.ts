@@ -42,4 +42,24 @@ describe('linked-message URL handling', () => {
     expect(window.location.search).toBe('?state=feed-1&messagesPage=3');
     expect(window.location.hash).toBe('#fragment');
   });
+
+  it('keeps the linked URL in history when leaving it for browsing', () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo?m=target&messagesPage=3');
+    const historyLength = window.history.length;
+
+    removeLinkedMessageReferenceFromWindowUrl({ keepInHistory: true });
+
+    expect(window.history.length).toBe(historyLength + 1);
+    expect(window.location.search).toBe('?messagesPage=3');
+  });
+
+  it('leaves history untouched when the URL has no linked message', () => {
+    window.history.replaceState({ layer: 'overlay' }, '', '/rer-analysis-neo?messagesPage=3');
+    const historyLength = window.history.length;
+
+    removeLinkedMessageReferenceFromWindowUrl({ keepInHistory: true });
+
+    expect(window.history.length).toBe(historyLength);
+    expect(window.history.state).toEqual({ layer: 'overlay' });
+  });
 });

@@ -41,6 +41,8 @@ async fn insert_device(
         organism_id: Set(owner.organism_id.unwrap()),
         unit_id: Set(None),
         tags: Set(json!([])),
+        rating: Set(None),
+        description: Set(None),
         external_url: Set(None),
         archived: Set(false),
         archived_at: Set(None),
@@ -193,6 +195,8 @@ async fn clear_file_entries(db: &DatabaseConnection) {
     db.execute_unprepared(
         r#"
         truncate table
+            public.file_favorite,
+            public.file_view,
             device_upload_finalization_attempt,
             device_upload_finalization_job,
             device_upload_finalization_budget,
@@ -1800,7 +1804,7 @@ async fn assert_stage_three_direct_children(
     let first_entry_ids = tree_entry_ids(&first_page.entries);
     assert_eq!(
         first_entry_ids,
-        vec![forest.same_directory_id, forest.zeta_directory_id]
+        vec![forest.aaa_file_id, forest.same_directory_id]
     );
     let first_after = resolve_browse_after(
         repository,
@@ -1822,7 +1826,7 @@ async fn assert_stage_three_direct_children(
     let second_entry_ids = tree_entry_ids(&second_page.entries);
     assert_eq!(
         second_entry_ids,
-        vec![forest.aaa_file_id, forest.same_file_ids[0]]
+        vec![forest.same_file_ids[0], forest.same_file_ids[1]]
     );
     let second_after = resolve_browse_after(
         repository,
@@ -1844,7 +1848,7 @@ async fn assert_stage_three_direct_children(
     let third_entry_ids = tree_entry_ids(&third_page.entries);
     assert_eq!(
         third_entry_ids,
-        vec![forest.same_file_ids[1], forest.same_file_ids[2]]
+        vec![forest.same_file_ids[2], forest.zeta_directory_id]
     );
     assert!(third_page.next.is_none());
 
@@ -1853,12 +1857,12 @@ async fn assert_stage_three_direct_children(
     assert_eq!(
         entry_ids,
         vec![
-            forest.same_directory_id,
-            forest.zeta_directory_id,
             forest.aaa_file_id,
+            forest.same_directory_id,
             forest.same_file_ids[0],
             forest.same_file_ids[1],
             forest.same_file_ids[2],
+            forest.zeta_directory_id,
         ]
     );
     assert!(!entry_ids.contains(&forest.nested_file_id));
@@ -1926,6 +1930,7 @@ async fn assert_stage_three_breadcrumbs(
             .await
             .unwrap(),
         vec![Breadcrumb {
+            archive_revision: None,
             entry_id: forest.target_primary_root_id,
             name: "C:\\".to_string(),
         }]
@@ -1936,14 +1941,17 @@ async fn assert_stage_three_breadcrumbs(
             .unwrap(),
         vec![
             Breadcrumb {
+                archive_revision: None,
                 entry_id: forest.target_primary_root_id,
                 name: "C:\\".to_string(),
             },
             Breadcrumb {
+                archive_revision: None,
                 entry_id: forest.navigation_id,
                 name: "navigation".to_string(),
             },
             Breadcrumb {
+                archive_revision: None,
                 entry_id: forest.same_directory_id,
                 name: "same".to_string(),
             },
@@ -2147,14 +2155,17 @@ async fn assert_stage_eight_browse_composition(
         default_page.breadcrumbs,
         vec![
             Breadcrumb {
+                archive_revision: None,
                 entry_id: forest.target_primary_root_id,
                 name: "C:\\".to_string(),
             },
             Breadcrumb {
+                archive_revision: None,
                 entry_id: forest.navigation_id,
                 name: "navigation".to_string(),
             },
             Breadcrumb {
+                archive_revision: None,
                 entry_id: forest.same_directory_id,
                 name: "same".to_string(),
             },
@@ -2227,7 +2238,7 @@ async fn assert_stage_eight_browse_composition(
     let first_entry_ids = tree_entry_ids(&first_page.entries);
     assert_eq!(
         first_entry_ids,
-        vec![forest.same_directory_id, forest.zeta_directory_id]
+        vec![forest.aaa_file_id, forest.same_directory_id]
     );
 
     let second_page = bl::browse(
@@ -2255,7 +2266,7 @@ async fn assert_stage_eight_browse_composition(
     let second_entry_ids = tree_entry_ids(&second_page.entries);
     assert_eq!(
         second_entry_ids,
-        vec![forest.aaa_file_id, forest.same_file_ids[0]]
+        vec![forest.same_file_ids[0], forest.same_file_ids[1]]
     );
 
     let third_page = bl::browse(
@@ -2279,18 +2290,18 @@ async fn assert_stage_eight_browse_composition(
     let third_entry_ids = tree_entry_ids(&third_page.entries);
     assert_eq!(
         third_entry_ids,
-        vec![forest.same_file_ids[1], forest.same_file_ids[2]]
+        vec![forest.same_file_ids[2], forest.zeta_directory_id]
     );
     assert!(third_page.next_cursor.is_none());
     assert_eq!(
         [first_entry_ids, second_entry_ids, third_entry_ids].concat(),
         vec![
-            forest.same_directory_id,
-            forest.zeta_directory_id,
             forest.aaa_file_id,
+            forest.same_directory_id,
             forest.same_file_ids[0],
             forest.same_file_ids[1],
             forest.same_file_ids[2],
+            forest.zeta_directory_id,
         ]
     );
 }
@@ -3470,6 +3481,8 @@ mod types_tests {
             device_id,
             name: "root".to_string(),
             hierarchy_path: "n00000000000000000000000000000002".to_string(),
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
             created_at: timestamp,
             updated_at: timestamp,
         });
@@ -3483,6 +3496,8 @@ mod types_tests {
                 hierarchy_path:
                     "n00000000000000000000000000000002.n00000000000000000000000000000003"
                         .to_string(),
+                file_metadata_created_at: None,
+                file_metadata_modified_at: None,
                 created_at: timestamp,
                 updated_at: timestamp,
             },
@@ -4153,6 +4168,8 @@ mod query_ancestors_tests {
                 parent_entry_id: root_id,
                 name: "current".to_string(),
                 hierarchy_path: hierarchy_path(&[root_id, current_id]),
+                file_metadata_created_at: None,
+                file_metadata_modified_at: None,
                 created_at: timestamp(),
                 updated_at: timestamp(),
             },
@@ -4543,6 +4560,8 @@ mod mapping_tests {
                 .unwrap(),
             name: "C:\\".to_string(),
             hierarchy_path: "internal".to_string(),
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
             created_at: timestamp,
             updated_at: timestamp,
         };
@@ -4551,12 +4570,16 @@ mod mapping_tests {
             serde_json::to_value(map_roots(vec![root])).unwrap(),
             json!({
                 "roots": [{
+                    "is_favorite": false,
                     "entry_id": "018f0000-0000-7000-8000-000000000001",
                     "device_id": "018f0000-0000-7000-8000-000000000002",
                     "parent_entry_id": null,
                     "kind": "directory",
                     "name": "C:\\",
                     "tags": [],
+                    "file_metadata_created_at": null,
+                    "file_metadata_modified_at": null,
+                    "content_uploaded_at": "2026-07-23T09:10:11.123Z",
                     "created_at": "2026-07-23T09:10:11.123Z",
                     "updated_at": "2026-07-23T09:10:11.123Z"
                 }]
@@ -4658,5 +4681,702 @@ mod mapping_tests {
                 "next_cursor": "018f0000-0000-7000-8000-000000000003"
             }),
         );
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn file_markers_are_shared_favorites_and_private_revision_views_3930() {
+    use super::markers::{
+        mark_viewed, set_favorite, set_viewed, MarkDeviceFileViewedReq,
+        SetDeviceFileFavoriteReq,
+    };
+    use crate::file_registry::test_support::{insert_entry, publish_content};
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let now = chrono::Utc::now().naive_utc();
+    let owner = insert_device_owner(&env.dbx, "file-markers").await;
+    let owner = access::login_with_roles(&owner, &[ROLE_CYBER]);
+    let reader = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            organism_id: Set(owner.organism_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let reader = access::login_with_roles(&reader, &[ROLE_CYBER]);
+    let device = Uuid::now_v7();
+    insert_device(&env.dbx, device, &owner, now).await;
+    let db = env.file_registry_db().unwrap().connection();
+    let root = Uuid::now_v7();
+    insert_entry(db, root_entry(root, device, now)).await;
+    let first = insert_entry(
+        db,
+        file_entry_row(
+            Uuid::now_v7(),
+            device,
+            root,
+            &uuid_label(root),
+            "a.txt",
+            "C:\\a.txt",
+            now,
+        ),
+    )
+    .await;
+    let second = insert_entry(
+        db,
+        file_entry_row(
+            Uuid::now_v7(),
+            device,
+            root,
+            &uuid_label(root),
+            "b.txt",
+            "C:\\b.txt",
+            now,
+        ),
+    )
+    .await;
+    publish_content(db, &first, owner.id).await;
+    publish_content(db, &second, owner.id).await;
+    let uploaded_at =
+        crate::file_registry::entities::file_content::Entity::find_by_id((
+            second.id, 1,
+        ))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        .created_at
+        .to_rfc3339();
+    let favorite = SetDeviceFileFavoriteReq {
+        device_id: device,
+        entry_id: second.id,
+        favorite: true,
+    };
+    assert!(
+        set_favorite(&env, &owner, &favorite)
+            .await
+            .unwrap()
+            .is_favorite
+    );
+    let viewed = MarkDeviceFileViewedReq {
+        device_id: device,
+        file_id: second.id,
+        revision: 1,
+    };
+    assert!(mark_viewed(&env, &owner, &viewed).await.unwrap().is_viewed);
+    assert!(mark_viewed(&env, &owner, &viewed).await.unwrap().is_viewed);
+    let req = serde_json::from_value(
+        json!({"device_id":device,"parent_entry_id":root,"limit":1}),
+    )
+    .unwrap();
+    let mut page = super::browse_page(&env, &owner, req).await.unwrap();
+    assert_eq!(page.entries[0].entry_id, first.id.to_string());
+    let next = serde_json::from_value(json!({"device_id":device,"parent_entry_id":root,"limit":1,"cursor":page.next_cursor})).unwrap();
+    page = super::browse_page(&env, &owner, next).await.unwrap();
+    super::markers::hydrate(&env, owner.id, &mut page.entries)
+        .await
+        .unwrap();
+    assert!(page.entries[0].is_favorite);
+    assert!(page.entries[0].is_viewed);
+    assert_eq!(page.entries[0].size_bytes, Some(1));
+    assert_eq!(
+        page.entries[0].content_uploaded_at.as_deref(),
+        Some(uploaded_at.as_str())
+    );
+    super::markers::hydrate(&env, reader.id, &mut page.entries)
+        .await
+        .unwrap();
+    assert!(page.entries[0].is_favorite);
+    assert!(!page.entries[0].is_viewed);
+    assert!(mark_viewed(&env, &reader, &viewed).await.unwrap().is_viewed);
+    assert!(
+        !set_viewed(&env, &owner, &viewed, false)
+            .await
+            .unwrap()
+            .is_viewed
+    );
+    assert!(
+        !set_viewed(&env, &owner, &viewed, false)
+            .await
+            .unwrap()
+            .is_viewed
+    );
+    super::markers::hydrate(&env, owner.id, &mut page.entries)
+        .await
+        .unwrap();
+    assert!(!page.entries[0].is_viewed);
+    super::markers::hydrate(&env, reader.id, &mut page.entries)
+        .await
+        .unwrap();
+    assert!(page.entries[0].is_viewed);
+    assert!(mark_viewed(&env, &owner, &viewed).await.unwrap().is_viewed);
+    assert!(
+        !set_viewed(&env, &reader, &viewed, false)
+            .await
+            .unwrap()
+            .is_viewed
+    );
+    page.entries[0].revision = Some(2);
+    super::markers::hydrate(&env, owner.id, &mut page.entries)
+        .await
+        .unwrap();
+    assert!(!page.entries[0].is_viewed);
+    assert_eq!(page.entries[0].content_uploaded_at, None);
+    assert!(mark_viewed(
+        &env,
+        &owner,
+        &MarkDeviceFileViewedReq {
+            revision: 2,
+            ..viewed
+        }
+    )
+    .await
+    .is_err());
+    let req = serde_json::from_value(json!({"device_id":device,"parent_entry_id":root,"limit":1,"favorites_only":true})).unwrap();
+    let filtered = super::browse_marked(&env, &reader, req).await.unwrap();
+    assert_eq!(filtered.entries[0].entry_id, second.id.to_string());
+    let req = serde_json::from_value(json!({"device_id":device,"scope_entry_id":root,"limit":1,"favorites_only":true,"unviewed_only":true})).unwrap();
+    let filtered = super::search_marked(&env, &owner, req).await.unwrap();
+    assert!(filtered.entries.is_empty());
+    let req = serde_json::from_value(json!({"device_id":device,"scope_entry_id":root,"limit":1,"favorites_only":true,"unviewed_only":true})).unwrap();
+    let filtered = super::search_marked(&env, &reader, req).await.unwrap();
+    assert_eq!(filtered.entries[0].entry_id, second.id.to_string());
+    let denied = access::login_with_roles(&owner, &["Basic"]);
+    assert!(set_favorite(&env, &denied, &favorite).await.is_err());
+    assert!(mark_viewed(&env, &denied, &viewed).await.is_err());
+    assert!(set_viewed(&env, &denied, &viewed, false).await.is_err());
+    let other_device = Uuid::now_v7();
+    insert_device(&env.dbx, other_device, &owner, now).await;
+    assert!(set_favorite(
+        &env,
+        &owner,
+        &SetDeviceFileFavoriteReq {
+            device_id: other_device,
+            ..favorite
+        }
+    )
+    .await
+    .is_err());
+    assert!(
+        set_favorite(
+            &env,
+            &reader,
+            &SetDeviceFileFavoriteReq {
+                entry_id: root,
+                ..favorite
+            }
+        )
+        .await
+        .unwrap()
+        .is_favorite
+    );
+    assert!(
+        !set_favorite(
+            &env,
+            &reader,
+            &SetDeviceFileFavoriteReq {
+                favorite: false,
+                ..favorite
+            }
+        )
+        .await
+        .unwrap()
+        .is_favorite
+    );
+    assert_sparse_favorite_cursor_3930(&env, &owner, device, root).await;
+    let mut metadata_revision =
+        crate::file_registry::entities::file_revision::Entity::find_by_id((
+            second.id, 1,
+        ))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    metadata_revision.revision = Set(2);
+    let mut source_state = crate::file_registry::entities::file_device_source_state::Entity::find_by_id(device)
+        .one(db).await.unwrap().unwrap().into_active_model();
+    let source_sequence = source_state.last_source_sequence.as_ref() + 1;
+    source_state.last_source_sequence = Set(source_sequence);
+    source_state.update(db).await.unwrap();
+    metadata_revision.source_sequence = Set(Some(source_sequence));
+    metadata_revision.insert(db).await.unwrap();
+    let mut current_file = second.clone().into_active_model();
+    current_file.revision = Set(Some(2));
+    current_file.content_path = Set(None);
+    current_file.update(db).await.unwrap();
+    let metadata_view = MarkDeviceFileViewedReq {
+        revision: 2,
+        ..viewed
+    };
+    assert!(
+        mark_viewed(&env, &owner, &metadata_view)
+            .await
+            .unwrap()
+            .is_viewed
+    );
+    assert!(
+        !set_viewed(&env, &owner, &viewed, false)
+            .await
+            .unwrap()
+            .is_viewed
+    );
+    page.entries[0].revision = Some(2);
+    super::markers::hydrate(&env, owner.id, &mut page.entries)
+        .await
+        .unwrap();
+    assert!(page.entries[0].is_viewed);
+    assert!(set_viewed(
+        &env,
+        &owner,
+        &MarkDeviceFileViewedReq {
+            device_id: other_device,
+            ..viewed
+        },
+        false
+    )
+    .await
+    .is_err());
+}
+
+async fn assert_sparse_favorite_cursor_3930(
+    env: &crate::types::Env,
+    owner: &login::Model,
+    device: Uuid,
+    root: Uuid,
+) {
+    use super::markers::{set_favorite, SetDeviceFileFavoriteReq};
+    let db = env.file_registry_db().unwrap().connection();
+    let mut last = Uuid::nil();
+    for index in 0..9 {
+        last = Uuid::now_v7();
+        insert_file_entry(
+            db,
+            file_entry_row(
+                last,
+                device,
+                root,
+                &uuid_label(root),
+                &format!("z{index}.txt"),
+                &format!("C:\\z{index}.txt"),
+                chrono::Utc::now().naive_utc(),
+            ),
+        )
+        .await;
+    }
+    set_favorite(
+        env,
+        owner,
+        &SetDeviceFileFavoriteReq {
+            device_id: device,
+            entry_id: last,
+            favorite: true,
+        },
+    )
+    .await
+    .unwrap();
+    let req = serde_json::from_value(json!({"device_id":device,"parent_entry_id":root,"limit":1,"favorites_only":true})).unwrap();
+    let page = super::browse_marked(env, owner, req).await.unwrap();
+    assert!(page.entries.is_empty());
+    assert!(page.next_cursor.is_some());
+    let req = serde_json::from_value(json!({"device_id":device,"parent_entry_id":root,"limit":1,"favorites_only":true,"cursor":page.next_cursor})).unwrap();
+    let page = super::browse_marked(env, owner, req).await.unwrap();
+    assert_eq!(page.entries[0].entry_id, last.to_string());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn file_sorting_3930_keeps_nulls_ties_and_pagination_consistent() {
+    use crate::file_registry::test_support::{
+        insert_entry, publish_content_at,
+    };
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let now = chrono::Utc::now().naive_utc();
+    let owner = insert_device_owner(&env.dbx, "file-sorting").await;
+    let owner = access::login_with_roles(&owner, &[ROLE_CYBER]);
+    let device = Uuid::now_v7();
+    insert_device(&env.dbx, device, &owner, now).await;
+    let db = env.file_registry_db().unwrap().connection();
+    let specifications = [
+        ("gamma.txt", Some(20), Some(1), Some(3), 1),
+        ("alpha.txt", Some(20), Some(2), Some(4), 3),
+        ("beta.txt", Some(0), Some(3), Some(1), 2),
+        ("delta.txt", None, None, None, 0),
+        ("epsilon.txt", Some(5), None, None, 4),
+    ];
+    let items = specifications
+        .iter()
+        .map(|(name, _, created, modified, _)| {
+            super::types::RawSyncDeviceFileItem {
+                absolute_path: format!("C:\\{name}"),
+                mime_type: Some("text/plain".into()),
+                extension: Some("txt".into()),
+                file_metadata_created_at: created.map(|days| {
+                    (now + Duration::days(days)).and_utc().to_rfc3339()
+                }),
+                file_metadata_modified_at: modified.map(|days| {
+                    (now + Duration::days(days)).and_utc().to_rfc3339()
+                }),
+                source_file_state: None,
+            }
+        })
+        .collect();
+    let synced = super::sync::automatic(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &owner,
+        device,
+        items,
+    )
+    .await
+    .unwrap();
+    let selected_sync = Uuid::parse_str(&synced.sync.sync_id).unwrap();
+    let root = query::list_roots(env.file_registry_db().unwrap(), device)
+        .await
+        .unwrap()[0]
+        .entry_id;
+    insert_entry(
+        db,
+        directory_entry(
+            Uuid::now_v7(),
+            device,
+            root,
+            &uuid_label(root),
+            "Folder",
+            now,
+        ),
+    )
+    .await;
+    for ((_, size, _, _, uploaded), result) in
+        specifications.into_iter().zip(synced.results)
+    {
+        let super::types::FileSyncResult::Accepted { file_id, .. } = result
+        else {
+            panic!("expected accepted file");
+        };
+        let entry =
+            file_entry::Entity::find_by_id(Uuid::parse_str(&file_id).unwrap())
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap();
+        if let Some(size) = size {
+            publish_content_at(
+                db,
+                &entry,
+                owner.id,
+                size,
+                (now + Duration::days(uploaded)).and_utc().fixed_offset(),
+            )
+            .await;
+        }
+    }
+    for (field, ascending, descending) in [
+        (
+            "name",
+            [
+                "alpha.txt",
+                "beta.txt",
+                "delta.txt",
+                "epsilon.txt",
+                "gamma.txt",
+            ],
+            [
+                "gamma.txt",
+                "epsilon.txt",
+                "delta.txt",
+                "beta.txt",
+                "alpha.txt",
+            ],
+        ),
+        (
+            "size",
+            [
+                "beta.txt",
+                "epsilon.txt",
+                "alpha.txt",
+                "gamma.txt",
+                "delta.txt",
+            ],
+            [
+                "alpha.txt",
+                "gamma.txt",
+                "epsilon.txt",
+                "beta.txt",
+                "delta.txt",
+            ],
+        ),
+        (
+            "created_at",
+            [
+                "gamma.txt",
+                "alpha.txt",
+                "beta.txt",
+                "delta.txt",
+                "epsilon.txt",
+            ],
+            [
+                "beta.txt",
+                "alpha.txt",
+                "gamma.txt",
+                "delta.txt",
+                "epsilon.txt",
+            ],
+        ),
+        (
+            "modified_at",
+            [
+                "beta.txt",
+                "gamma.txt",
+                "alpha.txt",
+                "delta.txt",
+                "epsilon.txt",
+            ],
+            [
+                "alpha.txt",
+                "gamma.txt",
+                "beta.txt",
+                "delta.txt",
+                "epsilon.txt",
+            ],
+        ),
+        (
+            "uploaded_at",
+            [
+                "gamma.txt",
+                "beta.txt",
+                "alpha.txt",
+                "epsilon.txt",
+                "delta.txt",
+            ],
+            [
+                "epsilon.txt",
+                "alpha.txt",
+                "beta.txt",
+                "gamma.txt",
+                "delta.txt",
+            ],
+        ),
+    ] {
+        for (direction, expected) in
+            [("ascending", ascending), ("descending", descending)]
+        {
+            for (sync, search) in [
+                (None, false),
+                (None, true),
+                (Some(selected_sync), false),
+                (Some(selected_sync), true),
+            ] {
+                let mut cursor = None;
+                let mut names = Vec::new();
+                loop {
+                    let request = json!({"device_id":device,"parent_entry_id":root,"sort_by":field,"sort_direction":direction,"limit":1,"cursor":cursor,"sync_id":sync});
+                    let (entries, next) = if search {
+                        let mut request = request;
+                        request
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("parent_entry_id");
+                        request["scope_entry_id"] = json!(root);
+                        let page = super::search_marked(
+                            &env,
+                            &owner,
+                            serde_json::from_value(request).unwrap(),
+                        )
+                        .await
+                        .unwrap();
+                        (page.entries, page.next_cursor)
+                    } else {
+                        let page = super::browse_marked(
+                            &env,
+                            &owner,
+                            serde_json::from_value(request).unwrap(),
+                        )
+                        .await
+                        .unwrap();
+                        (page.entries, page.next_cursor)
+                    };
+                    names.extend(entries.into_iter().map(|entry| entry.name));
+                    assert!(names.len() <= 6, "pagination repeated entries");
+                    cursor = next;
+                    if cursor.is_none() {
+                        break;
+                    }
+                }
+                let mut expected = expected.to_vec();
+                if sync.is_none() {
+                    let position = match (field, direction) {
+                        ("name", "ascending")
+                        | ("uploaded_at", "ascending") => 0,
+                        ("name", "descending") => 5,
+                        ("uploaded_at", "descending") => 4,
+                        ("size", "ascending") => 0,
+                        ("size", "descending") => 3,
+                        _ => 3,
+                    };
+                    expected.insert(position, "Folder");
+                }
+                assert_eq!(
+                    names, expected,
+                    "{field} {direction}, search={search}"
+                );
+            }
+        }
+    }
+    let request = json!({"device_id":device,"parent_entry_id":root,"sort_by":"size","sort_direction":"ascending","limit":1});
+    let page = super::browse_marked(
+        &env,
+        &owner,
+        serde_json::from_value(request.clone()).unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut changed = request;
+    changed["cursor"] = json!(page.next_cursor);
+    changed["sort_direction"] = json!("descending");
+    assert!(super::browse_marked(
+        &env,
+        &owner,
+        serde_json::from_value(changed).unwrap()
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn search_mode_3930_ranks_scoped_and_global_pages_in_current_and_session_views(
+) {
+    use sea_orm::ColumnTrait;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let now = chrono::Utc::now().naive_utc();
+    let owner = insert_device_owner(&env.dbx, "search-mode").await;
+    let owner = access::login_with_roles(&owner, &[ROLE_CYBER]);
+    let device = Uuid::now_v7();
+    insert_device(&env.dbx, device, &owner, now).await;
+    let paths = [
+        "C:\\Scope\\report",
+        "C:\\Scope\\Deep\\report",
+        "C:\\Scope\\report-near.txt",
+        "C:\\Scope\\Nested\\report-near.txt",
+        "C:\\Scope\\other-report.txt",
+        "C:\\Scope\\report-folder\\note.txt",
+        "C:\\Scope\\report%_literal.txt",
+        "D:\\Elsewhere\\report",
+        "C:\\Outside\\report-note.txt",
+    ];
+    let items = paths
+        .iter()
+        .map(|path| super::types::RawSyncDeviceFileItem {
+            absolute_path: (*path).to_owned(),
+            mime_type: Some("text/plain".into()),
+            extension: None,
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
+            source_file_state: None,
+        })
+        .collect();
+    let synced = super::sync::automatic(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &owner,
+        device,
+        items,
+    )
+    .await
+    .unwrap();
+    let db = env.file_registry_db().unwrap().connection();
+    let scope = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device))
+        .filter(file_entry::Column::Name.eq("Scope"))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    for sync in [None, Some(synced.sync.sync_id.as_str())] {
+        for global in [false, true] {
+            let base = json!({"device_id":device,"scope_entry_id":scope.id,"sync_id":sync,"global_search":global,"rank_by_relevance":true,"name_query":"report","limit":2});
+            let mut request = base.clone();
+            let mut all = Vec::new();
+            let mut first_cursor = None;
+            loop {
+                let page = super::search_marked(
+                    &env,
+                    &owner,
+                    serde_json::from_value(request.clone()).unwrap(),
+                )
+                .await
+                .unwrap();
+                assert!(page.entries.iter().all(|entry| entry
+                    .path_components
+                    .first()
+                    .is_some_and(|root| root == "C:\\" || root == "D:\\")));
+                all.extend(page.entries);
+                assert!(all.len() <= 12, "search pagination repeated entries");
+                let Some(cursor) = page.next_cursor else {
+                    break;
+                };
+                if first_cursor.is_none() {
+                    first_cursor = Some(cursor.clone());
+                }
+                request["cursor"] = json!(cursor);
+            }
+            let names = all
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>();
+            let mut expected = vec![
+                "report",
+                "report",
+                "report%_literal.txt",
+                "report-folder",
+                "report-near.txt",
+                "report-near.txt",
+                "other-report.txt",
+            ];
+            if global {
+                expected.insert(2, "report");
+                expected.insert(7, "report-note.txt");
+            }
+            assert_eq!(names, expected, "global={global}, sync={sync:?}");
+            assert_eq!(
+                all.iter()
+                    .map(|entry| &entry.entry_id)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len(),
+                all.len()
+            );
+            assert_eq!(all[0].absolute_path.as_deref(), Some(paths[0]));
+            assert_eq!(all[1].absolute_path.as_deref(), Some(paths[1]));
+            let near = all
+                .iter()
+                .filter(|entry| entry.name == "report-near.txt")
+                .map(|entry| entry.absolute_path.as_deref().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(near, [paths[2], paths[3]]);
+            let mut changed = base;
+            changed["cursor"] = json!(first_cursor);
+            changed["global_search"] = json!(!global);
+            assert!(super::search_marked(
+                &env,
+                &owner,
+                serde_json::from_value(changed).unwrap()
+            )
+            .await
+            .is_err());
+        }
+        let literal = json!({"device_id":device,"scope_entry_id":scope.id,"sync_id":sync,"global_search":true,"rank_by_relevance":true,"name_query":"report%_"});
+        let page = super::search_marked(
+            &env,
+            &owner,
+            serde_json::from_value(literal).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(page.entries[0].name, "report%_literal.txt");
     }
 }

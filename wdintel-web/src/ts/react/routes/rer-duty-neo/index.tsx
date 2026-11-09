@@ -1,3 +1,4 @@
+import { MessageCardQuickActionContext } from '../shared/message-card/MessageCardQuickAction';
 import {
   MessageRepliesProvider,
   ReplyMessageEditor,
@@ -50,6 +51,7 @@ import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/
 import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import { dutyEditorLayoutColumns } from './duty-editor-layout';
+import { findDutyFeedColumn, useDutyMinimalReportEditor } from './useDutyMinimalReportEditor';
 import {
   createMessageNavigationController,
   messageNavigationErrorText,
@@ -123,11 +125,15 @@ export function RerDutyNeoPage({
     hideNetworks,
     networkVisibilityReady,
     dutyExcludeMenuEnabled,
+    dutySelectedGroupsEnabled,
     collapseMediaPreviews,
     largeMediaPreviews,
     largeMessageCardText,
+    messageCardQuickAction,
     mediaSummaryEnabled,
     messageTextPreviewLines,
+    minimalReportWindowEnabled,
+    importantOnlyMyOrganism,
   } = useRerDutyPageSettings();
   const requestEditorIntent = useCallback(
     (
@@ -528,9 +534,11 @@ export function RerDutyNeoPage({
     tagsLayout,
     hideBotTags,
     hideNetworks: hideNetworks || !networkVisibilityReady,
+    dutySelectedGroupsEnabled,
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
+    importantOnlyMyOrganism,
     openReportEditor,
     openMessageEditor,
     openReportComposer,
@@ -594,15 +602,21 @@ export function RerDutyNeoPage({
   const editorOpen = editorIntentKey !== null;
   const editorPresentation = useManageMessageEditorPresentation();
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
+  const minimalReport = useDutyMinimalReportEditor({
+    enabled: minimalReportWindowEnabled && editorPresentation === 'embedded',
+    reportIntent: reportSource !== null || editAsReport,
+    editorIntentKey,
+    sourceFeedId: editorSourceFeedId,
+    feedIdsKey: messageFeeds.map((feed) => feed.id).join(),
+  });
+  const editorEmbeddedOpen =
+    editorOpen && editorPresentation === 'embedded' && !minimalReport.active;
   const previousCanWriteRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (editorOpen || editorSourceFeedId == null) return;
     return focusAfterEditorSurfacesClose(() => {
-      const sourceColumn = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-duty-feed-column]'),
-      ).find((column) => column.dataset.dutyFeedId === editorSourceFeedId);
+      const sourceColumn = findDutyFeedColumn(editorSourceFeedId);
       const createMessageButton =
         sourceColumn?.querySelector<HTMLElement>('[aria-label="Додати повідомлення"]') ?? null;
       createMessageFabRef.current = createMessageButton;
@@ -663,8 +677,13 @@ export function RerDutyNeoPage({
   }, [hasCompletedInitialLoad, messageFeeds]);
 
   useEffect(() => {
+    if (
+      messageFeeds.length === previousFeedCountRef.current &&
+      messageFeeds.some((feed) => feed.id === activeFeedId)
+    )
+      return;
     if (messageFeeds.length === 0) {
-      setActiveFeedId(null);
+      if (activeFeedId !== null) setActiveFeedId(null);
       previousFeedCountRef.current = 0;
       return;
     }
@@ -680,7 +699,7 @@ export function RerDutyNeoPage({
       return messageFeeds[0].id;
     });
     previousFeedCountRef.current = messageFeeds.length;
-  }, [messageFeeds, targetMessageUid]);
+  }, [activeFeedId, messageFeeds, targetMessageUid]);
 
   const dutyTabUnreadTotal = useMemo(
     () =>
@@ -808,6 +827,11 @@ export function RerDutyNeoPage({
               (createMessageOpen ? createMessageGroupMasterKey : null)
             }
             presentation={editorPresentation}
+            minimalReport={
+              minimalReport.active
+                ? { host: minimalReport.host, onExpand: minimalReport.expand }
+                : null
+            }
             adaptiveEmbeddedForm
             fillEmbeddedSurface
             transparentEmbeddedSurface
@@ -860,7 +884,9 @@ export function RerDutyNeoPage({
           )}
           currentUser={currentUser}
         >
-          {content}
+          <MessageCardQuickActionContext.Provider value={messageCardQuickAction}>
+            {content}
+          </MessageCardQuickActionContext.Provider>
         </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>

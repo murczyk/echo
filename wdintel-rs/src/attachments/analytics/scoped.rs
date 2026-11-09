@@ -27,6 +27,9 @@ pub(crate) struct SearchCoverageScope<'a> {
     pub till_inclusive: bool,
     pub time_basis: SearchTimeBasis,
     pub groups: &'a [String],
+    /// Request eligibility depends on attachment presence (`only_with_media`),
+    /// so any in-scope change is relevant regardless of search terms.
+    pub media_presence_filtered: bool,
 }
 
 pub(crate) async fn ensure_search_coverage_scoped(
@@ -81,21 +84,37 @@ pub(crate) async fn ensure_search_coverage_scoped(
     if changed.len() as u64 > ATTACHMENT_SEARCH_CHANGE_LIMIT {
         return requires_source("change_limit");
     }
-    if !changed.is_empty()
-        && (changed_groups_match(source, &changed, &scope)
+    if changed.is_empty() {
+        return Ok(());
+    }
+    let terms = ChangedTerms {
+        search: search_text,
+        search_mode,
+    };
+    if changed_attachments_match(source, &changed, &scope, &terms)
+        .await
+        .c(h!())?
+        || changed_attachments_match(analytics, &changed, &scope, &terms)
             .await
             .c(h!())?
-            || changed_groups_match(analytics, &changed, &scope)
-                .await
-                .c(h!())?)
     {
         return requires_source("recent_message_change");
     }
+    log::debug!(target: "attachment_search_coverage", "reason=recent_message_change_unaffected changed={}", changed.len());
     Ok(())
 }
 
+struct ChangedTerms<'a> {
+    search: &'a str,
+    search_mode: Option<crate::rer_importer::types::AnalysisSearchMode>,
+}
+
 fn requires_source(reason: &str) -> anyhow::Result<()> {
-    log::info!(target: "attachment_search_coverage", "reason={reason}");
+    if reason == "recent_message_change" {
+        log::info!(target: "attachment_search_coverage", "reason={reason}");
+    } else {
+        log::warn!(target: "attachment_search_coverage", "reason={reason}");
+    }
     Err(AttachmentSearchCoverageError).c(h!())
 }
 
@@ -145,24 +164,80 @@ async fn changed_messages(
         .collect()
 }
 
-async fn changed_groups_match(
+/// Whether a changed message is in scope and has an attachment matching any
+/// search term in this database's state. Evaluated on both source and
+/// analytics, so a term only one side matches still forces source.
+async fn changed_attachments_match(
     db: &DatabaseConnection,
     changed: &[i64],
     scope: &SearchCoverageScope<'_>,
+    terms: &ChangedTerms<'_>,
 ) -> anyhow::Result<bool> {
     let time_column = scope.time_basis.column();
     let till_operator = if scope.till_inclusive { "<=" } else { "<" };
+    let mut values: Vec<Value> = vec![
+        changed.to_vec().into(),
+        scope.groups.to_vec().into(),
+        scope.since.into(),
+        scope.till.into(),
+    ];
+    let relevant = if scope.media_presence_filtered {
+        "true".into()
+    } else {
+        values.push(changed_media(db, changed).await.c(h!())?.into());
+        changed_terms_match(terms, &mut values).c(h!())?
+    };
     let row = db
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            format!("SELECT EXISTS(SELECT 1 FROM signal_message message LEFT JOIN sigint_inbox_item inbox ON inbox.id=message.id AND inbox.id=ANY($1) WHERE message.id=ANY($1) AND ($3::timestamp IS NULL OR {time_column} >= $3) AND ($4::timestamp IS NULL OR {time_column} {till_operator} $4) AND EXISTS(SELECT 1 FROM signal_message_group access_group WHERE access_group.signal_message_id=message.id AND access_group.signal_message_id=ANY($1) AND access_group.group_master_key=ANY($2))) AS matches"),
-            [changed.to_vec().into(), scope.groups.to_vec().into(),
-                scope.since.into(), scope.till.into()],
+            format!("SELECT EXISTS(SELECT 1 FROM signal_message message LEFT JOIN sigint_inbox_item inbox ON inbox.id=message.id AND inbox.id=ANY($1) WHERE message.id=ANY($1) AND ($3::timestamp IS NULL OR {time_column} >= $3) AND ($4::timestamp IS NULL OR {time_column} {till_operator} $4) AND EXISTS(SELECT 1 FROM signal_message_group access_group WHERE access_group.signal_message_id=message.id AND access_group.signal_message_id=ANY($1) AND access_group.group_master_key=ANY($2)) AND ({relevant})) AS matches"),
+            values,
         ))
         .await
         .c(h!())?
         .c(h!())?;
     row.try_get("", "matches").c(h!())
+}
+
+/// Media of changed messages in this database, used to bound the document and
+/// chunk inputs (the gateway does not push the media correlation into them).
+async fn changed_media(
+    db: &DatabaseConnection,
+    changed: &[i64],
+) -> anyhow::Result<Vec<uuid::Uuid>> {
+    db.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT id FROM signal_message_media WHERE signal_message_id=ANY($1)",
+        [changed.to_vec().into()],
+    ))
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(|row| row.try_get("", "id").c(h!()))
+    .collect()
+}
+
+/// Correlated to `message`: an attachment chunk, media file name or audio file
+/// name of the changed message matches any search term. `$5` holds
+/// [`changed_media`].
+fn changed_terms_match(
+    terms: &ChangedTerms<'_>,
+    values: &mut Vec<Value>,
+) -> anyhow::Result<String> {
+    let attachment =
+        super::super::search::attachment_terms_predicate_with_mode(
+            terms.search,
+            terms.search_mode,
+            values,
+        )
+        .c(h!())?;
+    let audio = super::super::search::audio_terms_predicate_with_mode(
+        terms.search,
+        terms.search_mode,
+        values,
+    )
+    .c(h!())?;
+    Ok(format!("EXISTS(SELECT 1 FROM signal_message_media media LEFT JOIN attachment_document doc ON doc.media_id=media.id AND doc.media_id=ANY($5) LEFT JOIN attachment_chunk chunk ON chunk.media_id=doc.media_id AND chunk.revision=doc.revision AND chunk.media_id=ANY($5) WHERE media.signal_message_id=message.id AND media.signal_message_id=ANY($1) AND media.id=ANY($5) AND ({attachment})) OR EXISTS(SELECT 1 FROM signal_message_audio_search audio_search WHERE audio_search.signal_message_id=message.id AND audio_search.signal_message_id=ANY($1) AND ({audio}))"))
 }
 
 pub(crate) async fn reconcile_search_changes(

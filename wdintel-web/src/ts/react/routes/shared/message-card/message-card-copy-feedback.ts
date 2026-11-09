@@ -4,6 +4,10 @@ export function notifyMessageCopySuccess(
   feedbackId: string,
   notify: (notification: PowerSnackbarNotification) => unknown,
 ): void {
-  if (!feedbackId.startsWith('link-')) return;
-  notify({ severity: 'success', message: 'Посилання на повідомлення скопійовано.' });
+  const message = feedbackId.startsWith('link-')
+    ? 'Посилання на повідомлення скопійовано.'
+    : feedbackId.startsWith('text-')
+      ? 'Повідомлення скопійовано.'
+      : 'Скопійовано в буфер обміну.';
+  notify({ severity: 'success', message });
 }

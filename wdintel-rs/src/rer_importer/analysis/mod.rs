@@ -181,6 +181,7 @@ pub(super) async fn ensure_analytics_search_coverage(
             till_inclusive: false,
             time_basis,
             groups,
+            media_presence_filtered: false,
         },
     )
     .await
@@ -257,14 +258,18 @@ where
 {
     let allowed: HashSet<&String> =
         allowed_groups.iter().collect::<HashSet<_>>();
-    let selected_groups = selected_groups.as_ref().map(|groups| {
-        groups
-            .iter()
-            .filter(|key| allowed.contains(key))
-            .cloned()
-            .collect::<Vec<_>>()
-    });
-    let selected_groups = selected_groups.filter(|groups| !groups.is_empty());
+    // An empty selection means "no filter". A selection that matches no
+    // accessible group stays Some(vec![]) and must return nothing, not widen.
+    let selected_groups = selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .map(|groups| {
+            groups
+                .iter()
+                .filter(|key| allowed.contains(key))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
     let selected_senders = selected_senders
         .as_ref()
         .filter(|senders| !senders.is_empty())
@@ -1097,13 +1102,14 @@ fn linked_unit_ids_condition(
             ))
             .eq(message_id),
         )
-        .and_where(
+        .and_where(unit_ids_condition(
             Expr::col((
                 link_alias.clone(),
                 sigint_inbox_item_unit::Column::UnitId,
             ))
-            .is_in(unit_ids.to_vec()),
-        )
+            .into_simple_expr(),
+            unit_ids,
+        ))
         .and_where(
             Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
         );
@@ -1119,6 +1125,22 @@ fn linked_unit_ids_condition(
         query.offset(0);
     }
     Expr::exists(query.to_owned())
+}
+
+fn unit_ids_condition(column: SimpleExpr, unit_ids: &[i64]) -> SimpleExpr {
+    if unit_ids.is_empty() {
+        return Expr::cust("FALSE");
+    }
+    unit_ids
+        .chunks(crate::config::ANALYTICS_UNIT_FILTER_IDS_CHUNK_SIZE)
+        .fold(Condition::any(), |condition, ids| {
+            condition.add(
+                column
+                    .clone()
+                    .is_in(ids.iter().map(|id| Expr::cust(id.to_string()))),
+            )
+        })
+        .into()
 }
 
 pub(crate) fn filter_denied_units_correlated<Q>(
@@ -3910,20 +3932,19 @@ where
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        let source_scope = match source_scope {
-            Some(source_scope)
-                if scope.is_none()
-                    && !correlated_terms
-                    && crate::attachments::search::use_source_search_scope(
-                        search,
-                        search_mode,
-                        &source_scope,
-                    )
-                    .c(h!())? =>
-            {
-                Some(source_scope)
-            }
-            _ => None,
+        let source_scope = if message_search_strategy(
+            search,
+            search_mode,
+            correlated_terms,
+            scope,
+            source_scope.as_ref(),
+        )
+        .c(h!())?
+            == MessageSearchStrategy::Scoped
+        {
+            source_scope
+        } else {
+            None
         };
         let predicate = if let Some(source_scope) = source_scope {
             crate::attachments::search::scoped_analysis_message_filter(
@@ -3964,6 +3985,41 @@ where
     Ok(q2)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::rer_importer) enum MessageSearchStrategy {
+    Correlated,
+    Scoped,
+    Indexed,
+}
+
+pub(in crate::rer_importer) fn message_search_strategy(
+    search: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    source_scope: Option<
+        &crate::attachments::analytics::SearchCoverageScope<'_>,
+    >,
+) -> anyhow::Result<MessageSearchStrategy> {
+    if correlated_terms {
+        return Ok(MessageSearchStrategy::Correlated);
+    }
+    if scope.is_none() {
+        if let Some(source_scope) = source_scope {
+            if crate::attachments::search::use_source_search_scope(
+                search,
+                search_mode,
+                source_scope,
+            )
+            .c(h!())?
+            {
+                return Ok(MessageSearchStrategy::Scoped);
+            }
+        }
+    }
+    Ok(MessageSearchStrategy::Indexed)
+}
+
 /// Summary table showing row-per-frequency
 #[post("/api/rer/analysis/summary-table-freq")]
 pub async fn summary_table_freq(
@@ -3975,11 +4031,111 @@ pub async fn summary_table_freq(
     Ok(Json(summary_table_freq_1(&user, &env, &req).await.c(h!())?))
 }
 
-pub async fn summary_table_freq_1(
+/// Frequency activity for the AI agent: the most active rows, bounded and
+/// without the coordinates it never reads.
+#[post("/api/rer/analysis/ai/frequency-summary")]
+pub async fn ai_frequency_summary(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<AiFrequencySummary>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let (login, master_keys) =
+        summary_table_freq_access(&user, &env, &req).await.c(h!())?;
+    let summary = summary_table_freq_without_coordinates_by_login(
+        &login,
+        &env,
+        &req,
+        &master_keys,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(rank_ai_frequency_summary(summary).c(h!())?))
+}
+
+fn rank_ai_frequency_summary(
+    summary: SummaryTableFreq,
+) -> anyhow::Result<AiFrequencySummary> {
+    let mut rows = summary.rows;
+    let total_rows = rows.len();
+    rows.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.freq.cmp(&right.freq))
+    });
+    rows.truncate(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    let row_values_truncated = rows.iter().any(ai_frequency_row_exceeds_limits);
+    let rows = rows.into_iter().map(ai_frequency_summary_row);
+    Ok(AiFrequencySummary {
+        rows: ai_frequency_rows_within_budget(rows).c(h!())?,
+        total_rows,
+        row_values_truncated,
+    })
+}
+
+fn ai_frequency_rows_within_budget(
+    rows: impl Iterator<Item = AiFrequencySummaryRow>,
+) -> anyhow::Result<Vec<AiFrequencySummaryRow>> {
+    let mut remaining = AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES;
+    let mut kept = Vec::new();
+    for row in rows {
+        let bytes = serde_json::to_vec(&row).c(h!())?.len();
+        if bytes > remaining {
+            break;
+        }
+        remaining -= bytes;
+        kept.push(row);
+    }
+    Ok(kept)
+}
+
+fn ai_frequency_value_exceeds_limit(value: &str) -> bool {
+    value.chars().count() > AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
+}
+
+fn ai_frequency_row_exceeds_limits(row: &SummaryTableFreqRow) -> bool {
+    ai_frequency_value_exceeds_limit(&row.freq)
+        || [&row.callsigns, &row.units, &row.locations]
+            .iter()
+            .any(|values| {
+                values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
+                    || values
+                        .iter()
+                        .any(|value| ai_frequency_value_exceeds_limit(value))
+            })
+}
+
+fn ai_frequency_bounded_value(value: String) -> String {
+    value
+        .chars()
+        .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS)
+        .collect()
+}
+
+/// Every string is capped, so no single row can fill the byte budget.
+fn ai_frequency_summary_row(row: SummaryTableFreqRow) -> AiFrequencySummaryRow {
+    let bounded = |values: Vec<String>| {
+        values
+            .into_iter()
+            .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES)
+            .map(ai_frequency_bounded_value)
+            .collect()
+    };
+    AiFrequencySummaryRow {
+        freq: ai_frequency_bounded_value(row.freq),
+        count: row.count,
+        callsigns: bounded(row.callsigns),
+        units: bounded(row.units),
+        locations: bounded(row.locations),
+    }
+}
+
+async fn summary_table_freq_access(
     user: &Identity,
     env: &Env,
     req: &AnalysisStatsReq,
-) -> Result<SummaryTableFreq, AppError> {
+) -> Result<(uuid::Uuid, Vec<String>), AppError> {
     let master_keys =
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
@@ -3988,6 +4144,16 @@ pub async fn summary_table_freq_1(
     require_analysis_device_filter_access(&env.dbx, &login, req)
         .await
         .c(h!())?;
+    Ok((login, master_keys))
+}
+
+pub async fn summary_table_freq_1(
+    user: &Identity,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<SummaryTableFreq, AppError> {
+    let (login, master_keys) =
+        summary_table_freq_access(user, env, req).await.c(h!())?;
     summary_table_freq_by_login(&login, env, req, &master_keys).await
 }
 
@@ -4958,6 +5124,10 @@ fn filter_summary_table_aors_and_networks_for_scope(
     req: &AnalysisStatsReq,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<signal_message::Entity>, AppError> {
+    let query = crate::rer_report_admin::scope::filter_query(
+        query,
+        req.only_for_rer_report,
+    );
     let query =
         stats::filter_selected_aors_for_scope(query, &req.selected_aors, scope)
             .context(h!())?;
@@ -5994,6 +6164,10 @@ fn build_correlated_freq_messages_query(
     } else {
         query
     };
+    let query = crate::rer_report_admin::scope::filter_query(
+        query,
+        req.only_for_rer_report,
+    );
     let query = filter_selected_metadata_for_analysis_stats(query, req)?;
     filter_selected_device_names(query, &req.selected_device_names)
 }
@@ -6258,6 +6432,10 @@ pub async fn edit_freq_unit_name(
         &reqan.only_with_network,
     )
     .context(h!())?;
+    let rows_res = crate::rer_report_admin::scope::filter_query(
+        rows_res,
+        reqan.only_for_rer_report,
+    );
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
     let rows_res = filter_search_with_mode(
@@ -6318,7 +6496,7 @@ pub async fn edit_freq_unit_name(
 trait FromSavedFilter {
     fn from_saved_filter(
         saved_filter: &sigint_saved_filter::Model,
-    ) -> Result<Self, serde_json::Error>
+    ) -> anyhow::Result<Self>
     where
         Self: Sized;
 }
@@ -6326,11 +6504,19 @@ trait FromSavedFilter {
 impl FromSavedFilter for SavedFilter {
     fn from_saved_filter(
         saved_filter: &sigint_saved_filter::Model,
-    ) -> Result<Self, serde_json::Error> {
+    ) -> anyhow::Result<Self> {
         Ok(SavedFilter {
             id: saved_filter.id,
             name: saved_filter.name.clone(),
-            req: serde_json::from_value(saved_filter.req.clone())?,
+            req: serde_json::from_value(saved_filter.req.clone()).c(h!())?,
+            unit_filter: serde_json::from_value(
+                saved_filter
+                    .req
+                    .get("unit_filter")
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+            .c(h!())?,
         })
     }
 }
@@ -6338,14 +6524,14 @@ impl FromSavedFilter for SavedFilter {
 impl FromSavedFilter for SavedFilterDuty {
     fn from_saved_filter(
         saved_filter: &sigint_saved_filter::Model,
-    ) -> Result<Self, serde_json::Error>
+    ) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
         Ok(SavedFilterDuty {
             id: saved_filter.id,
             name: saved_filter.name.clone(),
-            req: serde_json::from_value(saved_filter.req.clone())?,
+            req: serde_json::from_value(saved_filter.req.clone()).c(h!())?,
         })
     }
 }
@@ -6464,12 +6650,15 @@ pub async fn saved_filter_upsert(
                 .await,
         )
         .c(h!())?;
+    let mut saved_req = serde_json::to_value(&req.req).c(h!())?;
+    saved_req["unit_filter"] =
+        serde_json::to_value(&req.unit_filter).c(h!())?;
     let mut filters: Vec<SavedFilter> = saved_filter_upsert_1(
         sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
         login,
         &env.dbx,
         req.name.clone(),
-        serde_json::to_value(req.req.clone()).context(h!())?,
+        saved_req,
     )
     .await
     .c(h!())?;
@@ -7258,6 +7447,10 @@ fn build_new_callsign_filtered_items_query(
         &req.only_with_network,
     )
     .c(h!())?;
+    let query = crate::rer_report_admin::scope::filter_query(
+        query,
+        req.only_for_rer_report,
+    );
     let query = filter_selected_metadata_for_analysis_stats(query, req)?;
     Ok(match callsign_source {
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
@@ -8769,7 +8962,11 @@ async fn unit_stats(
     )
     .await
     .context(h!())?;
-    Ok(Json(UnitStatsRsp { units }))
+    Ok(Json(
+        crate::rer_importer::unit_stats::enrich(&env, units)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/rer/analysis/stats/locations")]
@@ -9198,8 +9395,9 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     // Analytics scopes are materialized from interception-time partitions. Until
     // their creation-time equivalent is available, route creation-basis requests
     // through PostgreSQL so every panel describes the same message set.
-    req.message_time_basis
-        != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+    req.only_for_rer_report != Some(true)
+        && req.message_time_basis
+            != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
         && req.or_with_extended_form != Some(true)
         && analytics_text_search_supported(&req.search, req.search_mode)
 }
@@ -9250,7 +9448,8 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    req.or_with_extended_form != Some(true)
+    req.only_for_rer_report != Some(true)
+        && req.or_with_extended_form != Some(true)
         && analytics_text_search_supported(&req.search, req.search_mode)
         && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
             || (req.load_latest == Some(true) && req.nolimit != Some(true)))
@@ -9387,12 +9586,27 @@ where
             }
             Ok(Err(err)) => {
                 reason = analytics_failure_reason(&err, analytics_conn);
+                if reason == "source_saturated" {
+                    if let Some(retry_attempt) = retry_attempt {
+                        retry_attempt.record_success();
+                    }
+                    warn!(target: "analytics_route", "request_id={request_id} operation=\"analysis stats count\" route=analytics outcome=rejected reason=source_saturated elapsed_ms={}", started.elapsed().as_millis());
+                    return Err(err);
+                }
                 let open_circuit = reason == "analytics_error";
-                warn!(
-                    "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
-                    started.elapsed(),
-                    err
-                );
+                if is_expected_analytics_fallback(reason) {
+                    log_expected_analytics_fallback(
+                        "analysis stats count",
+                        reason,
+                        started.elapsed(),
+                    );
+                } else {
+                    warn!(
+                        "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+                        started.elapsed(),
+                        err
+                    );
+                }
                 open_circuit
             }
             Err(_) => {
@@ -9602,10 +9816,23 @@ where
             }
             Some(Err(err)) => {
                 reason = analytics_failure_reason(&err, Some(&analytics.conn));
+                if reason == "source_saturated" {
+                    retry_attempt.record_success();
+                    warn!(target: "analytics_route", "request_id={request_id} operation={operation:?} route=analytics outcome=rejected reason=source_saturated elapsed_ms={}", started.elapsed().as_millis());
+                    return Err(err);
+                }
                 let open_circuit = reason == "analytics_error";
-                warn!(
-                    "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
-                );
+                if is_expected_analytics_fallback(reason) {
+                    log_expected_analytics_fallback(
+                        operation,
+                        reason,
+                        started.elapsed(),
+                    );
+                } else {
+                    warn!(
+                        "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
+                    );
+                }
                 open_circuit
             }
             None => {
@@ -9783,10 +10010,17 @@ fn has_postgres_error_code(
     false
 }
 
+/// Classifies a failed analytics attempt. `source_saturated` means a local
+/// limit rejected a PostgreSQL read inside the attempt (SQL slots, pool wait,
+/// count queue, fallback capacity or a source statement timeout); analytics
+/// itself did not fail, and a PostgreSQL retry would queue on the same limits.
 fn analytics_failure_reason(
     error: &AppError,
     analytics_conn: Option<&DatabaseConnection>,
 ) -> &'static str {
+    if matches!(error, AppError::ServiceUnavailable { .. }) {
+        return "source_saturated";
+    }
     let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
@@ -9837,6 +10071,20 @@ fn analytics_failure_reason(
     } else {
         "analytics_error"
     }
+}
+
+/// A coverage miss is a routing decision rather than a failed query: the
+/// attachment search guard has logged why, and PostgreSQL serves the request.
+fn is_expected_analytics_fallback(reason: &str) -> bool {
+    reason == "attachment_history_incomplete"
+}
+
+fn log_expected_analytics_fallback(
+    operation: &str,
+    reason: &str,
+    elapsed: core::time::Duration,
+) {
+    info!(target: "analytics_route", "request_id={} operation={operation:?} route=analytics outcome=fallback reason={reason} elapsed_ms={}", crate::read_query::request_id(), elapsed.as_millis());
 }
 
 fn analytics_pool_is_at_capacity(analytics_conn: &DatabaseConnection) -> bool {
@@ -11691,6 +11939,8 @@ async fn collect_group_names(
             signal_group::Column::AiTranscriptAnalysisEnabled,
             signal_group::Column::ColorKey,
             signal_group::Column::FetchNewMessages,
+            signal_group::Column::IsSigintUnitMandatory,
+            signal_group::Column::IsDeviceMandatory,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
         .into_tuple::<(
@@ -11703,6 +11953,8 @@ async fn collect_group_names(
             Option<bool>,
             Option<String>,
             Option<bool>,
+            Option<bool>,
+            Option<bool>,
         )>()
         .all(txn)
         .await
@@ -11710,7 +11962,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -11739,6 +11991,8 @@ async fn collect_group_names(
         ai_transcript_analysis_enabled,
         color_key,
         fetch_new_messages,
+        is_sigint_unit_mandatory,
+        is_device_mandatory,
     ) in signal_groups
     {
         if let Some(name) = name {
@@ -11757,6 +12011,9 @@ async fn collect_group_names(
                 ai_transcript_analysis_enabled: ai_transcript_analysis_enabled
                     .unwrap_or(false),
                 fetch_new_messages: fetch_new_messages.unwrap_or(true),
+                is_sigint_unit_mandatory: is_sigint_unit_mandatory
+                    .unwrap_or(false),
+                is_device_mandatory: is_device_mandatory.unwrap_or(false),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -11797,6 +12054,8 @@ async fn collect_group_names(
             is_aviation_group: false,
             ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
+            is_sigint_unit_mandatory: false,
+            is_device_mandatory: false,
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,

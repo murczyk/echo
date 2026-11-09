@@ -2878,7 +2878,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202610291538"
+version = "0.1.1-rc.202611090807"
 
 [[package]]
 name = "echo-gpu-client"
@@ -2918,8 +2918,8 @@ version = "1.0.1"
 
 [[package]]
 name = "echo-im"
-version = "0.1.1-rc.202610230646"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=17cbc64163d227cbc4c3da327e6c0890523293fb#17cbc64163d227cbc4c3da327e6c0890523293fb"
+version = "0.1.1-rc.202610230737"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ce0222279ef36d09b3d24d35db16e6639908f58e#ce0222279ef36d09b3d24d35db16e6639908f58e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2946,7 +2946,7 @@ dependencies = [
 [[package]]
 name = "echo-im-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=17cbc64163d227cbc4c3da327e6c0890523293fb#17cbc64163d227cbc4c3da327e6c0890523293fb"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ce0222279ef36d09b3d24d35db16e6639908f58e#ce0222279ef36d09b3d24d35db16e6639908f58e"
 dependencies = [
  "async-std",
  "clap",
@@ -2957,17 +2957,17 @@ dependencies = [
 
 [[package]]
 name = "echo-im-signal"
-version = "0.1.1-rc.202610230646"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=17cbc64163d227cbc4c3da327e6c0890523293fb#17cbc64163d227cbc4c3da327e6c0890523293fb"
+version = "0.1.1-rc.202610230737"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ce0222279ef36d09b3d24d35db16e6639908f58e#ce0222279ef36d09b3d24d35db16e6639908f58e"
 
 [[package]]
 name = "echo-im-whatsapp"
-version = "0.1.1-rc.202610230646"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=17cbc64163d227cbc4c3da327e6c0890523293fb#17cbc64163d227cbc4c3da327e6c0890523293fb"
+version = "0.1.1-rc.202610230737"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ce0222279ef36d09b3d24d35db16e6639908f58e#ce0222279ef36d09b3d24d35db16e6639908f58e"
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202610291538"
+version = "0.1.1-rc.202611090807"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "echo-messengers"
-version = "0.1.1-rc.202610291538"
+version = "0.1.1-rc.202611090807"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3765,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202610291538"
+version = "0.1.1-rc.202611090807"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4130,6 +4130,7 @@ dependencies = [
  "http 1.4.0",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa 1.0.18",
  "pin-project-lite",
  "pin-utils",
@@ -4438,12 +4439,23 @@ dependencies = [
  "byteorder-lite",
  "color_quant",
  "gif",
+ "image-webp",
  "moxcms",
  "num-traits",
  "png",
  "tiff",
  "zune-core",
  "zune-jpeg",
+]
+
+[[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
 ]
 
 [[package]]
@@ -9334,6 +9346,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bytes",
+ "h2 0.4.15",
  "http 1.4.0",
  "http-body",
  "http-body-util",
@@ -9343,6 +9356,7 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "prost",
+ "socket2 0.5.10",
  "tokio",
  "tokio-stream",
  "tower",
@@ -9961,7 +9975,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202610291538"
+version = "0.1.1-rc.202611090807"
 dependencies = [
  "actix-files",
  "actix-identity",
@@ -9997,6 +10011,7 @@ dependencies = [
  "echo-install-utils",
  "echo-migration",
  "elm_rs",
+ "encoding_rs",
  "env_logger 0.11.9",
  "flate2",
  "fs2",
@@ -10009,6 +10024,7 @@ dependencies = [
  "governor",
  "hmac 0.12.1",
  "iggy",
+ "image 0.25.10",
  "indicatif 0.18.4",
  "infer",
  "itertools 0.14.0",
@@ -10029,6 +10045,7 @@ dependencies = [
  "openssl",
  "opentelemetry",
  "opentelemetry-otlp",
+ "opentelemetry-proto",
  "opentelemetry_sdk",
  "parquet",
  "pest",
@@ -10072,6 +10089,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "toml",
+ "tonic",
  "totp-rs",
  "tracing-subscriber",
  "unicode-normalization",

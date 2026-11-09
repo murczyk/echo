@@ -31,7 +31,8 @@ pub(super) fn start(
     let executable = std::ffi::OsStr::from_bytes(
         executable.strip_suffix(b" (deleted)").unwrap_or(executable),
     );
-    let mut child = Command::new("python3")
+    let mut command = Command::new("python3");
+    command
         .process_group(0)
         .current_dir(&options.repo)
         .arg(script)
@@ -40,15 +41,15 @@ pub(super) fn start(
         .arg(&options.repo)
         .arg("--executable")
         .arg(executable)
-        .arg("--agent-host")
-        .arg(&options.agent_host)
         .arg("--mode")
         .arg(mode.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .c(h!())?;
+        .stderr(Stdio::piped());
+    if let Some(agent_host) = &options.agent_host {
+        command.arg("--agent-host").arg(agent_host);
+    }
+    let mut child = command.spawn().c(h!())?;
     child
         .stdin
         .take()

@@ -1,5 +1,5 @@
 import { emitUnauthorizedEvent } from '../../auth-redirect';
-import { getJson, postBytes, postJson, postVoid } from './client';
+import { getJson, postBytes, postFormData, postJson, postVoid } from './client';
 import type {
   AiAgentActivityPresentation,
   AiAgentReasoningPreset,
@@ -8,6 +8,7 @@ import type {
   AiAgentAdminRequestItem,
   AiAgentAdminRequestListReq,
   AiAgentAdminRequestListRsp,
+  AiAgentAdminRequestMetadata,
   AiAgentAdminSettingsItem,
   AiAgentAdminSettingsUpdateReq,
   AiAgentAdminUserItem,
@@ -23,6 +24,14 @@ import type {
   AiAgentConversationSummary,
   AiAgentConversationUpdateReq,
   AiAgentDispatcherItem,
+  AiAgentDocumentArtifact,
+  AiAgentDocumentHeadReq,
+  AiAgentDocumentListReq,
+  AiAgentDocumentListRsp,
+  AiAgentDocumentSummary,
+  AiAgentDocumentTarget,
+  AiAgentDocumentWorkspaceReq,
+  AiAgentDocumentWorkspaceRsp,
   AiAgentDispatcherUpdateReq,
   AiAgentEchoProxyItem,
   AiAgentEchoProxyListRsp,
@@ -49,6 +58,10 @@ import type {
   AiAgentRequestCreateRsp,
   AiAgentRequestEventItem,
   AiAgentRequestIdReq,
+  AiAgentUploadIdReq,
+  AiAgentUploadItem,
+  AiAgentUploadListReq,
+  AiAgentUploadListRsp,
 } from '../../../../Bindings';
 
 export type AiAgentRequestState = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -108,6 +121,7 @@ export type AiAgentEventType =
   | 'message_citations'
   | 'file_citations'
   | 'map_artifact'
+  | 'document_artifact'
   | 'completion_metadata'
   | 'completion'
   | 'cancellation'
@@ -128,6 +142,7 @@ export type AiAgentEvent = {
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   map?: AiAgentMapSummary | null;
+  document?: AiAgentDocumentArtifact | null;
   sourceTitle: string | null;
   sourceUrl: string | null;
   method: string | null;
@@ -187,6 +202,8 @@ export type AiAgentAuditRequest = {
 
 export type AiAgentAuditRequestDetail = AiAgentAuditRequest & {
   conversation: AiAgentConversationDetail;
+  events: AiAgentEvent[];
+  metadata: AiAgentAdminRequestMetadata;
 };
 
 export type AiAgentEchoProxy = {
@@ -254,6 +271,27 @@ function mapSummary(value: unknown, requestId: string): AiAgentMapSummary | null
     totalCount: document.totalCount,
     validCount: document.validCount,
     invalidCount: document.invalidCount,
+  };
+}
+
+function documentArtifact(value: unknown): AiAgentDocumentArtifact | null {
+  if (!value || typeof value !== 'object') return null;
+  const document = value as AiAgentDocumentArtifact;
+  if (
+    typeof document.documentId !== 'string' ||
+    typeof document.title !== 'string' ||
+    typeof document.fileName !== 'string' ||
+    !Number.isSafeInteger(document.revision) ||
+    document.revision < 1 ||
+    !Number.isSafeInteger(document.sizeBytes)
+  )
+    return null;
+  return {
+    documentId: document.documentId,
+    revision: document.revision,
+    title: document.title,
+    fileName: document.fileName,
+    sizeBytes: document.sizeBytes,
   };
 }
 
@@ -382,7 +420,9 @@ function normalizeMessage(value: AiAgentMessageItem): AiAgentMessage {
     requestState: requestState(value.requestState),
     role: value.role,
     maps: value.maps ?? [],
+    documents: value.documents ?? [],
     fileCitations: value.fileCitations ?? [],
+    attachments: value.attachments ?? [],
   };
 }
 
@@ -423,6 +463,7 @@ export function normalizeAiAgentEvent(
     activityPresentation: value.activityPresentation ?? null,
     activityOnly: value.activityOnly ?? false,
     map: value.eventType === 'map_artifact' ? mapSummary(payload.document, requestId) : null,
+    document: value.eventType === 'document_artifact' ? documentArtifact(payload.document) : null,
     fileCitations:
       value.eventType === 'file_citations' && Array.isArray(payload.citations)
         ? payload.citations.filter(
@@ -629,6 +670,8 @@ export async function submitAiAgentRequest(input: {
   message: string;
   reasoningPreset?: AiAgentReasoningPreset | null;
   mapEdit?: AiAgentMapEditTarget | null;
+  documentTarget?: AiAgentDocumentTarget | null;
+  uploadIds?: string[];
 }): Promise<AiAgentRequestCreated> {
   const req: AiAgentRequestCreateReq = {
     conversationId: input.conversationId,
@@ -636,6 +679,8 @@ export async function submitAiAgentRequest(input: {
     prompt: input.message,
     reasoningPreset: input.reasoningPreset ?? null,
     mapEdit: input.mapEdit ?? null,
+    documentTarget: input.documentTarget ?? null,
+    uploadIds: input.uploadIds ?? [],
   };
   const response = await postJson<AiAgentRequestCreateRsp>('/api/ai-agent/requests/create', req);
   return {
@@ -643,6 +688,76 @@ export async function submitAiAgentRequest(input: {
     conversationId: response.conversationId,
     state: requestState(response.state),
   };
+}
+
+export type AiAgentUpload = AiAgentUploadItem;
+
+export async function uploadAiAgentFile(
+  file: File,
+  conversationId: string | null,
+  signal?: AbortSignal,
+): Promise<AiAgentUpload> {
+  const body = new FormData();
+  if (conversationId) body.append('conversationId', conversationId);
+  body.append('file', file, file.name);
+  return postFormData<AiAgentUpload>('/api/ai-agent/uploads/create', body, { signal });
+}
+
+export async function listAiAgentUploads(ids: string[]): Promise<AiAgentUpload[]> {
+  if (ids.length === 0) return [];
+  const req: AiAgentUploadListReq = { conversationId: null, ids };
+  return (await postJson<AiAgentUploadListRsp>('/api/ai-agent/uploads/list', req)).uploads;
+}
+
+export async function deleteAiAgentUpload(id: string): Promise<void> {
+  const req: AiAgentUploadIdReq = { id };
+  await postVoid('/api/ai-agent/uploads/delete', req);
+}
+
+export function aiAgentUploadUrl(id: string): string {
+  return `/api/ai-agent/uploads/${encodeURIComponent(id)}/original`;
+}
+
+/** Uploads already sent in a conversation, oldest first. */
+export async function listAiAgentConversationUploads(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<AiAgentUpload[]> {
+  const req: AiAgentUploadListReq = { conversationId, ids: [] };
+  const uploads = (
+    await postJson<AiAgentUploadListRsp>('/api/ai-agent/uploads/list', req, { signal })
+  ).uploads;
+  return uploads.filter((upload) => upload.requestId !== null);
+}
+
+export type AiAgentDocument = AiAgentDocumentSummary;
+export type AiAgentDocumentWorkspace = AiAgentDocumentWorkspaceRsp;
+
+export async function listAiAgentDocuments(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<AiAgentDocument[]> {
+  const req: AiAgentDocumentListReq = { conversationId };
+  return (await postJson<AiAgentDocumentListRsp>('/api/ai-agent/documents/list', req, { signal }))
+    .documents;
+}
+
+export async function getAiAgentDocumentWorkspace(
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<AiAgentDocumentWorkspace> {
+  const req: AiAgentDocumentWorkspaceReq = { documentId };
+  return postJson<AiAgentDocumentWorkspace>('/api/ai-agent/documents/workspace', req, { signal });
+}
+
+export async function setAiAgentDocumentHead(
+  req: AiAgentDocumentHeadReq,
+): Promise<AiAgentDocumentWorkspace> {
+  return postJson<AiAgentDocumentWorkspace>('/api/ai-agent/documents/head', req);
+}
+
+export function aiAgentDocumentFileUrl(documentId: string, revision: number): string {
+  return `/api/ai-agent/documents/${encodeURIComponent(documentId)}/revisions/${revision}/file`;
 }
 
 export async function cancelAiAgentRequest(id: string): Promise<AiAgentRequestState> {
@@ -657,9 +772,10 @@ export async function streamAiAgentEvents(input: {
   signal: AbortSignal;
   onEvent: (event: AiAgentEvent) => void;
   inactivityTimeoutMs?: number;
+  basePath?: string;
 }): Promise<void> {
   const url = new URL(
-    `/api/ai-agent/requests/${encodeURIComponent(input.requestId)}/events`,
+    `${input.basePath ?? '/api/ai-agent'}/requests/${encodeURIComponent(input.requestId)}/events`,
     window.location.origin,
   );
   if (input.afterSequence > 0) url.searchParams.set('after', String(input.afterSequence));
@@ -914,7 +1030,15 @@ export async function getAiAgentAuditRequest(id: string): Promise<AiAgentAuditRe
       ...normalizeConversation(response.conversation),
       messages: response.conversation.messages.map(normalizeMessage),
     },
+    events: response.events.map((event) => normalizeAiAgentEvent(event, response.request.id)),
+    metadata: response.metadata,
   };
+}
+
+export function streamAiAgentAdminEvents(
+  input: Omit<Parameters<typeof streamAiAgentEvents>[0], 'basePath'>,
+): Promise<void> {
+  return streamAiAgentEvents({ ...input, basePath: '/api/admin/ai-agent' });
 }
 
 export async function retryAiAgentSecurityReview(id: string): Promise<AiAgentAuditRequestDetail> {

@@ -42,6 +42,10 @@ pub struct SystemSettingsCurrentRsp {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: bool,
+    #[serde(default = "default_duty_selected_groups_enabled")]
+    pub duty_selected_groups_enabled: bool,
+    #[serde(default = "default_important_notify_all_enabled")]
+    pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
@@ -84,6 +88,9 @@ pub struct SystemSettingsItem {
     pub do_not_store_duplicate_echoim_failures: bool,
     pub goi_association_message_uid_worker_enabled: bool,
     pub report_chunking_hours: i64,
+    pub report_global_concurrency: i64,
+    pub report_kind_concurrency: i64,
+    pub report_etalonka_concurrency: i64,
     pub limit_big_reports: bool,
     pub enable_audio_transcription: bool,
     pub show_classic_duty: bool,
@@ -96,6 +103,10 @@ pub struct SystemSettingsItem {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: bool,
+    #[serde(default = "default_duty_selected_groups_enabled")]
+    pub duty_selected_groups_enabled: bool,
+    #[serde(default = "default_important_notify_all_enabled")]
+    pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
@@ -112,6 +123,10 @@ pub struct SystemSettingsItem {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+    #[serde(default)]
+    pub signoz_metrics_enabled: bool,
+    #[serde(default)]
+    pub signoz_metrics_endpoint: Option<String>,
 }
 
 #[derive(
@@ -161,6 +176,12 @@ pub struct CreateSystemSettingsReq {
     #[serde(default = "default_report_chunking_hours")]
     pub report_chunking_hours: i64,
     #[serde(default)]
+    pub report_global_concurrency: Option<i64>,
+    #[serde(default)]
+    pub report_kind_concurrency: Option<i64>,
+    #[serde(default)]
+    pub report_etalonka_concurrency: Option<i64>,
+    #[serde(default)]
     pub limit_big_reports: bool,
     #[serde(default)]
     pub enable_audio_transcription: bool,
@@ -180,6 +201,10 @@ pub struct CreateSystemSettingsReq {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: Option<bool>,
+    #[serde(default)]
+    pub duty_selected_groups_enabled: Option<bool>,
+    #[serde(default)]
+    pub important_notify_all_enabled: Option<bool>,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default)]
@@ -196,6 +221,11 @@ pub struct CreateSystemSettingsReq {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+    /// Omitted by older clients; the saved value is then kept.
+    #[serde(default)]
+    pub signoz_metrics_enabled: Option<bool>,
+    #[serde(default)]
+    pub signoz_metrics_endpoint: Option<String>,
 }
 
 fn default_api_rate_limit_replenish_interval_ms() -> i64 {
@@ -208,6 +238,14 @@ fn default_api_rate_limit_burst_size() -> i64 {
 
 fn default_analysis_aor_filter_enabled() -> bool {
     crate::config::ANALYSIS_AOR_FILTER_ENABLED_DEFAULT
+}
+
+fn default_duty_selected_groups_enabled() -> bool {
+    crate::config::DUTY_SELECTED_GROUPS_ENABLED_DEFAULT
+}
+
+fn default_important_notify_all_enabled() -> bool {
+    crate::config::IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT
 }
 
 fn default_true() -> bool {

@@ -287,3 +287,213 @@ Verify the running application revision, service health, release match and
 authenticated agent connection. Keep prior containers and rollout journals;
 verify other namespace selections remain unchanged. See
 [Flash completion diagnostics](FLASH_RESEARCH.md#completion-diagnostics).
+
+## GLM Flash checkpoint and pagination recovery (release 2026.10.30.2)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.10.30.2`,
+previewing with `--dry-run` first. This release requires no migration or provider
+change. It preserves other namespace selections and accepts prior runners.
+
+Verify matching application/container releases and authenticated connection
+checks. Exercise a Flash request with more than four retrievals, including a
+batch that crosses the fourth call: every admitted retrieval must complete, the
+next research turn must save its private state, and retrieval must then resume.
+Public activity must contain no private state or checkpoint prerequisite errors.
+Also exercise an inbox continuation without a saved pagination coverage reason:
+it must wait for a private checkpoint, then either resume with a justified
+coverage need or switch to focused searches. Verify that a real HTTP failure
+still produces a public error with `errorReason` and an allowlisted
+`AI agent tool` diagnostic in the worker journal. Private diagnostic frames must
+never appear in chat events or disclose source content or arguments. The one
+exception is a failed script tool: its diagnostic carries the exception class and
+the last traceback line, capped and scrubbed, and only the worker journal sees it.
+Retain the prior containers and rollout journal for the control panel's recovery
+procedure; recovery beyond the approved operation requires separate approval.
+
+## Bounded research for non-OpenAI engines (release 2026.10.30.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.10.30.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+The release preserves other namespace selections and accepts prior runners. With
+[reasoning presets](../docs/ai/reasoning-presets.md) enabled, GLM-5.3 and other
+non-OpenAI engines (not Flash alone) now use the
+[bounded research workflow](FLASH_RESEARCH.md) with a doubled synthesis reserve;
+raw source excerpts are no longer published as an answer by any engine.
+
+Roll out the application and the harness together: queued requests keep the
+policy snapshotted when they were queued and still validate. Verify the matching
+application/container releases and authenticated connection checks, then run a
+GLM-5.3 Balanced request that pages one search deeply: after three pages the next
+page must be refused until a coverage reason is saved, and a request that reaches
+its research limit must end with a cited answer or the short notice, never
+`Встиг отримати такі уривки джерел`. Check the request's `completion_diagnostic`
+log lines. Retain prior containers and the rollout journal; recovery beyond the
+approved operation requires separate approval.
+
+## Conversation uploads (release 2026.11.01.1)
+
+Apply the `m20261101_151245_ai_agent_uploads` migration with the matching
+application, then upgrade the approved installation's namespace with
+`ai-control-panel upgrade --host <host> --release 2026.11.01.1`, previewing with
+`--dry-run` first. The runner accepts the new `uploads`, `turnImages` and
+`visionInput` payload fields and registers the `upload_*` tools. Echo requires
+the exact harness release, so chat requests report that the agent is updating
+until the namespace matches.
+
+Uploads need S3 and the native document extractor already used for message
+attachments. Vision stays off until an admin enables "Модель приймає зображення"
+in an engine's runtime profile; enable it only for engines that accept OpenAI
+image parts. Verify the rollout this way:
+- A DOCX question is answered from inline text.
+- A follow-up question uses `upload_read`.
+- A photographed page is answered from OCR on a text-only engine and from the
+  image on a vision engine.
+
+See [the upload pipeline](../wdintel-rs/src/ai_agent/uploads/README.md).
+
+## Frequency normalization and DMR color codes (release 2026.11.03.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.03.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Releases `2026.11.03.1` and `2026.11.03.2` belong to the #3985 branch and are
+published on the shared host, so both stay in the compatible runner lists.
+The inbox tool accepts `selectedFrequencies`; the runner normalizes them to
+Echo's stored four-decimal form (`163.935` → `163.9350`) and the system prompt
+lists every frequency named in the conversation with its stored form. Retrieved
+messages carry their parsed DMR metadata (`dmr`: color code, call group, sender),
+and a query such as `144.8450 Мишаня Якудза, СС3` is read as color code 3, not
+as a callsign. Verify that a request naming `163.935` reads messages stored as
+`163.9350`, and that a `СС3` request reports color codes from message metadata.
+
+## Conversation documents (release 2026.11.03.4)
+
+Apply the `m20261103_120000_ai_agent_documents` migration with the matching
+application, then upgrade the approved installation's namespace with
+`ai-control-panel upgrade --host <host> --release 2026.11.03.4`, previewing with
+`--dry-run` first. The release also contains the frequency normalization of
+`2026.11.03.3`; `2026.11.03.1` and `2026.11.03.2` were this work's staging
+builds. The release template adds the Debian `python3-docx`,
+`python3-lxml`, `python3-matplotlib`, `python3-openpyxl` and `fonts-dejavu-core`
+packages and the `echodoc` library; the build warns when python-docx cannot be
+imported. The runner accepts the new `documents` and `documentTarget` payload
+fields and registers the `echo_document_*` tools only when the library and
+namespace isolation are available. Echo requires the exact harness release, so
+chat requests report that the agent is updating until the namespace matches.
+
+Verify the rollout this way:
+- Attach a .docx report and ask for the same report with new data: the answer
+  links a new document whose preview keeps the template's headers and tables.
+- Ask for a change in a follow-up: the document gets a new version and the
+  previous one stays in its version list.
+- A document request on the previous runner release is rejected as updating.
+
+See [conversation documents](DOCUMENTS.md).
+
+## Template reports and 4-hour Deep (release 2026.11.03.4)
+
+The same release and upgrade as conversation documents above. The runner accepts the new budget tiers: Deep runs up to
+4 hours (`maxRuntimeSeconds` 14400) with larger tool, API, provider-call and
+event limits, and Fast or Balanced requests that build a document get 30 minutes
+(`documentTask: true`). Deep requests queued before the deploy keep their
+30-minute policy.
+
+A Deep run holds its user's running slot and one of the six agent slots for its
+duration. A backend restart or a lost worker lease fails running requests, so
+deploys interrupt long Deep runs; the control panel's upgrade waits until the
+namespace has no queued or running request.
+
+Verify the rollout this way:
+- Attach a .docx report and ask, in Balanced, for the same report from Echo data
+  for a period: the policy shows `maxRuntimeSeconds` 1800 and `documentTask`
+  true; the agent outlines the template, searches Echo for the period without
+  the template's own callsigns, saves the filled document and links it.
+- A Deep request's policy shows `maxRuntimeSeconds` 14400.
+
+## Deep continuation of incomplete answers (release 2026.11.05.1)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.05.1`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded, and the upgrade waits for the namespace to go
+idle. Release `2026.11.03.4` stays in the compatible runner lists. Roll back the
+application and harness as a pair.
+
+The runner now emits `completion_metadata` for every answer that shows the
+incomplete-coverage notice, with reason `incomplete_research` when no budget
+limit was reached. Such answers gain the coverage footer, and admins see
+`Неповне: incomplete_research`. Verify that a Balanced answer showing the notice
+offers **Продовжити глибоким аналізом** both right after it finishes and after
+reload, that clicking it queues a Deep request in the same conversation, and that
+the composer stays on the remembered mode.
+
+## WGS-84 and MGRS map points (release 2026.11.05.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.05.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Releases `2026.11.05.2` and `2026.11.05.1` stay
+in the compatible runner lists. Roll back the application and harness as a pair.
+
+Verify that pasting `name,latitude,longitude` rows and MGRS references each
+produces a map with every point in place, without format probing. Tool failures
+log `AI agent tool failed` with the Rust level: `error!` for `tool_error`,
+`network_error`, HTTP 5xx and `map_not_published`, `warn!` for
+`invalid_arguments` and HTTP 4xx. The SigNoz severity field stays empty for
+`wdintel-rs`, so filter on `body CONTAINS 'AI agent tool failed'`.
+
+## Published bytes realigned (release 2026.11.07.1)
+
+Release `2026.11.06.4` was published to the agent hosts before two commits changed the
+harness under the same ID, so the merged code and the published bundle differ and
+the panel refuses it as an ID collision. This release carries the merged code,
+including those two group-scope fixes, under a new ID.
+
+Deploy the matching application, then upgrade each namespace with
+`ai-control-panel upgrade --host <host> --release 2026.11.07.1`, previewing with
+`--dry-run` first. No migration or provider change is needed. `2026.11.06.4` stays in the
+compatible runner lists. Roll back the application and harness as a pair.
+
+## Group scope and failed first calls (release 2026.11.06.4)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.4`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Release `2026.11.06.3` stays in the compatible runner
+lists. Roll back the application and harness as a pair.
+
+The application change also reaches people: a selection with no accessible group
+now returns nothing instead of every accessible group. A saved filter or duty
+column whose groups were all revoked or archived goes empty, and clearing the
+filter restores it. Before deploying, count saved filters that name archived or
+deleted groups; personal browser selections cannot be counted that way.
+
+Verify on GLM-5.3 that a request naming a group shows `джерела «<group>»` in its
+activity and cites only that group, and that an unknown group is reported as not
+found. Research failures now log `failureKind` and `httpStatus` in the
+`AI agent completion` diagnostic, and a retry shows as `outcome: continued`.
+
+## Deep continuation that finishes the work (release 2026.11.06.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Releases `2026.11.06.2`, `2026.11.06.1` and `2026.11.05.3` stay in the
+compatible runner lists. Use `2026.11.06.3` everywhere: the two before it reached only
+echo-staging. `2026.11.06.1` could say that tools did not run, and `2026.11.06.2` could
+finish Deep without searching. Roll back the application and harness as a pair.
+
+Balanced on non-OpenAI engines now runs up to 10 minutes and holds the user's
+running slot that long; the composer shows the new limit. Verify on GLM-5.3 that a
+short question about a callsign with no matches says that nothing was found, that a
+map request reports its map, and that Deep shows no coverage notice or footer. Synthesis stays bounded
+by each engine's `max_output_tokens` profile, so a host with 8,192 gains nothing
+from the higher limit. `AI agent tool` log lines now name `update_research` and
+`report_progress`, and validation failures add `fields`; use them to confirm which
+constraint models actually break.

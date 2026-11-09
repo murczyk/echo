@@ -197,7 +197,9 @@ export function PdfDocumentPreview({
         </Box>
       ) : null}
       {error != null ? (
-        <Box sx={{ p: 3, textAlign: 'center' }}>
+        <Box
+          sx={{ p: 3, pt: 'var(--attachment-preview-content-inset, 24px)', textAlign: 'center' }}
+        >
           <Typography variant="h6" sx={{ mb: 1 }}>
             Помилка перегляду
           </Typography>
@@ -232,7 +234,14 @@ export function PdfDocumentPreview({
             spacing={{ xs: 2.5, md: 4 }}
             sx={{
               px: { xs: 1, sm: 2.5, md: 3 },
-              py: { xs: 2.5, md: 3 },
+              py: {
+                xs: 'var(--attachment-preview-content-inset, 20px)',
+                md: 'var(--attachment-preview-content-inset, 24px)',
+              },
+              pb: {
+                xs: 'var(--attachment-preview-content-bottom-inset, 20px)',
+                md: 'var(--attachment-preview-content-bottom-inset, 24px)',
+              },
               alignItems: isOverflowing ? 'flex-start' : 'center',
               minWidth: '100%',
               width: 'max-content',

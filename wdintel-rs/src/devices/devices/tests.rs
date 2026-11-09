@@ -19,7 +19,8 @@ use crate::types::{AppError, BTreeMap};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
-    DbBackend, EntityTrait, QueryFilter, QueryOrder, QueryTrait,
+    DbBackend, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
+    QueryTrait,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -27,6 +28,9 @@ use uuid::Uuid;
 fn update_command(device_id: Uuid) -> UpdateDeviceCommand {
     UpdateDeviceCommand {
         device_id,
+        rating: DevicePatchField::Missing,
+        tags: DevicePatchField::Missing,
+        description: DevicePatchField::Missing,
         external_url: DevicePatchField::Missing,
         custom_fields: DevicePatchField::Missing,
         name: DevicePatchField::Missing,
@@ -46,6 +50,8 @@ fn list_command() -> ListDevicesCommand {
         archived_scope: DeviceArchivedScope::ActiveOnly,
         aor_ids: Vec::new(),
         unit_ids: Vec::new(),
+        created_by: Vec::new(),
+        tags: Vec::new(),
         limit: None,
         offset: None,
         sort_by: Vec::new(),
@@ -1100,7 +1106,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
         &reader.login,
         reader.organism_id.unwrap(),
         Some("AOR device"),
-        json!({}),
+        json!({"serial_no": "SN-Zeta_42"}),
         false,
         None,
     );
@@ -1133,6 +1139,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     );
     uuid_match.created_at = Set(now - chrono::Duration::hours(2));
     uuid_match.updated_at = Set(now - chrono::Duration::hours(2));
+    uuid_match.description = Set(Some("Roof Antenna_7".into()));
     let uuid_match = uuid_match.insert(&env.dbx).await.unwrap();
 
     let mut archived = device_active_model(
@@ -1166,10 +1173,18 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     assert_eq!(result.status_counts.archived, 1);
     assert_eq!(result.total, 3);
 
-    for (filter_text, expected_id) in [
-        ("%".to_string(), named.id),
-        ("Needle%Alpha".to_string(), named.id),
-        (uuid_match.id.to_string(), uuid_match.id),
+    for (filter_text, expected_ids) in [
+        ("%".to_string(), vec![named.id]),
+        ("Needle%Alpha".to_string(), vec![named.id]),
+        (uuid_match.id.to_string(), vec![uuid_match.id]),
+        // Custom field values match case-insensitively and literally.
+        ("zeta_42".to_string(), vec![aor_device.id]),
+        ("zeta%42".to_string(), vec![]),
+        // Descriptions match case-insensitively and literally.
+        ("antenna_7".to_string(), vec![uuid_match.id]),
+        ("antenna%7".to_string(), vec![]),
+        // Custom field keys are not searchable.
+        ("serial_no".to_string(), vec![]),
     ] {
         let mut command = list_command();
         command.filter_text = Some(filter_text);
@@ -1180,7 +1195,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
                 .iter()
                 .map(|device| device.id)
                 .collect::<Vec<_>>(),
-            vec![expected_id],
+            expected_ids,
         );
     }
 
@@ -1379,6 +1394,416 @@ mod validation_tests {
     }
 }
 
+mod metadata_tests {
+    use super::*;
+    use sea_orm::{ConnectionTrait, Statement};
+
+    // #3926: device metadata writes retain role, range and archive safeguards.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn metadata_roles_and_archive_are_enforced() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let actor = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+        let viewer =
+            login_with_roles(&actor, &[crate::config::ROLE_CYBER_VIEWER]);
+        let state = create(
+            &env.dbx,
+            &actor,
+            CreateDeviceCommand {
+                name: Some("Metadata device".into()),
+                external_url: None,
+                custom_fields: None,
+            },
+        )
+        .await
+        .unwrap();
+        let mut patch = update_command(state.id);
+        patch.rating = DevicePatchField::Value(5);
+        patch.description =
+            DevicePatchField::Value(Some("  Device description  ".into()));
+        let state = update(&env.dbx, &viewer, patch).await.unwrap();
+        assert_eq!(state.rating, 5);
+        assert_eq!(state.description.as_deref(), Some("Device description"));
+        for rating in [-1, 6] {
+            let mut patch = update_command(state.id);
+            patch.rating = DevicePatchField::Value(rating);
+            assert!(update(&env.dbx, &viewer, patch).await.is_err());
+        }
+        let mut patch = update_command(state.id);
+        patch.tags = DevicePatchField::Value(vec![
+            " Active ".into(),
+            "active".into(),
+            "Important".into(),
+        ]);
+        patch.rating = DevicePatchField::Value(0);
+        assert!(update(&env.dbx, &viewer, patch).await.is_err());
+        let mut patch = update_command(state.id);
+        patch.tags = DevicePatchField::Value(vec![
+            " Active ".into(),
+            "active".into(),
+            "Important".into(),
+        ]);
+        let state = update(&env.dbx, &actor, patch).await.unwrap();
+        assert_eq!(state.rating, 5);
+        assert_eq!(state.tags, vec!["Active", "Important"]);
+        let foreign_organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut foreign_device = device_active_model(
+            &actor.login,
+            foreign_organism.id,
+            Some("Foreign device"),
+            json!({}),
+            false,
+            None,
+        );
+        foreign_device.tags = Set(json!(["Secret"]));
+        let foreign_device = foreign_device.insert(&env.dbx).await.unwrap();
+        for archived in [true, false] {
+            assert!(super::super::query::set_archived(
+                &env.dbx,
+                &actor,
+                foreign_device.id,
+                archived
+            )
+            .await
+            .is_err());
+        }
+        assert_eq!(
+            super::super::query::tag_options(&env.dbx, &actor)
+                .await
+                .unwrap(),
+            state.tags
+        );
+        assert!(super::super::query::tag_options(&env.dbx, &viewer)
+            .await
+            .is_err());
+        assert!(super::super::query::set_archived(
+            &env.dbx, &viewer, state.id, true
+        )
+        .await
+        .is_err());
+        let archived =
+            super::super::query::set_archived(&env.dbx, &actor, state.id, true)
+                .await
+                .unwrap();
+        assert!(archived.archived);
+        assert!(archived.archived_at.is_some());
+        let again =
+            super::super::query::set_archived(&env.dbx, &actor, state.id, true)
+                .await
+                .unwrap();
+        assert_eq!(again.archived_at, archived.archived_at);
+        let mut patch = update_command(state.id);
+        patch.rating = DevicePatchField::Value(0);
+        assert!(update(&env.dbx, &actor, patch).await.is_err());
+        assert_eq!(
+            list(&env.dbx, &actor, list_command())
+                .await
+                .unwrap()
+                .status_counts
+                .archived,
+            1
+        );
+        assert!(super::super::query::set_archived(
+            &env.dbx, &viewer, state.id, false
+        )
+        .await
+        .is_err());
+        let restored = super::super::query::set_archived(
+            &env.dbx, &actor, state.id, false,
+        )
+        .await
+        .unwrap();
+        assert!(!restored.archived);
+        assert!(restored.archived_at.is_none());
+        assert_eq!(restored.rating, state.rating);
+        assert_eq!(restored.tags, state.tags);
+        let again = super::super::query::set_archived(
+            &env.dbx, &actor, state.id, false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(again.updated_at, restored.updated_at);
+        let mut patch = update_command(state.id);
+        patch.rating = DevicePatchField::Value(0);
+        assert!(update(&env.dbx, &actor, patch).await.is_ok());
+    }
+
+    // #3926: summary-based ordering must select the right page across both databases.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn metadata_and_registry_sorting_precede_pagination() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let file_db = env.file_registry_db.as_ref().unwrap().connection();
+        let actor = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+        let mut ids = Vec::new();
+        for (name, rating, bytes, day) in [
+            ("Alpha", 1, 100_i64, "2026-10-01"),
+            ("Zulu", 5, 900_i64, "2026-10-02"),
+        ] {
+            let creator = if ids.is_empty() {
+                actor.clone()
+            } else {
+                insert_login(&env.dbx, &[ROLE_CYBER]).await
+            };
+            login::ActiveModel {
+                id: Set(creator.id),
+                display_name: Set(Some(
+                    if ids.is_empty() {
+                        "Zulu author"
+                    } else {
+                        "Alpha author"
+                    }
+                    .into(),
+                )),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+            let state = create(
+                &env.dbx,
+                &creator,
+                CreateDeviceCommand {
+                    name: Some(name.into()),
+                    external_url: None,
+                    custom_fields: None,
+                },
+            )
+            .await
+            .unwrap();
+            let aor = mk_aor(
+                &env.dbx,
+                area_of_responsibility::ActiveModel {
+                    name: Set(name.into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let unit = mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    name: Set(name.into()),
+                    created_by_login_id: Set(actor.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let mut patch = update_command(state.id);
+            patch.rating = DevicePatchField::Value(rating);
+            patch.aor_ids = DevicePatchField::Value(vec![aor.id]);
+            patch.unit_id = DevicePatchField::Value(Some(unit.id));
+            update(&env.dbx, &actor, patch).await.unwrap();
+            file_db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+                r#"insert into device_content_stat(device_id, content_count, content_bytes, first_content_at, last_content_at, updated_at)
+                   values ($1, 1, $2, $3::text::timestamptz, $3::text::timestamptz, now())"#,
+                [state.id.into(), bytes.into(), day.into()],
+            )).await.unwrap();
+            ids.push(state.id);
+        }
+        device::ActiveModel {
+            id: Set(ids[0]),
+            updated_at: Set(Utc::now().naive_utc() + chrono::Duration::days(1)),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let mut command = list_command();
+        command.limit = Some(1);
+        let result = super::super::bl::list_with_stats(
+            &env.dbx,
+            Some(file_db),
+            &actor,
+            command,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.devices[0].id, ids[1]);
+        for (asc, desc) in [
+            (DeviceListSort::AorsAsc, DeviceListSort::AorsDesc),
+            (DeviceListSort::UnitAsc, DeviceListSort::UnitDesc),
+            (DeviceListSort::RatingAsc, DeviceListSort::RatingDesc),
+            (DeviceListSort::CreatedByAsc, DeviceListSort::CreatedByDesc),
+            (
+                DeviceListSort::ContentBytesAsc,
+                DeviceListSort::ContentBytesDesc,
+            ),
+            (
+                DeviceListSort::LastContentAtAsc,
+                DeviceListSort::LastContentAtDesc,
+            ),
+        ] {
+            let ascending = if matches!(asc, DeviceListSort::CreatedByAsc) {
+                [ids[1], ids[0]]
+            } else {
+                [ids[0], ids[1]]
+            };
+            for (sort, expected) in
+                [(asc, ascending), (desc, [ascending[1], ascending[0]])]
+            {
+                for (offset, expected) in expected.into_iter().enumerate() {
+                    let mut command = list_command();
+                    command.sort_by = vec![sort];
+                    command.limit = Some(1);
+                    command.offset = Some(offset as u64);
+                    let result = super::super::bl::list_with_stats(
+                        &env.dbx,
+                        Some(file_db),
+                        &actor,
+                        command,
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(
+                        result.devices[0].id, expected,
+                        "{sort:?} at {offset}"
+                    );
+                }
+            }
+        }
+    }
+    // PR #3949 / #3926: indexed activity pages retain scope, ties and the null tail.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn activity_pages_preserve_visibility_ties_and_devices_without_uploads(
+    ) {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        crate::entities::device_settings::ActiveModel {
+            id: Set(crate::devices::config::DEVICE_SETTINGS_ID),
+            activity_split_files_audio: Set(None),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let file_db = env.file_registry_db.as_ref().unwrap().connection();
+        let actor = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+        let foreign = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let first_id = Uuid::now_v7().as_u128();
+        let ids = (1..=230)
+            .map(|index| Uuid::from_u128(first_id + index))
+            .collect::<Vec<_>>();
+        device::Entity::insert_many(ids.iter().enumerate().map(
+            |(index, id)| device::ActiveModel {
+                id: Set(*id),
+                name: Set(Some(format!("Paged {index:03}"))),
+                created_by: Set(actor.login.clone()),
+                organism_id: Set(if index < 10 {
+                    foreign.id
+                } else {
+                    actor.organism_id.unwrap()
+                }),
+                archived: Set((10..20).contains(&index)),
+                archived_at: Set(
+                    (10..20).contains(&index).then(|| Utc::now().naive_utc()),
+                ),
+                tags: Set(json!(["page-test"])),
+                custom_fields: Set(json!({})),
+                ..Default::default()
+            },
+        ))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        file_db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, r#"
+insert into device_content_stat(device_id, content_count, content_bytes, first_content_at, last_content_at, updated_at)
+select id, 1, 1, at, at, now() from (
+    select id, '2026-10-01'::timestamptz + case when position <= 120 then interval '1 day' else interval '0 days' end as at
+    from unnest($1::uuid[]) with ordinality as d(id, position)
+) stats
+"#, [ids[..220].to_vec().into()])).await.unwrap();
+        for enabled in [None, Some(true)] {
+            crate::entities::device_settings::ActiveModel {
+                id: Set(crate::devices::config::DEVICE_SETTINGS_ID),
+                activity_split_files_audio: Set(enabled),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+            let mut loaded = Vec::new();
+            for offset in [0, 100, 200] {
+                let mut command = list_command();
+                command.offset = Some(offset);
+                command.tags = vec!["page-test".into()];
+                let page = super::super::bl::list_with_stats(
+                    &env.dbx,
+                    Some(file_db),
+                    &actor,
+                    command,
+                )
+                .await
+                .unwrap();
+                assert_eq!(page.total, 210);
+                assert_eq!(page.status_counts.active, 210);
+                assert_eq!(page.status_counts.archived, 10);
+                assert_eq!(page.has_more, offset < 200);
+                assert_eq!(
+                    page.activity_split_files_audio,
+                    enabled.unwrap_or(false)
+                );
+                loaded.extend(page.devices.into_iter().map(|device| device.id));
+            }
+            assert_eq!(loaded, ids[20..]);
+        }
+        crate::entities::device_settings::ActiveModel {
+            id: Set(crate::devices::config::DEVICE_SETTINGS_ID),
+            activity_split_files_audio: Set(None),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let mut command = list_command();
+        command.filter_text = Some("Paged 22".into());
+        let empty_activity = super::super::bl::list_with_stats(
+            &env.dbx,
+            Some(file_db),
+            &actor,
+            command,
+        )
+        .await
+        .unwrap();
+        assert_eq!(empty_activity.total, 10);
+        assert_eq!(
+            empty_activity
+                .devices
+                .iter()
+                .map(|device| device.id)
+                .collect::<Vec<_>>(),
+            ids[220..]
+        );
+        let mut command = list_command();
+        command.limit = Some(0);
+        assert!(super::super::bl::list_with_stats(
+            &env.dbx,
+            Some(file_db),
+            &actor,
+            command
+        )
+        .await
+        .unwrap()
+        .devices
+        .is_empty());
+    }
+}
+
 mod mapping_tests {
     use super::super::bl::{map_device_details, map_device_list};
     use super::super::types::{
@@ -1397,6 +1822,9 @@ mod mapping_tests {
             .and_hms_opt(9, 10, 11)
             .unwrap();
         DeviceCurrentState {
+            rating: 0,
+            tags: Vec::new(),
+            description: None,
             id: Uuid::parse_str("018f0000-0000-7000-8000-000000000001")
                 .unwrap(),
             name: Some("Mapped device".to_string()),
@@ -1428,6 +1856,9 @@ mod mapping_tests {
                 .unwrap(),
             json!({
                 "id": "018f0000-0000-7000-8000-000000000001",
+                "rating": 0,
+                "tags": [],
+                "description": null,
                 "name": "Mapped device",
                 "aors": [{"id": 7, "name": "AOR"}],
                 "unit": {"id": 8, "name": "Unit"},
@@ -1448,18 +1879,24 @@ mod mapping_tests {
                     devices: vec![device_state()],
                     total: 1,
                     has_more: false,
+                    activity_split_files_audio: false,
                     status_counts: DomainStatusCounts {
                         active: 0,
                         archived: 1,
                     },
                 },
+                None,
                 None
             ))
             .unwrap(),
             json!({
                 "list": [{
                     "id": "018f0000-0000-7000-8000-000000000001",
+                    "rating": 0,
+                    "tags": [],
                     "name": "Mapped device",
+                    "description": null,
+                    "custom_fields": {"inventory_id": "42"},
                     "aors": [{"id": 7, "name": "AOR"}],
                     "unit": {"id": 8, "name": "Unit"},
                     "created_by": "reader",
@@ -1467,7 +1904,9 @@ mod mapping_tests {
                     "created_at": "2026-07-23T09:10:11Z",
                     "updated_at": "2026-07-23T09:10:11Z",
                     "archived_at": "2026-07-23T09:10:11Z",
-                    "stats": null
+                    "stats": null,
+                    "audio_days": null,
+                    "activity_split_files_audio": false
                 }],
                 "total": 1,
                 "has_more": false,
@@ -1920,4 +2359,451 @@ mod query_tests {
         transaction.rollback().await.unwrap();
         main_pool.close().await.unwrap();
     }
+}
+
+mod activity_tests {
+    use super::*;
+    use chrono::TimeZone;
+    use sea_orm::{ConnectionTrait, Statement};
+
+    async fn insert_audio_activity(
+        db: &DatabaseConnection,
+        device_id: Uuid,
+        uploaded_at: chrono::DateTime<Utc>,
+        size: i64,
+        published: bool,
+    ) {
+        let id = Uuid::new_v4();
+        let audio_id = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let tus = Uuid::new_v4();
+        let name = audio_id.to_string();
+        db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, r#"
+insert into device_audio_ingest (
+    id, audio_id, device_id, actor_id, tus_upload_ref, tus_upload_id, tus_owner_id,
+    name, name_key, recording_started_at, created_at, storage_key, status, lease_token, heartbeat_at
+) values ($1, $2, $3, $4, $5, $6, $4, $7, convert_to($7, 'UTF8'),
+          '2020-01-01T00:00:00Z', $8, $9, 'finalizing', $10, $8)
+"#, [id.into(), audio_id.into(), device_id.into(), actor.into(), format!("/tus/{tus}").into(), tus.into(), name.into(), uploaded_at.into(), format!("device-audio/{device_id}/{audio_id}/{id}").into(), Uuid::new_v4().into()])).await.unwrap();
+        if !published {
+            return;
+        }
+        db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, r#"
+update device_audio_ingest set status = 'storing', source_size_bytes = $2,
+    source_sha256 = decode(repeat('01', 32), 'hex'), duration_us = 1000000, mime_type = 'audio/wav'
+where id = $1
+"#, [id.into(), size.into()])).await.unwrap();
+        db.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_audio_ingest set status = 'ready' where id = $1",
+            [id.into()],
+        ))
+        .await
+        .unwrap();
+        db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, r#"
+insert into device_audio (
+    id, device_id, ingest_id, name, name_key, recording_started_at, duration_us,
+    recording_ended_at, created_at, mime_type, source_size_bytes, source_sha256,
+    storage_key, transcription, text_version, processed, processing_version
+)
+select audio_id, device_id, id, name, name_key, recording_started_at, duration_us,
+       recording_started_at + interval '1 second', created_at, mime_type,
+       source_size_bytes, source_sha256, storage_key, '', gen_random_uuid(), false, gen_random_uuid()
+from device_audio_ingest where id = $1
+"#, [id.into()])).await.unwrap();
+    }
+
+    // #3926: published audio uses upload days, idle-day fallback and scoped activity pagination.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn file_audio_activity_counts_upload_days_and_sorts_before_pagination(
+    ) {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        crate::entities::system_settings::ActiveModel {
+            devices_section_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let db = env.file_registry_db.as_ref().unwrap().connection();
+        let actor = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+        let mut ids = Vec::new();
+        for name in ["Audio active", "File active", "Unpublished"] {
+            ids.push(
+                create(
+                    &env.dbx,
+                    &actor,
+                    CreateDeviceCommand {
+                        name: Some(name.into()),
+                        external_url: None,
+                        custom_fields: None,
+                    },
+                )
+                .await
+                .unwrap()
+                .id,
+            );
+        }
+        let zone: chrono_tz::Tz = crate::devices::config::DEVICE_STATS_TIMEZONE
+            .parse()
+            .unwrap();
+        let today = Utc::now().with_timezone(&zone).date_naive();
+        let midnight = zone
+            .from_local_datetime(&today.and_hms_opt(0, 0, 0).unwrap())
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
+        let old =
+            midnight - chrono::Duration::days(30) + chrono::Duration::hours(12);
+        for (device_id, at, size, published) in [
+            (
+                ids[0],
+                midnight - chrono::Duration::microseconds(1),
+                10,
+                true,
+            ),
+            (
+                ids[0],
+                midnight + chrono::Duration::microseconds(1),
+                20,
+                true,
+            ),
+            (ids[0], midnight + chrono::Duration::seconds(1), 30, true),
+            (ids[1], old, 7, true),
+            (ids[1], old + chrono::Duration::hours(1), 8, true),
+            (ids[2], Utc::now(), 100, false),
+            (Uuid::new_v4(), Utc::now(), 500, true),
+        ] {
+            insert_audio_activity(db, device_id, at, size, published).await;
+        }
+        let full = crate::devices::audio::read_activity(
+            &env.device_audio,
+            actor.id,
+            ids[0],
+        )
+        .await
+        .unwrap();
+        assert_eq!(full.uploaded_count, 3);
+        assert_eq!(full.days.len(), 2);
+        assert_eq!(full.days[0].content_count, 1);
+        assert_eq!(full.days[1].content_bytes, 50);
+        let unpublished = crate::devices::audio::read_activity(
+            &env.device_audio,
+            actor.id,
+            ids[2],
+        )
+        .await
+        .unwrap();
+        assert_eq!(unpublished.uploaded_count, 0);
+        assert!(unpublished.days.is_empty());
+        let days =
+            crate::devices::audio::activity::read_recent_or_none(db, &ids)
+                .await
+                .unwrap();
+        assert_eq!(days.len(), 3);
+        assert_eq!(
+            days[&ids[0]]
+                .iter()
+                .map(|day| (
+                    day.day.clone(),
+                    day.content_count,
+                    day.content_bytes
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ((today - chrono::Duration::days(1)).to_string(), 1, 10),
+                (today.to_string(), 2, 50),
+            ]
+        );
+        assert_eq!(days[&ids[1]].len(), 1);
+        assert_eq!(
+            days[&ids[1]][0].day,
+            old.with_timezone(&zone).date_naive().to_string()
+        );
+        assert_eq!(days[&ids[1]][0].content_count, 2);
+        assert_eq!(days[&ids[1]][0].content_bytes, 15);
+        assert!(days[&ids[2]].is_empty());
+        for (id, at) in [
+            (ids[0], old),
+            (ids[1], midnight - chrono::Duration::days(2)),
+        ] {
+            db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, r#"
+insert into device_content_stat(device_id, content_count, content_bytes, first_content_at, last_content_at, updated_at)
+values ($1, 1, 123, $2, $2, now())
+on conflict (device_id) do update set
+    content_count = excluded.content_count,
+    content_bytes = excluded.content_bytes,
+    first_content_at = excluded.first_content_at,
+    last_content_at = excluded.last_content_at,
+    updated_at = excluded.updated_at
+"#, [id.into(), at.into()])).await.unwrap();
+        }
+        insert_audio_activity(
+            db,
+            ids[0],
+            old - chrono::Duration::days(1),
+            1,
+            true,
+        )
+        .await;
+        let full = crate::devices::audio::read_activity(
+            &env.device_audio,
+            actor.id,
+            ids[0],
+        )
+        .await
+        .unwrap();
+        assert_eq!(full.uploaded_count, 4);
+        assert_eq!(full.days.len(), 3);
+        assert_eq!(full.days[0].content_bytes, 1);
+        let source = insert_login(&env.dbx, &["DeviceSource"]).await;
+        assert!(crate::devices::audio::read_activity(
+            &env.device_audio,
+            source.id,
+            ids[0],
+        )
+        .await
+        .is_err());
+        for enabled in [false, true] {
+            crate::entities::device_settings::ActiveModel {
+                id: Set(crate::devices::config::DEVICE_SETTINGS_ID),
+                activity_split_files_audio: Set(Some(enabled)),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+            let expected = if enabled {
+                [ids[0], ids[1], ids[2]]
+            } else {
+                [ids[1], ids[0], ids[2]]
+            };
+            for (offset, id) in expected.into_iter().enumerate() {
+                let mut command = list_command();
+                command.limit = Some(1);
+                command.offset = Some(offset as u64);
+                let result = super::super::bl::list_with_stats(
+                    &env.dbx,
+                    Some(db),
+                    &actor,
+                    command,
+                )
+                .await
+                .unwrap();
+                assert_eq!(result.devices[0].id, id);
+                assert_eq!(result.activity_split_files_audio, enabled);
+            }
+            let (sizes, _) = crate::devices::files::stats::read_sort_values(
+                db, &ids, enabled,
+            )
+            .await
+            .unwrap();
+            assert_eq!(sizes[ids[0].to_string()], json!(123));
+        }
+        crate::entities::device_settings::ActiveModel {
+            id: Set(crate::devices::config::DEVICE_SETTINGS_ID),
+            activity_split_files_audio: Set(Some(false)),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+    }
+}
+
+// #3926: sidebar facets share device visibility and combine before counts and pagination.
+#[tokio::test]
+#[serial_test::serial]
+async fn sidebar_filters_are_scoped_and_combined_before_pagination() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let actor = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+    let other_author = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+    let mut author = actor.clone().into_active_model();
+    author.display_name = Set(Some("Автор Альфа".into()));
+    let actor = author.update(&env.dbx).await.unwrap();
+    let viewer = login_with_roles(&actor, &[crate::config::ROLE_CYBER_VIEWER]);
+    let foreign_org = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let foreign_author = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("foreign-{}", Uuid::now_v7())),
+            organism_id: Set(Some(foreign_org.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut aors = Vec::new();
+    for name in ["Північ", "Південь", "Прихована"] {
+        aors.push(
+            mk_aor(
+                &env.dbx,
+                area_of_responsibility::ActiveModel {
+                    name: Set(name.into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let mut units = Vec::new();
+    for name in ["Unit 1", "Unit 2"] {
+        units.push(
+            mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    name: Set(name.into()),
+                    created_by_login_id: Set(actor.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let mut devices = Vec::new();
+    for (name, creator, aor, unit, tag, archived) in [
+        ("Alpha", &actor, &aors[0], &units[0], "Пріоритет", false),
+        (
+            "Bravo",
+            &other_author,
+            &aors[0],
+            &units[0],
+            "пріоритет",
+            false,
+        ),
+        ("Charlie", &actor, &aors[1], &units[0], "Пріоритет", false),
+        ("Delta", &actor, &aors[0], &units[1], "Пріоритет", false),
+        ("Echo", &actor, &aors[0], &units[0], "Інший", false),
+        ("Archive", &actor, &aors[0], &units[0], "Пріоритет", true),
+        (
+            "Foreign",
+            &foreign_author,
+            &aors[2],
+            &units[0],
+            "Secret",
+            false,
+        ),
+    ] {
+        let mut device = device_active_model(
+            &creator.login,
+            creator.organism_id.unwrap(),
+            Some(name),
+            json!({}),
+            archived,
+            archived.then(|| Utc::now().naive_utc()),
+        );
+        device.tags = Set(if archived {
+            json!([tag, "Лише архів"])
+        } else {
+            json!([tag])
+        });
+        device.unit_id = Set(Some(unit.id));
+        let device = device.insert(&env.dbx).await.unwrap();
+        link_device_aor(&env.dbx, device.id, aor.id).await;
+        devices.push(device);
+    }
+    // A second matching link must not duplicate a device in the result or its counts.
+    link_device_aor(&env.dbx, devices[0].id, aors[1].id).await;
+    let options = super::query::filter_options(&env.dbx, &viewer)
+        .await
+        .unwrap();
+    assert_eq!(
+        options
+            .aors
+            .iter()
+            .map(|aor| aor.id)
+            .collect::<std::collections::BTreeSet<_>>(),
+        [aors[0].id, aors[1].id].into()
+    );
+    assert_eq!(options.creators.len(), 2);
+    assert!(options
+        .creators
+        .iter()
+        .any(|creator| creator.login == actor.login
+            && creator.display_name.as_deref() == Some("Автор Альфа")));
+    assert!(!options
+        .creators
+        .iter()
+        .any(|creator| creator.login == foreign_author.login));
+    assert_eq!(
+        options
+            .tags
+            .iter()
+            .map(|tag| tag.to_lowercase())
+            .collect::<Vec<_>>(),
+        vec!["лише архів", "пріоритет", "інший"]
+    );
+    assert_forbidden(
+        super::query::tag_options(&env.dbx, &viewer)
+            .await
+            .unwrap_err(),
+    );
+    let basic = login_with_roles(&actor, &["Basic"]);
+    assert_forbidden(
+        super::query::filter_options(&env.dbx, &basic)
+            .await
+            .unwrap_err(),
+    );
+
+    let filtered_command = |multiple: bool| {
+        let mut command = list_command();
+        command.aor_ids = vec![aors[0].id];
+        command.created_by = vec![actor.login.clone()];
+        command.tags = vec![" ПРІОРИТЕТ ".into(), "пріоритет".into()];
+        command.unit_ids = vec![units[0].id];
+        command.sort_by = vec![DeviceListSort::DisplayTitleAsc];
+        if multiple {
+            command.aor_ids.push(aors[1].id);
+            command.created_by.push(other_author.login.clone());
+            command.tags.push("Інший".into());
+        }
+        command
+    };
+    let result = list(&env.dbx, &viewer, filtered_command(false))
+        .await
+        .unwrap();
+    assert_eq!(result.total, 1);
+    assert_eq!(result.devices[0].id, devices[0].id);
+    assert_eq!(
+        (result.status_counts.active, result.status_counts.archived),
+        (1, 1)
+    );
+
+    let mut command = filtered_command(false);
+    command.archived_scope = DeviceArchivedScope::All;
+    command.limit = Some(1);
+    command.offset = Some(1);
+    let result = list(&env.dbx, &viewer, command).await.unwrap();
+    assert_eq!(result.total, 2);
+    assert!(!result.has_more);
+    assert_eq!(result.devices[0].id, devices[5].id);
+
+    let result = list(&env.dbx, &viewer, filtered_command(true))
+        .await
+        .unwrap();
+    assert_eq!(result.total, 4);
+    assert_eq!(
+        result
+            .devices
+            .iter()
+            .map(|device| device.id)
+            .collect::<Vec<_>>(),
+        vec![devices[0].id, devices[1].id, devices[2].id, devices[4].id]
+    );
+    let mut command = filtered_command(true);
+    command.filter_text = Some("Charlie".into());
+    assert_eq!(list(&env.dbx, &viewer, command).await.unwrap().total, 1);
+    let mut command = filtered_command(true);
+    command.created_by = vec![foreign_author.login];
+    assert_eq!(list(&env.dbx, &viewer, command).await.unwrap().total, 0);
 }

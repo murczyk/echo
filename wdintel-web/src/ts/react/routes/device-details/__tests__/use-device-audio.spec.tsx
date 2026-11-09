@@ -29,12 +29,14 @@ function Harness({
   deviceId = 'first',
   canRead = true,
   syncId = null,
+  active = true,
 }: {
   deviceId?: string;
   canRead?: boolean;
   syncId?: string | null;
+  active?: boolean;
 }) {
-  state = useDeviceAudio(deviceId, canRead);
+  state = useDeviceAudio(deviceId, canRead, active);
   return (
     <div data-sync-id={syncId}>
       {state.error ?? (state.ready && state.rows.length === 0 ? 'empty' : '')}
@@ -763,3 +765,48 @@ it('another audio confirmation cannot suppress the selected audio current detail
   expect(state.rows.find((row) => row.id === 'one')?.processingVersion).toBe('one-foreign');
   expect(state.rows.find((row) => row.id === 'two')?.processingVersion).toBe('two-current');
 });
+
+for (const operation of ['refresh', 'filter', 'append'] as const) {
+  it(`#3930 resumes ${operation} after leaving loaded Audio and ignores its obsolete response`, async () => {
+    const interrupted = deferred();
+    vi.mocked(listDeviceAudio)
+      .mockResolvedValueOnce(page(['one'], 'tail'))
+      .mockReturnValueOnce(interrupted.promise)
+      .mockResolvedValueOnce(page(['two'], 'next'))
+      .mockResolvedValueOnce(page(['three']));
+    await act(async () => root.render(<Harness />));
+    act(() => {
+      state.selectAudio('one');
+      if (operation === 'refresh') void state.reload();
+      else if (operation === 'filter') state.setUnprocessedOnly(true);
+      else void state.loadMore();
+    });
+    const signal = vi.mocked(listDeviceAudio).mock.calls[1][1]?.signal;
+    await act(async () => root.render(<Harness active={false} />));
+    expect(signal?.aborted).toBe(true);
+    expect(state).toMatchObject({
+      loading: false,
+      loadingMore: false,
+      ready: true,
+      selectedAudioId: 'one',
+      nextCursor: 'tail',
+    });
+    expect(state.rows.map((row) => row.id)).toEqual(['one']);
+    await act(async () => root.render(<Harness />));
+    expect(vi.mocked(listDeviceAudio).mock.calls[2][0]).toMatchObject({
+      cursor: operation === 'append' ? 'tail' : null,
+      unprocessedOnly: operation === 'filter',
+    });
+    expect(state.loading).toBe(false);
+    expect(state.loadingMore).toBe(false);
+    expect(state.unprocessedOnly).toBe(operation === 'filter');
+    expect(state.selectedAudioId).toBe('one');
+    const expected = operation === 'append' ? ['one', 'two'] : ['two'];
+    expect(state.rows.map((row) => row.id)).toEqual(expected);
+    await act(async () => interrupted.resolve(page(['obsolete'], 'obsolete-cursor')));
+    expect(state.rows.map((row) => row.id)).toEqual(expected);
+    expect(state.nextCursor).toBe('next');
+    await act(async () => state.loadMore());
+    expect(state.rows.map((row) => row.id)).toEqual([...expected, 'three']);
+  });
+}

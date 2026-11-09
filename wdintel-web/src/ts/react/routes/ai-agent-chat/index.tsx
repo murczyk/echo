@@ -1,9 +1,11 @@
 import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
 import CloseIcon from '@mui/icons-material/Close';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import StopOutlinedIcon from '@mui/icons-material/StopOutlined';
 import {
+  Badge,
   Box,
   CircularProgress,
   Divider,
@@ -18,9 +20,20 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { ReactNode } from 'react';
 import type {
   AiAgentActivityPresentation,
+  AiAgentDocumentArtifact,
   AiAgentReasoningPreset,
   AiAgentCompletionMetadata,
   AiAgentMapEditTarget,
@@ -40,7 +53,26 @@ import {
 const MapWorkspace = lazy(() =>
   import('./MapWorkspace').then((module) => ({ default: module.MapWorkspace })),
 );
+const DocumentWorkspace = lazy(() =>
+  import('./DocumentWorkspace').then((module) => ({ default: module.DocumentWorkspace })),
+);
+import type { DocumentEditTarget } from './DocumentWorkspace';
+import { DocumentEditContext } from './DocumentEditContext';
+import {
+  ConversationDocumentsContext,
+  DocumentChip,
+  DocumentSelectionContext,
+  documentHref,
+  latestDocuments,
+  type DocumentFileSelection,
+} from './document-files';
 import { ConversationHistoryItem } from './ConversationHistoryItem';
+import {
+  rememberedProviderId,
+  rememberedReasoningPreset,
+  saveRememberedProviderId,
+  saveRememberedReasoningPreset,
+} from './chat-preferences';
 import {
   RequestActivity,
   RequestDuration,
@@ -53,6 +85,11 @@ import {
   isConversationId,
   writeConversationUrl,
 } from './conversation-url';
+import {
+  continuableRequestId,
+  DEEP_CONTINUATION_PROMPT,
+  DeepContinuationButton,
+} from './DeepContinuation';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
@@ -65,6 +102,7 @@ import {
   AiAgentEvent,
   AiAgentMessage,
   AiAgentRequestState,
+  AiAgentUpload,
   cancelAiAgentRequest,
   deleteAiAgentConversation,
   getAiAgentConfiguration,
@@ -74,6 +112,12 @@ import {
 } from '../../services/api/ai-agent';
 import { HttpRequestError } from '../../services/api/client';
 import { streamAiAgentEventsWithReconnect } from './stream';
+import { AttachFileButton, ComposerAttachments, MessageAttachments } from './ComposerAttachments';
+import {
+  AI_CHAT_UPLOAD_MAX_PER_MESSAGE,
+  pastedFiles,
+  useComposerAttachments,
+} from './composer-attachments';
 
 type Source = { title: string; url: string | null };
 
@@ -98,6 +142,8 @@ export type LiveRequest = {
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
+  attachments?: AiAgentUpload[];
   lastSequence: number;
   streamError: string | null;
 };
@@ -106,13 +152,30 @@ type PendingSubmission = {
   id: string;
   prompt: string;
   createdAt: number;
+  attachments: AiAgentUpload[];
 };
 
-const REASONING_LABELS: Record<AiAgentReasoningPreset, string> = {
+const ATTACHMENTS_ONLY_PROMPT = 'Опрацюй вкладені файли.';
+
+export const REASONING_LABELS: Record<AiAgentReasoningPreset, string> = {
   fast: 'Швидкий',
   balanced: 'Збалансований',
   deep: 'Глибокий',
 };
+
+/** The ceiling of a mode, e.g. «до 4 год»; the agent finishes earlier when done. */
+export function runtimeLimitLabel(seconds: number): string {
+  return seconds >= 3600
+    ? `до ${Math.round(seconds / 3600)} год`
+    : `до ${Math.round(seconds / 60)} хв`;
+}
+
+/** A mode's limit; long modes also warn that they hold the user's running slot. */
+function presetLimitHint(seconds: number): string {
+  return seconds >= 3600
+    ? `${runtimeLimitLabel(seconds)}; нові повідомлення чекатимуть у черзі`
+    : runtimeLimitLabel(seconds);
+}
 
 const TERMINAL_STATES = new Set<AiAgentRequestState>(['completed', 'failed', 'cancelled']);
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 48;
@@ -250,6 +313,8 @@ export function activeRequestsFromConversation(
       citations: assistantByRequestId.get(message.requestId)?.citations ?? [],
       fileCitations: assistantByRequestId.get(message.requestId)?.fileCitations ?? [],
       maps: assistantByRequestId.get(message.requestId)?.maps ?? [],
+      documents: assistantByRequestId.get(message.requestId)?.documents ?? [],
+      attachments: message.attachments ?? [],
       progress: [],
       tools: [],
       sources: [],
@@ -376,6 +441,13 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
         citations.set(citation.messageIdentifier, citation);
       return { ...next, citations: [...citations.values()] };
     }
+    case 'document_artifact': {
+      if (!event.document) return next;
+      return {
+        ...next,
+        documents: latestDocuments([...(request.documents ?? []), event.document]),
+      };
+    }
     case 'map_artifact': {
       if (!event.map || event.map.requestId !== request.id) return next;
       const maps = request.maps ?? [];
@@ -413,16 +485,20 @@ export function shouldIgnoreStreamError(
   return signal.aborted || Boolean(request && TERMINAL_STATES.has(request.state));
 }
 
-function MarkdownContent({
+export function MarkdownContent({
   children,
   citations,
   fileCitations = [],
   maps,
+  documents = [],
+  inertMaps = false,
 }: {
   children: string;
   citations: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
+  inertMaps?: boolean;
 }) {
   return (
     <Box
@@ -431,11 +507,19 @@ function MarkdownContent({
         '& > :first-of-type': { mt: 0 },
         '& > :last-child': { mb: 0 },
         '& p': { my: 1 },
+        '& h1, & h2, & h3, & h4, & h5, & h6': { mt: 2, mb: 1, fontWeight: 600, lineHeight: 1.3 },
+        '& h1': { fontSize: '1.375rem' },
+        '& h2': { fontSize: '1.25rem' },
+        '& h3': { fontSize: '1.125rem' },
+        '& h4, & h5, & h6': { fontSize: '1rem' },
         '& ul, & ol': { my: 1, pl: 3 },
+        '& ul': { listStyle: 'disc' },
+        '& ol': { listStyle: 'decimal' },
         '& li': { mb: 0.5 },
         '& a:not(.echo-chip)': { color: 'text.primary', textDecoration: 'underline' },
         '& blockquote': { m: 0, my: 1, pl: 2, borderLeft: 2, borderColor: 'divider' },
         '& code': {
+          color: 'inherit',
           px: 0.5,
           py: 0.125,
           borderRadius: 0.5,
@@ -449,7 +533,13 @@ function MarkdownContent({
         '& th, & td': { border: 1, borderColor: 'divider', px: 1, py: 0.75, textAlign: 'left' },
       }}
     >
-      <CitationMarkdown citations={citations} fileCitations={fileCitations} maps={maps}>
+      <CitationMarkdown
+        citations={citations}
+        fileCitations={fileCitations}
+        maps={maps}
+        documents={documents}
+        inertMaps={inertMaps}
+      >
         {children}
       </CitationMarkdown>
     </Box>
@@ -461,12 +551,17 @@ function AssistantMessage({
   citations = [],
   fileCitations = [],
   maps = [],
+  documents = [],
 }: {
   content: string;
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
 }) {
+  const unreferencedDocuments = documents.filter(
+    (document) => !content.includes(`](${documentHref(document.documentId)})`),
+  );
   const mainMap = [...maps].reverse().find((summary) => summary.isMain);
   const unreferencedMaps = maps.filter(
     (summary) => summary.id !== mainMap?.id && !content.includes(`](echo-map:${summary.id})`),
@@ -488,9 +583,21 @@ function AssistantMessage({
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
       </Typography>
-      <MarkdownContent citations={citations} fileCitations={fileCitations} maps={maps}>
+      <MarkdownContent
+        citations={citations}
+        fileCitations={fileCitations}
+        maps={maps}
+        documents={documents}
+      >
         {content}
       </MarkdownContent>
+      {unreferencedDocuments.length ? (
+        <p className="flex flex-wrap gap-echo-xs">
+          {unreferencedDocuments.map((document) => (
+            <DocumentChip key={document.documentId} document={document} />
+          ))}
+        </p>
+      ) : null}
       {unreferencedMaps.length ? (
         <p className="flex flex-wrap gap-echo-xs">
           {unreferencedMaps.map((summary) => (
@@ -507,10 +614,12 @@ function ConversationMessage({
   message,
   onRetry,
   retryDisabled = false,
+  continuation,
 }: {
   message: AiAgentMessage;
   onRetry?: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
   retryDisabled?: boolean;
+  continuation?: ReactNode;
 }) {
   if (message.role === 'assistant') {
     return (
@@ -522,7 +631,9 @@ function ConversationMessage({
               finishedAt={message.createdAt}
               active={false}
             />
-            {message.completionMetadata?.coverageLimited ? ' · Охоплення джерел неповне' : ''}
+            {message.completionMetadata?.coverageLimited && message.reasoningPreset !== 'deep'
+              ? ' · Охоплення джерел неповне'
+              : ''}
           </Typography>
         ) : null}
         <AssistantMessage
@@ -530,7 +641,9 @@ function ConversationMessage({
           citations={message.citations}
           fileCitations={message.fileCitations}
           maps={message.maps}
+          documents={message.documents}
         />
+        {continuation}
       </Stack>
     );
   }
@@ -562,6 +675,7 @@ function ConversationMessage({
       <Typography component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
         {message.content}
       </Typography>
+      <MessageAttachments attachments={message.attachments ?? []} />
       {stateMessage ? (
         <Typography
           variant="body2"
@@ -589,17 +703,25 @@ function ConversationMessage({
   );
 }
 
-function LiveResponse({ request }: { request: LiveRequest }) {
+function LiveResponse({
+  request,
+  continuation,
+}: {
+  request: LiveRequest;
+  continuation?: ReactNode;
+}) {
   return (
     <Stack spacing={1.5} alignItems="flex-start">
-      {request.assistantText || request.maps?.length ? (
+      {request.assistantText || request.maps?.length || request.documents?.length ? (
         <AssistantMessage
           content={request.assistantText}
           citations={request.citations}
           fileCitations={request.fileCitations}
           maps={request.maps}
+          documents={request.documents}
         />
       ) : null}
+      {continuation}
 
       {request.state === 'failed' ? (
         <PowerAlert severity="error">{GENERIC_REQUEST_FAILURE}</PowerAlert>
@@ -627,7 +749,7 @@ function requestStatus(request: LiveRequest): string {
   );
 }
 
-function currentActivityPresentation(request: LiveRequest) {
+export function currentActivityPresentation(request: LiveRequest) {
   if (TERMINAL_STATES.has(request.state)) return { title: requestStatus(request), detail: null };
   const runningTool = [...request.tools].reverse().find((tool) => tool.status === 'running');
   const presentation = runningTool ? runningTool.presentation : request.currentActivityPresentation;
@@ -685,6 +807,7 @@ function LiveRequestView({
   onReconnect,
   onRetry,
   retryDisabled,
+  continuation,
 }: {
   request: LiveRequest;
   cancelling: boolean;
@@ -692,6 +815,7 @@ function LiveRequestView({
   onReconnect: (request: LiveRequest) => void;
   onRetry: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
   retryDisabled: boolean;
+  continuation?: ReactNode;
 }) {
   const prompt: AiAgentMessage = {
     reasoningPreset: request.reasoningPreset,
@@ -705,6 +829,8 @@ function LiveRequestView({
     citations: [],
     fileCitations: [],
     maps: [],
+    documents: [],
+    attachments: request.attachments ?? [],
     content: request.prompt,
     createdAt: request.createdAt,
   };
@@ -743,7 +869,7 @@ function LiveRequestView({
           ) : undefined
         }
       />
-      <LiveResponse request={request} />
+      <LiveResponse request={request} continuation={continuation} />
     </Stack>
   );
 }
@@ -758,8 +884,11 @@ export function AiAgentChat({
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiAgentMessage[]>([]);
   const [providerId, setProviderId] = useState('');
-  const [reasoningPreset, setReasoningPreset] = useState<AiAgentReasoningPreset>('balanced');
+  const [reasoningPreset, setReasoningPreset] =
+    useState<AiAgentReasoningPreset>(rememberedReasoningPreset);
   const [draft, setDraft] = useState('');
+  const composerAttachments = useComposerAttachments(activeConversationId);
+  const sendingUploadIdsRef = useRef<string[]>([]);
   const [liveRequests, setLiveRequests] = useState<LiveRequest[]>([]);
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -775,6 +904,12 @@ export function AiAgentChat({
   const [mapEditEnabled, setMapEditEnabled] = useState(true);
   const [mapSelectionCount, setMapSelectionCount] = useState(0);
   const mapOpenerRef = useRef<HTMLElement | null>(null);
+  const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [documentSelection, setDocumentSelection] = useState<DocumentFileSelection | null>(null);
+  const [documentTarget, setDocumentTarget] = useState<DocumentEditTarget | null>(null);
+  const [documentEditEnabled, setDocumentEditEnabled] = useState(true);
+  const [documentRefreshToken, setDocumentRefreshToken] = useState(0);
+  const documentOpenerRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const liveRequestsRef = useRef<LiveRequest[]>([]);
@@ -866,8 +1001,7 @@ export function AiAgentChat({
       const nextConfiguration = await getAiAgentConfiguration();
       if (!mountedRef.current) return;
       setConfiguration(nextConfiguration);
-      defaultProviderIdRef.current =
-        nextConfiguration.defaultProviderId ?? nextConfiguration.providers[0]?.id ?? '';
+      defaultProviderIdRef.current = rememberedProviderId(nextConfiguration);
       setProviderId(defaultProviderIdRef.current);
       if (nextConfiguration.enabled) {
         const nextConversations = await listAiAgentConversations();
@@ -987,7 +1121,11 @@ export function AiAgentChat({
   }
 
   function activateConversation(conversation: AiAgentConversationDetail) {
-    setReasoningPreset('balanced');
+    setReasoningPreset(rememberedReasoningPreset());
+    showConversation(conversation);
+  }
+
+  function showConversation(conversation: AiAgentConversationDetail) {
     clearLiveRequests();
     activeConversationIdRef.current = conversation.id;
     setActiveConversationId(conversation.id);
@@ -1028,11 +1166,13 @@ export function AiAgentChat({
           reasoningPreset: userMessage.reasoningPreset ?? request.reasoningPreset,
           maxRuntimeSeconds: userMessage.maxRuntimeSeconds ?? request.maxRuntimeSeconds,
           startedAt: userMessage.startedAt ?? request.startedAt,
+          attachments: userMessage.attachments ?? request.attachments,
           completionMetadata: assistantMessage?.completionMetadata ?? request.completionMetadata,
           assistantText: assistantMessage?.content ?? request.assistantText,
           citations: assistantMessage?.citations ?? request.citations,
           fileCitations: assistantMessage?.fileCitations ?? request.fileCitations,
           maps: assistantMessage?.maps ?? request.maps,
+          documents: assistantMessage?.documents ?? request.documents,
         };
       }),
     );
@@ -1048,8 +1188,13 @@ export function AiAgentChat({
     setMessages([]);
     setSelectedMap(null);
     mapOpenerRef.current = null;
+    setDocumentsOpen(false);
+    setDocumentSelection(null);
+    setDocumentTarget(null);
+    documentOpenerRef.current = null;
     clearLiveRequests();
     setDraft('');
+    composerAttachments.discardAll(sendingUploadIdsRef.current);
     setPendingSubmission(null);
     setSubmitting(false);
     setLoadingConversation(false);
@@ -1060,7 +1205,7 @@ export function AiAgentChat({
   }
 
   function startNewConversation(replace = false) {
-    setReasoningPreset('balanced');
+    setReasoningPreset(rememberedReasoningPreset());
     requestedConversationIdRef.current = null;
     resetConversationView();
     writeConversationUrl(null, replace);
@@ -1076,6 +1221,16 @@ export function AiAgentChat({
 
   function handleEvent(requestId: string, event: AiAgentEvent) {
     updateLiveRequest(requestId, (request) => applyAiAgentEvent(request, event));
+    if (event.type === 'document_artifact' && event.document) {
+      const saved = event.document;
+      setDocumentRefreshToken((token) => token + 1);
+      // Follow the agent's new version of the document that is open.
+      setDocumentSelection((current) =>
+        current?.kind === 'document' && current.documentId === saved.documentId
+          ? { kind: 'document', documentId: saved.documentId, revision: saved.revision }
+          : current,
+      );
+    }
     if (event.type === 'error') {
       notify({ severity: 'error', message: GENERIC_REQUEST_FAILURE });
     }
@@ -1127,6 +1282,7 @@ export function AiAgentChat({
     const current = liveRequestsRef.current.find((request) => request.id === requestId);
     if (!controller.signal.aborted && current && TERMINAL_STATES.has(current.state)) {
       setMapRefreshToken((token) => token + 1);
+      setDocumentRefreshToken((token) => token + 1);
       const edited = editedMapsRef.current.get(requestId);
       if (edited) {
         editedMapsRef.current.delete(requestId);
@@ -1158,11 +1314,44 @@ export function AiAgentChat({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await submitPrompt(draft.trim());
+    if (composerAttachments.uploading) return;
+    const hasAttachments = composerAttachments.uploadIds.length > 0;
+    await submitPrompt(draft.trim() || (hasAttachments ? ATTACHMENTS_ONLY_PROMPT : ''), {
+      withAttachments: hasAttachments,
+    });
+  }
+
+  function addComposerFiles(files: File[]) {
+    const skipped = composerAttachments.addFiles(files);
+    if (skipped > 0) {
+      notify({
+        severity: 'warning',
+        message: `До одного повідомлення можна додати не більше ${AI_CHAT_UPLOAD_MAX_PER_MESSAGE} файлів`,
+      });
+    }
   }
 
   function retryRequest(prompt: string, preset?: AiAgentReasoningPreset | null) {
     void submitPrompt(prompt, { preserveDraft: true, preset: preset ?? 'balanced' });
+  }
+
+  function continueWithDeep(requestId: string) {
+    void submitPrompt(DEEP_CONTINUATION_PROMPT, {
+      preserveDraft: true,
+      preset: 'deep',
+      continuedRequestId: requestId,
+    });
+  }
+
+  /** The prompt only says "previous", and another tab may have moved the conversation on. */
+  async function assertNewestRequest(requestId: string, viewSequence: number) {
+    const conversation = await getAiAgentConversation(activeConversationIdRef.current!);
+    if (!mountedRef.current || viewSequence !== viewSequenceRef.current) {
+      throw new Error('розмову змінено');
+    }
+    if (conversation.messages.at(-1)?.requestId === requestId) return;
+    showConversation(conversation);
+    throw new Error('у розмові вже є новіший запит');
   }
 
   async function submitPrompt(
@@ -1170,7 +1359,14 @@ export function AiAgentChat({
     {
       preserveDraft = false,
       preset = reasoningPreset,
-    }: { preserveDraft?: boolean; preset?: AiAgentReasoningPreset } = {},
+      withAttachments = false,
+      continuedRequestId,
+    }: {
+      preserveDraft?: boolean;
+      preset?: AiAgentReasoningPreset;
+      withAttachments?: boolean;
+      continuedRequestId?: string;
+    } = {},
   ) {
     if (
       !prompt ||
@@ -1188,11 +1384,19 @@ export function AiAgentChat({
     submittingRef.current = true;
     setSubmitting(true);
     const createdAt = Date.now();
-    setPendingSubmission({ id: `pending-${createdAt}`, prompt, createdAt });
+    const uploadIds = withAttachments ? composerAttachments.uploadIds : [];
+    sendingUploadIdsRef.current = uploadIds;
+    const attachments = withAttachments
+      ? composerAttachments.attachments.flatMap((item) =>
+          item.upload && uploadIds.includes(item.upload.id) ? [item.upload] : [],
+        )
+      : [];
+    setPendingSubmission({ id: `pending-${createdAt}`, prompt, createdAt, attachments });
     if (!preserveDraft) setDraft('');
     setError(null);
 
     try {
+      if (continuedRequestId) await assertNewestRequest(continuedRequestId, viewSequence);
       const mapTarget = mapTargetRef.current;
       const mapEdit =
         selectedMap &&
@@ -1202,15 +1406,22 @@ export function AiAgentChat({
         mapTarget.mapId === selectedMap.id
           ? mapTarget
           : null;
+      const documentEdit =
+        documentsOpen && documentEditEnabled && documentTarget
+          ? { documentId: documentTarget.documentId, revision: documentTarget.revision }
+          : null;
       const created = await submitAiAgentRequest({
         conversationId: activeConversationIdRef.current,
         providerId,
         message: prompt,
         ...(configuration?.reasoningPresetsEnabled ? { reasoningPreset: preset } : {}),
         ...(mapEdit ? { mapEdit } : {}),
+        ...(documentEdit ? { documentTarget: documentEdit } : {}),
+        ...(uploadIds.length ? { uploadIds } : {}),
       });
+      if (uploadIds.length) composerAttachments.clearSent(uploadIds);
       if (mapEdit) editedMapsRef.current.set(created.id, mapEdit);
-      if (mountedRef.current) setReasoningPreset('balanced');
+      if (mountedRef.current) setReasoningPreset(rememberedReasoningPreset());
       if (!mountedRef.current) return;
       void refreshConversationList();
       if (viewSequence !== viewSequenceRef.current) return;
@@ -1230,6 +1441,7 @@ export function AiAgentChat({
             (option) => option.preset === preset,
           )?.maxRuntimeSeconds,
           state: created.state,
+          attachments,
           assistantText: '',
           progress: [],
           tools: [],
@@ -1252,6 +1464,7 @@ export function AiAgentChat({
       setError(message);
       notify({ severity: 'error', message });
     } finally {
+      sendingUploadIdsRef.current = [];
       if (mountedRef.current && viewSequence === viewSequenceRef.current) {
         submittingRef.current = false;
         setSubmitting(false);
@@ -1291,8 +1504,29 @@ export function AiAgentChat({
 
   function selectMap(summary: AiAgentMapSummary, opener: HTMLElement) {
     mapOpenerRef.current = opener;
+    setDocumentsOpen(false);
     setSelectedMap(summary);
     setMapEditEnabled(true);
+  }
+
+  const openDocuments = useCallback(
+    (selection: DocumentFileSelection | null, opener: HTMLElement) => {
+      documentOpenerRef.current = opener;
+      setSelectedMap(null);
+      setDocumentSelection(selection);
+      setDocumentsOpen(true);
+      setDocumentEditEnabled(true);
+    },
+    [],
+  );
+
+  function closeDocuments() {
+    setDocumentsOpen(false);
+    setDocumentTarget(null);
+    window.requestAnimationFrame(() => {
+      if (documentOpenerRef.current?.isConnected)
+        documentOpenerRef.current.focus({ preventScroll: true });
+    });
   }
 
   function closeMap() {
@@ -1314,6 +1548,23 @@ export function AiAgentChat({
     [messages, liveRequests],
   );
 
+  const conversationDocuments = useMemo(
+    () =>
+      latestDocuments([
+        ...messages.flatMap((message) => message.documents ?? []),
+        ...liveRequests.flatMap((request) => request.documents ?? []),
+      ]),
+    [messages, liveRequests],
+  );
+  const conversationFileCount =
+    conversationDocuments.length +
+    new Set(
+      [
+        ...messages.flatMap((message) => message.attachments ?? []),
+        ...liveRequests.flatMap((request) => request.attachments ?? []),
+      ].map((upload) => upload.id),
+    ).size;
+
   const selectedProvider = useMemo(
     () => configuration?.providers.find((provider) => provider.id === providerId) ?? null,
     [configuration, providerId],
@@ -1328,6 +1579,21 @@ export function AiAgentChat({
   const interactionLocked = submitting || activeRequestExists;
   const retryDisabled =
     interactionLocked || loadingConversation || conversationLoadFailed || !selectedProvider;
+  const deepOption = configuration?.reasoningPresetsEnabled
+    ? selectedProvider?.reasoningPresets?.find((option) => option.preset === 'deep')
+    : undefined;
+  const continuableId =
+    deepOption && !pendingSubmission ? continuableRequestId(messages, liveRequests) : null;
+  const deepContinuation =
+    deepOption && continuableId ? (
+      <DeepContinuationButton
+        hint={presetLimitHint(deepOption.maxRuntimeSeconds)}
+        disabled={retryDisabled}
+        onClick={() => continueWithDeep(continuableId)}
+      />
+    ) : null;
+  const composerDisabled =
+    submitting || loadingConversation || conversationLoadFailed || !selectedProvider;
 
   if (unavailable && error) {
     return <AiAgentChatUnavailable message={error} onRetry={() => void loadPage()} />;
@@ -1399,7 +1665,8 @@ export function AiAgentChat({
       <Stack
         data-testid="ai-agent-chat-pane"
         sx={{
-          flex: selectedMap ? { xs: 1, lg: `0 0 ${AI_AGENT_CHAT_MAP_DOCK_WIDTH}` } : 1,
+          flex:
+            selectedMap || documentsOpen ? { xs: 1, lg: `0 0 ${AI_AGENT_CHAT_MAP_DOCK_WIDTH}` } : 1,
           minWidth: 0,
           minHeight: 0,
           position: 'relative',
@@ -1480,6 +1747,7 @@ export function AiAgentChat({
                     message={message}
                     onRetry={retryRequest}
                     retryDisabled={retryDisabled}
+                    continuation={message.requestId === continuableId ? deepContinuation : null}
                   />
                 ))
               )}
@@ -1491,6 +1759,7 @@ export function AiAgentChat({
                   onCancel={(id) => void cancelRequest(id)}
                   onRetry={retryRequest}
                   retryDisabled={retryDisabled}
+                  continuation={request.id === continuableId ? deepContinuation : null}
                   onReconnect={(current) =>
                     void connectToRequest(current.id, current.conversationId)
                   }
@@ -1507,6 +1776,8 @@ export function AiAgentChat({
                       citations: [],
                       fileCitations: [],
                       maps: [],
+                      documents: [],
+                      attachments: pendingSubmission.attachments,
                       content: pendingSubmission.prompt,
                       createdAt: pendingSubmission.createdAt,
                     }}
@@ -1523,6 +1794,15 @@ export function AiAgentChat({
             <Box
               component="form"
               onSubmit={submit}
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                const files = Array.from(event.dataTransfer.files);
+                if (files.length === 0) return;
+                event.preventDefault();
+                if (!composerDisabled) addComposerFiles(files);
+              }}
               sx={{
                 width: '100%',
                 maxWidth: 768,
@@ -1545,6 +1825,18 @@ export function AiAgentChat({
                   }
                 />
               ) : null}
+              {documentsOpen && documentTarget ? (
+                <DocumentEditContext
+                  title={documentTarget.title}
+                  revision={documentTarget.revision}
+                  enabled={documentEditEnabled}
+                  onToggle={() => setDocumentEditEnabled((enabled) => !enabled)}
+                />
+              ) : null}
+              <ComposerAttachments
+                attachments={composerAttachments.attachments}
+                onRemove={composerAttachments.remove}
+              />
               <TextField
                 fullWidth
                 multiline
@@ -1552,11 +1844,15 @@ export function AiAgentChat({
                 variant="standard"
                 placeholder="Повідомлення"
                 value={draft}
-                disabled={
-                  submitting || loadingConversation || conversationLoadFailed || !selectedProvider
-                }
+                disabled={composerDisabled}
                 slotProps={{ input: { disableUnderline: true } }}
                 onChange={(event) => setDraft(event.target.value)}
+                onPaste={(event) => {
+                  const files = pastedFiles(event.clipboardData?.items);
+                  if (files.length === 0) return;
+                  event.preventDefault();
+                  addComposerFiles(files);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
@@ -1577,6 +1873,24 @@ export function AiAgentChat({
                   flexWrap="wrap"
                   sx={{ minWidth: 0 }}
                 >
+                  <AttachFileButton disabled={composerDisabled} onFiles={addComposerFiles} />
+                  {activeConversationId && conversationFileCount ? (
+                    <Tooltip title="Файли розмови">
+                      <IconButton
+                        aria-label={`Файли розмови: ${conversationFileCount}`}
+                        aria-pressed={documentsOpen}
+                        onClick={(event) =>
+                          documentsOpen
+                            ? closeDocuments()
+                            : openDocuments(documentSelection, event.currentTarget)
+                        }
+                      >
+                        <Badge badgeContent={conversationFileCount} color="primary" max={99}>
+                          <FolderOpenOutlinedIcon fontSize="small" />
+                        </Badge>
+                      </IconButton>
+                    </Tooltip>
+                  ) : null}
                   <Select
                     variant="standard"
                     disableUnderline
@@ -1584,7 +1898,9 @@ export function AiAgentChat({
                     disabled={interactionLocked || Boolean(activeConversationId)}
                     onChange={(event) => {
                       setProviderId(event.target.value);
-                      setReasoningPreset('balanced');
+                      defaultProviderIdRef.current = event.target.value;
+                      saveRememberedProviderId(event.target.value);
+                      setReasoningPreset(rememberedReasoningPreset());
                     }}
                     inputProps={{ 'aria-label': 'Провайдер ШІ' }}
                     sx={{
@@ -1618,15 +1934,21 @@ export function AiAgentChat({
                       disableUnderline
                       value={reasoningPreset}
                       disabled={interactionLocked}
-                      onChange={(event) =>
-                        setReasoningPreset(event.target.value as AiAgentReasoningPreset)
-                      }
+                      onChange={(event) => {
+                        const preset = event.target.value as AiAgentReasoningPreset;
+                        setReasoningPreset(preset);
+                        saveRememberedReasoningPreset(preset);
+                      }}
                       inputProps={{ 'aria-label': 'Глибина аналізу' }}
+                      renderValue={(value) => REASONING_LABELS[value]}
                       sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
                     >
                       {selectedProvider.reasoningPresets.map((option) => (
                         <MenuItem key={option.preset} value={option.preset}>
-                          {REASONING_LABELS[option.preset]}
+                          <ListItemText
+                            primary={REASONING_LABELS[option.preset]}
+                            secondary={presetLimitHint(option.maxRuntimeSeconds)}
+                          />
                         </MenuItem>
                       ))}
                     </Select>
@@ -1659,11 +1981,9 @@ export function AiAgentChat({
                     type="submit"
                     aria-label="Надіслати"
                     disabled={
-                      submitting ||
-                      loadingConversation ||
-                      conversationLoadFailed ||
-                      !draft.trim() ||
-                      !selectedProvider
+                      composerDisabled ||
+                      composerAttachments.uploading ||
+                      (!draft.trim() && composerAttachments.uploadIds.length === 0)
                     }
                     size="small"
                     sx={{
@@ -1698,11 +2018,33 @@ export function AiAgentChat({
           />
         </Suspense>
       ) : null}
+      {documentsOpen && activeConversationId ? (
+        <Suspense fallback={null}>
+          <DocumentWorkspace
+            key={activeConversationId}
+            conversationId={activeConversationId}
+            selection={documentSelection}
+            refreshToken={documentRefreshToken}
+            onSelect={setDocumentSelection}
+            onClose={closeDocuments}
+            onTargetChange={setDocumentTarget}
+            onUseTemplate={(upload) =>
+              setDraft((current) => current || `Створи документ за зразком «${upload.fileName}»: `)
+            }
+          />
+        </Suspense>
+      ) : null}
     </Box>
   );
   return (
     <ConversationMapsContext.Provider value={conversationMaps}>
-      <MapSelectionContext.Provider value={selectMap}>{view}</MapSelectionContext.Provider>
+      <MapSelectionContext.Provider value={selectMap}>
+        <ConversationDocumentsContext.Provider value={conversationDocuments}>
+          <DocumentSelectionContext.Provider value={openDocuments}>
+            {view}
+          </DocumentSelectionContext.Provider>
+        </ConversationDocumentsContext.Provider>
+      </MapSelectionContext.Provider>
     </ConversationMapsContext.Provider>
   );
 }

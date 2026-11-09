@@ -40,6 +40,10 @@ export function isDeviceArchive(file: DeviceFileSelection) {
   );
 }
 
+export function isDeviceFolder(file: DeviceFileSelection) {
+  return file.kind === 'directory' || (isDeviceArchive(file) && file.archive?.state === 'ready');
+}
+
 export function archiveMemberSelection(
   archive: DeviceFileSelection,
   entry: DeviceFileTreeEntry,

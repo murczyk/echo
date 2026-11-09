@@ -113,6 +113,10 @@ servers-active:
 servers-ai:
     @echo "{{ ai_servers }}"
 
+# Create or update the AI providers dashboard. `--check` sends GET requests only.
+signoz-install-dashboard *args:
+    python3 deploy/signoz/install_dashboard.py {{ args }}
+
 # Inspect AI harnesses using the dev binary; dev-tmux owns rebuilds/restarts.
 ai-control-panel *args:
     @test -x target/debug/wdintel-rs || (cd wdintel-rs && cargo build --bin wdintel-rs)
@@ -247,7 +251,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_favorite,file_view,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -273,7 +277,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_favorite,file_view,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
@@ -316,20 +320,11 @@ test-be:
     export CARGO_INCREMENTAL=1
     export RUSTC_WRAPPER=""
 
-    if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
-        echo "Running cargo clippy..."
-        cargo clippy --all-targets --all-features -- -D warnings
-    else
-        echo "Skipping clippy in time-critical CI; run it locally or with workflow_dispatch"
-    fi
+    echo "Running cargo clippy..."
+    cargo clippy --all-targets --all-features -- -D warnings
 
-    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        echo "Running curated Rust tests in CI with optimizations..."
-        cargo test --release --locked -p wdintel-rs
-    else
-        echo "Running curated Rust tests locally with optimizations..."
-        cargo test --release -p wdintel-rs
-    fi
+    echo "Running curated Rust tests locally with optimizations..."
+    cargo test --release -p wdintel-rs
 
 test: test-fe test-be
 
@@ -1191,6 +1186,9 @@ deploy _server_pos="" server silent="false":
         -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
         '{{ discord_webhook_infra }}' || true
     fi
+    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" "$SERVER"; then
+      echo "WARNING: AI harness check failed. Run: just ai-control-panel scan --host $SERVER --json" >&2
+    fi
 
 [arg('server', long='server')]
 [arg('silent', long='silent', value='true')]
@@ -1493,6 +1491,9 @@ deploy-from-local _server_pos="" server silent="false":
         -H 'Content-Type: application/json' \
         -d "{\"content\":\"✅ Deployed $SERVER from local .deb ($DEB_NAME)\"}" \
         '{{ discord_webhook_infra }}' || true
+    fi
+    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" "$SERVER"; then
+      echo "WARNING: AI harness check failed. Run: just ai-control-panel scan --host $SERVER --json" >&2
     fi
 
 [arg('server', long='server')]

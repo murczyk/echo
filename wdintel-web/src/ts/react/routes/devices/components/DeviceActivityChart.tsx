@@ -3,7 +3,12 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 
-import { formatDeviceBytes, formatDeviceCount, type DeviceActivityDay } from '../device-activity';
+import {
+  deviceActivityCategoryColor,
+  formatDeviceBytes,
+  formatDeviceCount,
+  type DeviceActivityDay,
+} from '../device-activity';
 import { FILE_TYPE_CATEGORIES, FILE_TYPE_CATEGORY_NAMES } from '../file-type-categories';
 
 // Pixel geometry shared by the y labels, the SVG plot and the day labels so they line up exactly.
@@ -18,14 +23,14 @@ const GEOMETRY = {
   detailed: {
     bandWidth: 22,
     barWidth: 16,
-    plotHeight: 140,
+    plotHeight: 180,
     plotTop: 8,
     barRadius: 3,
   },
-} as const;
+};
 const Y_LABEL_WIDTH = 40;
-const Y_LABEL_FONT_SIZE = 11;
-const DAY_LABEL_FONT_SIZE = 12;
+const Y_LABEL_FONT_SIZE = '0.85rem';
+const DAY_LABEL_FONT_SIZE = '0.85rem';
 
 type Geometry = (typeof GEOMETRY)[keyof typeof GEOMETRY];
 
@@ -48,6 +53,7 @@ type ChartScale = {
 
 type Props = {
   days: DeviceActivityDay[];
+  ariaLabel?: string;
   /** `detailed` adds a y-axis with gridlines and a category legend and uses taller bars. */
   variant?: keyof typeof GEOMETRY;
   /** Dims the bars, e.g. for activity outside the displayed window. */
@@ -56,11 +62,28 @@ type Props = {
 
 const FADED_BAR_OPACITY = 0.4;
 
-/** Same layout as `NetworkDetailsActivityChart`, but in fixed pixels inside a horizontal
- * scroller so the full history fits; it opens scrolled to the latest day. */
-export function DeviceActivityChart({ days, variant = 'compact', faded = false }: Props) {
+/** Short detailed histories fill the available width; longer histories scroll to the latest day. */
+export function DeviceActivityChart({
+  days,
+  variant = 'compact',
+  faded = false,
+  ariaLabel = 'Завантаження файлів за днями',
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<HoveredDay | null>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const detailed = variant === 'detailed';
+  const hasDays = days.length > 0;
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!detailed || !element) return;
+    const measure = () => setAvailableWidth(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [detailed, hasDays]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
@@ -75,8 +98,19 @@ export function DeviceActivityChart({ days, variant = 'compact', faded = false }
     );
   }
 
-  const detailed = variant === 'detailed';
-  const scale = chartScale(days, GEOMETRY[variant], detailed);
+  const geometry = GEOMETRY[variant];
+  const bandWidth = detailed
+    ? Math.max(geometry.bandWidth, availableWidth / days.length)
+    : geometry.bandWidth;
+  const scale = chartScale(
+    days,
+    {
+      ...geometry,
+      bandWidth,
+      barWidth: detailed ? Math.min(32, bandWidth * 0.7) : geometry.barWidth,
+    },
+    detailed,
+  );
 
   return (
     <>
@@ -88,6 +122,7 @@ export function DeviceActivityChart({ days, variant = 'compact', faded = false }
           sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', pb: '2px' }}
         >
           <ActivityPlot
+            ariaLabel={ariaLabel}
             days={days}
             scale={scale}
             faded={faded}
@@ -157,12 +192,14 @@ function YAxisLabels({ ticks, height }: { ticks: YTick[]; height: number }) {
 }
 
 function ActivityPlot({
+  ariaLabel,
   days,
   scale,
   faded,
   hovered,
   onHover,
 }: {
+  ariaLabel: string;
   days: DeviceActivityDay[];
   scale: ChartScale;
   faded: boolean;
@@ -187,7 +224,7 @@ function ActivityPlot({
     <Box
       component="svg"
       role="img"
-      aria-label="Завантаження файлів за днями"
+      aria-label={ariaLabel}
       width={plotWidth}
       height={svgHeight}
       onMouseMove={onMouseMove}
@@ -259,7 +296,7 @@ function DayBar({
       {day.categories.map((category, categoryIndex) => {
         const height = (Number(category.contentCount) / Number(maxCount)) * geometry.plotHeight;
         segmentTop -= height;
-        const fill = FILE_TYPE_CATEGORIES[category.category]?.color;
+        const fill = deviceActivityCategoryColor(category.category);
         return categoryIndex === day.categories.length - 1 ? (
           <path
             key={category.category}
@@ -344,6 +381,7 @@ function ActivityTooltip({
 }) {
   return (
     <Paper
+      role="tooltip"
       elevation={6}
       sx={{
         position: 'fixed',
@@ -359,7 +397,7 @@ function ActivityTooltip({
       }}
     >
       <Stack spacing={1}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
           {day.label}
         </Typography>
         {day.categories.length === 0 ? (
@@ -382,7 +420,7 @@ function ActivityTooltip({
                       width: 12,
                       height: 12,
                       borderRadius: '3px',
-                      bgcolor: FILE_TYPE_CATEGORIES[category.category]?.color,
+                      bgcolor: deviceActivityCategoryColor(category.category),
                       flexShrink: 0,
                     }}
                   />

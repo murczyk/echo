@@ -23,6 +23,9 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   map: vi.fn(),
   fetchSources: vi.fn(),
+  upload: vi.fn(),
+  listUploads: vi.fn(),
+  deleteUpload: vi.fn(),
 }));
 
 vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
@@ -34,6 +37,9 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
   cancelAiAgentRequest: mocks.cancel,
   deleteAiAgentConversation: mocks.delete,
   getAiAgentMap: mocks.map,
+  uploadAiAgentFile: mocks.upload,
+  listAiAgentUploads: mocks.listUploads,
+  deleteAiAgentUpload: mocks.deleteUpload,
   openAiAgentMapWorkspace: async (summary: unknown, signal?: AbortSignal) => {
     const document = await mocks.map(summary, signal);
     return {
@@ -65,6 +71,7 @@ vi.mock('../app6d-catalog', async (importOriginal) => {
 });
 
 import { AiAgentChat } from '..';
+import { DEEP_CONTINUATION_PROMPT } from '../DeepContinuation';
 import { resetSharedMapDocuments } from '../map-documents';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../conversation-url';
 import { HttpRequestError } from '../../../services/api/client';
@@ -139,11 +146,60 @@ async function selectConversation() {
   await flush();
 }
 
+const REASONING_PRESETS = [
+  { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'low' },
+  { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
+  { preset: 'deep', maxRuntimeSeconds: 14_400, reasoningEffort: 'max' },
+];
+const SECOND_PROVIDER = {
+  ...PROVIDER,
+  id: 'provider-2',
+  name: 'GLM',
+  isDefault: false,
+};
+
+async function remountWithProviders(
+  providers: Array<typeof PROVIDER>,
+  reasoningPresets = REASONING_PRESETS,
+) {
+  mocks.configuration.mockResolvedValue({
+    enabled: true,
+    reasoningPresetsEnabled: true,
+    defaultProviderId: PROVIDER.id,
+    providers: providers.map((provider) => ({
+      ...provider,
+      reasoningAvailable: true,
+      reasoningPresets,
+    })),
+  });
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<AiAgentChat />));
+  await flush();
+}
+
+function selector(label: string) {
+  return container.querySelector(`[role="combobox"][aria-label="${label}"]`) as HTMLElement;
+}
+
+async function chooseOption(label: string, optionText: string) {
+  await act(async () =>
+    selector(label).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+  );
+  await flush();
+  const option = Array.from(document.body.querySelectorAll('[role="option"]')).find((item) =>
+    item.textContent?.includes(optionText),
+  )!;
+  await act(async () => option.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await flush();
+}
+
 function streamEvent(
   requestId: string,
   sequence: number,
   type: AiAgentEvent['type'],
   text: string,
+  extra: Partial<AiAgentEvent> = {},
 ) {
   connections.get(requestId)?.onEvent({
     sequence,
@@ -159,12 +215,22 @@ function streamEvent(
     path: null,
     status: null,
     isError: null,
+    ...extra,
   });
 }
 
 beforeEach(async () => {
   window.history.replaceState({}, '', '/');
   window.sessionStorage.clear();
+  const storage = new Map<string, string>();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    },
+  });
   connections = new Map();
   mocks.configuration.mockResolvedValue({
     enabled: true,
@@ -205,6 +271,89 @@ afterEach(async () => {
   vi.clearAllMocks();
   resetSharedMapDocuments();
 });
+function chooseFiles(files: File[]) {
+  const input = container.querySelector(
+    '[data-testid="ai-agent-chat-file-input"]',
+  ) as HTMLInputElement;
+  Object.defineProperty(input, 'files', { configurable: true, value: files });
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function uploadItem(id: string, fileName: string) {
+  return {
+    id,
+    conversationId: null,
+    requestId: null,
+    fileName,
+    contentType: 'application/pdf',
+    sizeBytes: 2048,
+    state: 'ready',
+    isImage: false,
+    chunkCount: 3,
+    lastError: null,
+    createdAt: 1_700_000_000_000,
+  };
+}
+
+describe('AiAgentChat attachments', () => {
+  it('#3962 uploads picked files and sends them with the next message', async () => {
+    mocks.upload.mockResolvedValueOnce(uploadItem('upload-1', 'наказ.pdf'));
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-upload',
+      conversationId: CONVERSATION.id,
+      state: 'queued',
+    });
+    await act(async () => chooseFiles([new File(['%PDF-1.7'], 'наказ.pdf')]));
+    await flush();
+    expect(mocks.upload).toHaveBeenCalledWith(expect.any(File), null, expect.any(AbortSignal));
+    const chips = container.querySelector('[data-testid="ai-agent-chat-attachments"]');
+    expect(chips?.textContent).toContain('наказ.pdf');
+
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: 'Опрацюй вкладені файли.', uploadIds: ['upload-1'] }),
+    );
+    expect(container.querySelector('[data-testid="ai-agent-chat-attachments"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="live-request-request-upload"]')?.textContent,
+    ).toContain('наказ.pdf');
+  });
+
+  it('#3962 rejects unsupported files locally and removes drafts on the server', async () => {
+    mocks.upload.mockResolvedValueOnce(uploadItem('upload-2', 'фото.jpg'));
+    mocks.deleteUpload.mockResolvedValue(undefined);
+    await act(async () =>
+      chooseFiles([new File(['MZ'], 'setup.exe'), new File(['jpg'], 'фото.jpg')]),
+    );
+    await flush();
+    expect(mocks.upload).toHaveBeenCalledTimes(1);
+    const chips = container.querySelector('[data-testid="ai-agent-chat-attachments"]')!;
+    expect(chips.textContent).toContain('setup.exe · Непідтримуваний формат');
+    const remove = chips.querySelectorAll('.MuiChip-deleteIcon')[1];
+    await act(async () => remove.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    expect(mocks.deleteUpload).toHaveBeenCalledWith('upload-2');
+    expect(chips.textContent).not.toContain('фото.jpg');
+  });
+});
+
+describe('AiAgentChat attachment navigation', () => {
+  it('#3962 discards drafts from a new chat when another conversation opens', async () => {
+    mocks.conversations.mockResolvedValue([CONVERSATION]);
+    await remountWithProviders([PROVIDER]);
+    mocks.upload.mockResolvedValueOnce(uploadItem('upload-3', 'чернетка.pdf'));
+    mocks.deleteUpload.mockResolvedValue(undefined);
+    await act(async () => chooseFiles([new File(['%PDF-1.7'], 'чернетка.pdf')]));
+    await flush();
+    expect(container.querySelector('[data-testid="ai-agent-chat-attachments"]')).not.toBeNull();
+
+    await selectConversation();
+    expect(mocks.deleteUpload).toHaveBeenCalledWith('upload-3');
+    expect(container.querySelector('[data-testid="ai-agent-chat-attachments"]')).toBeNull();
+  });
+});
+
 describe('AiAgentChat request queue', () => {
   it('#3724 requires explicit Deep selection and preserves it on retry', async () => {
     mocks.configuration.mockResolvedValue({
@@ -218,7 +367,7 @@ describe('AiAgentChat request queue', () => {
           reasoningPresets: [
             { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'low' },
             { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
-            { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+            { preset: 'deep', maxRuntimeSeconds: 14_400, reasoningEffort: 'max' },
           ],
         },
       ],
@@ -260,6 +409,83 @@ describe('AiAgentChat request queue', () => {
       expect.objectContaining({ reasoningPreset: 'deep' }),
     );
     expect(container.textContent).toContain('Ви · Глибокий');
+  });
+
+  it('remembers the chosen provider and Fast/Balanced across reloads and submits', async () => {
+    await remountWithProviders([PROVIDER, SECOND_PROVIDER]);
+    await chooseOption('Провайдер ШІ', 'GLM');
+    await chooseOption('Глибина аналізу', 'Швидкий');
+    expect(window.localStorage.getItem('echo.ai-agent.provider-id')).toBe('provider-2');
+    expect(window.localStorage.getItem('echo.ai-agent.reasoning-preset')).toBe('fast');
+
+    await remountWithProviders([PROVIDER, SECOND_PROVIDER]);
+    expect(selector('Провайдер ШІ').textContent).toContain('GLM');
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-remembered',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Коротке питання');
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ providerId: 'provider-2', reasoningPreset: 'fast' }),
+    );
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+  });
+
+  it('#3985 shows each mode with its time limit and Deep as up to four hours', async () => {
+    await remountWithProviders([PROVIDER]);
+    await act(async () =>
+      selector('Глибина аналізу').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+    );
+    await flush();
+    const options = Array.from(document.body.querySelectorAll('[role="option"]')).map(
+      (item) => item.textContent,
+    );
+    expect(options).toEqual([
+      'Швидкийдо 2 хв',
+      'Збалансованийдо 5 хв',
+      'Глибокийдо 4 год; нові повідомлення чекатимуть у черзі',
+    ]);
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    expect(selector('Глибина аналізу').textContent).toBe('Глибокий');
+  });
+
+  it('keeps Deep one-shot and falls back to the remembered preset', async () => {
+    await remountWithProviders([PROVIDER]);
+    await chooseOption('Глибина аналізу', 'Швидкий');
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    expect(window.localStorage.getItem('echo.ai-agent.reasoning-preset')).toBe('fast');
+
+    await remountWithProviders([PROVIDER]);
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-deep-once',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Досліди докладно');
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningPreset: 'deep' }),
+    );
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+  });
+
+  it('ignores a remembered provider that is gone or disabled', async () => {
+    window.localStorage.setItem('echo.ai-agent.provider-id', 'provider-2');
+    await remountWithProviders([PROVIDER, { ...SECOND_PROVIDER, enabled: false }]);
+    expect(selector('Провайдер ШІ').textContent).toContain('Gemma');
+
+    window.localStorage.setItem('echo.ai-agent.provider-id', 'removed-provider');
+    await remountWithProviders([PROVIDER, SECOND_PROVIDER]);
+    expect(selector('Провайдер ШІ').textContent).toContain('Gemma');
   });
 
   // The map workspace is lazy and pulls in milsymbol; load it once up front so
@@ -822,6 +1048,206 @@ describe('AiAgentChat request queue', () => {
     );
   });
 });
+describe('#4031 Deep continuation of incomplete answers', () => {
+  const CONTINUE = 'Продовжити в глибокому режимі';
+  const INCOMPLETE = { coverageLimited: true, reason: 'incomplete_research' };
+
+  function continueButtons() {
+    return Array.from(container.querySelectorAll('button')).filter(
+      (button) => button.textContent?.trim() === CONTINUE,
+    );
+  }
+
+  function answer(requestId: string, content: string, overrides: object = {}) {
+    return {
+      id: `${requestId}-assistant`,
+      requestId,
+      requestState: 'completed',
+      role: 'assistant',
+      content,
+      createdAt: Date.now(),
+      startedAt: Date.now() - 300_000,
+      citations: [],
+      reasoningPreset: 'balanced',
+      completionMetadata: INCOMPLETE,
+      ...overrides,
+    };
+  }
+
+  async function openConversation(messages: object[], presets = REASONING_PRESETS): Promise<void> {
+    mocks.conversation.mockResolvedValue({ ...CONVERSATION, messages });
+    window.history.replaceState({}, '', `?conversation=${CONVERSATION.id}`);
+    await remountWithProviders([PROVIDER], presets);
+  }
+
+  async function finishIncompleteRequest(requestId: string) {
+    mocks.conversation.mockResolvedValue({
+      ...CONVERSATION,
+      messages: [answer(requestId, 'Часткова відповідь')],
+    });
+    await remountWithProviders([PROVIDER]);
+    mocks.submit.mockResolvedValueOnce({
+      id: requestId,
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Огляд за тиждень');
+    submitForm();
+    await flush();
+    await act(async () => streamEvent(requestId, 1, 'assistant_snapshot', 'Часткова відповідь'));
+    await act(async () =>
+      streamEvent(requestId, 2, 'completion_metadata', '', { completionMetadata: INCOMPLETE }),
+    );
+    expect(continueButtons()).toHaveLength(0);
+    await act(async () => streamEvent(requestId, 3, 'completion', ''));
+    await flush();
+  }
+
+  it('sends a just-finished answer on as a one-shot Deep follow-up', async () => {
+    await finishIncompleteRequest('request-limited');
+    expect(continueButtons()).toHaveLength(1);
+    expect(container.textContent).toContain('до 4 год; нові повідомлення чекатимуть у черзі');
+
+    setTextarea('Незавершена чернетка');
+    await flush();
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-continued',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    await act(async () => {
+      clickButton(CONTINUE);
+      clickButton(CONTINUE);
+    });
+    await flush();
+
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        conversationId: CONVERSATION.id,
+        message: DEEP_CONTINUATION_PROMPT,
+        reasoningPreset: 'deep',
+      }),
+    );
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Незавершена чернетка',
+    );
+    expect(selector('Глибина аналізу').textContent).toContain('Збалансований');
+    expect(container.textContent).toContain('Ви · Глибокий');
+    expect(continueButtons()).toHaveLength(0);
+  });
+
+  it('brings the button back when the follow-up is rejected', async () => {
+    await finishIncompleteRequest('request-limited');
+    mocks.submit.mockRejectedValueOnce(new Error('мережа недоступна'));
+    await act(async () => clickButton(CONTINUE));
+    await flush();
+
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося надіслати запит: мережа недоступна',
+    });
+    expect(continueButtons()).toHaveLength(1);
+    expect(continueButtons()[0].disabled).toBe(false);
+  });
+
+  it('sends nothing when another tab already moved the conversation on', async () => {
+    await openConversation([answer('request-limited', 'Часткова відповідь')]);
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    mocks.conversation.mockResolvedValue({
+      ...CONVERSATION,
+      messages: [
+        answer('request-limited', 'Часткова відповідь'),
+        answer('request-elsewhere', 'Відповідь з іншої вкладки', { completionMetadata: null }),
+      ],
+    });
+    await act(async () => clickButton(CONTINUE));
+    await flush();
+
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося надіслати запит: у розмові вже є новіший запит',
+    });
+    expect(container.textContent).toContain('Відповідь з іншої вкладки');
+    expect(continueButtons()).toHaveLength(0);
+    expect(selector('Глибина аналізу').textContent).toContain('Глибокий');
+  });
+
+  it('never posts into a conversation opened while the check was running', async () => {
+    const limited = { ...CONVERSATION, messages: [answer('request-limited', 'Часткова')] };
+    await openConversation(limited.messages);
+    let finishCheck: (conversation: typeof limited) => void = () => {};
+    mocks.conversation.mockImplementationOnce(
+      () => new Promise((resolve) => (finishCheck = resolve)),
+    );
+    await act(async () => clickButton(CONTINUE));
+    await act(async () => {
+      window.dispatchEvent(new Event(AI_AGENT_NEW_CONVERSATION_EVENT));
+    });
+    await flush();
+    await act(async () => finishCheck(limited));
+    await flush();
+
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it('restores the button after reload, including for a context-limited answer', async () => {
+    await openConversation([
+      answer('request-context', 'Обрізана відповідь', {
+        completionMetadata: { coverageLimited: true, reason: 'context_limit' },
+      }),
+    ]);
+    expect(continueButtons()).toHaveLength(1);
+  });
+
+  it('offers it only on the newest answer', async () => {
+    await openConversation([
+      answer('request-older', 'Старіша відповідь'),
+      answer('request-newer', 'Новіша відповідь'),
+    ]);
+    expect(continueButtons()).toHaveLength(1);
+    const answers = container.querySelector('[data-testid="ai-agent-chat-messages"]')!;
+    expect(answers.textContent!.indexOf(CONTINUE)).toBeGreaterThan(
+      answers.textContent!.indexOf('Новіша відповідь'),
+    );
+
+    await openConversation([
+      answer('request-older', 'Старіша відповідь'),
+      answer('request-newer', 'Повна відповідь', { completionMetadata: null }),
+    ]);
+    expect(continueButtons()).toHaveLength(0);
+  });
+
+  it('is absent when Deep was already used or is unavailable', async () => {
+    await openConversation([answer('request-deep', 'Глибока', { reasoningPreset: 'deep' })]);
+    expect(continueButtons()).toHaveLength(0);
+
+    await openConversation(
+      [answer('request-limited', 'Часткова')],
+      REASONING_PRESETS.filter((option) => option.preset !== 'deep'),
+    );
+    expect(continueButtons()).toHaveLength(0);
+  });
+
+  it('leaves the coverage footer off a Deep answer, which states its own stop', async () => {
+    const STOPPED = { coverageLimited: true, reason: 'time_limit' };
+    await openConversation([
+      answer('request-deep', 'Глибока', { reasoningPreset: 'deep', completionMetadata: STOPPED }),
+    ]);
+    expect(container.textContent).not.toContain('Охоплення джерел неповне');
+
+    await openConversation([answer('request-limited', 'Часткова')]);
+    expect(container.textContent).toContain('Охоплення джерел неповне');
+  });
+
+  it('asks to finish the task without assuming it was an analysis', () => {
+    expect(DEEP_CONTINUATION_PROMPT).toContain('доведи його до кінця');
+    expect(DEEP_CONTINUATION_PROMPT).toContain('мапами');
+    expect(DEEP_CONTINUATION_PROMPT).not.toMatch(/аналіз|джерела новим пошуком/);
+  });
+});
+
 describe('AiAgentChat conversation controls', () => {
   it('renders the polished empty state, provider control, and hidden history pane', () => {
     expect(container.textContent).toContain('Спитайте ЕХО');

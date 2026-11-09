@@ -208,6 +208,7 @@ pub fn signal_worker_options(
     SignalWorkerOptions {
         restapi_error_discord_webhook_url,
         restart_coordinator: Some(Arc::new(coordinator)),
+        ..Default::default()
     }
 }
 

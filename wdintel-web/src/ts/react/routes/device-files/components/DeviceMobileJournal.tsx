@@ -20,9 +20,9 @@ export function DeviceMobileJournal({
           className="flex min-w-0 flex-col gap-echo-sm p-echo-lg [overflow-wrap:anywhere]"
         >
           <strong>{entry.name}</strong>
-          <code className="text-[length:var(--echo-typography-font-size-xs)] text-echo-text/70!">
+          <span className="text-[length:var(--echo-typography-font-size-xs)] text-echo-text/70">
             {entry.absolutePath}
-          </code>
+          </span>
           <DeviceAnalyticsTagBadges tags={entry.tags} />
           <span className="flex items-center gap-echo-sm text-[length:var(--echo-typography-font-size-xs)]">
             <DeviceFileContentMarker hasContent={entry.hasContent} />

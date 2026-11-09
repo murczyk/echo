@@ -2,6 +2,7 @@ import ClearIcon from '@mui/icons-material/Clear';
 import SearchIcon from '@mui/icons-material/Search';
 import { InputAdornment, TextField } from '@mui/material';
 import clsx from 'clsx';
+import { useEffect, useState, useTransition } from 'react';
 import type { KeyboardEvent } from 'react';
 
 import { PowerIconButton } from '../../../../../PowerIconButton';
@@ -14,19 +15,26 @@ type GlobalFilterTextFieldProps = {
 };
 
 export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
+  const [filter, setFilter] = useState(props.globalFilter);
+  const [filterPending, startFilterTransition] = useTransition();
+
+  useEffect(() => {
+    if (!filterPending) setFilter(props.globalFilter);
+  }, [props.globalFilter, filterPending]);
+
+  function updateFilter(value: string) {
+    setFilter(value);
+    startFilterTransition(() => props.setGlobalFilter(value));
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (
-      props.disabled ||
-      !props.globalFilter ||
-      event.key !== 'Escape' ||
-      event.currentTarget.readOnly
-    ) {
+    if (props.disabled || !filter || event.key !== 'Escape' || event.currentTarget.readOnly) {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
-    props.setGlobalFilter('');
+    updateFilter('');
   }
 
   return (
@@ -63,9 +71,9 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
         },
       }}
       disabled={props.disabled}
-      onChange={(event) => props.setGlobalFilter(event.target.value)}
+      onChange={(event) => updateFilter(event.target.value)}
       onKeyDown={onKeyDown}
-      value={props.globalFilter}
+      value={filter}
       variant="outlined"
       size="small"
       slotProps={{
@@ -84,12 +92,12 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
           endAdornment: (
             <InputAdornment position="end">
               <PowerIconButton
-                disabled={props.disabled || !props.globalFilter}
+                disabled={props.disabled || !filter}
                 size="small"
                 aria-label="clear-filter"
-                onClick={() => props.setGlobalFilter('')}
+                onClick={() => updateFilter('')}
               >
-                {props.globalFilter ? (
+                {filter ? (
                   <ClearIcon className="!w-[18px] !h-[18px]" />
                 ) : (
                   <div className="!w-[18px] !h-[18px]" />

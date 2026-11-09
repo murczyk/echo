@@ -23,6 +23,7 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
+const unitCatalogMock = vi.hoisted(() => ({ getUnitHierarchy: vi.fn() }));
 const groupCatalogMock = vi.hoisted(() => ({ groups: vi.fn(), details: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock('../../../services/api/client', () => ({
 vi.mock('../../../services/api/user', () => ({
   fetchCurrentUser: currentUserMock.fetchCurrentUser,
 }));
+vi.mock('../../../services/api/units', () => unitCatalogMock);
 
 vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
@@ -383,6 +385,9 @@ describe('useRerAnalysisNeoPage', () => {
       disableBotTags: false,
     });
     currentUserMock.fetchCurrentUser.mockReset();
+    unitCatalogMock.getUnitHierarchy
+      .mockReset()
+      .mockResolvedValue({ revision: 'empty', groups: [], units: [] });
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
     inboxMessagesMock.fetchInboxItemContext.mockReset();
     inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
@@ -525,7 +530,9 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
   });
 
-  it('restores a selected group filter from browser storage', async () => {
+  // Regression: https://github.com/echoua/echo/issues/3982
+  it('starts a fresh navigation with default filters and restores filters only from the URL', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo');
     renderHook(['Rer']);
     await act(async () => {
       latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
@@ -533,33 +540,30 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => {
       latest?.updateQueryState({ freqsSelected: ['222.2'] });
     });
+    const filteredUrl = window.location.href;
 
     act(() => root?.unmount());
     root = null;
     latest = null;
-    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+    window.history.replaceState({}, '', '/rer-analysis-neo');
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.freqsSelected).toEqual([]);
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(window.localStorage.getItem('rer-analysis-neo-scope-filters-v1')).toBeNull();
+
+    act(() => root?.unmount());
+    root = null;
+    latest = null;
+    window.history.replaceState({}, '', filteredUrl);
     renderHook(['Rer']);
 
     expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
     expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
   });
 
-  it('ignores malformed stored group filters', () => {
-    window.localStorage.setItem(
-      'rer-analysis-neo-scope-filters-v1',
-      JSON.stringify({
-        version: 1,
-        scopes: { 'group:group-b': { callsignsSelected: 'not-an-array' } },
-      }),
-    );
-    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
-
-    renderHook(['Rer']);
-
-    expect(latest?.queryState.callsignsSelected).toEqual([]);
-  });
-
   it('restores the group scope filter from browser history', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo');
     renderHook(['Rer']);
     await act(async () => {
       latest?.updateQueryState({ freqsSelected: ['111.1'] });
@@ -572,6 +576,65 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.groupNavigation.scope).toEqual({ kind: 'all' });
     expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+  });
+
+  it.each([
+    { label: 'unknown unit', unitsSelected: [''] },
+    { label: 'unknown and named units', unitsSelected: ['', 'Header Unit'] },
+    { label: 'named unit', unitsSelected: ['Header Unit'] },
+  ])(
+    '#4022 retains $label when an editor overlay pops to the same URL',
+    async ({ unitsSelected }) => {
+      window.history.replaceState({}, '', '/rer-analysis-neo');
+      renderHook();
+      await flushEffects();
+
+      await act(async () => latest?.updateQueryState({ unitsSelected }));
+      await flushEffects();
+      expect(latest?.queryState.unitsSelected).toEqual(unitsSelected);
+      expect(new URL(window.location.href).searchParams.getAll('units')).toEqual(unitsSelected);
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+      await flushEffects();
+
+      expect(latest?.queryState.unitsSelected).toEqual(unitsSelected);
+      expect(new URL(window.location.href).searchParams.getAll('units')).toEqual(unitsSelected);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3992
+  it('leaves the next route URL untouched when SPA navigation leaves analysis', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/rer-analysis-neo?filterPanelOpen=true&fromDateTime=2026-11-03T00%3A00&toDateTime=2026-11-04T00%3A00&leftPanelOpen=false&rightPanelOpen=false',
+    );
+    renderHook(['Rer']);
+    await flushEffects();
+
+    // requestNavigation commits the next URL and dispatches popstate before Elm unmounts the page.
+    await act(async () => {
+      window.history.pushState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await flushEffects();
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps URL ownership across the trailing-slash alias of the analysis route', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo/');
+    renderHook(['Rer']);
+    await flushEffects();
+
+    window.history.pushState({}, '', '/rer-analysis-neo?freqs=111.1');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    expect(new URL(window.location.href).searchParams.getAll('freqs')).toEqual(['222.2']);
   });
 
   it('keeps a group scope transition pending until that scope commits its messages', async () => {
@@ -742,7 +805,7 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.queryState.onlyWithNetwork).toBe(expected);
       expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.onlyWithNetwork).toBe(expected);
-      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyWithNetwork).toBe(
+      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyForRerReport).toBe(
         expected,
       );
     },
@@ -846,6 +909,7 @@ describe('useRerAnalysisNeoPage', () => {
       deferInitialLoad: true,
     });
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
     expect(window.location.search).toContain('device-1');
   });
 
@@ -862,6 +926,7 @@ describe('useRerAnalysisNeoPage', () => {
       deferInitialLoad: true,
     });
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
     expect(window.location.search).toContain('device-1');
   });
 
@@ -872,6 +937,7 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.networkVisibilityReady).toBe(false);
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -1260,6 +1326,51 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.hideBotTags).toBe(true);
   });
+  it('#4019 preserves a failed setup explanation when inbox loading or filters clear their own errors', async () => {
+    currentUserMock.fetchCurrentUser.mockRejectedValueOnce(new Error('user failed'));
+    renderHook();
+    await flushEffects();
+    const error = latest?.error;
+    const occurrence = latest?.errorOccurrence;
+    expect(error).toContain('Не вдалося завантажити поточного користувача');
+    const onError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => onError('Recoverable action failed'));
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorOccurrence).toBe(occurrence);
+    await act(async () => onError(''));
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorPersistent).toBe(true);
+    await act(async () => latest?.resetFilters());
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorPersistent).toBe(true);
+  });
+
+  it('#4019 keeps recoverable page errors transient, including before messages load', async () => {
+    currentAnalysisData!.hasLoadedInitialMessages = false;
+    renderHook();
+    await flushEffects();
+    const onError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => onError('Inbox unavailable', true));
+    expect(latest?.errorPersistent).toBe(true);
+    await act(async () => latest?.updateQueryState({ fromDateTimeStr: 'invalid' }));
+    await act(async () => {
+      await latest?.findCallsignFrequencyMatches(['test'], 1);
+    });
+    expect(latest?.error).toBe('Перевірте дату та час перед пошуком частот.');
+    expect(latest?.errorPersistent).toBe(false);
+    const occurrence = latest?.errorOccurrence;
+    await act(async () => {
+      await latest?.findCallsignFrequencyMatches(['test'], 1);
+    });
+    expect(latest?.error).toBe('Перевірте дату та час перед пошуком частот.');
+    expect(latest?.errorPersistent).toBe(false);
+    expect(latest?.errorOccurrence).not.toBe(occurrence);
+    await act(async () => onError('Inbox unavailable', true));
+    await act(async () => latest?.resetFilters());
+    expect(latest?.error).toBeNull();
+    expect(latest?.errorPersistent).toBe(false);
+  });
+
   it('keeps the direct-link error when the regular message list clears its error', async () => {
     inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({ message: null });
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);
@@ -1459,6 +1570,55 @@ describe('useRerAnalysisNeoPage', () => {
     },
   );
 
+  it.each(['unit-id:10', 'unit-parent:group:2:6 А'])(
+    '#3527 waits for the hierarchy before opening a direct window for %s',
+    async (parent) => {
+      const catalog = deferred<import('../../../../../Bindings').UnitHierarchyRsp>();
+      unitCatalogMock.getUnitHierarchy.mockReturnValue(catalog.promise);
+      const params = new URLSearchParams({
+        m: 'target-uid',
+        units: parent,
+        unitsIncludeChildren: 'false',
+        fromDateTime: '2026-08-28T00:00',
+        toDateTime: '2026-08-29T00:00',
+      });
+      window.history.replaceState({}, '', `${window.location.pathname}?${params}`);
+      inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildDirectLinkWindow());
+      renderHook();
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => {
+        catalog.resolve({
+          revision: parent,
+          groups: [
+            { id: 'group:2:6 А', label: '6 А', level: 2, parentIndex: null },
+            {
+              id: 'group:2:6 А|3:__EMPTY__|4:__EMPTY__|5:__EMPTY__|6:__EMPTY__|7:__EMPTY__|8:1 мср',
+              label: '1 мср',
+              level: 8,
+              parentIndex: 0,
+            },
+          ],
+          units: [
+            ...(parent === 'unit-id:10' ? [{ id: 10, name: '6 А', groupIndex: 0 }] : []),
+            { id: 11, name: '1 мср', groupIndex: 1 },
+          ],
+        });
+      });
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledWith(
+        {
+          messageRef: 'target-uid',
+          inboxReq: expect.objectContaining({
+            selectedUnitIds: parent === 'unit-id:10' ? [10, 11] : [11],
+            selectedUnits: null,
+          }),
+        },
+        expect.anything(),
+      );
+    },
+  );
+
   it('opens the direct-link message window with its references', async () => {
     const targetMessage = {
       text: 'target',
@@ -1536,6 +1696,85 @@ describe('useRerAnalysisNeoPage', () => {
     act(() => latest?.directMessageNavigation?.onClearFocus());
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+  });
+
+  it('keeps the linked-message context when an overlay layer pops back to the same URL', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    const linkedUrl = window.location.href;
+
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(linkedUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+    const browsingUrl = window.location.href;
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(browsingUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('lands on the linked message again when Back restores its URL after scrolling away', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValue(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    const linkedUrl = window.location.href;
+    const historyLength = window.history.length;
+    const landingKey = latest!.linkedMessageLandingKey;
+
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+
+    expect(window.history.length).toBe(historyLength + 1);
+    expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+
+    window.history.replaceState(window.history.state, '', linkedUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(2);
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls[1]?.[0]).toMatchObject({
+      messageRef: 'target-uid',
+    });
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    expect(latest?.linkedMessageLandingKey).toBe(landingKey + 1);
+    expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
+  });
+
+  it('releases the linked focus when Forward restores the browsing URL', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValue(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    const linkedUrl = window.location.href;
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+    const browsingUrl = window.location.href;
+    window.history.replaceState(window.history.state, '', linkedUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+
+    window.history.replaceState(window.history.state, '', browsingUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(browsingUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(2);
   });
 
   // Regression: https://github.com/echoua/echo/issues/3689

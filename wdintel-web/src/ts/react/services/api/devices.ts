@@ -1,5 +1,9 @@
 import type {
   DeviceArchiveStatus,
+  DeviceFileMarkers,
+  DeviceFileFilterOptions,
+  SetDeviceFileFavoriteReq,
+  MarkDeviceFileViewedReq,
   DeviceAudioForwardingSettings,
   DeviceFileContentRef,
   DeviceAnalyticsSummaryReq,
@@ -19,6 +23,7 @@ import type {
   CreateDeviceReq,
   DeviceDetailReq,
   DeviceDetails,
+  DeviceFilterOptions,
   DeviceSettingsItem,
   DeviceSettingsReq,
   DeviceAnalyticsFilesReq,
@@ -62,6 +67,9 @@ export type CreateDeviceInput = {
 
 export type DeviceUpdatePatchInput = {
   deviceId: UpdateDeviceReq['deviceId'];
+  rating?: NonNullable<UpdateDeviceReq['rating']>;
+  tags?: NonNullable<UpdateDeviceReq['tags']>;
+  description?: UpdateDeviceReq['description'];
   externalUrl?: UpdateDeviceReq['externalUrl'];
   customFields?: Exclude<UpdateDeviceReq['customFields'], null>;
   name?: NonNullable<UpdateDeviceReq['name']>;
@@ -76,6 +84,9 @@ type DeviceUpdatePatchReq = DeviceUpdatePatchInput;
 
 function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatchReq {
   const req: DeviceUpdatePatchReq = { deviceId: input.deviceId };
+  if (input.rating !== undefined) req.rating = input.rating;
+  if (input.tags !== undefined) req.tags = input.tags;
+  if (input.description !== undefined) req.description = input.description;
 
   if (input.externalUrl !== undefined) req.externalUrl = input.externalUrl;
   if (input.customFields !== undefined) req.customFields = input.customFields;
@@ -112,6 +123,9 @@ function normalizeDeviceDetails(data: unknown): DeviceDetails {
   const customFields = readCustomFields(data);
   return {
     ...details,
+    rating: details.rating ?? 0,
+    tags: details.tags ?? [],
+    description: details.description ?? null,
     customFields,
   };
 }
@@ -125,7 +139,20 @@ export async function listDevices(
     transformCamelToSnake(req),
     options,
   );
-  return transformSnakeToCamel<ListDevicesRsp>(data);
+  const response = transformSnakeToCamel<ListDevicesRsp>(data);
+  const rawList: unknown[] = Array.isArray(data?.list) ? data.list : [];
+  return {
+    ...response,
+    list: response.list.map((device, index) => ({
+      ...device,
+      rating: device.rating ?? 0,
+      tags: device.tags ?? [],
+      description: device.description ?? null,
+      customFields: readCustomFields(rawList[index]),
+      audioDays: device.audioDays ?? null,
+      activitySplitFilesAudio: device.activitySplitFilesAudio ?? false,
+    })),
+  };
 }
 
 export async function getDeviceUnitStats(options?: RequestOptions): Promise<DeviceUnitStat[]> {
@@ -136,6 +163,28 @@ export async function getDeviceUnitStats(options?: RequestOptions): Promise<Devi
 export async function listDeviceAors(options?: RequestOptions): Promise<AreaOfResponsibility[]> {
   const data = await postJson('/api/device/aors', undefined, options);
   return transformSnakeToCamel<AreaOfResponsibility[]>(data);
+}
+
+export async function listDeviceFilterOptions(
+  options?: RequestOptions,
+): Promise<DeviceFilterOptions> {
+  const data = await postJson('/api/device/filter-options', undefined, options);
+  const filterOptions = transformSnakeToCamel<DeviceFilterOptions>(data);
+  return { ...filterOptions, customFieldKeys: filterOptions.customFieldKeys ?? [] };
+}
+
+export async function listDeviceTags(options?: RequestOptions): Promise<string[]> {
+  return postJson<string[]>('/api/device/tags', undefined, options);
+}
+
+export async function archiveDevice(deviceId: DeviceDetails['id']): Promise<DeviceDetails> {
+  const data = await postJson('/api/device/archive', { device_id: deviceId });
+  return normalizeDeviceDetails(data);
+}
+
+export async function unarchiveDevice(deviceId: DeviceDetails['id']): Promise<DeviceDetails> {
+  const data = await postJson('/api/device/unarchive', { device_id: deviceId });
+  return normalizeDeviceDetails(data);
 }
 
 export async function listDeviceUnits(options?: RequestOptions): Promise<Unit[]> {
@@ -182,8 +231,12 @@ export async function updateDeviceSettings(
   if (req.clearMattermostWebhook !== undefined) {
     body.clearMattermostWebhook = req.clearMattermostWebhook;
   }
+  if (req.activitySplitFilesAudio !== undefined) {
+    body.activitySplitFilesAudio = req.activitySplitFilesAudio;
+  }
   const data = await postJson<DeviceSettingsItem>('/api/admin/device/settings', body, options);
-  return transformSnakeToCamel<DeviceSettingsItem>(data);
+  const settings = transformSnakeToCamel<DeviceSettingsItem>(data);
+  return { ...settings, activitySplitFilesAudio: settings.activitySplitFilesAudio ?? false };
 }
 
 export async function listDeviceFileRoots(
@@ -403,4 +456,40 @@ export async function getDeviceAudioForwarding(
 ): Promise<DeviceAudioForwardingSettings> {
   const data = await postJson('/api/device/audio/forwarding', { device_id: deviceId }, options);
   return transformSnakeToCamel<DeviceAudioForwardingSettings>(data);
+}
+
+export async function setDeviceFileFavorite(
+  req: SetDeviceFileFavoriteReq,
+  options?: RequestOptions,
+): Promise<DeviceFileMarkers> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/files/favorite', transformCamelToSnake(req), options),
+  );
+}
+
+export async function markDeviceFileViewed(
+  req: MarkDeviceFileViewedReq,
+  options?: RequestOptions,
+): Promise<DeviceFileMarkers> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/files/viewed', transformCamelToSnake(req), options),
+  );
+}
+
+export async function markDeviceFileUnviewed(
+  req: MarkDeviceFileViewedReq,
+  options?: RequestOptions,
+): Promise<DeviceFileMarkers> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/files/unviewed', transformCamelToSnake(req), options),
+  );
+}
+
+export async function listDeviceFileFilterOptions(
+  req: ListDeviceFileRootsReq,
+  options?: RequestOptions,
+): Promise<DeviceFileFilterOptions> {
+  return transformSnakeToCamel<DeviceFileFilterOptions>(
+    await postJson('/api/device/files/filter-options', transformCamelToSnake(req), options),
+  );
 }

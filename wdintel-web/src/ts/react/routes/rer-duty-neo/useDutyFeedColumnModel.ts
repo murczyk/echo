@@ -30,9 +30,11 @@ export type DutyFeedColumnModelDeps = {
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
   hideNetworks: boolean;
+  dutySelectedGroupsEnabled: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  importantOnlyMyOrganism: boolean;
   openReportEditor: (feedId: string, reportId: number, sourceMessageId: number) => void;
   openMessageEditor: (
     feedId: string,
@@ -202,6 +204,9 @@ function buildFeedFilterPanel(
       postsList,
       locationsList,
       unitsList: Object.values(unitsMap),
+      unitStatsReq: deps.feeds.buildReqForFeed(feed, { loadLatest: true }),
+      unitStatsRefreshIntervalMs: deps.feeds.pollIntervalMs,
+      unitHierarchy: deps.feeds.unitHierarchy,
       persistentUnitFilterValues,
     },
     toggles: {
@@ -284,6 +289,7 @@ function buildFeedFilterPanel(
           unitsSelected: includeValues.length ? includeValues : null,
           unitsDenied: excludeValues.length ? excludeValues : null,
         }),
+      onUnitStatsError: deps.feeds.setError,
       onUnitsExactMatchOnlyChange: (v: boolean) =>
         applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
       ...buildLocationFilterActions(feed, deps.feeds),
@@ -346,6 +352,7 @@ function buildFeedFilterPanel(
                   adjacentFreqsRange: 0,
                   highlightSignalsEnabled: false,
                   onlyMyUnitTagsEnabled: false,
+                  unitsIncludeChildren: true,
                 }
               : item,
           ),
@@ -395,6 +402,7 @@ function buildFeedMessageCard(
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,
+    importantOnlyMyOrganism: deps.importantOnlyMyOrganism,
     tagsMap,
     tagsOrder,
     botTagAction,
@@ -426,6 +434,7 @@ export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
     filterPanel: buildFeedFilterPanel(feed, deps),
     groupNavigation: {
       scope: groupFilterScope(feed.filter.groupsSelected ?? []),
+      showSelectedGroups: deps.dutySelectedGroupsEnabled,
       groupName: feed.groupScopeMasterKey
         ? (deps.feeds.groupInfos[feed.groupScopeMasterKey]?.name ?? feed.groupScopeMasterKey)
         : 'Всі групи',

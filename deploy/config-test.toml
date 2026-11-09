@@ -23,9 +23,10 @@ server_id = 37
 # signoz_logs_enabled = true
 # signoz_logs_endpoint = "http://signoz-echo.eagle-atria.ts.net:8082"
 
-# Enable device metrics to Signoz (OTLP gRPC).
-# signoz_metrics_enabled = true
-# signoz_metrics_endpoint = "http://signoz-echo.eagle-atria.ts.net:4317"
+# Application metrics export to Signoz is set on the Monitoring tab of the
+# admin system settings.
+# Collect hourly admin KPI snapshots (requires that metrics export).
+# signoz_kpi_metrics_enabled = true
 
 [file_registry]
 pg_host = "localhost"

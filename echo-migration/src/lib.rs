@@ -10,6 +10,13 @@ mod m20261026_101819_messenger_alert_delivery_created_at_index;
 mod m20261026_110911_large_media_previews;
 mod m20261026_190000_message_card_text_size;
 mod m20261027_153932_ai_worker_fallback_monitoring;
+mod m20261030_114640_device_rating_description;
+mod m20261030_143441_device_activity_breakdown;
+mod m20261031_155820_api_sender;
+mod m20261101_151245_ai_agent_uploads;
+mod m20261104_165252_rer_report_unit_selection;
+mod m20261105_212108_iggy_group_refresh_queue;
+mod m20261107_175019_duty_selected_groups_flag;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -511,6 +518,13 @@ mod m20261022_151553_iggy_unit_refresh_queue;
 
 mod m20261029_104825_message_reply_component_locks;
 
+mod m20261031_080043_message_card_quick_action;
+mod m20261031_104502_role_message_settings;
+mod m20261102_131738_report_concurrency_settings;
+mod m20261103_073829_important_notify_all_flag;
+mod m20261103_120000_ai_agent_documents;
+mod m20261104_064753_minimal_report_window;
+
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
@@ -523,6 +537,10 @@ mod m20261010_073418_inbox_settlement_processed_flag;
 mod m20261010_085100_settlement_alias;
 mod m20261010_094039_settlement_alias_lookup_indexes;
 mod m20261010_110158_ai_settlement_worker_groups;
+
+mod m20261104_083000_group_message_requirements;
+mod m20261107_175132_important_only_my_organism;
+mod m20261108_090102_signoz_metrics_settings;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1206,6 +1224,22 @@ impl MigratorTrait for Migrator {
             Box::new(m20261026_190000_message_card_text_size::Migration),
             Box::new(m20261027_153932_ai_worker_fallback_monitoring::Migration),
             Box::new(m20261029_104825_message_reply_component_locks::Migration),
+            Box::new(m20261031_080043_message_card_quick_action::Migration),
+            Box::new(m20261030_114640_device_rating_description::Migration),
+            Box::new(m20261030_143441_device_activity_breakdown::Migration),
+            Box::new(m20261031_104502_role_message_settings::Migration),
+            Box::new(m20261031_155820_api_sender::Migration),
+            Box::new(m20261101_151245_ai_agent_uploads::Migration),
+            Box::new(m20261102_131738_report_concurrency_settings::Migration),
+            Box::new(m20261103_073829_important_notify_all_flag::Migration),
+            Box::new(m20261103_120000_ai_agent_documents::Migration),
+            Box::new(m20261104_083000_group_message_requirements::Migration),
+            Box::new(m20261104_165252_rer_report_unit_selection::Migration),
+            Box::new(m20261105_212108_iggy_group_refresh_queue::Migration),
+            Box::new(m20261104_064753_minimal_report_window::Migration),
+            Box::new(m20261107_175019_duty_selected_groups_flag::Migration),
+            Box::new(m20261107_175132_important_only_my_organism::Migration),
+            Box::new(m20261108_090102_signoz_metrics_settings::Migration),
         ]
     }
 }

@@ -661,6 +661,14 @@ pub(crate) async fn publish_file_in(
     complete_file_job(transaction, claim, verified, &receipt)
         .await
         .context(h!())?;
+    super::super::stats::record_content_completed_sqlx_in(
+        transaction,
+        upload.device_id,
+        upload.id,
+        chrono::Utc::now().fixed_offset(),
+    )
+    .await
+    .context(h!())?;
     Ok(receipt)
 }
 
@@ -1249,6 +1257,50 @@ where id = $1 and status = 'open'
         .context("expire due content upload")
         .context(h!())?;
     Ok(result.rows_affected() > 0)
+}
+
+/// Reopens an open-but-due or expired upload whose source is still spooled,
+/// so recovery can admit it. The target must still expect this revision.
+pub(super) async fn reopen_for_recovery(
+    db: &DatabaseConnection,
+    upload_id: Uuid,
+    idle_ttl_secs: u64,
+) -> Result<bool> {
+    let ttl = i64::try_from(idle_ttl_secs).context(h!())?;
+    let result = db
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+with deadline as (
+    select clock_timestamp() + $2 * interval '1 second' as at
+)
+update file_content_upload u
+set status = 'open',
+    expires_at = deadline.at,
+    hard_expires_at = greatest(u.hard_expires_at, deadline.at),
+    next_cleanup_at = deadline.at
+from deadline
+where u.id = $1
+  and u.status in ('open', 'expired')
+  and u.spool_removed_at is null
+  and u.finalization_job_id is null
+  and exists (
+      select 1 from file_entry f
+      where f.id = u.file_id and f.device_id = u.device_id
+        and f.kind = 'file' and f.revision = u.revision
+        and f.content_path is null and f.archive_file_id is null
+  )
+  and not exists (
+      select 1 from file_content c
+      where c.file_id = u.file_id and c.revision = u.revision
+  )
+"#,
+            [upload_id.into(), ttl.into()],
+        ))
+        .await
+        .context("reopen content upload for recovery")
+        .context(h!())?;
+    Ok(result.rows_affected() == 1)
 }
 
 pub(crate) async fn mark_spool_removed(

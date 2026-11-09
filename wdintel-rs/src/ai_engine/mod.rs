@@ -1,8 +1,10 @@
 pub mod client;
 mod cooldown;
 pub mod gov;
+mod metrics;
 pub mod types;
 pub use client::AiEngineClient;
+pub(crate) use metrics::StreamBodyTimer;
 
 use crate::config::{
     AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,
@@ -10,7 +12,7 @@ use crate::config::{
     AI_ENGINE_GLM_5_3_OUTPUT_TOKENS, AI_ENGINE_MODEL_NAME_MAX_CHARS,
     AI_ENGINE_NAME_MAX_CHARS, AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES,
     AI_ENGINE_OPENAI_REASONING_NONE_MODELS, AI_ENGINE_REQUEST_TIMEOUT_SEC,
-    AI_ENGINE_TOKEN_MAX_CHARS, AI_ENGINE_URL_MAX_CHARS,
+    AI_ENGINE_TOKEN_MAX_CHARS, AI_ENGINE_URL_MAX_CHARS, AI_GOV_UA_API_BASE,
 };
 use crate::entities::{
     ai_callsign_settings, ai_chat, ai_chat_message, ai_engine,
@@ -534,7 +536,7 @@ fn validate_create_values(
             "Вкажіть назву ШІ движка",
             AI_ENGINE_NAME_MAX_CHARS,
         )?,
-        url: validate_url(req.url)?,
+        url: validate_url(req.url, req.enabled)?,
         token: validate_token(req.token)?,
         model_name: validate_required(
             req.model_name,
@@ -562,7 +564,7 @@ fn validate_update_values(
             "Вкажіть назву ШІ движка",
             AI_ENGINE_NAME_MAX_CHARS,
         )?,
-        url: validate_url(req.url)?,
+        url: validate_url(req.url, req.enabled)?,
         token,
         model_name: validate_required(
             req.model_name,
@@ -594,7 +596,7 @@ fn validate_required(
     Ok(value)
 }
 
-fn validate_url(value: String) -> Result<String, AppError> {
+fn validate_url(value: String, enabled: bool) -> Result<String, AppError> {
     let value = validate_required(
         value,
         "Вкажіть URL OpenAI-сумісного API",
@@ -607,6 +609,13 @@ fn validate_url(value: String) -> Result<String, AppError> {
         return Err(AppError::BL {
             msg: "URL ШІ API повинен використовувати http або https"
                 .to_string(),
+        });
+    }
+    if enabled && client::is_direct_openai_url(&url) {
+        return Err(AppError::BL {
+            msg: format!(
+                "Прямий доступ до OpenAI заборонено, використовуйте {AI_GOV_UA_API_BASE}"
+            ),
         });
     }
     Ok(value.trim_end_matches('/').to_string())
@@ -1091,7 +1100,7 @@ fn chat_title(prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{chat_completions_url, chat_title};
+    use super::{chat_completions_url, chat_title, validate_url};
 
     #[test]
     fn appends_chat_completions_to_base_url() {
@@ -1101,6 +1110,33 @@ mod tests {
                 .as_str(),
             "https://api.openai.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn enabled_engines_cannot_use_direct_openai() {
+        for url in [
+            "https://api.openai.com/v1",
+            "https://API.OpenAI.com/v1/",
+            "https://api.openai.com./v1",
+            "https://api.openai.com:443/v1",
+            "https://eu.api.openai.com/v1",
+            "http://api.openai.com/v1",
+        ] {
+            assert!(validate_url(url.to_string(), true).is_err(), "{url}");
+            assert!(validate_url(url.to_string(), false).is_ok(), "{url}");
+        }
+    }
+
+    #[test]
+    fn other_engine_hosts_stay_valid() {
+        for url in [
+            crate::config::AI_GOV_UA_API_BASE,
+            "http://spark:8000/v1",
+            "https://notopenai.com/v1",
+            "https://openai.com.example.org/v1",
+        ] {
+            assert!(validate_url(url.to_string(), true).is_ok(), "{url}");
+        }
     }
 
     #[test]

@@ -3,6 +3,8 @@ use crate::functest::tests::*;
 
 fn settings(admin: &login::Model) -> NativeGroupSettings {
     NativeGroupSettings {
+        is_sigint_unit_mandatory: None,
+        is_device_mandatory: None,
         name: "Група Echo".to_string(),
         color_key: None,
         short_note: Some("Коротка нотатка".to_string()),
@@ -203,6 +205,104 @@ async fn native_group_create_replay_rename_assign_and_archive_preserve_access_se
     assert!(!restored.is_archived);
     assert_eq!(restored.settings.color_key, Some(SignalGroupColor::Teal));
     assert!(restored.settings.zone_ids.is_empty());
+    txn.rollback().await.unwrap();
+}
+
+#[serial]
+#[tokio::test]
+async fn native_group_edit_preserves_inactive_ai_managed_access() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let admin = mk_login(&txn, Default::default()).await.unwrap();
+    let created = create_group(
+        &txn,
+        admin.id,
+        NativeGroupCreateReq {
+            request_id: Uuid::new_v4().to_string(),
+            settings: settings(&admin),
+        },
+    )
+    .await
+    .unwrap();
+    let agent = mk_login(
+        &txn,
+        login::ActiveModel {
+            deleted: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    ai_agent_user_link::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        human_login_id: Set(admin.id),
+        agent_login_id: Set(agent.id),
+        created_at: Set(Utc::now().naive_utc()),
+        updated_at: Set(Utc::now().naive_utc()),
+    }
+    .insert(&txn)
+    .await
+    .unwrap();
+    mk_secret_group_user(
+        &txn,
+        secret_group_user::ActiveModel {
+            master_key: Set(created.master_key.clone()),
+            login_id: Set(agent.id),
+            secret_group_organism_id: Set(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    signal_group_admin::ActiveModel {
+        signal_group_id: Set(created.master_key.clone()),
+        login_id: Set(agent.id),
+        deleted: Set(false),
+        created_at: Set(Utc::now().naive_utc()),
+    }
+    .insert(&txn)
+    .await
+    .unwrap();
+
+    let mut settings =
+        detail(&txn, &created.master_key).await.unwrap().settings;
+    assert_eq!(settings.user_logins, vec![admin.id.to_string()]);
+    assert_eq!(settings.admin_logins, vec![admin.id.to_string()]);
+    settings.name = "Перейменована група".to_string();
+    settings.user_logins.clear();
+    let updated = update_group(
+        &txn,
+        NativeGroupUpdateReq {
+            master_key: created.master_key.clone(),
+            settings,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.settings.name, "Перейменована група");
+    assert!(updated.settings.user_logins.is_empty());
+    assert_eq!(updated.settings.admin_logins, vec![admin.id.to_string()]);
+    assert_eq!(
+        secret_group_user::Entity::find()
+            .filter(
+                secret_group_user::Column::MasterKey.eq(&created.master_key)
+            )
+            .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
+            .select_only()
+            .column(secret_group_user::Column::LoginId)
+            .into_tuple::<Uuid>()
+            .all(&txn)
+            .await
+            .unwrap(),
+        vec![agent.id]
+    );
+    let agent_admin =
+        signal_group_admin::Entity::find_by_id((created.master_key, agent.id))
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(!agent_admin.deleted);
     txn.rollback().await.unwrap();
 }
 

@@ -1,18 +1,45 @@
 # Agent reasoning and research budgets
 
 The composer shows only **Швидкий**, **Збалансований**, and **Глибокий**.
-Their limits remain 2, 5, and 30 minutes. Balanced is the default. Successful submission,
-changing provider, and opening another conversation reset the composer to
-Balanced. Retry preserves the failed request's preset. Each follow-up makes
+Their limits are 2 minutes, 5 minutes (10 on non-OpenAI engines) and 4 hours;
+the composer shows them in the mode menu. A Fast or Balanced request that builds a document (an open
+document, a .docx attached to the message, or a report request in a conversation
+with a .docx upload or a generated document) gets 30 minutes instead and keeps
+its reasoning effort; its policy carries `documentTask: true`. Balanced is the default. The browser
+remembers the last chosen Fast or Balanced in `localStorage`
+(`echo.ai-agent.reasoning-preset`). Deep is never remembered: successful
+submission, changing provider, and opening another conversation reset the
+composer to the remembered preset (Balanced if none). Retry preserves the
+failed request's preset. Each follow-up makes
 its own selection; an active request's policy cannot change.
 
+When the newest answer finished in Fast or Balanced with incomplete coverage and
+the provider offers Deep, the chat shows **Продовжити в глибокому режимі** under
+it, with Deep's limit. The button submits a fixed, task-neutral follow-up prompt
+as a new Deep request in the same conversation; it is a fresh run informed by the
+previous answer, not a resume. Deep answers get no button because there is no
+higher mode.
+
+A Deep answer on a non-OpenAI engine is final. Gaps reported on finished work are
+written as findings, without a coverage notice, footer or `incomplete_research`
+metadata. A real stop (time, tool or context limit, or a provider failure), tasks
+left pending or a failed synthesis qualify it, with one line naming that.
+
 The limit starts when a worker claims the request, excluding queue time.
-Fast reserves its last 30 seconds, Balanced 60 seconds, and Deep 120 seconds
-for a final answer. Checkpoints, output recovery, citation repair, and provider
+Fast reserves its last 30 seconds, Balanced 60 seconds, a document request
+120 seconds, and Deep 300 seconds for a final answer; non-OpenAI engines (GLM, Gemma) reserve twice that, because
+they run the [bounded research workflow](../../echo-ai-agent/FLASH_RESEARCH.md). Checkpoints, output recovery, citation repair, and provider
 retries share the original deadline and call counters. These are ceilings,
-not promised completion times. The normal tool ceiling remains 128 and the
-provider ceiling remains 256 calls, with one provider call reserved for final
-synthesis.
+not promised completion times: the agent finishes as soon as the work is done.
+The normal tool and Echo API ceilings are 128 and the provider ceiling is 256
+calls, with one provider call reserved for final synthesis. A 4-hour Deep
+request allows 1024 tool and API calls, 2048 provider calls, 50 000 runner
+events (64 MiB) and 30-minute provider turns (`reasoning::limits`).
+
+A Deep request holds its user's single running slot for as long as it runs:
+the user's next messages wait in the queue. A backend restart or a lost worker
+lease fails running requests (there is no resume), so long Deep runs are lost
+on a deploy; namespace upgrades wait until the namespace is idle.
 
 At the research limit, tools stop and the selected engine summarizes evidence
 with its lowest supported effort. This call cannot use tools. If synthesis
@@ -49,13 +76,15 @@ Queue labels and elapsed execution times are shown independently of this flag.
 Policies are snapshotted into nullable `ai_agent_request.execution_policy`
 when queued, including actual effort, transport, runtime, and finalization
 reserve. They survive later host configuration changes. Completion metadata
-records limited coverage and its `time_limit` or `tool_limit` cause. Conversation
+records limited coverage and its cause: `time_limit`, `tool_limit`,
+`context_limit`, `provider_error`, or `incomplete_research` when Fast or Balanced
+research ended with remaining gaps or a fallback answer without reaching a limit. Conversation
 reload restores the selected preset, worker start time, and completion metadata.
 
 The new modes use the selected provider for checkpoints. Luna's vision role,
 the document extractor, engine token profiles, and the configured default
-provider are unaffected. Kharkiv should retain Sol as default and GLM as an
-option.
+provider are unaffected. Kharkiv should retain its configured default provider
+and keep GLM as an option.
 
 ## Rollout and recovery
 
@@ -67,7 +96,7 @@ option.
 2. Deploy only to Kharkiv. Drain queued/running requests before maintenance;
    disabling the global agent flag while a request runs revokes its access.
    Install the matching harness and migrate the application with the preset
-   feature flag still off. Preserve the existing Sol default, GLM option,
+   feature flag still off. Preserve the existing default provider, GLM option,
    government credentials, vision engine, and shared extractor settings.
 3. Against each candidate's government endpoint, verify a harmless function
    call, its matching result, and a final answer at **every mapped effort**.
@@ -83,7 +112,8 @@ option.
    a Balanced follow-up after Deep, retry, reload while queued/running, and
    cancellation. Check original deadlines in gateway logs, source links,
    coverage notices, and persisted policy/metadata. A forced stalled synthesis
-   must yield source excerpts before the request deadline plus cleanup slack.
+   must yield the saved draft or a short notice before the request deadline
+   plus cleanup slack.
    Confirm other Echo hosts and namespaces were not changed.
 
 For rollback, stop admitting new work and drain active requests first. Disable
@@ -129,10 +159,14 @@ citations still require evidence collected during the current request. History
 alone does not replace that evidence.
 Final synthesis has no tools and lasts at most the preset's finalization
 allowance, also bounded by the original deadline. If synthesis times out,
-truncates, or lacks valid citations, Echo returns labeled source excerpts.
+truncates, or lacks valid citations, Echo returns the latest validated saved
+draft when the engine keeps one (non-OpenAI engines) and otherwise a short
+notice; raw source excerpts are never published.
 Completion metadata records `coverageLimited: true`, `reason: "context_limit"`.
 The notice describes incomplete coverage without suggesting that Deep mode
-would fix it. Cancellation, authorization failures, and content filtering do
+would fix it, because Deep does not enlarge the context window. The Deep
+continuation button is still offered, because its follow-up starts with fresh
+context. Cancellation, authorization failures, and content filtering do
 not become successful partial answers, including synthesis after time/tool
 limits. Legacy requests without a reasoning policy still fail on exhausted
 compaction instead of producing partial answers; the bounded checkpoint retry

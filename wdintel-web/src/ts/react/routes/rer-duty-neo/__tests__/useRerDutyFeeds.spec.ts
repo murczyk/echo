@@ -12,6 +12,7 @@ const hoisted = vi.hoisted(() => ({
   fetchOrganismKeywordSets: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchMessagesByIds: vi.fn(),
+  fetchMessagesByIdsMatchingFilters: vi.fn(),
   fetchUserSettings: vi.fn(),
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   currentSystemSettings: vi.fn(),
@@ -32,6 +33,7 @@ const hoisted = vi.hoisted(() => ({
     >
   >,
   feedLoadGenerations: {} as Record<string, number>,
+  feedReady: true,
   messageFeeds: [] as Array<{
     id: string;
     items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
@@ -46,6 +48,7 @@ vi.mock('../../../services/api/organism-keyword-sets', () => ({
 
 vi.mock('../../../services/api/analysis', () => ({
   fetchAnalysisCallsignInfos: hoisted.fetchAnalysisCallsignInfos,
+  fetchMessagesByIdsMatchingFilters: hoisted.fetchMessagesByIdsMatchingFilters,
 }));
 
 vi.mock('../../../services/api/user-settings', () => ({
@@ -200,6 +203,7 @@ vi.mock('../useRerDutyFeedState', () => ({
       flushPendingNewerMessages: vi.fn(),
       pollNow: hoisted.pollNow,
       getFeedLoadGeneration: (feedId: string) => hoisted.feedLoadGenerations[feedId] ?? 0,
+      isFeedReady: () => hoisted.feedReady,
       buildReqForFeed: vi.fn(
         (
           feed: {
@@ -211,6 +215,9 @@ vi.mock('../useRerDutyFeedState', () => ({
         ) => ({
           feedId: feed.id,
           filter: feed.filter,
+          selectedGroups: feed.filter.selectedGroups,
+          deniedGroups: feed.filter.deniedGroups,
+          selectedUnitIds: feed.filter.selectedUnitIds,
           loadLatest: opts?.loadLatest ?? null,
           highlightSignals: feed.highlightSignalsEnabled ?? false,
           reportTagsOnlyThisUnit: null,
@@ -584,7 +591,139 @@ describe('useRerDutyFeeds', () => {
 });
 describe('useRerDutyFeeds inbox refreshes', () => {
   beforeEach(() => {
+    hoisted.feedReady = true;
     hoisted.fetchMessagesByIds.mockClear();
+    hoisted.fetchMessagesByIdsMatchingFilters.mockReset();
+  });
+
+  it.each([false, true])(
+    '#3527 preserves messages while the hierarchy is pending before reconciliation: %s',
+    async (startsPending) => {
+      const localContainer = document.createElement('div');
+      const localRoot = createRoot(localContainer);
+      hoisted.messageFeeds = [
+        {
+          id: 'mf-0',
+          items: [[2, { text: 'current', textMarked: [], inboxTags: [] }]],
+          filter: { selectedUnitIds: [20, 21] },
+        },
+      ] as never;
+      hoisted.feedReady = !startsPending;
+      let resolveRefresh!: (items: never[]) => void;
+      if (!startsPending) {
+        hoisted.fetchMessagesByIdsMatchingFilters.mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveRefresh = resolve;
+          }),
+        );
+      }
+      document.body.appendChild(localContainer);
+      try {
+        await act(async () => localRoot.render(React.createElement(TestHarness)));
+        let refresh: Promise<void> | undefined;
+        await act(async () => {
+          refresh = hoisted.onInboxChangedMessageIds([2]);
+        });
+        hoisted.feedReady = false;
+        if (!startsPending) {
+          await act(async () => {
+            resolveRefresh([]);
+            await refresh;
+          });
+        }
+        expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
+        expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledTimes(
+          startsPending ? 0 : 1,
+        );
+
+        hoisted.feedReady = true;
+        hoisted.fetchMessagesByIdsMatchingFilters.mockResolvedValue([]);
+        await act(async () => {
+          await hoisted.onInboxChangedMessageIds([2]);
+        });
+        expect(latest?.messageFeeds[0].items).toEqual([]);
+      } finally {
+        hoisted.feedReady = true;
+        await act(async () => localRoot.unmount());
+        localContainer.remove();
+      }
+    },
+  );
+
+  it.each([
+    ['#3527', { selectedUnitIds: [21, 22] }],
+    ['#3955', { selectedGroups: ['group-1'] }],
+    ['#3955', { deniedGroups: ['group-2'] }],
+  ])('%s removes edited messages that no longer match %j', async (_issue, filter) => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[2, { text: 'moved to another unit', textMarked: [], inboxTags: [] }]],
+        pendingNewerItems: [],
+        filter,
+        unreadCount: 1,
+        readIds: new Set<number>(),
+      },
+    ] as never;
+    hoisted.fetchMessagesByIdsMatchingFilters.mockResolvedValue([]);
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => localRoot.render(React.createElement(TestHarness)));
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+      expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledWith(
+        [2],
+        expect.objectContaining(filter),
+      );
+      expect(latest?.messageFeeds[0].items).toEqual([]);
+      expect(latest?.messageFeeds[0].unreadCount).toBe(0);
+      expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => localRoot.unmount());
+      localContainer.remove();
+    }
+  });
+
+  it('#3955 reconciles moved buffered and off-window unread messages', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    const displayedItems = [[1, { text: 'displayed', textMarked: [], inboxTags: [] }]];
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: displayedItems,
+        pendingNewerItems: [[2, { textMarked: [], inboxTags: [] }]],
+        windowedUnreadItems: new Map([[3, 300]]),
+        unresolvedUnreadIds: new Set([4]),
+        filter: { selectedGroups: ['group-1'] },
+        unreadCount: 3,
+        readIds: new Set([1]),
+      },
+    ] as never;
+    hoisted.fetchMessagesByIdsMatchingFilters.mockResolvedValue([]);
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => localRoot.render(React.createElement(TestHarness)));
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([2, 3, 4, 9]);
+      });
+      expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledWith(
+        [2, 3, 4],
+        expect.objectContaining({ selectedGroups: ['group-1'] }),
+      );
+      expect(latest?.messageFeeds[0].items).toBe(displayedItems);
+      expect(latest?.messageFeeds[0].pendingNewerItems).toEqual([]);
+      expect(latest?.messageFeeds[0].windowedUnreadItems).toEqual(new Map());
+      expect(latest?.messageFeeds[0].unresolvedUnreadIds).toEqual(new Set());
+      expect(latest?.messageFeeds[0].unreadCount).toBe(0);
+      expect(hoisted.pollNow).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => localRoot.unmount());
+      localContainer.remove();
+    }
   });
 
   // Regression: https://github.com/echoua/echo/issues/3780

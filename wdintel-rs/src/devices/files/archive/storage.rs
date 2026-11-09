@@ -285,22 +285,27 @@ impl Client {
         let mut key_marker = String::new();
         let mut upload_marker = String::new();
         for _ in 0..DEVICE_FILE_ARCHIVE_S3_LIST_MAX_PAGES {
+            // B2 rejects empty markers with HTTP 400; send them only when paging.
+            let mut query = vec![("uploads", ""), ("prefix", prefix)];
+            if !key_marker.is_empty() {
+                query.push(("key-marker", &key_marker));
+            }
+            if !upload_marker.is_empty() {
+                query.push(("upload-id-marker", &upload_marker));
+            }
             let response = self
-                .request(
-                    Method::GET,
-                    None,
-                    &[
-                        ("uploads", ""),
-                        ("prefix", prefix),
-                        ("key-marker", &key_marker),
-                        ("upload-id-marker", &upload_marker),
-                    ],
-                    Vec::new(),
-                    None,
-                )
-                .await?;
-            successful(response.status())?;
-            let listing: Uploads = xml(&body(response).await?)?;
+                .request(Method::GET, None, &query, Vec::new(), None)
+                .await
+                .context(h!())?;
+            let status = response.status();
+            let bytes = body(response).await.context(h!())?;
+            if !status.is_success() {
+                if let Some(code) = error_code(&bytes) {
+                    return Err(StorageFailure::Service(code).into());
+                }
+            }
+            successful(status).context(h!())?;
+            let listing: Uploads = xml(&bytes).context(h!())?;
             for upload in listing.uploads {
                 if upload.key.starts_with(prefix) {
                     result.push((upload.key, upload.id));

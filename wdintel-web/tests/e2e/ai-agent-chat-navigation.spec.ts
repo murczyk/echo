@@ -667,7 +667,9 @@ test('@regression #3064 failed chat retries preserve the prompt, provider and dr
       aiEngineId: 'engine',
       prompt: originalPrompt,
       mapEdit: null,
+      documentTarget: null,
       reasoningPreset: null,
+      uploadIds: [],
     });
     await expect(retry).toBeDisabled();
     await expect(input).toHaveValue(draft);
@@ -699,7 +701,9 @@ test('@regression #3064 failed chat retries preserve the prompt, provider and dr
       aiEngineId: 'engine',
       prompt: originalPrompt,
       mapEdit: null,
+      documentTarget: null,
       reasoningPreset: null,
+      uploadIds: [],
     });
     await expect(chat.getByTestId('live-request-request-retry-3')).toContainText(
       'Повторний запит завершено.',
@@ -886,7 +890,7 @@ for (const width of [1280, 320]) {
               reasoningPresets: [
                 { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'none' },
                 { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'medium' },
-                { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+                { preset: 'deep', maxRuntimeSeconds: 14_400, reasoningEffort: 'max' },
               ],
             },
           ],
@@ -908,9 +912,13 @@ for (const width of [1280, 320]) {
     await page.waitForTimeout(800);
     await expect(page.getByRole('tooltip')).toHaveCount(0);
     await selector.click();
-    await expect(page.getByRole('option')).toHaveText(['Швидкий', 'Збалансований', 'Глибокий']);
+    await expect(page.getByRole('option')).toHaveText([
+      'Швидкийдо 2 хв',
+      'Збалансованийдо 5 хв',
+      'Глибокийдо 4 год; нові повідомлення чекатимуть у черзі',
+    ]);
     await expect(page.getByRole('tooltip')).toHaveCount(0);
-    await page.getByRole('option', { name: 'Глибокий', exact: true }).click();
+    await page.getByRole('option', { name: /^Глибокий/ }).click();
     await page.getByPlaceholder('Повідомлення').fill('Докладне дослідження');
     await page.getByRole('button', { name: 'Надіслати', exact: true }).click();
     await expect.poll(() => submitted).toEqual(['deep']);
@@ -919,5 +927,90 @@ for (const width of [1280, 320]) {
     await page.getByPlaceholder('Повідомлення').fill('Коротке уточнення');
     await page.getByRole('button', { name: 'Надіслати', exact: true }).click();
     await expect.poll(() => submitted).toEqual(['deep', 'balanced']);
+  });
+}
+
+for (const width of [1280, 320]) {
+  test(`@regression #4031 continues an incomplete answer with Deep at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await installChat(page, true);
+    await page.route('**/api/ai-agent/configuration', (route) =>
+      route.fulfill({
+        json: {
+          featureEnabled: true,
+          reasoningPresetsEnabled: true,
+          defaultAiEngineId: 'engine',
+          providers: [
+            {
+              id: 'engine',
+              name: 'Gemma',
+              modelName: 'gemma',
+              reasoningAvailable: true,
+              reasoningPresets: [
+                { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
+                { preset: 'deep', maxRuntimeSeconds: 14_400, reasoningEffort: 'max' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    await page.route('**/api/ai-agent/conversations/get', (route) =>
+      route.fulfill({
+        json: {
+          ...conversation,
+          messages: [
+            {
+              requestId: 'request-limited',
+              requestState: 'completed',
+              role: 'assistant',
+              content: 'Часткова відповідь',
+              reasoningPreset: 'balanced',
+              completionMetadata: { coverageLimited: true, reason: 'incomplete_research' },
+              createdAt: 1,
+            },
+          ],
+        },
+      }),
+    );
+    const submitted: { reasoningPreset: string; hasPrompt: boolean }[] = [];
+    await page.route('**/api/ai-agent/requests/create', (route) => {
+      const { reasoningPreset, prompt } = route.request().postDataJSON();
+      submitted.push({
+        reasoningPreset,
+        hasPrompt: prompt.startsWith('Продовж попереднє завдання'),
+      });
+      return route.fulfill({
+        json: { requestId: 'request-continued', conversationId, state: 'queued' },
+      });
+    });
+    await page.goto(`/?conversation=${conversationId}`);
+    const continuation = page.getByRole('button', {
+      name: 'Продовжити в глибокому режимі',
+      exact: true,
+    });
+    await expect(continuation).toBeEnabled();
+    await expect(page.getByText('до 4 год; нові повідомлення чекатимуть у черзі')).toBeVisible();
+    const clipped = await continuation.evaluate(
+      (button) => button.scrollWidth > button.clientWidth,
+    );
+    expect(clipped).toBe(false);
+    const box = await continuation.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    const preview = test.info().outputPath(`deep-continuation-${width}.png`);
+    await page.screenshot({ path: preview });
+    await test.info().attach(`Fixture preview: Deep continuation at ${width}px`, {
+      path: preview,
+      contentType: 'image/png',
+    });
+
+    await continuation.click();
+    await expect.poll(() => submitted).toEqual([{ reasoningPreset: 'deep', hasPrompt: true }]);
+    await expect(continuation).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: 'Глибина аналізу' })).toContainText(
+      'Збалансований',
+    );
   });
 }

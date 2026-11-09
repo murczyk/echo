@@ -53,6 +53,24 @@ def unit_lookup(case, body):
             "show_load_more": len(units) > body.get("limit", 20)}
 
 
+def group_name(case, key):
+    return case.get("groupNames", {}).get(key, key)
+
+
+def group_details(case):
+    return [{"master_key": key, "name": group_name(case, key), "kind": "signal",
+             "group_stats": {"activity_last_day": 0, "activity_last_week": 0}} for key in case["groups"]]
+
+
+def selectable_groups(case, body, settings):
+    """A selection with no accessible key finds nothing; production widened to all groups before #4053."""
+    groups = set(case["groups"])
+    selected = body.get("selected_groups")
+    if not selected:
+        return groups
+    return (groups & set(selected)) or (groups if settings.get("legacyGroupFallback") else set())
+
+
 def inbox_ids(case, body, settings):
     since, till = body.get("since_date_inclusive_ms"), body.get("till_date_inclusive_ms")
     if not isinstance(since, int) or not isinstance(till, int) or since > till:
@@ -61,9 +79,7 @@ def inbox_ids(case, body, settings):
     if (datetime.fromtimestamp(till / 1000, zone).date() -
             datetime.fromtimestamp(since / 1000, zone).date()).days >= 31:
         raise ValueError("Fixture inbox period exceeds 31 days")
-    groups = set(case["groups"])
-    if body.get("selected_groups"):
-        groups.intersection_update(body["selected_groups"])
+    groups = selectable_groups(case, body, settings)
     records = [item for item in case["messages"] if item["groupKey"] in groups
                and since <= item["timestamp"] <= till
                and (not body.get("before_id_noninclusive") or
@@ -100,6 +116,8 @@ def response(case, path, body, settings):
                                   json.dumps({"operation": "prepare", "records": body.get("records", [])}), timeout=30))
     if path == "/api/sigint/units":
         return unit_lookup(case, body)
+    if path == "/api/user/sigint-groups-detailed":
+        return group_details(case)
     visible = [item for item in case["messages"] if item["groupKey"] in case["groups"]]
     if path == "/api/user":
         return {"id": "019fc7f7-9770-7f83-9c1a-211af29b02e6", "name": "Evaluation", "roles": ["ApiAgent", "Rer"]}
@@ -119,7 +137,8 @@ def response(case, path, body, settings):
         "group_master_key": item["groupKey"], "callsigns": item["callsigns"],
         "freq": item.get("frequency"), "unit": item.get("unit"),
     }] for item in selected]
-    groups = [{"master_key": key, "name": key} for key in case["groups"]]
+    groups = [{"master_key": key, "name": group_name(case, key)}
+              for key in sorted({item["groupKey"] for item in selected})]
     if path.endswith("get-inbox"):
         return {"inbox_items": tuples, "signal_groups": groups, "page_limit": 20}
     if path.endswith("inbox-item-context"):

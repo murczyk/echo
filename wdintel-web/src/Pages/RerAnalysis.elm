@@ -443,6 +443,7 @@ getInboxReq model =
                 |> emptyToNothing
     , withoutNetwork = Just (not model.hideNetworks && model.withoutNetwork)
     , onlyWithNetwork = Nothing
+    , onlyForRerReport = Nothing
     , withoutModelTags = Just model.withoutModelTags
     }
 
@@ -3109,6 +3110,7 @@ update user shared route msg model =
                         req =
                             { req = analysisPs
                             , name = model.saveFilterInp
+                            , unitFilter = Nothing
                             }
                     in
                     ( { model | saveFilterInProgress = True }
@@ -3203,6 +3205,7 @@ update user shared route msg model =
                                 req =
                                     { req = analysisPs
                                     , name = savedFilter.name
+                                    , unitFilter = Nothing
                                     }
                             in
                             ( { model

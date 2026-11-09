@@ -25,6 +25,8 @@ export function createEmptyFeedState(
   filter: MessageFeedState['filter'],
   options: Partial<DutyFeedFilterOptions> = {},
 ): MessageFeedState {
+  const unitsIncludeChildren = true;
+  filter = { ...filter, unitsIncludeChildren };
   return {
     id,
     filter: options.groupScopeMasterKey
@@ -43,6 +45,7 @@ export function createEmptyFeedState(
     adjacentFreqsRange: options.adjacentFreqsRange ?? 0,
     highlightSignalsEnabled: options.highlightSignalsEnabled ?? false,
     onlyMyUnitTagsEnabled: options.onlyMyUnitTagsEnabled ?? false,
+    unitsIncludeChildren,
   };
 }
 
@@ -60,6 +63,7 @@ type Params = {
       sinceIdNoninclusive?: number | null;
     },
   ) => InboxMessagesReq;
+  isFeedReady: (feed: MessageFeedState) => boolean;
   getFeedLoadGeneration: (feedId: string) => number;
   mergeInboxCallsigns: (
     feedId: string,
@@ -176,7 +180,7 @@ export function useRerDutyInitialLoad(params: Params) {
     ) => {
       const current = paramsRef.current;
       const feed = current.messageFeeds.find((candidate) => candidate.id === feedId);
-      if (!feed) return;
+      if (!feed || !current.isFeedReady(feed)) return;
       current.controllersByFeedIdRef.current[feedId]?.abort();
       const controller = new AbortController();
       current.controllersByFeedIdRef.current[feedId] = controller;

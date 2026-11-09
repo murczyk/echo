@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { CSSProperties, MouseEvent, RefObject } from 'react';
+import type { CSSProperties, FormEventHandler, MouseEvent, ReactNode, RefObject } from 'react';
 import { FormProvider, Controller, useFormContext } from 'react-hook-form';
 import {
   Typography,
@@ -50,6 +50,8 @@ import {
 } from './ManageMessageEditorSurface';
 import { AutoParseStatusIcon } from './AutoParseStatusIcon';
 import { ExpandableMessageTextField, MessageTextHeightToggle } from './ExpandableMessageTextField';
+import { MinimalReportEditor } from './MinimalReportEditor';
+import { useFocusWhenEnabled } from './useFocusWhenEnabled';
 import { MessageParserFeedbackProvider } from './MessageParserFeedback';
 import { FormSectionWrapper } from './drawer-sections/FormSectionWrapper';
 import { AttachmentsSection } from './drawer-sections/AttachmentsSection';
@@ -59,7 +61,7 @@ import { NetworkSection } from './drawer-sections/NetworkSection';
 import { DmrSection } from './drawer-sections/DmrSection';
 import { LocationsSection } from './drawer-sections/LocationsSection';
 import { AdvancedFieldsSection } from './drawer-sections/AdvancedFieldsSection';
-import type { MessageFormData } from './manage-message-drawer.schema';
+import { DO_NOT_SEND_GROUP_VALUE, type MessageFormData } from './manage-message-drawer.schema';
 import type {
   QuickIntelReportSuggestionState,
   ManageMessageIntentChange,
@@ -74,6 +76,11 @@ import {
 import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
 import { useObservedWidth } from '../../../hooks/use-observed-width';
 import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-layout';
+
+export type MinimalReportPresentation = {
+  host: HTMLElement | null;
+  onExpand: () => void;
+};
 
 export type Props = {
   engagedMessageId?: number;
@@ -108,6 +115,7 @@ export type Props = {
   intentKey?: string;
   initialGroupMasterKey?: string | null;
   presentation?: ManageMessageEditorPresentation;
+  minimalReport?: MinimalReportPresentation | null;
   interactionActive?: boolean;
   adaptiveEmbeddedForm?: boolean;
   fillEmbeddedSurface?: boolean;
@@ -140,11 +148,7 @@ function scheduleAfterPaint(callback: () => void) {
 
 function ReportTextRow({
   originalText,
-  sourceMessage,
-  sourceGroupName,
-  sourceSenderName,
-  sourceEtalonDisplayModel,
-  deviceAccess,
+  sourceHeader,
   busy,
   quickSuggestion,
   onApplyQuickSuggestion,
@@ -154,11 +158,7 @@ function ReportTextRow({
   embeddedMainColumns,
 }: {
   originalText: string;
-  sourceMessage: InboxMessage | null;
-  sourceGroupName: string | null;
-  sourceSenderName: string | null;
-  sourceEtalonDisplayModel: MessageCardEtalonDisplayModel | null;
-  deviceAccess: boolean;
+  sourceHeader: ReactNode;
   busy: boolean;
   quickSuggestion: QuickIntelReportSuggestionState;
   onApplyQuickSuggestion: () => void;
@@ -180,11 +180,7 @@ function ReportTextRow({
         : 'minmax(0, 1fr)'
       : { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' };
 
-  useEffect(() => {
-    if (busy) return;
-    const frameId = window.requestAnimationFrame(() => reportTextRef.current?.focus());
-    return () => window.cancelAnimationFrame(frameId);
-  }, [busy]);
+  useFocusWhenEnabled(reportTextRef, !busy);
 
   return (
     <Box
@@ -197,15 +193,7 @@ function ReportTextRow({
         minWidth: 0,
       }}
     >
-      {sourceMessage ? (
-        <ReportSourceHeader
-          message={sourceMessage}
-          groupName={sourceGroupName}
-          senderName={sourceSenderName}
-          etalonDisplayModel={sourceEtalonDisplayModel}
-          deviceAccess={deviceAccess}
-        />
-      ) : null}
+      {sourceHeader}
       <Stack spacing={2} sx={{ gridColumn: '1 / -1' }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 0.5 }}>
           <Box sx={{ display: 'grid', gridTemplateColumns: textColumns, gap: 3, minWidth: 0 }}>
@@ -456,6 +444,8 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
     const presentation = props.presentation ?? 'modal';
     const interactionActive = props.interactionActive ?? true;
     const intentKey = props.intentKey ?? 'manage-message';
+    const minimalReport = props.minimalReport ?? null;
+    const requestMinimalReportExpand = minimalReport?.onExpand;
     const { ref: editorWidthRef, width: editorWidth } = useObservedWidth<HTMLDivElement>();
     const adaptiveEmbeddedForm = presentation === 'embedded' && props.adaptiveEmbeddedForm === true;
     const embeddedFormLayout = resolveManageMessageEmbeddedFormLayout(
@@ -493,6 +483,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
       ...props,
       interactionActive,
       keepOpenAfterCreate: presentation === 'embedded' && props.reportSource == null,
+      quickSuggestionsEnabled: minimalReport === null,
       onClose: handleClosed,
       open: props.open && canWrite,
     });
@@ -537,6 +528,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
       handleDropzoneKeyDown,
       methods,
       canSubmit,
+      reportDetailsMissing,
       handleParse,
       acceptParsedField,
       autoParseEnabled,
@@ -650,6 +642,24 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
       wasOpenRef.current = props.open;
     }, [props.open]);
 
+    // The panel has no attachment list, so a pasted file or its rejection must not stay invisible.
+    const attachmentsNeedPanel = uppyFiles.length > 0 || Boolean(drawerState.attachmentErrorMsg);
+    // A report needs an explicit destination, and the minimal panel has no group field. Never
+    // guess a group here: only a deliberate choice in the full panel may send the report.
+    const applyMinimalReportDestination = useCallback(() => {
+      if (methods.getValues('signalGroupMasterKey')?.trim()) return;
+      methods.setValue('signalGroupMasterKey', DO_NOT_SEND_GROUP_VALUE, { shouldValidate: true });
+    }, [methods]);
+    const expandMinimalReport = useCallback(() => {
+      if (!requestMinimalReportExpand) return;
+      applyMinimalReportDestination();
+      requestMinimalReportExpand();
+    }, [applyMinimalReportDestination, requestMinimalReportExpand]);
+
+    useEffect(() => {
+      if (attachmentsNeedPanel) expandMinimalReport();
+    }, [attachmentsNeedPanel, expandMinimalReport]);
+
     const handleDeleteConfirm = async () => {
       if (reportDeleteId == null || deleteInFlight) return;
       setDeleteInFlight(true);
@@ -672,6 +682,140 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
         console.error('Error handling report deletion', error);
       }
     };
+
+    const editorTitle = isReportMode
+      ? isReportEditIntent
+        ? 'Редагувати розвіддонесення'
+        : 'Створити розвіддонесення'
+      : isEditMode
+        ? 'Редагувати повідомлення'
+        : 'Створити повідомлення';
+    const submitLabel = isReportEditIntent || isEditMode ? 'Зберегти' : 'Створити';
+    const editorAlerts = (
+      <>
+        {drawerState.deviceRequired && !props.cyberEchoEnabled ? (
+          <PowerAlert severity="error" dismissible={false}>
+            Для цієї групи обов’язкова назва пристрою. У вас немає доступу до пристроїв.
+          </PowerAlert>
+        ) : null}
+        {reportCopyError ? (
+          <PowerAlert
+            severity="error"
+            autoHideDuration={null}
+            dismissible={false}
+            action={<Button onClick={retryReportCopy}>Повторити копіювання</Button>}
+            sx={{ mb: 2 }}
+          >
+            {reportCopyError}
+          </PowerAlert>
+        ) : null}
+        {referenceDataError ? (
+          <PowerAlert
+            severity="error"
+            autoHideDuration={null}
+            dismissible={false}
+            action={<Button onClick={retryReferenceData}>Повторити завантаження</Button>}
+            sx={{ mb: 2 }}
+          >
+            {referenceDataError}
+          </PowerAlert>
+        ) : null}
+        {errorMsg && (
+          <PowerAlert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
+            {errorMsg}
+          </PowerAlert>
+        )}
+      </>
+    );
+    const reportLoadAlert = reportEditError ? (
+      <PowerAlert
+        severity="error"
+        action={<Button onClick={props.onRetryEditTargetLoad}>Повторити</Button>}
+      >
+        {props.editTargetLoadState?.status === 'error' ? props.editTargetLoadState.message : null}
+      </PowerAlert>
+    ) : null;
+    const reportSourceHeader = props.reportSource ? (
+      <ReportSourceHeader
+        message={props.reportSource.message}
+        groupName={reportSourceGroupName}
+        senderName={props.reportSource.senderName ?? props.reportSource.message.sender ?? null}
+        etalonDisplayModel={props.reportSource.etalonDisplayModel ?? null}
+        deviceAccess={props.cyberEchoEnabled}
+      />
+    ) : null;
+    const editorDialogs = (
+      <>
+        <ConfirmDangerDialog
+          open={discardConfirmationOpen}
+          onClose={handleCancelDiscard}
+          onConfirm={confirmDiscard}
+          disableRestoreFocus
+          title="Відхилити незбережені зміни?"
+          description="Усі незбережені зміни буде втрачено."
+          cancelLabel="Продовжити редагування"
+          confirmLabel="Відхилити зміни"
+          disabled={dismissDisabled}
+        />
+        <ConfirmDangerDialog
+          open={deleteConfirmOpen}
+          onClose={() => setDeleteConfirmOpen(false)}
+          onConfirm={() => void handleDeleteConfirm()}
+          title="Видалити розвіддонесення?"
+          description="Цю дію неможливо скасувати."
+          submitting={deleteInFlight}
+          disabled={saving}
+        />
+      </>
+    );
+
+    if (minimalReport) {
+      const reportGroupKey = methods.getValues('signalGroupMasterKey')?.trim() ?? '';
+      const submitMinimalReport: FormEventHandler<HTMLFormElement> = (event) => {
+        applyMinimalReportDestination();
+        // Failures on fields this panel hides are only reachable in the full panel.
+        void methods.handleSubmit(onSubmit, expandMinimalReport)(event);
+      };
+      return (
+        <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
+          {minimalReport.host && props.open && canWrite ? (
+            <MinimalReportEditor
+              host={minimalReport.host}
+              rootRef={editorRootRef}
+              methods={methods}
+              titleId={titleId}
+              title={editorTitle}
+              submitLabel={submitLabel}
+              source={reportSourceHeader}
+              originalText={originalReportText}
+              alerts={
+                <>
+                  {reportLoadAlert}
+                  {editorAlerts}
+                </>
+              }
+              destinationNote={
+                !reportGroupKey || reportGroupKey === DO_NOT_SEND_GROUP_VALUE
+                  ? 'Без надсилання в групу.'
+                  : null
+              }
+              detailsMissing={reportDetailsMissing}
+              loading={reportEditLoading}
+              formVisible={!reportEditLoading && !reportEditError}
+              busy={busy}
+              saving={saving}
+              canSubmit={canSubmit && !deleteInFlight}
+              dismissDisabled={dismissDisabled}
+              interactionActive={interactionActive}
+              onSubmit={submitMinimalReport}
+              onRequestClose={handleDrawerClose}
+              onExpand={expandMinimalReport}
+            />
+          ) : null}
+          {editorDialogs}
+        </RadioFeaturesProvider>
+      );
+    }
 
     return (
       <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
@@ -709,13 +853,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                 component="h2"
                 variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}
               >
-                {isReportMode
-                  ? isReportEditIntent
-                    ? 'Редагувати розвіддонесення'
-                    : 'Створити розвіддонесення'
-                  : isEditMode
-                    ? 'Редагувати повідомлення'
-                    : 'Створити повідомлення'}
+                {editorTitle}
               </Typography>
             </Box>
 
@@ -725,14 +863,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
               sx={{ flex: 1, p: 2.5, overflowY: 'auto' }}
             >
               {reportEditLoading ? null : reportEditError ? (
-                <PowerAlert
-                  severity="error"
-                  action={<Button onClick={props.onRetryEditTargetLoad}>Повторити</Button>}
-                >
-                  {props.editTargetLoadState?.status === 'error'
-                    ? props.editTargetLoadState.message
-                    : null}
-                </PowerAlert>
+                reportLoadAlert
               ) : (
                 <>
                   {!isEditMode && !isReportMode && autoParseSettingsLoadError ? (
@@ -746,33 +877,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                       {autoParseSettingsLoadError}
                     </PowerAlert>
                   ) : null}
-                  {reportCopyError ? (
-                    <PowerAlert
-                      severity="error"
-                      autoHideDuration={null}
-                      dismissible={false}
-                      action={<Button onClick={retryReportCopy}>Повторити копіювання</Button>}
-                      sx={{ mb: 2 }}
-                    >
-                      {reportCopyError}
-                    </PowerAlert>
-                  ) : null}
-                  {referenceDataError ? (
-                    <PowerAlert
-                      severity="error"
-                      autoHideDuration={null}
-                      dismissible={false}
-                      action={<Button onClick={retryReferenceData}>Повторити завантаження</Button>}
-                      sx={{ mb: 2 }}
-                    >
-                      {referenceDataError}
-                    </PowerAlert>
-                  ) : null}
-                  {errorMsg && (
-                    <PowerAlert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
-                      {errorMsg}
-                    </PowerAlert>
-                  )}
+                  {editorAlerts}
                   <MessageParserFeedbackProvider
                     feedback={parserFeedback}
                     onAccept={acceptParsedField}
@@ -847,17 +952,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                         {isReportMode ? (
                           <ReportTextRow
                             originalText={originalReportText}
-                            sourceMessage={props.reportSource?.message ?? null}
-                            sourceGroupName={reportSourceGroupName}
-                            sourceSenderName={
-                              props.reportSource?.senderName ??
-                              props.reportSource?.message.sender ??
-                              null
-                            }
-                            sourceEtalonDisplayModel={
-                              props.reportSource?.etalonDisplayModel ?? null
-                            }
-                            deviceAccess={props.cyberEchoEnabled}
+                            sourceHeader={reportSourceHeader}
                             busy={busy}
                             quickSuggestion={quickSuggestion}
                             onApplyQuickSuggestion={applyQuickSuggestion}
@@ -1001,9 +1096,12 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             busy={busy}
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
-                            groupEditable={isReportMode}
+                            groupEditable={
+                              isReportMode || hasRole(props.currentUser?.roles, 'DeleteMsg')
+                            }
                             groupLocked={isReplyMode}
                             cyberEchoEnabled={props.cyberEchoEnabled}
+                            deviceRequired={drawerState.deviceRequired}
                             deviceNameOptions={deviceNameOptions}
                             deviceNamesLoading={deviceNamesLoading}
                             setDeviceNameInput={setDeviceNameInput}
@@ -1022,6 +1120,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             unitOptions={drawerState.unitOptions}
                             unitLoading={drawerState.unitLoading}
                             unitAllowCreate={drawerState.unitAllowCreate}
+                            unitRequired={drawerState.unitRequired}
                             canMergeUnitDuplicates={hasRole(
                               props.currentUser?.roles,
                               'UnitsEditor',
@@ -1156,11 +1255,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                   disabled={!canSubmit || busy || reportEditLoading || reportEditError}
                   startIcon={saving && <CircularProgress size={20} color="inherit" />}
                 >
-                  {saving
-                    ? 'Збереження...'
-                    : isReportEditIntent || isEditMode
-                      ? 'Зберегти'
-                      : 'Створити'}
+                  {saving ? 'Збереження...' : submitLabel}
                 </Button>
               </Box>
             </Box>
@@ -1171,26 +1266,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
             ) : null}
           </div>
         </ManageMessageEditorSurface>
-        <ConfirmDangerDialog
-          open={discardConfirmationOpen}
-          onClose={handleCancelDiscard}
-          onConfirm={confirmDiscard}
-          disableRestoreFocus
-          title="Відхилити незбережені зміни?"
-          description="Усі незбережені зміни буде втрачено."
-          cancelLabel="Продовжити редагування"
-          confirmLabel="Відхилити зміни"
-          disabled={dismissDisabled}
-        />
-        <ConfirmDangerDialog
-          open={deleteConfirmOpen}
-          onClose={() => setDeleteConfirmOpen(false)}
-          onConfirm={() => void handleDeleteConfirm()}
-          title="Видалити розвіддонесення?"
-          description="Цю дію неможливо скасувати."
-          submitting={deleteInFlight}
-          disabled={saving}
-        />
+        {editorDialogs}
       </RadioFeaturesProvider>
     );
   },

@@ -24,7 +24,13 @@ export function DeviceAnalyticsTagBadges({ tags }: { tags: AnalyticsTag[] }) {
   return (
     <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
       {visibleTags.map((tag) => (
-        <PowerChip key={tag.id} label={tag.name} color="primary" interactive={false} />
+        <PowerChip
+          key={tag.id}
+          label={tag.name}
+          title={tag.name}
+          color="primary"
+          interactive={false}
+        />
       ))}
       {hiddenTagCount > 0 ? (
         <>

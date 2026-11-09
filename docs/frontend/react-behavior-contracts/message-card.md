@@ -1,5 +1,13 @@
 # Message card and inbox compatibility
 
+## РЕР mode
+
+- The system setting «Режим РЕР» is enabled when `hide_networks` is false; saving the switch preserves the inverse value in the existing API field.
+- New Analysis defaults to closed groups and open filters in this mode, unless panel state is supplied in the URL.
+- Shared Analysis and Duty cards replace the unit heading with networks, group, sender, and location in that order. Missing networks never restore the unit heading. The explicit unit remains in the body after frequency and permitted device details, in the former network-binding position, even when no networks or other body metadata are available. The DMR metadata control also remains in the body; moved header metadata is not duplicated there.
+- Disabling РЕР mode retains the unit heading and hides networks. Existing group visibility and device access rules still apply.
+- Existing tests: `wdintel-web/tests/e2e/message-card-rer-mode.spec.ts`, `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`.
+
 ## Inbox metadata compatibility default
 
 - **Status:** operational compatibility
@@ -78,8 +86,8 @@
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** thumbnail retrieval uses the messenger media thumbnail route with same-origin credentials and server retry semantics.
 - **Responsive and keyboard requirements:** none at the loading boundary.
-- **Known race/idempotency constraints:** leaving the viewport cancels future polling until re-entry; terminal and unauthorized responses cannot schedule another retry.
-- **Source implementation:** `MessageCardVideoThumb.tsx`
+- **Known race/idempotency constraints:** leaving the viewport cancels future polling until re-entry; terminal and unauthorized responses cannot schedule another retry. The shared loader keys image state and callbacks by source; replacing an attachment cannot display a late thumbnail from the previous source. Forced navigation or unauthorized events cancel requests and revoke loaded Blob URLs.
+- **Source implementation:** `MessageCardVideoThumb.tsx`, shared `use-media-thumbnail.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
@@ -97,7 +105,7 @@
 - **API endpoint and compatibility requirements:** uses `/api/messenger/media/{id}/thumbnail`; images without a messenger media ID keep their original-image behavior.
 - **Responsive and keyboard requirements:** existing card controls remain unchanged.
 - **Known race/idempotency constraints:** offscreen cards do not request thumbnail bytes; returning to view can retry pending thumbnails.
-- **Source implementation:** `MessageCardImageThumb.tsx`, `MessageCardVideoThumb.tsx`
+- **Source implementation:** `MessageCardImageThumb.tsx`, shared `use-media-thumbnail.ts`. Device tiles reuse the loader with their own revision URL, request limit and icon fallback; the message image fallback policy remains unchanged.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 
 ## OCR and media-summary response safety
@@ -252,6 +260,8 @@ that point. Positions without parseable coordinates remain textual. Regression:
 
 - **Status:** inferred characterization
 - **Behavior ID:** `react-message-card-presentation-workflows`
+- **Narrow-card actions (#3927):** Overflow is one flat list, grouping primary actions, copying, navigation, filter exclusions, and secondary actions with dividers only between nonempty groups. Individual network destinations remain separate items. Existing permission/data guards, action handlers, and the wide-card toolbar and menus remain unchanged. Browser coverage: `wdintel-web/tests/e2e/message-card-layout.spec.ts`, `wdintel-web/tests/e2e/rer-duty-workflows.spec.ts`.
+- **Quick action (#3927):** The shared `messageCardQuickAction` user preference selects report creation, reply, importance, bookmark, copy text, copy link, edit, or delete for the single direct action on narrow Duty and Analysis cards. That action is omitted from narrow overflow; report creation moves into overflow when another action is selected. An unavailable action is hidden without a replacement or preference reset. Importance/bookmark labels and pressed states track the message. The compact settings selector uses the card icons, and its selection immediately updates the card preview. Copy actions from either the toolbar or menu show the shared success snackbar only after the clipboard write completes. Wide-card controls retain their existing behavior. Missing/NULL or unrecognized preferences use copy text when the server’s «Режим РЕР» is enabled (`hide_networks` false/NULL or no active system settings), and report creation when it is disabled. A stored personal choice takes precedence regardless of user roles or later server-mode changes. Saving unrelated settings omits this field and leaves the stored choice (including NULL) intact; an explicit selector change persists the personal choice. Explicit unknown or NULL quick actions are rejected by the API. For older API responses with a missing, NULL, or unrecognized quick action, React and classic Elm fall back to report creation. Database/API coverage: `wdintel-rs/src/user_settings/functional_tests.rs`. Browser coverage: `wdintel-web/tests/e2e/message-card-quick-action.spec.ts`.
 - **Coordinate preloading:** Coordinate lookup and thumbnail-map mounting start within 1000px above or below the nearest message-feed scroller, falling back to the browser viewport outside feeds. More distant coordinates stay deferred; collapsed categories still mount nothing until revealed. Duty windowing and idle offloading remain unchanged, so only mounted cards can preload.
 - **Reply chains:** Two-message chains have no standalone Analysis action beside their heading; cited-message navigation remains available. Longer chains retain the all-messages popover and its labeled Analysis link. In dark mode, the popover mixes the card surface with 6% foreground to sit one tone above the card; its existing translucent cited-message fills create a slightly lighter inner level. Light-mode paper, the semantic border, and the popover shadow are unchanged; MUI's elevation overlay remains disabled.
 - **Affected route/component:** MessageCard and supporting presentation children

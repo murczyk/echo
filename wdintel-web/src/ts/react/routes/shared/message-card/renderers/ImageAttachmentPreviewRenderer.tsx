@@ -26,6 +26,7 @@ import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPrev
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
+import { AttachmentPreviewMobileCarouselIsland } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
@@ -165,6 +166,7 @@ export function ImageAttachmentPreviewRenderer({
   const [loadedImageKey, setLoadedImageKey] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const [ocrVisible, setOcrVisible] = useState(false);
   const [ocrFullPane, setOcrFullPane] = useState(false);
   const [ocrStatus, setOcrStatus] = useState(image.ocr ?? null);
@@ -181,14 +183,22 @@ export function ImageAttachmentPreviewRenderer({
     blurActiveAttachmentPreviewElement();
     onClose();
   }, [onClose]);
+  const isMobile = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
+  const edgeToEdge = (isMobile || touchLandscape) && editor.session === null;
+  const overlayHeader =
+    edgeToEdge && !ocrVisible && !summaryVisible && !(reportDraft != null && reportVisible);
+  const toggleControls = useCallback(() => {
+    if (!editor.isLocked && infoAnchorEl === null) setControlsVisible((visible) => !visible);
+  }, [editor.isLocked, infoAnchorEl]);
   const gestures = useImageAttachmentPreviewGestures({
     previewKey: key,
     href,
     failedHref,
     interactionLocked: editor.isLocked,
     onBackgroundClick: close,
+    onSurfaceTap: edgeToEdge ? toggleControls : undefined,
   });
-  const isMobile = useMediaQuery(useTheme().breakpoints.down('sm'));
   const previewFileName = useMemo(
     () => derivePreviewFileName(image, navigation.index),
     [image, navigation.index],
@@ -220,6 +230,7 @@ export function ImageAttachmentPreviewRenderer({
     setLoadedImage(null);
     setLoadedImageKey(null);
     setCopyStatus('idle');
+    setControlsVisible(true);
     setInfoAnchorEl(null);
     setOcrVisible(false);
     setOcrFullPane(false);
@@ -276,7 +287,7 @@ export function ImageAttachmentPreviewRenderer({
         />
       </Suspense>
     );
-  const source = (
+  const imageSource = (
     <MessageCardAttachmentPreviewStage
       ref={gestures.stageRef}
       kind="image"
@@ -304,13 +315,25 @@ export function ImageAttachmentPreviewRenderer({
         onError={() => {
           setFailedHref(href);
           setLoadedImage(null);
+          setControlsVisible(true);
         }}
+        onSurfaceTap={edgeToEdge ? toggleControls : undefined}
+        insetForControls={overlayHeader}
       />
       <AttachmentPreviewZoomBadge
         zoom={gestures.zoom}
         onResetZoom={() => gestures.setPreviewZoom(ZOOM_MIN)}
+        alignWithCarousel={edgeToEdge && isMobile}
       />
     </MessageCardAttachmentPreviewStage>
+  );
+  const source = (
+    <Box sx={{ display: 'flex', flex: '1 1 0', minHeight: 0, minWidth: 0, position: 'relative' }}>
+      {imageSource}
+      {edgeToEdge ? (
+        <AttachmentPreviewMobileCarouselIsland navigation={navigation} visible={controlsVisible} />
+      ) : null}
+    </Box>
   );
   const stage = (
     <OcrSplitPreview
@@ -483,6 +506,10 @@ export function ImageAttachmentPreviewRenderer({
         />
       }
       navigation={navigation}
+      immersive={edgeToEdge}
+      safeArea={edgeToEdge}
+      overlayHeader={overlayHeader}
+      headerVisible={!edgeToEdge || controlsVisible || (ocrVisible && ocrFullPane && !isMobile)}
       swipeEnabled={gestures.zoom <= ZOOM_MIN && !editor.isLocked}
       onSwipeDismiss={close}
     />

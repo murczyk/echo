@@ -14,6 +14,7 @@ import {
   queryStateMatchesSavedFilter,
 } from './helpers';
 import type { AnalysisQueryState } from './types';
+import { buildUnitHierarchyIndex } from '../shared/unit-children-filter';
 
 type Props = {
   allFrequencies: string[];
@@ -54,6 +55,8 @@ export function useAnalysisSavedFilters({
   const [savedFilterName, setSavedFilterName] = useState('');
   const [saveInFlight, setSaveInFlight] = useState(false);
   const hasSyncedLoadedSavedFilterRef = useRef(false);
+  const comparisonHierarchyRef = useRef(queryState.unitHierarchy);
+  if (queryState.unitHierarchy) comparisonHierarchyRef.current = queryState.unitHierarchy;
 
   const loadedSavedFilter = useMemo(
     () => savedFilters.find((savedFilter) => savedFilter.id === loadedSavedFilterId) ?? null,
@@ -62,7 +65,15 @@ export function useAnalysisSavedFilters({
 
   const isDirty = useMemo(() => {
     if (!loadedSavedFilter) return false;
-    return !queryStateMatchesSavedFilter(queryState, loadedSavedFilter, allFrequencies);
+    return !queryStateMatchesSavedFilter(
+      {
+        ...queryState,
+        unitHierarchy:
+          queryState.unitHierarchy ?? comparisonHierarchyRef.current ?? buildUnitHierarchyIndex([]),
+      },
+      loadedSavedFilter,
+      allFrequencies,
+    );
   }, [allFrequencies, loadedSavedFilter, queryState]);
 
   const loadSavedFilters = useCallback(async () => {
@@ -98,6 +109,7 @@ export function useAnalysisSavedFilters({
     );
     if (isNullOrUndefined(matchedSavedFilter)) {
       if (queryState.adjacentFreqsRange > 0 && allFrequencies.length === 0) return;
+      if (queryState.unitsSelected.length > 0 && !queryState.unitHierarchy) return;
       hasSyncedLoadedSavedFilterRef.current = true;
       return;
     }
@@ -132,7 +144,14 @@ export function useAnalysisSavedFilters({
       setSaveInFlight(true);
       onError('');
       try {
-        const next = await upsertAnalysisSavedFilter({ name: nextName, req });
+        const next = await upsertAnalysisSavedFilter({
+          name: nextName,
+          req,
+          unitFilter: {
+            values: queryState.unitsSelected,
+            includeChildren: true,
+          },
+        });
         setSavedFilters(next);
         const saved = next.find((item) => item.name === nextName) ?? null;
         setLoadedSavedFilterId(saved?.id ?? null);
@@ -185,7 +204,14 @@ export function useAnalysisSavedFilters({
     setSaveInFlight(true);
     onError('');
     try {
-      const next = await upsertAnalysisSavedFilter({ name: loadedSavedFilter.name, req });
+      const next = await upsertAnalysisSavedFilter({
+        name: loadedSavedFilter.name,
+        req,
+        unitFilter: {
+          values: queryState.unitsSelected,
+          includeChildren: true,
+        },
+      });
       setSavedFilters(next);
       setLoadedSavedFilterId(loadedSavedFilter.id);
     } catch (saveError) {

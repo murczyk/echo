@@ -15,6 +15,7 @@ import Json.Encode as Encode
 import Layout exposing (Layout)
 import Process
 import Route exposing (Route)
+import Route.Path
 import Shared
 import Shared.Msg
 import Shared.Components.Toast as Toast
@@ -372,11 +373,22 @@ view user activeName shared route { toContentMsg, model, content } =
 
               else
                 div [] []
-            , Toast.overlay ToastMsg shared.toasts
+            , if route.path == Route.Path.RerAnalysisNeo then
+                text ""
+
+              else
+                Toast.overlay ToastMsg shared.toasts
             ]
             |> Html.map toContentMsg
         , div
             ([ class "app-shell"
+             , class
+                (if isDevicesListPath then
+                    "app-shell--without-bottom-gap"
+
+                 else
+                    ""
+                )
              , class
                 (if model.isNavbarVisible then
                     "app-shell--navbar-visible"

@@ -3,9 +3,10 @@
 Message creation, editing, and report creation accept the optional `unit_id`
 and `create_unit` fields (#3535). An explicit ID selects an existing,
 non-deleted unit; `create_unit: true` requires a nonempty name and no ID.
-Message writers (`Rer` or `Cyber`, including administrators) can add name-only
-units through this flow; general unit editing still requires `UnitsEditor`.
-Creation reuses a unique name match, rejects ambiguous names, and serializes
+Creating units through this flow requires `UnitsEditor` access, including
+administrators under the standard role hierarchy. Required fields for new
+messages and reports follow the destination group's
+[requirements](../../../../docs/group-message-requirements.md). Creation reuses a unique name match, rejects ambiguous names, and serializes
 concurrent inline creation by normalized name. Name matching collapses
 whitespace and ignores case. Legacy free-text submissions remain accepted.
 
@@ -53,9 +54,7 @@ Creation forms automatically select a unique exact unit name after a successful
 search, including names supplied by the parser. Partial matches and duplicate
 names require an explicit choice. The inline creation option appears only when
 the current search succeeds without any candidates. Choosing it opens the shared
-unit form from `/rer-units-neo` with the typed text in `name`. Message writers can
-create full units without requiring `UnitsEditor`; merging existing duplicates
-still requires `UnitsEditor`. Saving this form immediately
+unit form from `/rer-units-neo` with the typed text in `name`. Users with `UnitsEditor` access can create full units and merge existing duplicates. Saving this form immediately
 creates the unit and selects its ID in the message; cancelling leaves the text
 unresolved. Cancelling the message afterwards does not remove the saved unit.
 `POST /api/sigint/unit/create-for-message` accepts the full unit and optional

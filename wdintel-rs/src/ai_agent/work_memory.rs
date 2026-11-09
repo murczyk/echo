@@ -85,6 +85,14 @@ async fn current_request(
     http: &HttpRequest,
 ) -> anyhow::Result<ai_agent_request::Model> {
     enabled(env).c(h!())?;
+    running_request(env, http).await.c(h!())
+}
+
+/// The running request bound to the calling agent session.
+pub(crate) async fn running_request(
+    env: &Env,
+    http: &HttpRequest,
+) -> anyhow::Result<ai_agent_request::Model> {
     let binding = http
         .get_session()
         .get::<AgentSessionBinding>(AI_AGENT_SESSION_BINDING_KEY)

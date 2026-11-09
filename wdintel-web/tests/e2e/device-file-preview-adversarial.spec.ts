@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -14,7 +15,14 @@ import {
   uploadPreviewContent,
 } from './device-file-preview-backend';
 import { loadDeviceFilePreviewFixture } from './device-file-preview.fixtures';
-import { openDeviceFilePreview, type FilePreviewBackend } from './device-file-preview.ui';
+import {
+  openDeviceArchiveFolder,
+  openDeviceFilePreview,
+  openDeviceFilePreviewEntry,
+  selectDeviceFilePreviewEntry,
+  type FilePreviewBackend,
+} from './device-file-preview.ui';
+import { createConverterTransportFixture } from './device-file-preview-converter-fixture';
 
 test.setTimeout(90_000);
 
@@ -45,28 +53,25 @@ async function expectViewerReady(pane: Locator, id: string) {
     await expect
       .poll(() => pane.locator('video').evaluate((video: HTMLVideoElement) => video.readyState))
       .toBeGreaterThanOrEqual(1);
-  } else if (id === 'archive-zip')
-    await expect(pane.getByRole('button', { name: 'Звіт.txt', exact: true })).toBeVisible();
-  else await expect(pane.locator('.leaflet-container')).toBeVisible();
+  } else await expect(pane.locator('.leaflet-container')).toBeVisible();
 }
 
 async function selectFile(page: Page, backend: FilePreviewBackend, id: string) {
   const { fixture } = await loadDeviceFilePreviewFixture(id);
   const entry = backend.fixtures.seeded.find((item) => item.fixtureId === id)!;
-  await page.getByRole('textbox', { name: 'Назва містить', exact: true }).fill(fixture.fileName);
-  await page.getByRole('button', { name: 'Знайти', exact: true }).click({ noWaitAfter: true });
+  return selectFileEntry(page, entry.file.fileId, fixture.fileName);
+}
+
+async function selectFileEntry(page: Page, fileId: string, fileName: string) {
   await page
-    .getByRole('region', { name: 'Результати пошуку файлів' })
-    .locator(`[data-entry-id="${entry.file.fileId}"]`)
-    .getByRole('button', { name: fixture.fileName, exact: true })
-    .click({ noWaitAfter: true });
-  const pane = page.getByTestId('device-file-content-pane');
-  await expect(pane.locator('#device-file-content-title')).toContainText(fixture.fileName);
-  return pane;
+    .getByRole('navigation', { name: 'Навігаційний шлях пристрою', exact: true })
+    .getByRole('link', { name: 'C', exact: true })
+    .click();
+  return selectDeviceFilePreviewEntry(page, fileId, fileName);
 }
 
 async function convertedFixture(backend: FilePreviewBackend) {
-  const entry = backend.fixtures.seeded.find((item) => item.fixtureId === 'converted-map-gpx')!;
+  const entry = await createConverterTransportFixture(backend);
   const base = entry.originalHref.replace(/\/content$/, '/preview/geodata');
   const generation = '11111111-1111-4111-8111-111111111111';
   const status: DeviceFileGeodataPreviewRsp = {
@@ -84,7 +89,7 @@ async function convertedFixture(backend: FilePreviewBackend) {
   return { entry, base, status };
 }
 
-test('@regression controlled converter transport reaches a real KMZ parser and original stays GPX', async ({
+test('@regression controlled converter transport reaches a real KMZ parser and retains the exact original', async ({
   page,
 }) => {
   const backend = await localFilePreviewBackend();
@@ -106,7 +111,12 @@ test('@regression controlled converter transport reaches a real KMZ parser and o
     await page.route(`**${base}/${status.generation}/content`, (route) =>
       route.fulfill({ body: kmz, contentType: 'application/vnd.google-earth.kmz' }),
     );
-    const { pane } = await openDeviceFilePreview(page, backend, 'converted-map-gpx');
+    const pane = await openDeviceFilePreviewEntry(
+      page,
+      backend,
+      entry.file.fileId,
+      entry.file.name,
+    );
     await expect(pane.locator('.leaflet-container')).toBeVisible();
     await expect(pane.locator('[data-map-preview-polygons]')).toHaveAttribute(
       'data-map-preview-polygons',
@@ -115,9 +125,7 @@ test('@regression controlled converter transport reaches a real KMZ parser and o
     expect(prepared).toBe(1);
     const saved = page.waitForEvent('download');
     await pane.getByRole('button', { name: 'Скачати файл', exact: true }).click();
-    expect(await readFile((await (await saved).path())!)).toEqual(
-      (await loadDeviceFilePreviewFixture('converted-map-gpx')).bytes,
-    );
+    expect(await readFile((await (await saved).path())!)).toEqual(entry.bytes);
     expect((await (await backend.login('reader')).head(entry.originalHref)).status()).toBe(200);
   } finally {
     await backend.dispose();
@@ -130,7 +138,7 @@ test('@regression converter waits 120 seconds and status refresh creates no seco
   const backend = await localFilePreviewBackend();
   try {
     await page.clock.install();
-    const { base, status } = await convertedFixture(backend);
+    const { entry, base, status } = await convertedFixture(backend);
     let gets = 0;
     let prepares = 0;
     await page.route(`**${base}`, async (route) => {
@@ -140,7 +148,12 @@ test('@regression converter waits 120 seconds and status refresh creates no seco
         json: transformCamelToSnake({ ...status, status: prepares ? 'running' : 'idle' }),
       });
     });
-    const { pane } = await openDeviceFilePreview(page, backend, 'converted-map-gpx');
+    const pane = await openDeviceFilePreviewEntry(
+      page,
+      backend,
+      entry.file.fileId,
+      entry.file.name,
+    );
     await expect.poll(() => prepares).toBe(1);
     for (let poll = 2; poll <= 60; poll += 1) {
       await page.clock.runFor(2000);
@@ -162,7 +175,7 @@ test('@regression converter retry carries generation and 409 refreshes the curre
 }) => {
   const backend = await localFilePreviewBackend();
   try {
-    const { base, status } = await convertedFixture(backend);
+    const { entry, base, status } = await convertedFixture(backend);
     const kmz = (await loadDeviceFilePreviewFixture('native-map-kmz')).bytes;
     let retries = 0;
     let prepares = 0;
@@ -187,7 +200,12 @@ test('@regression converter retry carries generation and 409 refreshes the curre
     await page.route(`**${base}/${status.generation}/content`, (route) =>
       route.fulfill({ body: kmz, contentType: 'application/vnd.google-earth.kmz' }),
     );
-    const { pane } = await openDeviceFilePreview(page, backend, 'converted-map-gpx');
+    const pane = await openDeviceFilePreviewEntry(
+      page,
+      backend,
+      entry.file.fileId,
+      entry.file.name,
+    );
     await expect(pane.getByRole('alert').first()).toContainText('Тимчасова помилка');
     await pane.getByRole('button', { name: 'Повторити підготовку', exact: true }).click();
     await expect(pane.locator('.leaflet-container')).toBeVisible();
@@ -204,7 +222,7 @@ test('@regression late converter result cannot replace a newer A to B to A sessi
   const backend = await localFilePreviewBackend();
   let release: (() => void) | undefined;
   try {
-    const { base, status } = await convertedFixture(backend);
+    const { entry, base, status } = await convertedFixture(backend);
     let gets = 0;
     const pending = new Promise<void>((resolve) => {
       release = resolve;
@@ -216,12 +234,14 @@ test('@regression late converter result cannot replace a newer A to B to A sessi
         await route.fulfill({ status: 500, body: 'retired converter error' }).catch(() => {});
       } else await route.fulfill({ json: transformCamelToSnake({ ...status, status: 'running' }) });
     });
-    await openDeviceFilePreview(page, backend, 'converted-map-gpx');
+    await openDeviceFilePreviewEntry(page, backend, entry.file.fileId, entry.file.name);
+    const timeOrigin = await page.evaluate(() => performance.timeOrigin);
     await expect.poll(() => gets).toBe(1);
     const text = await selectFile(page, backend, 'current-text');
     await expect(text.locator('pre')).toContainText('Версія: поточна.');
-    const pane = await selectFile(page, backend, 'converted-map-gpx');
+    const pane = await selectFileEntry(page, entry.file.fileId, entry.file.name);
     await expect.poll(() => gets).toBe(2);
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
     release!();
     await expect(pane).toContainText('Підготовка мапи…');
     await expect(pane).not.toContainText('retired converter error');
@@ -487,7 +507,7 @@ test('@regression thousand-file catalogue fetches no unselected bytes or preview
         content.push(request.url());
     });
     await page.goto(`/devices/${backend.fixtures.deviceId}`);
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await openDeviceSection(page, 'Файли');
     await page
       .getByRole('button', { name: /Вибрати каталог C:/ })
       .first()
@@ -595,6 +615,14 @@ test('@regression original viewers run with extraction and AI explicitly disable
       'archive-zip',
       'native-map-kml',
     ]) {
+      if (id === 'archive-zip') {
+        const { folder } = await openDeviceArchiveFolder(page, backend, id);
+        await expect(
+          folder.getByRole('button', { name: 'Відкрити файл Звіт.txt', exact: true }),
+        ).toBeVisible();
+        await expect(folder.getByRole('alert')).toHaveCount(0);
+        continue;
+      }
       const { pane } = await openDeviceFilePreview(page, backend, id);
       await expectViewerReady(pane, id);
       await expect(pane.getByRole('button', { name: 'Скачати файл', exact: true })).toBeEnabled();

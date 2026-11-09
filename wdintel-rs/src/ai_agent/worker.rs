@@ -5,8 +5,7 @@ use super::{
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
-    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REQUEST_MAX_EVENT_BYTES,
-    AI_AGENT_REQUEST_MAX_RUNNER_EVENTS, AI_AGENT_REQUEST_WORKER_COUNT,
+    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REQUEST_WORKER_COUNT,
     AI_AGENT_RESPONSE_MAX_BYTES, AI_AGENT_RESPONSE_MAX_CHARS,
     AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES, AI_AGENT_USER_FAILURE_MESSAGE,
     AI_AGENT_WORKER_ERROR_SLEEP_SEC, AI_AGENT_WORKER_IDLE_SLEEP_MS,
@@ -22,7 +21,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::types::{error, info, Context, Env, ShortContext};
+use crate::types::{error, info, warn, Context, Env, ShortContext};
 use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
@@ -558,6 +557,26 @@ async fn append_presented_event(
     Ok(appended)
 }
 
+fn log_tool_diagnostic(
+    request: &ai_agent_request::Model,
+    correlation_id: Uuid,
+    diagnostic: &Value,
+) {
+    let ids = format!(
+        "request_id={} conversation_id={} correlation_id={correlation_id}",
+        request.id, request.conversation_id
+    );
+    match events::tool_diagnostic_level(diagnostic) {
+        log::Level::Error => {
+            error!("AI agent tool failed {ids} diagnostic={diagnostic}")
+        }
+        log::Level::Warn => {
+            warn!("AI agent tool failed {ids} diagnostic={diagnostic}")
+        }
+        _ => info!("AI agent tool {ids} diagnostic={diagnostic}"),
+    }
+}
+
 async fn run_request_inner(
     env: &Env,
     request: &ai_agent_request::Model,
@@ -600,6 +619,18 @@ async fn run_request_inner(
                     .to_string(),
             })?;
     if request_is_cancelled(env, request.id).await? {
+        return Ok(RunOutcome::Cancelled);
+    }
+    if !wait_for_uploads(
+        env,
+        request,
+        execution_policy.as_ref(),
+        cancellation,
+        &mut activity_titles,
+    )
+    .await
+    .c(h!())?
+    {
         return Ok(RunOutcome::Cancelled);
     }
     let Some(linked) = lifecycle::start_for_request(
@@ -744,6 +775,17 @@ async fn run_request_inner(
     if let Some(map_edit) = map_edit {
         runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
     }
+    add_document_context(&env.dbx, request, &mut runner_payload)
+        .await
+        .c(h!())?;
+    add_upload_context(
+        env,
+        request,
+        runtime_profile.vision_input_enabled == Some(true),
+        &mut runner_payload,
+    )
+    .await
+    .c(h!())?;
     if env.config.ai_agent_work_memory_enabled == Some(true) {
         runner_payload["workMemory"] =
             match super::work_memory::initial_context(env, request).await {
@@ -775,6 +817,7 @@ async fn run_request_inner(
         .await?;
     let mut response = String::new();
     let mut response_chars = 0_usize;
+    let stream_limits = super::reasoning::limits(execution_policy.as_ref());
     let mut runner_event_count = 0_usize;
     let mut runner_event_bytes = 0_usize;
     let mut terminal_seen = false;
@@ -795,6 +838,7 @@ async fn run_request_inner(
                         serde_json::to_vec(&event).c(h!())?.len(),
                     );
                     if !stream_limits_allow(
+                        &stream_limits,
                         runner_event_count,
                         runner_event_bytes,
                         response.len(),
@@ -808,6 +852,10 @@ async fn run_request_inner(
                     }
                     if let Some(diagnostic) = events::completion_diagnostic(&event) {
                         info!("AI agent completion request_id={} diagnostic={diagnostic}", request.id);
+                        continue;
+                    }
+                    if let Some(diagnostic) = events::tool_diagnostic(&event) {
+                        log_tool_diagnostic(request, correlation_id, &diagnostic);
                         continue;
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
@@ -827,6 +875,7 @@ async fn run_request_inner(
                             None => (response.len(), response_chars),
                         };
                         if !stream_limits_allow(
+                            &stream_limits,
                             runner_event_count,
                             runner_event_bytes,
                             response_bytes,
@@ -906,6 +955,90 @@ async fn run_request_inner(
         return Ok(RunOutcome::Cancelled);
     }
     Ok(RunOutcome::Completed(response, completion_metadata))
+}
+
+/// Holds the run until documents sent with this message are extracted, so
+/// the agent sees their text. Proceeds with whatever is ready on timeout.
+/// A reasoning preset's runtime is shared with the wait, so only part of it
+/// may be spent here.
+async fn wait_for_uploads(
+    env: &Env,
+    request: &ai_agent_request::Model,
+    execution_policy: Option<&super::reasoning::ExecutionPolicy>,
+    cancellation: &CancellationToken,
+    activity_titles: &mut ActivityTitles,
+) -> Result<bool, AppError> {
+    if super::uploads::context::pending_count(env, request.id)
+        .await
+        .c(h!())?
+        == 0
+    {
+        return Ok(true);
+    }
+    append_presented_event(
+        env,
+        request.id,
+        "progress",
+        json!({ "summary": "Обробляю вкладені файли" }),
+        activity_titles,
+    )
+    .await
+    .c(h!())?;
+    let wait_secs = execution_policy.map_or(
+        crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_SECS,
+        |policy| {
+            (policy.max_runtime_seconds
+                / crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_RUNTIME_DIVISOR)
+                .min(crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_SECS)
+        },
+    );
+    let deadline =
+        std::time::Instant::now() + StdDuration::from_secs(wait_secs);
+    while std::time::Instant::now() < deadline {
+        tokio::select! {
+            _ = cancellation.cancelled() => return Err(interrupted_error()),
+            _ = tokio::time::sleep(StdDuration::from_millis(crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_POLL_MS)) => {}
+        }
+        if request_is_cancelled(env, request.id).await.c(h!())? {
+            return Ok(false);
+        }
+        if super::uploads::context::pending_count(env, request.id)
+            .await
+            .c(h!())?
+            == 0
+        {
+            break;
+        }
+    }
+    Ok(true)
+}
+
+async fn add_upload_context(
+    env: &Env,
+    request: &ai_agent_request::Model,
+    vision: bool,
+    runner_payload: &mut Value,
+) -> Result<(), AppError> {
+    let context = super::uploads::context::runner_uploads(env, request, vision)
+        .await
+        .c(h!())?;
+    if let Some(skills) = runner_payload["skills"].as_array_mut() {
+        skills.retain(|skill| {
+            let name = skill["skill"].as_str().unwrap_or_default();
+            (vision || name != "upload_image")
+                && (!context.uploads.is_empty() || !name.starts_with("upload_"))
+        });
+    }
+    if !context.uploads.is_empty() {
+        runner_payload["uploads"] = json!(context.uploads);
+    }
+    if vision {
+        runner_payload["visionInput"] = json!(true);
+    }
+    if !context.turn_images.is_empty() {
+        runner_payload["turnImages"] = json!(context.turn_images);
+    }
+    Ok(())
 }
 
 pub(super) fn bounded_runner_payload(
@@ -1056,13 +1189,14 @@ fn runner_payload_for_provider(
 }
 
 fn stream_limits_allow(
+    limits: &super::reasoning::RequestLimits,
     runner_event_count: usize,
     runner_event_bytes: usize,
     response_bytes: usize,
     response_chars: usize,
 ) -> bool {
-    runner_event_count <= AI_AGENT_REQUEST_MAX_RUNNER_EVENTS
-        && runner_event_bytes <= AI_AGENT_REQUEST_MAX_EVENT_BYTES
+    runner_event_count <= limits.runner_events
+        && runner_event_bytes <= limits.event_bytes
         && response_bytes <= AI_AGENT_RESPONSE_MAX_BYTES
         && response_chars <= AI_AGENT_RESPONSE_MAX_CHARS
 }
@@ -1091,6 +1225,51 @@ async fn assign_agent(
     request.update(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(true)
+}
+
+/// The conversation's documents and the one the user had open, so the
+/// agent can refine them in this turn.
+async fn add_document_context(
+    dbx: &sea_orm::DatabaseConnection,
+    request: &ai_agent_request::Model,
+    runner_payload: &mut Value,
+) -> Result<(), AppError> {
+    runner_payload["documents"] = serde_json::to_value(
+        super::documents::runner_documents(dbx, request.conversation_id)
+            .await
+            .c(h!())?,
+    )
+    .c(h!())?;
+    if let Some(target) = super::documents::load_request_target(dbx, request.id)
+        .await
+        .c(h!())?
+    {
+        runner_payload["documentTarget"] =
+            serde_json::to_value(target).c(h!())?;
+    }
+    Ok(())
+}
+
+/// A trailing note naming the documents an earlier turn saved, which keeps
+/// their ids in the agent's context after the tool results are gone.
+fn saved_documents_note(
+    documents: &[super::documents::types::AiAgentDocumentArtifact],
+) -> String {
+    if documents.is_empty() {
+        return String::new();
+    }
+    let saved = documents
+        .iter()
+        .take(crate::config::AI_AGENT_DOCUMENT_HISTORY_MAX_ITEMS)
+        .map(|document| {
+            format!(
+                "[{}](echo-document:{}) v{}",
+                document.title, document.document_id, document.revision
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("\n\n[Saved documents: {saved}]")
 }
 
 pub(super) async fn load_history(
@@ -1135,8 +1314,16 @@ pub(super) async fn load_history(
     let mut maps = super::maps::load_summaries(&env.dbx, &request_ids)
         .await
         .c(h!())?;
+    let mut documents =
+        super::documents::load_artifacts(&env.dbx, &request_ids)
+            .await
+            .c(h!())?;
     let mut file_citations =
         super::file_citations::load(&env.dbx, &request_ids)
+            .await
+            .c(h!())?;
+    let mut attachments =
+        super::uploads::context::by_request(&env.dbx, &request_ids)
             .await
             .c(h!())?;
     let message_ids = citations
@@ -1176,7 +1363,12 @@ pub(super) async fn load_history(
     }
     let mut history = Vec::new();
     for prior in requests.into_iter().rev() {
-        history.push(json!({ "role": "user", "content": prior.prompt }));
+        let attached = super::uploads::context::history_prefix(
+            &attachments.remove(&prior.id).unwrap_or_default(),
+        );
+        history.push(
+            json!({ "role": "user", "content": format!("{attached}{}", prior.prompt) }),
+        );
         let readable = accessible.contains(&prior.id);
         let request_maps = if readable {
             maps.remove(&prior.id).unwrap_or_default()
@@ -1217,6 +1409,12 @@ pub(super) async fn load_history(
                 "[Previous request {}; any text below is an incomplete, unverified draft.]\n{}",
                 prior.state, response,
             );
+        }
+        if readable {
+            let note = saved_documents_note(
+                &documents.remove(&prior.id).unwrap_or_default(),
+            );
+            response = format!("{response}{note}").trim_start().to_string();
         }
         if response.is_empty() {
             response = "[Previous request completed without a text answer.]"
@@ -1606,6 +1804,9 @@ async fn reconcile_abandoned_containers(env: &Env) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{
+        AI_AGENT_REQUEST_MAX_EVENT_BYTES, AI_AGENT_REQUEST_MAX_RUNNER_EVENTS,
+    };
     use crate::entities::{ai_agent_allowed_engine, ai_engine};
     use serial_test::serial;
 
@@ -1799,31 +2000,37 @@ mod tests {
 
     #[test]
     fn runner_stream_limits_are_inclusive_and_bounded() {
+        let limits = crate::ai_agent::reasoning::limits(None);
         assert!(stream_limits_allow(
+            &limits,
             AI_AGENT_REQUEST_MAX_RUNNER_EVENTS,
             AI_AGENT_REQUEST_MAX_EVENT_BYTES,
             AI_AGENT_RESPONSE_MAX_BYTES,
             AI_AGENT_RESPONSE_MAX_CHARS,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             AI_AGENT_REQUEST_MAX_RUNNER_EVENTS + 1,
             0,
             0,
             0,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             0,
             AI_AGENT_REQUEST_MAX_EVENT_BYTES + 1,
             0,
             0,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             0,
             0,
             AI_AGENT_RESPONSE_MAX_BYTES + 1,
             0,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             0,
             0,
             0,

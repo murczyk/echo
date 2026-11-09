@@ -57,6 +57,8 @@ async fn insert_device(db: &DatabaseConnection, owner: &login::Model) -> Uuid {
         organism_id: Set(owner.organism_id.unwrap()),
         unit_id: Set(None),
         tags: Set(json!([])),
+        rating: Set(None),
+        description: Set(None),
         external_url: Set(None),
         archived: Set(false),
         archived_at: Set(None),
@@ -1152,4 +1154,6 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
     assert_eq!(file_entry::Entity::find().count(file_db).await.unwrap(), 0);
 }
 
+mod folder_dates;
+mod nonempty_filters;
 mod session_reads;

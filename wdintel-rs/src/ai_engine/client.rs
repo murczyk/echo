@@ -1,12 +1,17 @@
+use super::metrics::{
+    ProviderCallAttempt, ProviderMetricsSink, StreamBodyTimer,
+};
 use super::{cooldown::ProviderCooldown, gov};
 use crate::config::{
     AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_ENGINE_GLM_5_3_MODEL, AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE,
-    AI_GOV_UA_API_HOST, AI_GOV_UA_AUTH_BASE, AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC,
+    AI_ENGINE_BLOCKED_OPENAI_DOMAIN, AI_ENGINE_GLM_5_3_MODEL,
+    AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE, AI_GOV_UA_API_HOST,
+    AI_GOV_UA_AUTH_BASE, AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC,
     AI_GOV_UA_TOKEN_REQUEST_TIMEOUT_SEC,
 };
 use crate::entities::{ai_engine, ai_gov_ua_settings};
 use crate::h;
+use crate::telemetry::Metrics;
 use crate::types::{info, Deserialize, ShortContext};
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
@@ -23,6 +28,7 @@ pub struct AiEngineClient {
     token: Mutex<Option<CachedToken>>,
     government_cooldowns: Arc<Mutex<HashMap<String, Arc<ProviderCooldown>>>>,
     preview_settings: Option<ai_gov_ua_settings::Model>,
+    metrics: Option<ProviderMetricsSink>,
     #[cfg(test)]
     token_endpoint: Option<Url>,
 }
@@ -55,9 +61,31 @@ impl AiEngineClient {
             token: Mutex::new(None),
             government_cooldowns: Arc::default(),
             preview_settings: None,
+            metrics: None,
             #[cfg(test)]
             token_endpoint: None,
         })
+    }
+
+    pub fn with_metrics(
+        mut self,
+        metrics: Option<Metrics>,
+        process: &'static str,
+    ) -> Self {
+        self.metrics = metrics.map(|metrics| ProviderMetricsSink {
+            metrics: Arc::new(metrics),
+            process,
+        });
+        self
+    }
+
+    pub(crate) fn start_stream_body_timer(
+        &self,
+        engine: &ai_engine::Model,
+    ) -> Option<StreamBodyTimer> {
+        self.metrics
+            .as_ref()
+            .map(|sink| StreamBodyTimer::start(sink, engine))
     }
 
     pub(super) fn preview(&self, settings: ai_gov_ua_settings::Model) -> Self {
@@ -68,6 +96,7 @@ impl AiEngineClient {
             token: Mutex::new(None),
             government_cooldowns: self.government_cooldowns.clone(),
             preview_settings: Some(settings),
+            metrics: self.metrics.clone(),
             #[cfg(test)]
             token_endpoint: self.token_endpoint.clone(),
         }
@@ -102,7 +131,28 @@ impl AiEngineClient {
         timeout: Duration,
         responses: bool,
     ) -> anyhow::Result<reqwest::Response> {
+        let mut attempt = ProviderCallAttempt::start(
+            self.metrics.as_ref(),
+            engine,
+            is_streaming(Some(&body)),
+        );
+        let result = self
+            .send_after_cooldown(engine, body, timeout, responses, &mut attempt)
+            .await;
+        attempt.finish(&result);
+        result
+    }
+
+    async fn send_after_cooldown(
+        &self,
+        engine: &ai_engine::Model,
+        body: Value,
+        timeout: Duration,
+        responses: bool,
+        attempt: &mut ProviderCallAttempt,
+    ) -> anyhow::Result<reqwest::Response> {
         if !is_government_url(&engine.url) {
+            attempt.mark_provider_start();
             return self
                 .send_agent_request_inner(engine, body, timeout, responses)
                 .await
@@ -118,6 +168,7 @@ impl AiEngineClient {
                 !timeout.is_zero(),
                 "Government provider request deadline elapsed during provider cooldown"
             );
+            attempt.mark_provider_start();
             let response = self
                 .send_agent_request_inner(engine, body, timeout, responses)
                 .await
@@ -152,6 +203,10 @@ impl AiEngineClient {
         responses: bool,
     ) -> anyhow::Result<reqwest::Response> {
         let mut endpoint = super::chat_completions_url(&engine.url).c(h!())?;
+        anyhow::ensure!(
+            !is_direct_openai_url(&endpoint),
+            "Прямий доступ до OpenAI заборонено"
+        );
         if responses {
             let prefix =
                 endpoint.path().strip_suffix("/chat/completions").c(h!())?;
@@ -367,12 +422,14 @@ impl AiEngineClient {
     }
 }
 
-fn response_content_type(body: Option<&Value>) -> &'static str {
-    if body
-        .and_then(|body| body.get("stream"))
+fn is_streaming(body: Option<&Value>) -> bool {
+    body.and_then(|body| body.get("stream"))
         .and_then(Value::as_bool)
         == Some(true)
-    {
+}
+
+fn response_content_type(body: Option<&Value>) -> &'static str {
+    if is_streaming(body) {
         "text/event-stream"
     } else {
         "application/json"
@@ -382,6 +439,18 @@ fn response_content_type(body: Option<&Value>) -> &'static str {
 pub(super) fn is_government_glm(engine: &ai_engine::Model) -> bool {
     engine.model_name == AI_ENGINE_GLM_5_3_MODEL
         && is_government_url(&engine.url)
+}
+
+/// OpenAI models are reached only through the government gateway, so direct
+/// OpenAI hosts are refused even when a stored engine still points at them.
+pub fn is_direct_openai_url(url: &Url) -> bool {
+    url.host_str().is_some_and(|host| {
+        let host = host.trim_end_matches('.');
+        host == AI_ENGINE_BLOCKED_OPENAI_DOMAIN
+            || host
+                .strip_suffix(AI_ENGINE_BLOCKED_OPENAI_DOMAIN)
+                .is_some_and(|subdomain| subdomain.ends_with('.'))
+    })
 }
 
 pub fn is_government_url(value: &str) -> bool {

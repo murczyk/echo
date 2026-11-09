@@ -194,5 +194,9 @@ pub(in crate::devices::files) fn current_visibility(
 pub(in crate::devices::files) fn current_visibility_for(
     alias: &str,
 ) -> sea_orm::sea_query::SimpleExpr {
-    sea_orm::sea_query::Expr::cust(format!("({alias}.archive_file_id is null or exists(select 1 from file_revision visible join file_archive job on job.id=visible.origin_archive_id and job.state='ready' join file_archive root on root.id=job.root_id and root.state='ready' join file_entry source on source.id=root.source_file_id and source.revision=root.source_revision where visible.id={alias}.id and visible.revision={alias}.revision))"))
+    sea_orm::sea_query::Expr::cust(current_visibility_sql(alias))
+}
+
+pub(in crate::devices::files) fn current_visibility_sql(alias: &str) -> String {
+    format!("({alias}.archive_file_id is null or exists(select 1 from file_revision visible join file_archive job on job.id=visible.origin_archive_id and job.state='ready' join file_archive root on root.id=job.root_id and root.state='ready' join file_entry source on source.id=root.source_file_id and source.revision=root.source_revision where visible.id={alias}.id and visible.revision={alias}.revision))")
 }

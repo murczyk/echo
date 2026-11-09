@@ -2,10 +2,12 @@ export type SystemSettingsTab =
   | 'main'
   | 'duty'
   | 'analysis'
+  | 'reports'
   | 'control'
   | 'pelengs'
   | 'api'
   | 'notifications'
+  | 'monitoring'
   | 'cache'
   | 'integrations';
 
@@ -16,10 +18,12 @@ const SYSTEM_SETTINGS_TABS = new Set<SystemSettingsTab>([
   'main',
   'duty',
   'analysis',
+  'reports',
   'control',
   'pelengs',
   'api',
   'notifications',
+  'monitoring',
   'cache',
   'integrations',
 ]);

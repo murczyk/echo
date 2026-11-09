@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   localFilePreviewBackend,
@@ -739,7 +740,7 @@ test('@regression checked preflight A and native playback B use separate cold ca
     await media.evaluate(play);
     await expect.poll(() => media.evaluate(currentTime)).toBeGreaterThan(1.6);
     const retired = await expectRetired(media);
-    await page.getByRole('tab', { name: 'Журнал', exact: true }).click();
+    await openDeviceSection(page, 'Журнал');
     await retired();
   } finally {
     backend.route('a', 'a', 'a');

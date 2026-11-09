@@ -57,6 +57,7 @@ pub mod search;
 pub mod signals;
 pub mod types;
 pub mod unit;
+pub(crate) mod unit_stats;
 pub mod zp_digital_post_alt_format;
 pub mod zp_peleng_extended_format;
 pub mod zp_peleng_vorony_odina_format;
@@ -145,6 +146,8 @@ fn apply_media_response_headers(
 ) {
     builder.insert_header((header::ACCEPT_RANGES, "bytes"));
     builder.insert_header((header::CONTENT_TYPE, content_type.to_string()));
+    // Compress would drop Content-Length, which PDF previews depend on.
+    builder.insert_header((header::CONTENT_ENCODING, "identity"));
     builder.insert_header(("X-Accel-Buffering", "no"));
     if let Some(cd) = media_inline_content_disposition(file_name) {
         builder.insert_header(cd);
@@ -163,7 +166,27 @@ fn media_range_not_satisfiable_response(
         .finish()
 }
 
-#[get("/api/messenger/media/{media_id}")]
+// HEAD lets previews read the size and type without fetching or decrypting the file.
+fn messenger_media_head_response(
+    content_type: &str,
+    file_name: Option<&str>,
+    total: u64,
+) -> HttpResponse {
+    let mut response = HttpResponse::Ok();
+    apply_media_response_headers(&mut response, content_type, file_name);
+    response
+        .insert_header((header::CACHE_CONTROL, "private, no-store"))
+        .body(actix_web::body::SizedStream::new(
+            total,
+            futures_util::stream::empty::<Result<Bytes, actix_web::Error>>(),
+        ))
+}
+
+#[actix_web::route(
+    "/api/messenger/media/{media_id}",
+    method = "GET",
+    method = "HEAD"
+)]
 async fn messenger_media(
     user: actix_identity::Identity,
     req: HttpRequest,
@@ -190,9 +213,82 @@ async fn messenger_media(
         .await;
     }
 
-    Ok(serve_messenger_media(&req, env.as_ref(), &media)
-        .await
-        .c(h!())?)
+    let mut response = if req.method() == actix_web::http::Method::HEAD
+        && !crate::messenger::audio_ref::is_reference(&media)
+    {
+        messenger_media_head_response(
+            &media.content_type,
+            media.file_name.as_deref(),
+            u64::try_from(media.size_bytes).c(h!())?,
+        )
+    } else {
+        serve_messenger_media(&req, env.as_ref(), &media)
+            .await
+            .c(h!())?
+    };
+    apply_media_document_security_headers(&mut response, &media.content_type);
+    Ok(response)
+}
+
+// Media comes from senders, and "open in a new tab" loads it as a page on Echo's
+// origin. Scripts are disabled and the page gets an opaque origin, so it cannot
+// reach the session or the API. In-app <img>, <video>, <audio> and fetch() loads
+// do not apply a response CSP, so previews are not affected.
+const MEDIA_DOCUMENT_CSP: &str =
+    "sandbox; default-src 'none'; img-src 'self' blob: data:; \
+     media-src 'self' blob: data:; style-src 'unsafe-inline'; \
+     frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+// A video or audio tab is a page the browser builds, and its player requests the
+// file again. From a sandboxed page that request has a null origin and no
+// session cookie, so it gets a 401. These files cannot run script, and nosniff
+// stops a mislabelled file from rendering as HTML, so they keep Echo's origin.
+const MEDIA_PLAYER_DOCUMENT_CSP: &str =
+    "default-src 'none'; img-src 'self' blob: data:; \
+     media-src 'self' blob: data:; style-src 'unsafe-inline'; \
+     frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+
+fn is_browser_player_media(content_type: &str) -> bool {
+    let essence = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_ascii_lowercase();
+    essence.starts_with("video/") || essence.starts_with("audio/")
+}
+
+fn apply_media_document_security_headers(
+    response: &mut HttpResponse,
+    content_type: &str,
+) {
+    let csp = if is_browser_player_media(content_type) {
+        MEDIA_PLAYER_DOCUMENT_CSP
+    } else {
+        MEDIA_DOCUMENT_CSP
+    };
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        header::HeaderValue::from_static(csp),
+    );
+    // CSP does not cover DNS prefetching, which would tell a sender's DNS
+    // server that the file was opened.
+    headers.insert(
+        header::HeaderName::from_static("x-dns-prefetch-control"),
+        header::HeaderValue::from_static("off"),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        header::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("cross-origin-resource-policy"),
+        header::HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        header::HeaderValue::from_static("no-referrer"),
+    );
 }
 
 async fn load_authorized_messenger_media(
@@ -365,6 +461,10 @@ fn local_messenger_media_response(
     }
     let mut response = file.into_response(req);
     response.headers_mut().insert(
+        header::CONTENT_ENCODING,
+        header::HeaderValue::from_static("identity"),
+    );
+    response.headers_mut().insert(
         header::HeaderName::from_static("x-accel-buffering"),
         header::HeaderValue::from_static("no"),
     );
@@ -421,9 +521,8 @@ pub(crate) async fn serve_messenger_media(
             .await
             .c(h!())?);
     }
-    if crate::messenger::media::is_video_media(media)
-        && crate::messenger::media_cache::should_cache_media(media.size_bytes)
-    {
+    // Decryption covers the whole object, so range clients need a local copy.
+    if crate::messenger::media_cache::should_cache_media(media.size_bytes) {
         return Ok(serve_cached_messenger_media(req, env, media)
             .await
             .c(h!())?);
@@ -507,18 +606,23 @@ async fn serve_cached_messenger_media(
     let mut file = open_cached_messenger_media(env, media, poll_cache)
         .await?
         .use_etag(false)
-        .use_last_modified(false);
+        .use_last_modified(false)
+        .prefer_utf8(false);
     if let Ok(content_type) =
         media.content_type.parse::<actix_web::mime::Mime>()
     {
         file = file.set_content_type(content_type);
     }
-    if let Some(content_disposition) =
-        media_inline_content_disposition(media.file_name.as_deref())
-    {
-        file = file.set_content_disposition(content_disposition);
-    }
+    // NamedFile would otherwise derive a disposition from the cache file name.
+    file = match media_inline_content_disposition(media.file_name.as_deref()) {
+        Some(disposition) => file.set_content_disposition(disposition),
+        None => file.disable_content_disposition(),
+    };
     let mut response = file.into_response(req);
+    response.headers_mut().insert(
+        header::CONTENT_ENCODING,
+        header::HeaderValue::from_static("identity"),
+    );
     response.headers_mut().insert(
         header::HeaderName::from_static("x-accel-buffering"),
         header::HeaderValue::from_static("no"),
@@ -2049,26 +2153,34 @@ where
         .c(h!())?;
     let mut data = BTreeMap::new();
     for id in sender_uuids {
-        let m_profile = echo_senders
+        let m_profile = logins
             .iter()
-            .find(|sender| sender.uuid == id)
-            .map(|sender| SignalProfileEntry {
+            .find(|login| login.id.to_string() == id)
+            .map(|login| SignalProfileEntry {
                 family_name: None,
-                given_name: sender.name.clone(),
+                given_name: Some(login.login.clone()),
             })
             .or_else(|| {
-                logins.iter().find(|login| login.id.to_string() == id).map(
-                    |login| SignalProfileEntry {
+                profiles
+                    .get(&id)
+                    .filter(|profile| {
+                        [&profile.given_name, &profile.family_name]
+                            .into_iter()
+                            .flatten()
+                            .any(|name| !name.trim().is_empty())
+                    })
+                    .map(|profile| SignalProfileEntry {
+                        family_name: profile.family_name.clone(),
+                        given_name: profile.given_name.clone(),
+                    })
+            })
+            .or_else(|| {
+                echo_senders.iter().find(|sender| sender.uuid == id).map(
+                    |sender| SignalProfileEntry {
                         family_name: None,
-                        given_name: Some(login.login.clone()),
+                        given_name: sender.name.clone(),
                     },
                 )
-            })
-            .or_else(|| {
-                profiles.get(&id).map(|p| SignalProfileEntry {
-                    family_name: p.family_name.clone(),
-                    given_name: p.given_name.clone(),
-                })
             });
         data.insert(id, m_profile);
     }
@@ -2079,17 +2191,22 @@ where
 mod messenger_media_tests {
     use super::{
         checked_attachment_size_total, find_active_attachment_archive_message,
-        media_cache_preflight_requested, media_range_not_satisfiable_response,
-        message_attachments_archive_name_from_parts,
+        local_messenger_media_response, media_cache_preflight_requested,
+        media_range_not_satisfiable_response,
+        message_attachments_archive_name_from_parts, messenger_media,
         parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
         safe_zip_entry_name, validate_attachment_metadata_sizes,
         validate_converted_attachment_metadata_sizes, write_zip_entry,
     };
     use crate::entities::signal_message;
+    use crate::entities::signal_message_group;
     use crate::entities::signal_message_media;
     use crate::entities::signal_message_media_conversion_job;
     use crate::error::AppError;
-    use crate::functest::tests::{cleanup, mk_signal_message};
+    use crate::functest::tests::{
+        cleanup, find_test_datasource_group, mk_signal_message,
+        mk_test_identity,
+    };
     use actix_web::http::{header, StatusCode};
     use actix_web::test::TestRequest;
     use chrono::{NaiveDate, NaiveDateTime};
@@ -2176,6 +2293,311 @@ mod messenger_media_tests {
             parse_single_byte_range("bytes=1000-1100,2000-", 1000),
             None
         );
+    }
+
+    async fn sign_in(
+        request: actix_web::HttpRequest,
+        login: actix_web::web::Path<String>,
+    ) -> actix_web::HttpResponse {
+        actix_identity::Identity::login(
+            &actix_web::HttpMessage::extensions(&request),
+            login.into_inner(),
+        )
+        .unwrap();
+        actix_web::HttpResponse::NoContent().finish()
+    }
+
+    // Inserts a PDF into a group that the test identity can read.
+    async fn mk_accessible_pdf(
+        env: &crate::types::Env,
+        size_bytes: i64,
+        storage_key: &str,
+    ) -> (uuid::Uuid, signal_message_media::Model) {
+        let identity = mk_test_identity().await.unwrap();
+        let login_id =
+            crate::users::login_id_by_name(&env.dbx, &identity.login)
+                .await
+                .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(datasource_group.group_master_key)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/pdf".to_string()),
+            file_ext: Set(Some("pdf".to_string())),
+            file_name: Set(Some("map.pdf".to_string())),
+            size_bytes: Set(size_bytes),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some(storage_key.to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        (login_id, media)
+    }
+
+    // The media route behind the real session and Compress middleware.
+    async fn media_test_app(
+        env: std::sync::Arc<crate::types::Env>,
+    ) -> actix_web::App<
+        impl actix_web::dev::ServiceFactory<
+            actix_web::dev::ServiceRequest,
+            Config = (),
+            Response = actix_web::dev::ServiceResponse<
+                impl actix_web::body::MessageBody,
+            >,
+            Error = actix_web::Error,
+            InitError = (),
+        >,
+    > {
+        let sessions = actix_session::storage::RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        actix_web::App::new()
+            .app_data(actix_web::web::Data::from(env))
+            .wrap(actix_identity::IdentityMiddleware::default())
+            .wrap(actix_session::SessionMiddleware::new(
+                sessions,
+                actix_web::cookie::Key::generate(),
+            ))
+            .wrap(actix_web::middleware::Compress::default())
+            .route("/test/login/{login}", actix_web::web::post().to(sign_in))
+            .service(messenger_media)
+    }
+
+    // Regression: PDF previews probe media with HEAD, which a GET-only route answered with 404.
+    #[serial]
+    #[tokio::test]
+    async fn media_previews_get_size_through_compression() {
+        use actix_web::body::{BodySize, MessageBody};
+        use actix_web::http::Method;
+        use actix_web::test::{call_service, init_service};
+        use actix_web::web;
+
+        let env = cleanup().await.unwrap();
+        // Storage has no such object, so only a metadata response can succeed.
+        let (login_id, media) =
+            mk_accessible_pdf(&env, 68_997_590, "test/missing-map.pdf").await;
+
+        // Local files take a different response path from HEAD.
+        let local_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(local_file.path(), b"%PDF-1.7").unwrap();
+        let local_path = local_file.path().to_path_buf();
+        let local_media = media.clone();
+
+        let app = init_service(media_test_app(env.clone()).await.route(
+            "/test/local-media",
+            web::get().to(move |req: actix_web::HttpRequest| {
+                let file = actix_files::NamedFile::open(&local_path).unwrap();
+                let response = local_messenger_media_response(
+                    &req,
+                    &local_media,
+                    file,
+                    "application/pdf",
+                );
+                async move { response }
+            }),
+        ))
+        .await;
+        let head = |uri: &str| {
+            TestRequest::default()
+                .method(Method::HEAD)
+                .uri(uri)
+                .insert_header((header::ACCEPT_ENCODING, "br"))
+        };
+        let media_uri = format!("/api/messenger/media/{}", media.id);
+
+        let unauthorized =
+            call_service(&app, head(&media_uri).to_request()).await;
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let login = call_service(
+            &app,
+            TestRequest::post()
+                .uri(&format!("/test/login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = login.response().cookies().next().unwrap().into_owned();
+
+        let response = call_service(
+            &app,
+            head(&media_uri).cookie(cookie.clone()).to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.response().body().size(),
+            BodySize::Sized(68_997_590)
+        );
+        assert_eq!(
+            response.headers().get(header::CONTENT_ENCODING).unwrap(),
+            "identity"
+        );
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/pdf"
+        );
+        assert_eq!(
+            response.headers().get(header::ACCEPT_RANGES).unwrap(),
+            "bytes"
+        );
+
+        let missing = call_service(
+            &app,
+            head(&format!("/api/messenger/media/{}", uuid::Uuid::now_v7()))
+                .cookie(cookie)
+                .to_request(),
+        )
+        .await;
+        assert_ne!(missing.status(), StatusCode::OK);
+
+        let local = call_service(
+            &app,
+            TestRequest::get()
+                .uri("/test/local-media")
+                .insert_header((header::ACCEPT_ENCODING, "br"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(local.status(), StatusCode::OK);
+        assert_eq!(
+            local.headers().get(header::CONTENT_ENCODING).unwrap(),
+            "identity"
+        );
+        assert_eq!(local.response().body().size(), BodySize::Sized(8));
+    }
+
+    // Regression: pdf.js sends parallel ranges, and each one decrypted the whole object.
+    #[serial]
+    #[tokio::test]
+    async fn parallel_ranges_on_large_encrypted_media_come_from_the_cache() {
+        use actix_web::body::{BodySize, MessageBody};
+        use actix_web::test::{call_service, init_service, read_body};
+
+        let env = cleanup().await.unwrap();
+        let mut env = env.as_ref().clone();
+        let cache_dir = tempfile::tempdir().unwrap();
+        env.config.storage_dir = cache_dir.path().to_str().unwrap().to_string();
+        let s3_config = crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "media-range-test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        };
+        let storage = crate::storage::S3Config::from(&s3_config);
+        let strongbox_key = s3_config.strongbox_key.clone();
+        let operator =
+            opendal::Operator::new(opendal::services::Memory::default())
+                .unwrap()
+                .finish();
+        env.config.s3_config = Some(s3_config);
+        env.s3_config = Some(storage.clone());
+        env.s3 = Some(operator.clone());
+
+        let size = crate::config::MESSENGER_MEDIA_CACHE_MIN_FILE_SIZE_BYTES + 1;
+        let plaintext: Vec<u8> =
+            (0..size).map(|index| (index % 251) as u8).collect();
+        let storage_key = "test/large-map.pdf";
+        crate::storage::upload_encrypted_to_s3_with_operator(
+            &env.s3,
+            &storage,
+            &strongbox_key,
+            storage_key,
+            plaintext.clone().into(),
+        )
+        .await
+        .unwrap();
+        let (login_id, media) =
+            mk_accessible_pdf(&env, size, storage_key).await;
+        let media_uri = format!("/api/messenger/media/{}", media.id);
+
+        let app =
+            init_service(media_test_app(std::sync::Arc::new(env)).await).await;
+        let login = call_service(
+            &app,
+            TestRequest::post()
+                .uri(&format!("/test/login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = login.response().cookies().next().unwrap().into_owned();
+        let get = || {
+            TestRequest::get()
+                .uri(&media_uri)
+                .cookie(cookie.clone())
+                .insert_header((header::ACCEPT_ENCODING, "br"))
+        };
+        let get_range = |start: usize, end: usize| {
+            get()
+                .insert_header((header::RANGE, format!("bytes={start}-{end}")))
+                .to_request()
+        };
+
+        let ranges: Vec<(usize, usize)> = (0..20)
+            .map(|index| (index * 400_000, index * 400_000 + 65_535))
+            .collect();
+        let responses =
+            futures_util::future::join_all(ranges.iter().map(
+                |&(start, end)| call_service(&app, get_range(start, end)),
+            ))
+            .await;
+        for (response, (start, end)) in responses.into_iter().zip(ranges) {
+            assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+            assert_eq!(
+                response.headers().get(header::CONTENT_RANGE).unwrap(),
+                format!("bytes {start}-{end}/{size}").as_str()
+            );
+            assert_eq!(
+                response.headers().get(header::CONTENT_ENCODING).unwrap(),
+                "identity"
+            );
+            assert_eq!(read_body(response).await, plaintext[start..=end]);
+        }
+
+        // pdf.js switches to ranges only when the full GET advertises them.
+        let full = call_service(&app, get().to_request()).await;
+        assert_eq!(full.status(), StatusCode::OK);
+        assert_eq!(full.headers().get(header::ACCEPT_RANGES).unwrap(), "bytes");
+        assert_eq!(
+            full.headers().get(header::CONTENT_ENCODING).unwrap(),
+            "identity"
+        );
+        assert_eq!(
+            full.response().body().size(),
+            BodySize::Sized(u64::try_from(size).unwrap())
+        );
+
+        // Without the object, only the cached copy can answer.
+        operator
+            .delete(&storage.prefixed_key(storage_key))
+            .await
+            .unwrap();
+        let cached = call_service(&app, get_range(0, 7)).await;
+        assert_eq!(cached.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(read_body(cached).await, plaintext[0..=7]);
     }
 
     #[test]

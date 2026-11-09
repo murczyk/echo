@@ -4,6 +4,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { releaseNativeMedia } from '../attachment-preview/native-media-lifecycle';
+import { ATTACHMENT_PREVIEW_DRAG_THRESHOLD_PX } from '../message-card-image-preview-utils';
 
 export function VideoFilePreview({
   src,
@@ -26,6 +27,9 @@ export function VideoFilePreview({
   onStreamError,
   loadTimeoutMs = 30_000,
   nativeControls = false,
+  fit = 'intrinsic',
+  onSurfaceTap,
+  onBufferingChange,
 }: {
   src: string | null;
   onRetry: () => void;
@@ -36,6 +40,9 @@ export function VideoFilePreview({
   error?: { message: string };
   loadTimeoutMs?: number;
   nativeControls?: boolean;
+  fit?: 'intrinsic' | 'contain';
+  onSurfaceTap?: () => void;
+  onBufferingChange?: (buffering: boolean) => void;
   zoom?: number;
   pan?: { x: number; y: number };
   onPlay: () => void;
@@ -59,6 +66,9 @@ export function VideoFilePreview({
   const [isBuffering, setIsBuffering] = useState(true);
   const clickActionTimer = useRef<number | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const tapStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressTap = useRef(false);
+  useEffect(() => onBufferingChange?.(isBuffering), [isBuffering, onBufferingChange]);
   const beginLoading = () => {
     setIsBuffering(true);
     setLoadAttempt((attempt) => attempt + 1);
@@ -92,6 +102,18 @@ export function VideoFilePreview({
           ref={videoRef}
           src={isVideoPreviewStream(src) ? undefined : src}
           controls={nativeControls}
+          tabIndex={onSurfaceTap && !nativeControls ? 0 : undefined}
+          role={onSurfaceTap && !nativeControls ? 'button' : undefined}
+          aria-label={
+            onSurfaceTap && !nativeControls ? 'Показати або приховати керування відео' : undefined
+          }
+          onKeyDown={(event) => {
+            if (!onSurfaceTap || nativeControls || (event.key !== 'Enter' && event.key !== ' '))
+              return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) onSurfaceTap();
+          }}
           preload="metadata"
           playsInline
           onLoadStart={beginLoading}
@@ -108,10 +130,37 @@ export function VideoFilePreview({
           onVolumeChange={onVolumeChange}
           onRateChange={onRateChange}
           onError={onError}
+          onTouchStart={(event) => {
+            if (!onSurfaceTap || nativeControls) return;
+            suppressTap.current = event.touches.length !== 1;
+            const touch = event.touches[0];
+            tapStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+          }}
+          onTouchMove={(event) => {
+            const touch = event.touches[0];
+            const start = tapStart.current;
+            if (
+              event.touches.length !== 1 ||
+              (touch &&
+                start &&
+                Math.hypot(touch.clientX - start.x, touch.clientY - start.y) >
+                  ATTACHMENT_PREVIEW_DRAG_THRESHOLD_PX)
+            )
+              suppressTap.current = true;
+          }}
+          onTouchCancel={() => {
+            suppressTap.current = true;
+            tapStart.current = null;
+          }}
           onClick={
             nativeControls
               ? undefined
               : () => {
+                  if (onSurfaceTap) {
+                    if (!suppressTap.current) onSurfaceTap();
+                    suppressTap.current = false;
+                    return;
+                  }
                   const video = videoRef.current;
                   if (!video) return;
                   if (clickActionTimer.current) window.clearTimeout(clickActionTimer.current);
@@ -127,6 +176,9 @@ export function VideoFilePreview({
                 }
           }
           style={{
+            width: fit === 'contain' ? '100%' : undefined,
+            height: fit === 'contain' ? '100%' : undefined,
+            objectFit: fit === 'contain' ? 'contain' : undefined,
             maxWidth: '100%',
             maxHeight: '100%',
             display: error ? 'none' : 'block',

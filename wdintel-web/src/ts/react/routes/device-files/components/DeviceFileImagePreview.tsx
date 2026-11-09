@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { CircularProgress, IconButton, Tooltip } from '@mui/material';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import { Box, CircularProgress } from '@mui/material';
 import type {
   FilePreviewLifecycleProps,
   FilePreviewSource,
 } from '../../shared/message-card/attachment-preview/file-preview-source';
 import { AttachmentPreviewZoomBadge } from '../../shared/message-card/attachment-preview/AttachmentPreviewZoomBadge';
+import { getAttachmentPreviewStageBg } from '../../shared/message-card/attachment-preview/message-card-attachment-preview';
 import { MessageCardAttachmentPreviewStage } from '../../shared/message-card/attachment-preview/MessageCardAttachmentPreviewStage';
 import { ImageFilePreview } from '../../shared/message-card/renderers/ImageFilePreview';
 import { useImageAttachmentPreviewGestures } from '../../shared/message-card/renderers/use-image-attachment-preview-gestures';
@@ -32,9 +31,11 @@ export function imagePreviewMime(source: FilePreviewSource) {
 export function DeviceFileImagePreview({
   source,
   lifecycle,
+  onImageLoad,
 }: {
   source: FilePreviewSource;
   lifecycle: FilePreviewLifecycleProps;
+  onImageLoad?: (image: HTMLImageElement) => void;
 }) {
   const [href, setHref] = useState<string | null>(null);
   const { signal, isCurrent, onError, registerCleanup } = lifecycle;
@@ -81,27 +82,10 @@ export function DeviceFileImagePreview({
   }, [registerCleanup, gestures.cleanup]);
   if (!href) return <CircularProgress aria-label="Завантаження зображення" />;
   return (
-    <div className="relative flex min-h-64 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex justify-end">
-        <Tooltip title="Зменшити">
-          <IconButton
-            aria-label="Зменшити зображення"
-            disabled={gestures.zoom <= 100}
-            onClick={() => gestures.setPreviewZoom(gestures.zoom - 25)}
-          >
-            <ZoomOutIcon />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Збільшити">
-          <IconButton
-            aria-label="Збільшити зображення"
-            disabled={gestures.zoom >= 400}
-            onClick={() => gestures.setPreviewZoom(gestures.zoom + 25)}
-          >
-            <ZoomInIcon />
-          </IconButton>
-        </Tooltip>
-      </div>
+    <Box
+      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+      sx={{ backgroundColor: getAttachmentPreviewStageBg }}
+    >
       <MessageCardAttachmentPreviewStage
         ref={gestures.stageRef}
         kind="image"
@@ -124,7 +108,10 @@ export function DeviceFileImagePreview({
           pan={gestures.pan}
           failedHref={null}
           imageSize={gestures.imageSize}
-          onLoad={gestures.registerImage}
+          onLoad={(image) => {
+            gestures.registerImage(image);
+            onImageLoad?.(image);
+          }}
           onError={() => {
             if (isCurrent()) onError(new Error('Не вдалося відкрити зображення.'));
           }}
@@ -134,6 +121,6 @@ export function DeviceFileImagePreview({
           onResetZoom={() => gestures.setPreviewZoom(100)}
         />
       </MessageCardAttachmentPreviewStage>
-    </div>
+    </Box>
   );
 }

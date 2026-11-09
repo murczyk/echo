@@ -46,6 +46,34 @@ describe('streamAiAgentEventsWithReconnect', () => {
     expect(afterSequences).toEqual([0, 3]);
   });
 
+  it('#3985 keeps resuming a long request that delivers events between drops', async () => {
+    let sequence = 0;
+    let connections = 0;
+    const connect = vi.fn(async (input: { onEvent: (event: AiAgentEvent) => void }) => {
+      connections += 1;
+      if (connections <= 6) {
+        sequence += 1;
+        input.onEvent({ sequence, requestId: 'request-1', type: 'progress' } as AiAgentEvent);
+        throw new Error('disconnected');
+      }
+      throw new Error('still offline');
+    });
+
+    await expect(
+      streamAiAgentEventsWithReconnect({
+        requestId: 'request-1',
+        signal: new AbortController().signal,
+        getAfterSequence: () => sequence,
+        isTerminal: () => false,
+        onEvent: vi.fn(),
+        connect: connect as never,
+        reconnectDelayMs: 0,
+      }),
+    ).rejects.toThrow('still offline');
+    // Six drops after delivered events, then the usual three retries.
+    expect(connections).toBe(9);
+  });
+
   it('stops retrying after cancellation', async () => {
     const controller = new AbortController();
     const connect = vi.fn(async () => {

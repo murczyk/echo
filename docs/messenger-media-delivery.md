@@ -71,6 +71,8 @@ Originals and playback copies live in
 originals are retained for at least 24 hours after publication, irrespective of
 viewing or the message's event timestamp. Copied references share the same object
 and extend its protection. Legacy on-demand cache files remain separate.
+Encrypted media over 10 MiB without a retained copy is decrypted once into that
+on-demand cache: decryption covers the whole object, so it cannot serve ranges.
 
 Completed immutable uploads can be hard-linked; other sources are copied with
 bounded memory. Files are synced and published atomically before upload source
@@ -161,8 +163,137 @@ that a slow mobile connection can sustain the original video's bitrate.
 Preview regression coverage lives in
 `wdintel-rs/src/messenger/media_preview/tests.rs` and
 `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` (#3769).
+
 Staging acceptance must measure first frame and sustained playback on a large
 cold object, reopen it with warm segments, seek to an uncached position, and
 check that closing stops further requests. A cold source still depends on B2
 latency and how quickly FFmpeg can decode the source GOP; the original bitrate
 and keyframe spacing can affect preparation time.
+
+### Mobile message-card video viewer
+
+Analysis and Duty share a video viewer that fits mobile footage to the whole
+available browser viewport without cropping or forcing orientation. Its background
+uses the same theme surface as other attachments. The translucent mobile playback
+panel and carousel island use that surface too, with controls coloured by the theme.
+The header,
+playback controls, and attachment navigation overlay the video without reserving
+layout height. Rotating a phone to landscape automatically fits the video to the
+new viewport, keeping the same video element, playback position, mute, and speed.
+
+A tap or click on the video toggles the header and controls together, while playing
+or paused; it does not play, pause, zoom, close, or request fullscreen. Playback has
+a separate button. Controls initially hide after two seconds of playback, except
+during loading, errors, menu interaction, keyboard focus, and report editing.
+Manual taps cancel that timer. Enter/Space on the focusable video toggles the same
+panels without changing playback. The shared attachment header preserves filename,
+information, file actions, close, and carousel spacing. Playback speed is in its
+overflow menu. Horizontal swipes and shared carousel controls retain the message's
+mixed attachments. The mobile playback panel uses one row from 480px wide, or a
+timeline above the buttons on narrower screens, without a duplicate centre button.
+On narrow screens, carousel navigation sits in a translucent island above the
+playback panel. At the initial zoom, a vertical swipe on the mobile video surface
+dismisses the viewer, including standard fullscreen, and stops playback. Timeline
+and button gestures keep their own actions; fullscreen still blocks horizontal
+attachment navigation. Desktop background clicks outside the video still dismiss
+the viewer. The panel stays anchored to the bottom for one or many attachments.
+While the mobile video viewer is open, it temporarily sets `viewport-fit=cover`
+so supporting browsers can extend its background underneath gesture navigation.
+The shared dialog owns this setting and keeps it unchanged while switching
+between photos and videos, avoiding repeated browser viewport resets.
+The playback buttons remain above the bottom safe-area inset. Closing the viewer,
+switching to an attachment other than an image or video, or returning to desktop
+controls restores the previous viewport settings. Browsers may still draw their own system bar;
+fullscreen exit banners remain controlled by the browser.
+
+The mobile playback panel includes a fullscreen button when the platform supports
+it; it becomes available after video metadata loads. On Android with the standard
+Fullscreen API, it expands the document containing the player and its portalled
+menus, preserving our controls. The same button exits fullscreen. While fullscreen
+is active, attachment navigation is hidden and horizontal swipes and arrow keys cannot change slides;
+exiting restores normal attachment navigation. Escape or the
+browser's fullscreen exit returns to the open viewer. In portrait fullscreen,
+the header adds minimum top and side spacing to the system safe-area insets.
+Entry failures show a toast. Exiting fullscreen remains available while the video
+element is absent during loading or after a failed retry.
+Leaving the video viewer releases its fullscreen, including late requests after
+closing; returning retains the same video element, position, mute, and speed.
+
+On iPhone without element fullscreen support, the button invokes WebKit's native
+video fullscreen, enabling system controls before entry. Apple controls replace
+our UI there. Exiting restores our inline controls without reloading the video.
+The inline viewport layout can retain browser bars; rotating alone never requests
+fullscreen. Device-file playback keeps its existing behavior.
+
+Browser regressions: `wdintel-web/tests/e2e/message-card-video-mobile.spec.ts`
+(#3340). Chromium emulation does not replace physical Android Chrome and iPhone
+Safari acceptance, including fullscreen entry/exit, native controls, browser bars, safe areas,
+rotation, and the onscreen keyboard.
+
+### Mobile message-card image viewer
+
+Mobile image previews share the video's temporary edge-to-edge opt-in. Without
+OCR, summary or report panes, the zoom stage fills the viewport. The header
+overlays the stage and respects the top and side safe-area insets. At 100%, the
+image fits between equal top and bottom insets, each exactly the measured header
+height including its top safe area. Aspect-ratio fitting can add letterboxing
+when image width is the limiting dimension. These insets limit the
+image's initial dimensions, not the zoom stage: zoom and pan can use the whole
+viewport. On narrow screens, a
+translucent themed carousel island overlays the stage,
+16px above the bottom safe area, instead of reserving a full-width footer. A single
+attachment has no island. Wider screens retain the header's carousel controls.
+With OCR or report panes open, the island stays inside the source image area.
+Single taps or clicks on the mobile image surface toggle the header and island
+together without changing zoom. Hiding the panels preserves the image size and
+position. With OCR, summary or report panes open, the header reserves its own
+space so pane actions remain accessible; hiding it releases that space. Full-pane OCR keeps
+the header visible when the source image is hidden. Enter/Space on the focusable
+image performs the same action. Double touch taps, pinch, wheel zoom, pan, swipe,
+editing, and OCR/report actions retain their existing behavior. New attachments
+start with the controls visible. Desktop image-click zoom remains unchanged.
+Entering the image editor restores the previous viewport settings.
+
+Browser regressions: `wdintel-web/tests/e2e/message-card-image-mobile.spec.ts` (#3340).
+The gesture navigation bar's final appearance still requires physical-device acceptance.
+
+### Other mobile message-card attachments
+
+Documents, spreadsheets, archives, audio and coordinate/KML/KMZ maps use the same
+mobile theme surface, viewport opt-in and header safe areas. Attachment navigation
+floats in a translucent island instead of a full-width bottom bar; one attachment
+has no island. Map controls and spreadsheet sheet buttons keep their own actions,
+with the island above them. Leaflet bottom controls are offset above the gesture
+safe area. Desktop layouts retain their existing behavior.
+
+ZIP statistics and file listings start below the measured mobile header with a
+small gap and retain trailing clearance above the navigation island.
+
+Single surface taps or Enter/Space on the focused preview region toggle the
+header and island without resizing the content. Buttons, links, spreadsheet
+selection, text selection, scrolling, map markers, map gestures and audio playback
+retain their own actions. New attachments start with panels visible. Audio previews
+without vertical overflow dismiss on vertical surface swipes and stop playback,
+matching images and videos. Scrollable audio, player controls, transcription
+selection and report panes retain their own gestures. Scrollable content has
+initial header clearance and enough trailing space to reach its last lines above
+the island and system gesture area. OCR, summary and report panes keep the header
+in the layout so their actions remain reachable.
+
+At the initial document zoom, a new downward swipe starting at the top or an upward
+swipe starting at the bottom dismisses the mobile viewer. The scroll positions of
+all containers under the initial touch must allow that direction; a gesture that
+merely reaches an edge continues scrolling. Short drags settle back. Text selection,
+interactive controls, zoomed documents and open OCR/summary/report panes retain
+their gestures. This applies to PDF, DOCX, text, office documents, spreadsheets and
+ZIP listings. Mobile previews block scroll chaining to browser page refresh; DOCX
+registers the same touch handlers inside its existing sandboxed iframe and contains
+overscroll on the iframe document's root and body. Desktop behavior is unchanged.
+
+DOCX enables `allow-same-origin` on mobile so the parent can observe iframe taps
+and preserve selection and scrolling. Scripts remain blocked by both the sandbox
+and CSP; sanitization and external-resource restrictions stay in place. Insets
+are applied inside the iframe without resizing it when panels hide. Desktop
+keeps the opaque sandbox.
+
+Browser regressions: `wdintel-web/tests/e2e/message-card-attachments-mobile.spec.ts` (#3340).

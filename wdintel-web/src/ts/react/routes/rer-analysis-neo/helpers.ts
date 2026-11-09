@@ -7,7 +7,6 @@ import type {
   SavedFilter,
 } from '../../../../Bindings';
 import {
-  hasRerAnalysisQueryStateParams,
   parseRerAnalysisQueryStateFromSearchParams,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
@@ -20,7 +19,16 @@ import {
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
-import { getCanonicalUnitIdValue, getUnitIdFilterValue } from '../../utils/unit-search';
+import {
+  UNIT_FILTER_UNSET_ID,
+  getCanonicalUnitIdValue,
+  getUnitIdFilterValue,
+} from '../../utils/unit-search';
+import {
+  buildUnitHierarchyIndex,
+  expandUnitSelections,
+  isUnitParentValue,
+} from '../shared/unit-children-filter';
 import type { AnalysisQueryState } from './types';
 import type { GroupScope } from '../shared/group-navigation';
 
@@ -111,6 +119,7 @@ export function emptyQueryState(): AnalysisQueryState {
     freqsSelected: [],
     callsignsSelected: [],
     unitsSelected: [],
+    unitsIncludeChildren: true,
     deviceNamesSelected: [],
     locationsSelected: [],
     postsSelected: [],
@@ -176,12 +185,6 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
   };
 }
 
-export function hasQueryStateInWindow(): boolean {
-  if (typeof window === 'undefined') return false;
-  const searchParams = new URL(window.location.href).searchParams;
-  return hasRerAnalysisQueryStateParams(searchParams) || searchParams.has(ONLY_WITH_MEDIA_PARAM);
-}
-
 export function parseNewestFirstFromWindow(): boolean {
   if (typeof window === 'undefined') return true;
   const url = new URL(window.location.href);
@@ -205,8 +208,9 @@ export function writeMessagesPageIndexToWindowUrl(pageIndex: number): void {
     url.searchParams.set(MESSAGES_PAGE_PARAM, String(normalizedPageIndex + 1));
   }
   const query = url.searchParams.toString();
+  // Keep the current history state: an open attachment preview owns this entry's overlay layer.
   window.history.replaceState(
-    {},
+    window.history.state,
     '',
     `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
   );
@@ -404,7 +408,21 @@ export function pushQueryStateToUrl(
   if (panelState) {
     writeAnalysisPanelQueryState(url.searchParams, panelState);
   }
-  window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${url.pathname}?${url.searchParams.toString()}`,
+  );
+}
+
+// Compares query states by the filter params they write to the URL, so a history entry
+// can be matched against the state that produced it.
+export function analysisQueryStateUrlKey(state: AnalysisQueryState): string {
+  const searchParams = new URLSearchParams();
+  writeRerAnalysisQueryStateToSearchParams(searchParams, state);
+  if (state.onlyWithMedia) searchParams.set(ONLY_WITH_MEDIA_PARAM, 'true');
+  searchParams.sort();
+  return searchParams.toString();
 }
 
 export function normalizeQueryState(state: AnalysisQueryState): AnalysisQueryState {
@@ -434,9 +452,7 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
   }
 
   if (next.withoutNetwork) {
-    next = { ...next, networksSelected: [], onlyWithNetwork: false };
-  } else if (next.onlyWithNetwork) {
-    next = { ...next, withoutNetwork: false };
+    next = { ...next, networksSelected: [] };
   }
 
   if (next.orWithCoords && next.orWithoutCoords) {
@@ -445,6 +461,7 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
   return {
     ...next,
+    unitsIncludeChildren: true,
     callsignsSelected: normalizeCallsignFilterValues(next.callsignsSelected),
     unitsSelected: normalizeUnknownUnitSelections(next.unitsSelected),
   };
@@ -455,6 +472,7 @@ export function buildAnalysisReq(
   allFrequencies: string[] = [],
 ): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
+  if (!query.unitHierarchy && query.unitsSelected.length > 0) return null;
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
@@ -475,7 +493,9 @@ export function buildAnalysisReq(
           ]),
         )
       : query.freqsSelected;
-  const units = partitionUnitSelections(query.unitsSelected);
+  const units = partitionUnitSelections(
+    expandUnitSelections(query.unitsSelected, true, query.unitHierarchy),
+  );
 
   return {
     sinceDateInclusiveMs,
@@ -486,7 +506,11 @@ export function buildAnalysisReq(
     selectedPosts: query.postsSelected.length ? query.postsSelected : null,
     selectedCallsigns: query.callsignsSelected.length ? query.callsignsSelected : null,
     selectedUnits: units.legacy.length ? units.legacy : null,
-    selectedUnitIds: units.ids.length ? units.ids : null,
+    selectedUnitIds: units.ids.length
+      ? units.ids
+      : query.unitsSelected.some(isUnitParentValue) && units.legacy.length === 0
+        ? [UNIT_FILTER_UNSET_ID]
+        : null,
     selectedDeviceNames: query.deviceNamesSelected.length ? query.deviceNamesSelected : null,
     selectedLocations: query.locationsSelected.length ? query.locationsSelected : null,
     selectedAors: query.aorsSelected.length
@@ -506,7 +530,8 @@ export function buildAnalysisReq(
       ? null
       : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
     withoutNetwork: query.withoutNetwork,
-    onlyWithNetwork: query.onlyWithNetwork,
+    onlyWithNetwork: null,
+    onlyForRerReport: query.onlyWithNetwork,
     metadataCc: query.metadataCc.length ? query.metadataCc : null,
     metadataSender: query.metadataSender.length ? query.metadataSender : null,
     metadataReceiver: query.metadataReceiver.length ? query.metadataReceiver : null,
@@ -592,7 +617,8 @@ export function buildInboxReq(
     selectedAors: req.selectedAors,
     selectedNetworks: req.selectedNetworks,
     withoutNetwork: req.withoutNetwork,
-    onlyWithNetwork: req.onlyWithNetwork,
+    onlyWithNetwork: null,
+    onlyForRerReport: req.onlyForRerReport ?? req.onlyWithNetwork,
     metadataCc: req.metadataCc,
     metadataSender: req.metadataSender,
     metadataReceiver: req.metadataReceiver,
@@ -658,7 +684,8 @@ export function queryStateFromSavedFilter(
     sendersSelected: req.selectedSenders ?? [],
     freqsSelected: req.selectedFreqs ?? [],
     callsignsSelected: req.selectedCallsigns ?? [],
-    unitsSelected: [
+    unitsIncludeChildren: true,
+    unitsSelected: savedFilter.unitFilter?.values ?? [
       ...(req.selectedUnitIds ?? []).map(getUnitIdFilterValue),
       ...(req.selectedUnits ?? []),
     ],
@@ -667,7 +694,7 @@ export function queryStateFromSavedFilter(
     postsSelected: req.selectedPosts ?? [],
     networksSelected: (req.selectedNetworks ?? []).map(String),
     withoutNetwork: req.withoutNetwork ?? false,
-    onlyWithNetwork: req.onlyWithNetwork ?? false,
+    onlyWithNetwork: req.onlyForRerReport ?? req.onlyWithNetwork ?? false,
     orWithExtendedForm: req.orWithExtendedForm ?? false,
     orBookmarked: req.orBookmarked ?? false,
     orImportant: req.orImportant ?? false,
@@ -736,6 +763,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
 
   return normalizeQueryState({
     ...emptyQueryState(),
+    unitHierarchy: buildUnitHierarchyIndex([]),
     includeOnlyNewFreqs: false,
     fromDateTimeStr: formatDateTimeInputValueInTimeZone(
       new Date(normalized.sinceDateInclusiveMs),
@@ -759,7 +787,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     postsSelected: normalized.selectedPosts ?? [],
     networksSelected: (normalized.selectedNetworks ?? []).map(String),
     withoutNetwork: normalized.withoutNetwork,
-    onlyWithNetwork: normalized.onlyWithNetwork,
+    onlyWithNetwork: normalized.onlyForRerReport ?? normalized.onlyWithNetwork,
     orWithExtendedForm: normalized.orWithExtendedForm,
     orBookmarked: normalized.orBookmarked,
     orImportant: normalized.orImportant,
@@ -837,8 +865,23 @@ export function queryStateMatchesSavedFilter(
   savedFilter: SavedFilter,
   allFrequencies: string[] = [],
 ): boolean {
+  if (savedFilter.unitFilter) {
+    const stateKey = queryStateComparisonKey(state, allFrequencies);
+    const savedKey = queryStateComparisonKey(
+      queryStateFromSavedFilter(savedFilter, state),
+      allFrequencies,
+    );
+    return (
+      stateKey !== null &&
+      stateKey === savedKey &&
+      JSON.stringify(state.unitsSelected) === JSON.stringify(savedFilter.unitFilter.values)
+    );
+  }
   const stateKey = queryStateComparisonKey(state, allFrequencies);
-  const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
+  const savedFilterKey = queryStateComparisonKey(
+    queryStateFromSavedFilter(savedFilter, state),
+    allFrequencies,
+  );
   if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;
 
   return stateKey === savedFilterKey;

@@ -5,6 +5,7 @@ import type { SyntheticEvent } from 'react';
 import type { MyAdminSignalGroup } from '../../../../Bindings';
 import { isNullOrUndefined } from '../../utils/misc';
 
+import { PowerAlert } from '../../components/PowerAlert';
 import { PageHeader } from '../../components/PageHeader';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
@@ -121,6 +122,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       aiPositionHighlightsEnabled: dutySettings.aiPositionHighlightsEnabled,
       messageSortBy: dutySettings.messageSortBy,
       messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
+      minimalReportWindowEnabled: dutySettings.minimalReportWindowEnabled,
+      importantOnlyMyOrganism: dutySettings.importantOnlyMyOrganism,
       ...overrides,
     });
   };
@@ -129,6 +132,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     : dutySettings.largeMediaPreviews
       ? MessageAttachmentPreviewMode.Large
       : MessageAttachmentPreviewMode.Compact;
+  const handleMessageCardQuickActionChange = (
+    messageCardQuickAction: UserDutySettings['messageCardQuickAction'],
+  ) => {
+    dutySettings.setMessageCardQuickAction(messageCardQuickAction);
+    scheduleDutySettingsSave({ messageCardQuickAction });
+  };
   const handleLargeMessageCardTextChange = (largeMessageCardText: boolean) => {
     dutySettings.setLargeMessageCardText(largeMessageCardText);
     scheduleDutySettingsSave({ largeMessageCardText });
@@ -291,6 +300,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           {settingsSection === 'profile' ? <SettingsProfileSection /> : null}
           {settingsSection === 'duty' ? (
             <SettingsDutySection
+              messageCardQuickAction={dutySettings.messageCardQuickAction}
+              onMessageCardQuickActionChange={handleMessageCardQuickActionChange}
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
               saveError={dutySettings.saveError ?? dutyFilterPersistenceError}
@@ -319,6 +330,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onDisableAutoScrollChange={(value) => {
                 dutySettings.setDisableAutoScroll(value);
                 scheduleDutySettingsSave({ disableAutoScroll: value });
+              }}
+              minimalReportWindowEnabled={dutySettings.minimalReportWindowEnabled}
+              onMinimalReportWindowEnabledChange={(value) => {
+                dutySettings.setMinimalReportWindowEnabled(value);
+                scheduleDutySettingsSave({ minimalReportWindowEnabled: value });
+              }}
+              importantOnlyMyOrganism={dutySettings.importantOnlyMyOrganism}
+              onImportantOnlyMyOrganismChange={(value) => {
+                dutySettings.setImportantOnlyMyOrganism(value);
+                scheduleDutySettingsSave({ importantOnlyMyOrganism: value });
               }}
               doNotPersistCurrentFilter={dutyFilterPersistenceDisabled}
               onDoNotPersistCurrentFilterChange={(value) => {
@@ -389,6 +410,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     </Box>
                   ) : null}
 
+                  {dutySettings.loadError ? (
+                    <PowerAlert severity="error">{dutySettings.loadError}</PowerAlert>
+                  ) : null}
+                  {dutySettings.saveError ? (
+                    <PowerAlert severity="error">{dutySettings.saveError}</PowerAlert>
+                  ) : null}
                   <SettingsAnalysisTimeBasisCard
                     messageSortBy={dutySettings.messageSortBy}
                     onMessageSortByChange={(value) => {
@@ -399,6 +426,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                   />
 
                   <SettingsMessageCard
+                    messageCardQuickAction={dutySettings.messageCardQuickAction}
+                    onMessageCardQuickActionChange={handleMessageCardQuickActionChange}
                     tagsLayout={dutySettings.tagsLayout}
                     onTagsLayoutChange={(layout) => {
                       dutySettings.setTagsLayout(layout);

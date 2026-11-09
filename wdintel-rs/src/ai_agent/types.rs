@@ -157,6 +157,10 @@ pub struct AiAgentMessageItem {
         Vec<crate::devices::documents::types::AiAgentFileCitation>,
     #[serde(default)]
     pub maps: Vec<super::maps::types::AiAgentMapSummary>,
+    #[serde(default)]
+    pub documents: Vec<super::documents::types::AiAgentDocumentArtifact>,
+    #[serde(default)]
+    pub attachments: Vec<super::uploads::types::AiAgentUploadItem>,
 }
 
 #[derive(
@@ -184,6 +188,10 @@ pub struct AiAgentRequestCreateReq {
     pub prompt: String,
     #[serde(default)]
     pub map_edit: Option<super::maps::types::AiAgentMapEditTarget>,
+    #[serde(default)]
+    pub document_target: Option<super::documents::types::AiAgentDocumentTarget>,
+    #[serde(default)]
+    pub upload_ids: Vec<String>,
 }
 
 #[derive(
@@ -251,6 +259,8 @@ pub struct AiAgentProviderRuntimeProfileItem {
     pub max_output_tokens: i32,
     pub compaction_reserve_tokens: i32,
     pub compaction_keep_recent_tokens: i32,
+    #[serde(default)]
+    pub vision_input_enabled: bool,
 }
 
 #[derive(
@@ -449,10 +459,29 @@ pub struct AiAgentRequestEventItem {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+pub struct AiAgentAdminRequestMetadata {
+    pub ai_engine_model_name: String,
+    pub ai_engine_host: Option<String>,
+    pub agent_login: Option<String>,
+    pub provider_api: Option<String>,
+    pub reasoning_preset: Option<AiAgentReasoningPreset>,
+    pub reasoning_effort: Option<String>,
+    pub checkpoint_effort: Option<String>,
+    pub synthesis_effort: Option<String>,
+    pub max_runtime_seconds: Option<i64>,
+    pub finalization_seconds: Option<i64>,
+    pub completion_metadata: Option<AiAgentCompletionMetadata>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
 pub struct AiAgentAdminRequestDetail {
     pub request: AiAgentAdminRequestItem,
     pub conversation: AiAgentConversationDetail,
     pub events: Vec<AiAgentRequestEventItem>,
+    pub metadata: AiAgentAdminRequestMetadata,
 }
 
 #[derive(

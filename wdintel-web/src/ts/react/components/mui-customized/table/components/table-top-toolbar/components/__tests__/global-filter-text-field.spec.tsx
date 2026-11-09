@@ -139,7 +139,7 @@ describe('GlobalFilterTextField', () => {
 
     const event = createKeyboardEvent();
 
-    lastTextFieldProps?.onKeyDown?.(event);
+    act(() => lastTextFieldProps?.onKeyDown?.(event));
 
     expect(setGlobalFilter).toHaveBeenCalledWith('');
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
@@ -197,7 +197,7 @@ describe('GlobalFilterTextField', () => {
     const view = await renderComponent({ globalFilter: 'abc', setGlobalFilter });
     rendered.push(view);
 
-    lastPowerIconButtonProps?.onClick?.();
+    act(() => lastPowerIconButtonProps?.onClick?.());
 
     expect(setGlobalFilter).toHaveBeenCalledWith('');
   });

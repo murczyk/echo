@@ -28,6 +28,266 @@ struct GroupFixture {
     datasource_group: datasource_group::Model,
 }
 
+#[actix_web::test]
+#[serial]
+async fn issue_3940_bulk_unit_rename_preserves_rer_scope() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let db = &env.dbx;
+    let login = find_test_login(db).await.unwrap().id;
+    let group = GroupFixture {
+        signal_group: find_test_signal_group(db).await.unwrap(),
+        datasource_group: find_test_datasource_group(db).await.unwrap(),
+    };
+    let configured = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let excluded = mk_sigint_unit(db, Default::default()).await.unwrap();
+    sigint_unit_rer_report_metadata::ActiveModel {
+        sigint_unit_id: Set(configured.id),
+        report_name: Set(Some("Bulk rename".into())),
+        labels: Set(serde_json::json!(["Bulk rename"])),
+        locations: Set(serde_json::json!([])),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let now = Utc::now().naive_utc();
+    let mut items = Vec::new();
+    for (unit_id, label) in [
+        (configured.id, "rename-inside-3940"),
+        (excluded.id, "rename-outside-3940"),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            label,
+            "3940.1",
+            now,
+            &[&group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(unit_id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        items.push(message.id);
+    }
+    let session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(session_store, Key::generate()))
+            .route(
+                "/test/rer-rename-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .service(edit_freq_unit_name),
+    )
+    .await;
+    let login_response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/rer-rename-login/{login}"))
+            .to_request(),
+    )
+    .await;
+    let session_cookie = login_response
+        .response()
+        .cookies()
+        .next()
+        .unwrap()
+        .into_owned();
+    for enabled in [Some(true), Some(false), None] {
+        for id in &items {
+            sigint_inbox_item::ActiveModel {
+                id: Set(*id),
+                datetime: Set(Some(now)),
+                unit: Set(Some("Original unit".into())),
+                unit_v2: Set(Some("Original unit".into())),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            }
+            .update(db)
+            .await
+            .unwrap();
+        }
+        let mut req = mk_analysis_stats_req(
+            (now - chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+            (now + chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+        );
+        req.only_for_rer_report = enabled;
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/freq-edit-unit-name")
+                .cookie(session_cookie.clone())
+                .set_json(EditFreqUnitNameReq {
+                    analysis_stats_req: req,
+                    freq: "3940.1".into(),
+                    unit: "Original unit".into(),
+                    unit_new: "Renamed unit".into(),
+                    search: None,
+                    filter_tags_option: None,
+                    report_tags_only_this_unit: None,
+                })
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        for (index, id) in items.iter().enumerate() {
+            let item = sigint_inbox_item::Entity::find_by_id(*id)
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap();
+            let changed = index == 0 || enabled != Some(true);
+            let expected = if changed {
+                "Renamed unit"
+            } else {
+                "Original unit"
+            };
+            assert_eq!(item.unit.as_deref(), Some(expected));
+            assert_eq!(item.unit_v2.as_deref(), Some(expected));
+            assert_eq!(item.parsed_unit_v2, changed);
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3940_map_exports_preserve_rer_scope() {
+    use std::io::Read;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let db = &env.dbx;
+    let login = find_test_login(db).await.unwrap().id;
+    let group = GroupFixture {
+        signal_group: find_test_signal_group(db).await.unwrap(),
+        datasource_group: find_test_datasource_group(db).await.unwrap(),
+    };
+    let configured = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let excluded = mk_sigint_unit(db, Default::default()).await.unwrap();
+    sigint_unit_rer_report_metadata::ActiveModel {
+        sigint_unit_id: Set(configured.id),
+        report_name: Set(Some("Map export".into())),
+        labels: Set(serde_json::json!(["Map export"])),
+        locations: Set(serde_json::json!([])),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let now = Utc::now().naive_utc();
+    for (unit_id, label, latitude) in [
+        (configured.id, "INSIDE3940", 48.0),
+        (excluded.id, "OUTSIDE3940", 49.0),
+    ] {
+        seed_rer_map_export_message(
+            db, &group, unit_id, &login, label, latitude, now,
+        )
+        .await;
+    }
+    let mut req = mk_analysis_stats_req(
+        (now - chrono::Duration::hours(1))
+            .and_utc()
+            .timestamp_millis(),
+        (now + chrono::Duration::hours(1))
+            .and_utc()
+            .timestamp_millis(),
+    );
+    req.without_network = Some(true);
+    for (scope, expected_count) in [(Some(true), 1), (None, 2)] {
+        req.only_for_rer_report = scope;
+        let geojson =
+            geojson::rer_analysis_geojson_bytes(&login, &env, req.clone())
+                .await
+                .unwrap();
+        let geojson = String::from_utf8(geojson).unwrap();
+        let features: serde_json::Value =
+            serde_json::from_str(&geojson).unwrap();
+        assert_eq!(
+            features["features"].as_array().unwrap().len(),
+            expected_count
+        );
+        let kmz = kmz::rer_analysis_kmz_bytes(&login, &env, req.clone())
+            .await
+            .unwrap();
+        let mut archive =
+            ::zip::ZipArchive::new(std::io::Cursor::new(kmz)).unwrap();
+        let mut kml = String::new();
+        archive
+            .by_name("doc.kml")
+            .unwrap()
+            .read_to_string(&mut kml)
+            .unwrap();
+        for output in [&geojson, &kml] {
+            assert!(output.contains("INSIDE3940"));
+            assert_eq!(output.contains("OUTSIDE3940"), scope.is_none());
+        }
+    }
+}
+
+async fn seed_rer_map_export_message(
+    db: &DatabaseConnection,
+    group: &GroupFixture,
+    unit_id: i64,
+    login: &uuid::Uuid,
+    label: &str,
+    latitude: f64,
+    datetime: NaiveDateTime,
+) {
+    let message =
+        mk_analysis_message(db, label, "111.1", datetime, &[group], &[], false)
+            .await
+            .unwrap();
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.datetime = Set(Some(datetime));
+    inbox_item.lat = Set(Some(latitude));
+    inbox_item.lng = Set(Some(37.0));
+    let inbox_item = inbox_item.update(db).await.unwrap();
+    sigint_inbox_item_unit::ActiveModel {
+        item_id: Set(message.id),
+        item_uuid: Set(inbox_item.id_uuid),
+        unit_id: Set(unit_id),
+        kind: Set(SigintInboxItemUnitKind::Parsed),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    crate::inbox::callsigns::sync(
+        db,
+        message.id,
+        inbox_item.id_uuid,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: vec![label.into()],
+            alg2: vec![],
+        },
+        *login,
+    )
+    .await
+    .unwrap();
+}
+
 #[serial]
 #[tokio::test]
 async fn issue_3780_message_group_lookup_preserves_access_and_scope() {
@@ -440,6 +700,7 @@ fn short_state_filter(
         posts_denied: None,
         units_selected: None,
         units_denied: None,
+        units_include_children: None,
         selected_unit_ids: None,
         denied_unit_ids: None,
         selected_device_names: None,
@@ -494,6 +755,7 @@ fn mk_analysis_stats_req(
         selected_networks: None,
         without_network: None,
         only_with_network: None,
+        only_for_rer_report: None,
         metadata_cc: None,
         metadata_sender: None,
         metadata_receiver: None,
@@ -2803,6 +3065,108 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
                     }
                 } else {
                     assert!(ids.iter().all(|id| !first_ids.contains(id)));
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn indexed_fuzzy_inbox_pages_preserve_full_period_matches_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    seed_search_pagination_messages(&fixture, &login.id, tag.id).await;
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 3, 1, 10, 0);
+    let attachments = seed_fresh_tail_search_messages_3780(
+        &fixture,
+        [unit.id, unit.id],
+        date,
+    )
+    .await;
+    let audio = seed_full_period_audio_search_3780(&fixture, date).await;
+    for (group, datetime) in [
+        (&fixture.secret_hidden, date),
+        (&fixture.alpha, date - chrono::Duration::days(16)),
+    ] {
+        mk_analysis_message(
+            db,
+            "Береза",
+            "155.2750",
+            datetime,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    for newest in [false, true] {
+        for (search, count) in [
+            ("Берез", 31),
+            ("\"Береза\"", 31),
+            ("коридор", 1),
+            ("absent3780", 0),
+        ] {
+            let mut req = InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 16, 0, 0).and_utc().timestamp_millis(),
+                ),
+                search: Some(search.into()),
+                newest_first: Some(newest),
+                ..Default::default()
+            };
+            let reference = inbox_map_item_ids(
+                &fixture.env,
+                &login.id,
+                &InboxMessagesReq {
+                    nolimit: Some(true),
+                    ..req.clone()
+                },
+            )
+            .await;
+            assert_eq!(reference.len(), count, "{search}");
+            if search == "Берез" {
+                assert!(reference.contains(&attachments[1]));
+                assert!(reference.contains(&attachments[3]));
+                assert!(!reference.contains(&attachments[4]));
+                assert!(reference.contains(&audio));
+            }
+            for page in 0..2 {
+                let transaction = crate::read_query::begin(db).await.unwrap();
+                let ids = crate::rer_importer::inbox::query::load_postgres_inbox_page_ids(
+                    &transaction,
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    None,
+                )
+                .await
+                .unwrap();
+                transaction.commit().await.unwrap();
+                let expected = reference
+                    .iter()
+                    .copied()
+                    .skip(page * INBOX_MESSAGES_PAGE_LIMIT)
+                    .take(INBOX_MESSAGES_PAGE_LIMIT)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    ids, expected,
+                    "{search}, newest={newest}, page={page}"
+                );
+                let Some(cursor) = ids.last().copied() else {
+                    break;
+                };
+                if newest {
+                    req.before_id_noninclusive = Some(cursor);
+                } else {
+                    req.since_id_noninclusive = Some(cursor);
                 }
             }
         }
@@ -10303,12 +10667,13 @@ async fn rer_duty_short_state_hash_collision_creates_new_id() {
 async fn rer_duty_short_state_get_refreshes_ttl() {
     let env = cleanup().await.unwrap();
     let mut redis = env.redis.clone();
-    let (id, _reused) = rer_duty_short_state_create_or_reuse(
-        &mut redis,
-        short_state(Some(vec!["group-1".to_string()])),
-    )
-    .await
-    .unwrap();
+    let mut state = short_state(Some(vec!["group-1".to_string()]));
+    state.waterfalls.as_mut().unwrap()[0]
+        .1
+        .units_include_children = Some(true);
+    let (id, _reused) = rer_duty_short_state_create_or_reuse(&mut redis, state)
+        .await
+        .unwrap();
     let ttl_before: i64 =
         redis.ttl(rer_duty_short_state_key(&id)).await.unwrap();
 
@@ -10324,6 +10689,44 @@ async fn rer_duty_short_state_get_refreshes_ttl() {
     );
     assert!(ttl_before > 0);
     assert!(ttl_after > 0);
+    assert_eq!(
+        rsp.state.waterfalls.as_ref().unwrap()[0]
+            .1
+            .units_include_children,
+        Some(true)
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn saved_analysis_filter_preserves_descendant_selection_3527() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let env = &fixture.env;
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let req = analysis_stats_req0(&fixture);
+    let unit_filter = AnalysisUnitFilter {
+        values: vec!["unit-parent:group:2:6 А".to_string()],
+        include_children: true,
+    };
+    let mut saved_req = serde_json::to_value(req).unwrap();
+    saved_req["unit_filter"] = serde_json::to_value(&unit_filter).unwrap();
+    let filters: Vec<SavedFilter> = saved_filter_upsert_1(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+        login.id,
+        &env.dbx,
+        "Descendant filter #3527".to_string(),
+        saved_req,
+    )
+    .await
+    .unwrap();
+    for filter in &filters {
+        sigint_saved_filter::Entity::delete_by_id(filter.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0].unit_filter.as_ref(), Some(&unit_filter));
 }
 
 #[tokio::test]
@@ -10442,6 +10845,194 @@ async fn count_stats_analytics_resource_limits_preserve_circuit_3780() {
     assert!(analytics_fallback_needs_capacity(
         "analytics_resource_limit"
     ));
+}
+
+fn local_source_rejection_3978() -> AppError {
+    anyhow::Error::new(DbErr::Custom(
+        crate::config::ANALYSIS_SOURCE_READ_QUEUE_ERROR.into(),
+    ))
+    .context(h!())
+    .into()
+}
+
+#[test]
+fn analytics_failure_reason_separates_local_source_saturation_3978() {
+    assert_eq!(
+        analytics_failure_reason(&local_source_rejection_3978(), None),
+        "source_saturated"
+    );
+    let source_timeout = AppError::ServiceUnavailable {
+        msg: "source statement timeout".into(),
+        retry_after_secs: 1,
+    };
+    assert_eq!(
+        analytics_failure_reason(&source_timeout, None),
+        "source_saturated"
+    );
+    let analytics: AppError = anyhow::anyhow!("analytics unavailable").into();
+    assert_eq!(
+        analytics_failure_reason(&analytics, None),
+        "analytics_error"
+    );
+}
+
+fn attachment_coverage_error() -> AppError {
+    use crate::types::ShortContext;
+    let coverage: anyhow::Result<()> =
+        Err(crate::attachments::analytics::AttachmentSearchCoverageError)
+            .c(h!());
+    coverage.c(h!()).unwrap_err().into()
+}
+
+#[tokio::test]
+async fn count_stats_attachment_coverage_miss_retries_postgres() {
+    // 0 is a closed circuit; 1 is an expired cooldown, i.e. a half-open probe.
+    for initial_state in [0, 1] {
+        let retry_state = AtomicU64::new(initial_state);
+        let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+        let postgres_attempts = std::sync::atomic::AtomicUsize::new(0);
+        let response = with_count_stats_analytics_fallback(
+            Some(async { Err::<&str, AppError>(attachment_coverage_error()) }),
+            None,
+            core::time::Duration::from_secs(1),
+            async {
+                postgres_attempts
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok::<_, AppError>("postgres")
+            },
+            "circuit_open",
+            Some(retry_attempt),
+            core::time::Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response, "postgres");
+        assert_eq!(
+            postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+}
+
+#[tokio::test]
+async fn count_stats_local_source_rejection_keeps_circuit_closed_3978() {
+    // 0 is a closed circuit; 1 is an expired cooldown, i.e. a half-open probe.
+    for initial_state in [0, 1] {
+        let retry_state = AtomicU64::new(initial_state);
+        let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+        let postgres_attempts = std::sync::atomic::AtomicUsize::new(0);
+        let error = with_count_stats_analytics_fallback(
+            Some(async {
+                Err::<&str, AppError>(local_source_rejection_3978())
+            }),
+            None,
+            core::time::Duration::from_secs(1),
+            async {
+                postgres_attempts
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok::<_, AppError>("postgres")
+            },
+            "circuit_open",
+            Some(retry_attempt),
+            core::time::Duration::from_secs(30),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            AppError::ServiceUnavailable {
+                retry_after_secs: 1,
+                ..
+            }
+        ));
+        assert_eq!(
+            postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_read_local_source_rejection_keeps_circuit_closed_3978() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    // One connection holds an uncommitted health view, so the analytics
+    // freshness check passes without changing the shared test schema.
+    let analytics = crate::new_pg_pool_from_conn_string_with_max_connections(
+        crate::mk_conn_string(&fixture.env.config),
+        1,
+    )
+    .await
+    .unwrap();
+    analytics
+        .execute_unprepared(
+            "BEGIN; CREATE VIEW public.echo_analytics_health AS \
+             SELECT true AS singleton, true AS healthy, \
+             CURRENT_TIMESTAMP AS checked_at;",
+        )
+        .await
+        .unwrap();
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(
+        serde_json::from_value(serde_json::json!({
+            "pg_host":"unused", "pg_user":"unused",
+            "pg_password":"unused", "pg_dbname":"unused"
+        }))
+        .unwrap(),
+    );
+    env.analytics = Some(crate::types::AnalyticsPool {
+        conn: analytics.clone(),
+        retry_after_unix_ms_by_operation: Default::default(),
+    });
+    let operation = "source saturation test 3978";
+    let postgres_attempts = std::sync::atomic::AtomicUsize::new(0);
+
+    let error = with_analytics_read_fallback(
+        &env,
+        operation,
+        true,
+        |_db| async { Err::<i64, AppError>(local_source_rejection_3978()) },
+        |_db| async {
+            postgres_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok::<_, AppError>(0)
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, AppError::ServiceUnavailable { .. }));
+    assert_eq!(
+        postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+    let analytics_value = || {
+        with_analytics_read_fallback(
+            &env,
+            operation,
+            true,
+            |_db| async { Ok::<_, AppError>(1i64) },
+            |_db| async { Ok::<_, AppError>(0i64) },
+        )
+    };
+    assert_eq!(analytics_value().await.unwrap(), 1);
+
+    // A failure of analytics itself still opens the circuit.
+    with_analytics_read_fallback(
+        &env,
+        operation,
+        true,
+        |_db| async {
+            Err::<i64, AppError>(
+                anyhow::anyhow!("analytics unavailable").into(),
+            )
+        },
+        |_db| async { Ok::<_, AppError>(0i64) },
+    )
+    .await
+    .unwrap();
+    assert_eq!(analytics_value().await.unwrap(), 0);
+    analytics.close().await.unwrap();
 }
 
 #[tokio::test]
@@ -13653,4 +14244,84 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
             StatusCode::FORBIDDEN
         );
     }
+}
+
+#[test]
+fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
+    let row = |index: usize, count: i64, values: usize| SummaryTableFreqRow {
+        freq: format!("{index:04}"),
+        count,
+        callsigns: vec!["позивний".to_string(); values],
+        units: vec![],
+        locations: vec![],
+        coords: vec![],
+        locality_coords: vec![],
+    };
+    let extra = 2;
+    let mut rows = (0..AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS + extra)
+        .map(|index| row(index, index as i64, 1))
+        .collect::<Vec<_>>();
+    rows.push(row(
+        9998,
+        1_000,
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES + 1,
+    ));
+    rows.push(row(9997, 1_000, 1));
+
+    let summary = rank_ai_frequency_summary(SummaryTableFreq { rows }).unwrap();
+
+    assert_eq!(
+        summary.total_rows,
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS + extra + 2
+    );
+    assert_eq!(summary.rows.len(), AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    assert_eq!(summary.rows[0].freq, "9997");
+    assert_eq!(summary.rows[1].freq, "9998");
+    assert_eq!(
+        summary.rows[1].callsigns.len(),
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
+    );
+    assert!(summary.row_values_truncated);
+    assert!(summary
+        .rows
+        .windows(2)
+        .all(|pair| pair[0].count >= pair[1].count));
+
+    let long = "підрозділ ".repeat(40);
+    let rows = (0..AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS)
+        .map(|index| SummaryTableFreqRow {
+            callsigns: vec![long.clone(); 32],
+            units: vec![long.clone(); 32],
+            locations: vec![long.clone(); 32],
+            ..row(index, 1, 0)
+        })
+        .collect::<Vec<_>>();
+    let summary = rank_ai_frequency_summary(SummaryTableFreq { rows }).unwrap();
+    assert_eq!(summary.total_rows, AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    assert!(!summary.rows.is_empty());
+    assert!(summary.rows.len() < AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    assert!(
+        serde_json::to_vec(&summary).unwrap().len()
+            <= AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES + 1024
+    );
+
+    let oversized = SummaryTableFreqRow {
+        freq: "\u{1}".repeat(200_000),
+        units: vec!["п".repeat(17_000); 32],
+        ..row(1, 1, 0)
+    };
+    let summary = rank_ai_frequency_summary(SummaryTableFreq {
+        rows: vec![oversized],
+    })
+    .unwrap();
+    assert_eq!(summary.rows.len(), 1);
+    assert_eq!(
+        summary.rows[0].units[0].chars().count(),
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
+    );
+    assert_eq!(
+        summary.rows[0].freq.chars().count(),
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
+    );
+    assert!(summary.row_values_truncated);
 }

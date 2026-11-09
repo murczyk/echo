@@ -148,6 +148,59 @@ syncs the packaged exclusions before running migrations and fails if analytics
 does not become healthy afterward. Do not replace that guard with a warning or
 an automatic full-mirror resync.
 
+## AI agent tool contracts
+
+Treat each `echo_*` tool and its backend route as one API across two codebases.
+Nothing generates the tool from the Rust request type, so a mismatch reaches
+production without a compile error. Apply this review to any change to a tool's
+parameters in `echo-ai-agent/runner/runner.ts`, and to any change to the request
+type behind a route in `wdintel-rs/src/ai_agent/route_registry.rs`.
+
+Require these to agree in the same pull request:
+
+- the filters the route applies, on both its analytics and PostgreSQL paths;
+- the tool's TypeBox parameters;
+- the field allowlist and body mapping in its request builder;
+- tool, parameter, and system guidance that names or implies those parameters.
+
+Do not require a tool to expose every request field; most `AnalysisStatsReq`
+fields are of no use to the agent. When a sibling tool already filters the same
+data by some dimension, require the change to expose that filter too or state
+why not. The model carries parameters across tools, so an omission surfaces as a
+rejected call.
+
+Give the same filter the same parameter name, limits, and semantics on every
+tool, and share its schema builder rather than copying it. Reject guidance that
+steers the model toward an argument the tool rejects. Text reused from another
+tool is the usual cause: it can name parameters this tool lacks.
+
+Require a route serving a tool to bound its own response in bytes, not only in
+items. The runner refuses a JSON response over `MAX_RESPONSE_BYTES`, so an
+unbounded list works on small scopes and fails on large ones. Order rows by what
+matters most, because compaction keeps the first items, and report the total so
+a partial list cannot pass as complete. Generic compaction limits object fields
+as well as array items, so a response whose fields must survive needs its own
+compaction. Add a new tool diagnostic reason to the allowlists in
+`wdintel-rs/src/ai_agent/events.rs` as well, or Echo discards it.
+
+Rejected arguments fail before reaching Echo and show the user a generic failed
+step, so a review of recurring `invalid_arguments` diagnostics should look for
+this drift before blaming the model.
+
+## Admin settings over config.toml
+
+Make almost every new configurable value an admin UI setting stored in the
+database, usually a `system_settings` column, rather than a `config.toml` key.
+Keep `config.toml` minimal: only what a process needs before it can reach the
+database, secrets and keys, local paths, host identity (`public_host`,
+`server_id`), and values read by processes outside Echo, such as the
+`signoz_logs_*` keys that Vector reads.
+
+When moving an existing `config.toml` key into the admin UI, import its value
+automatically at startup so deployed servers keep their behavior, and log that
+the key can be removed. See `wdintel-rs/src/system_settings/signoz_metrics.rs`
+and `wdintel-rs/src/ai_agent/dispatcher.rs`.
+
 ## Configuration compatibility
 
 When adding configuration values, prefer backward-compatible behavior for

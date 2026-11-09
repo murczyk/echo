@@ -168,7 +168,10 @@ export function LegacyOfficeDocumentPreview({
     );
   if (status === 'error' || result == null)
     return (
-      <section className="p-6 text-center">
+      <section
+        className="p-6 text-center"
+        style={{ paddingTop: 'var(--attachment-preview-content-inset, 24px)' }}
+      >
         <Typography variant="h6">Помилка перегляду</Typography>
         <Typography variant="body2">{formatLegacyOfficePreviewError(error, extension)}</Typography>
       </section>
@@ -201,7 +204,11 @@ export function LegacyOfficeDocumentPreview({
   return (
     <article
       className="h-full overflow-auto p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
-      style={{ fontSize: `${zoom}%` }}
+      style={{
+        fontSize: `${zoom}%`,
+        paddingTop: 'var(--attachment-preview-content-inset, 16px)',
+        paddingBottom: 'var(--attachment-preview-content-bottom-inset, 16px)',
+      }}
       tabIndex={0}
       aria-label="Попередній перегляд документа"
     >

@@ -73,6 +73,7 @@ const SECTION_QUERY_FIELDS: Array<{
   { field: 'deviceNamesSelected', section: 'devices' },
   { field: 'callsignsSelected', section: 'callsigns' },
   { field: 'unitsSelected', section: 'units' },
+  { field: 'unitsIncludeChildren', section: 'units' },
   { field: 'locationsSelected', section: 'locations' },
   { field: 'postsSelected', section: 'posts' },
   { field: 'networksSelected', section: 'networks' },
@@ -193,17 +194,17 @@ export function useAnalysisFilterSections({
   const { clearFilterRetry, clearFilterRetries, isFilterRetryBlocked, scheduleFilterRetry } =
     useAnalysisFilterRetries(retryFilterSection);
   const filterSectionLoadVersionRef = useRef(0);
+  const unitSectionLoadVersionRef = useRef(0);
   useEffect(
     () => () => {
       filterSectionLoadVersionRef.current += 1;
+      unitSectionLoadVersionRef.current += 1;
     },
     [],
   );
 
   const nextFilterSectionLoadIdRef = useRef(0);
-  const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>(
-    {} as Record<AnalysisFilterSectionId, string>,
-  );
+  const loadedFilterSectionKeyRef = useRef<Partial<Record<AnalysisFilterSectionId, string>>>({});
   const inFlightFilterSectionLoadIdsRef = useRef(new Map<AnalysisFilterSectionId, number>());
   const inFlightFilterSectionKeysRef = useRef(new Map<AnalysisFilterSectionId, string>());
   const reloadFilterSectionsRef = useRef<Set<AnalysisFilterSectionId>>(new Set());
@@ -244,13 +245,15 @@ export function useAnalysisFilterSections({
   const clearSectionInFlight = useCallback((section: AnalysisFilterSectionId, loadId: number) => {
     if (inFlightFilterSectionLoadIdsRef.current.get(section) === loadId) {
       inFlightFilterSectionLoadIdsRef.current.delete(section);
+      inFlightFilterSectionKeysRef.current.delete(section);
     }
   }, []);
 
   const invalidateFilterSectionLoads = useCallback(() => {
     clearFilterRetries();
     filterSectionLoadVersionRef.current += 1;
-    loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
+    unitSectionLoadVersionRef.current += 1;
+    loadedFilterSectionKeyRef.current = {};
     inFlightFilterSectionLoadIdsRef.current.clear();
     inFlightFilterSectionKeysRef.current.clear();
     reloadFilterSectionsRef.current.clear();
@@ -282,6 +285,7 @@ export function useAnalysisFilterSections({
       });
 
       filterSectionLoadVersionRef.current += 1;
+      unitSectionLoadVersionRef.current += 1;
       hasTargetedFilterSectionInvalidationRef.current = true;
       sectionsToReload.forEach((section) => {
         reloadFilterSectionsRef.current.add(section);
@@ -343,7 +347,9 @@ export function useAnalysisFilterSections({
       if (inFlightFilterSectionKeysRef.current.get(section) === requestKey) return;
       if (isFilterRetryBlocked(section, requestKey)) return;
 
-      const loadVersion = filterSectionLoadVersionRef.current;
+      const loadVersionRef =
+        section === 'units' ? unitSectionLoadVersionRef : filterSectionLoadVersionRef;
+      const loadVersion = loadVersionRef.current;
       const loadId = markSectionInFlight(section);
       inFlightFilterSectionKeysRef.current.set(section, requestKey);
       if (filterSectionLoadStates[section] !== 'stale') {
@@ -353,7 +359,7 @@ export function useAnalysisFilterSections({
         await loadFilterSectionData(section, {
           analysisReq: sectionAnalysisReq,
           loadVersion,
-          loadVersionRef: filterSectionLoadVersionRef,
+          loadVersionRef,
           setAorEntries,
           setGroupInfos,
           setNetworks,
@@ -364,13 +370,13 @@ export function useAnalysisFilterSections({
           queryState,
           unitsMap: unitsMapRef.current,
         });
-        if (loadVersion !== filterSectionLoadVersionRef.current) return;
+        if (loadVersion !== loadVersionRef.current) return;
         clearFilterRetry(section);
         loadedFilterSectionKeyRef.current[section] = requestKey;
         reloadFilterSectionsRef.current.delete(section);
         setSectionLoadState(section, 'loaded');
       } catch (loadError) {
-        if (loadVersion !== filterSectionLoadVersionRef.current) return;
+        if (loadVersion !== loadVersionRef.current) return;
         const shouldReport = scheduleFilterRetry(section, requestKey, loadError);
         setSectionLoadState(section, 'error');
         if (!onUnauthorized(loadError) && shouldReport) {
@@ -378,9 +384,6 @@ export function useAnalysisFilterSections({
         }
       } finally {
         clearSectionInFlight(section, loadId);
-        if (inFlightFilterSectionKeysRef.current.get(section) === requestKey) {
-          inFlightFilterSectionKeysRef.current.delete(section);
-        }
       }
     },
     [
@@ -411,6 +414,23 @@ export function useAnalysisFilterSections({
   useEffect(() => {
     retryLoadRef.current = loadFilterSection;
   }, [loadFilterSection]);
+
+  const previousUnitHierarchyRef = useRef(queryState.unitHierarchy);
+  useEffect(() => {
+    if (previousUnitHierarchyRef.current === queryState.unitHierarchy) return;
+    previousUnitHierarchyRef.current = queryState.unitHierarchy;
+    unitSectionLoadVersionRef.current += 1;
+    clearFilterRetry('units');
+    delete loadedFilterSectionKeyRef.current.units;
+    inFlightFilterSectionLoadIdsRef.current.delete('units');
+    inFlightFilterSectionKeysRef.current.delete('units');
+    if (filterSectionLoadStates.units !== 'idle') void loadFilterSection('units');
+  }, [
+    clearFilterRetry,
+    filterSectionLoadStates.units,
+    loadFilterSection,
+    queryState.unitHierarchy,
+  ]);
 
   const loadInitialFilterSections = useCallback(
     async (
@@ -457,7 +477,9 @@ export function useAnalysisFilterSections({
           if (loadedFilterSectionKeyRef.current[section] === sectionKey) return;
           if (inFlightFilterSectionKeysRef.current.get(section) === sectionKey) return;
           if (isFilterRetryBlocked(section, sectionKey)) return;
-          const loadVersion = filterSectionLoadVersionRef.current;
+          const loadVersionRef =
+            section === 'units' ? unitSectionLoadVersionRef : filterSectionLoadVersionRef;
+          const loadVersion = loadVersionRef.current;
           const loadId = markSectionInFlight(section);
           inFlightFilterSectionKeysRef.current.set(section, sectionKey);
           if (filterSectionLoadStates[section] !== 'stale') {
@@ -467,7 +489,7 @@ export function useAnalysisFilterSections({
             await loadFilterSectionData(section, {
               analysisReq: buildAnalysisReqForFilterSection(section, analysisReq),
               loadVersion,
-              loadVersionRef: filterSectionLoadVersionRef,
+              loadVersionRef,
               signal,
               setAorEntries,
               setGroupInfos,
@@ -480,13 +502,13 @@ export function useAnalysisFilterSections({
               networkStatsCache,
               unitsMap: unitsMapRef.current,
             });
-            if (signal?.aborted || loadVersion !== filterSectionLoadVersionRef.current) return;
+            if (signal?.aborted || loadVersion !== loadVersionRef.current) return;
             clearFilterRetry(section);
             loadedFilterSectionKeyRef.current[section] = sectionKey;
             reloadFilterSectionsRef.current.delete(section);
             setSectionLoadState(section, 'loaded');
           } catch (loadError) {
-            if (signal?.aborted || loadVersion !== filterSectionLoadVersionRef.current) return;
+            if (signal?.aborted || loadVersion !== loadVersionRef.current) return;
             const shouldReport = scheduleFilterRetry(section, sectionKey, loadError);
             setSectionLoadState(section, 'error');
             if (!onUnauthorized(loadError) && shouldReport) {
@@ -494,9 +516,6 @@ export function useAnalysisFilterSections({
             }
           } finally {
             clearSectionInFlight(section, loadId);
-            if (inFlightFilterSectionKeysRef.current.get(section) === sectionKey) {
-              inFlightFilterSectionKeysRef.current.delete(section);
-            }
           }
         }),
       );

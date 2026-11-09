@@ -104,7 +104,6 @@ for (const width of [1280, 390]) {
       'Обробка повідомлень',
       'Можливості системи',
       'Службова обробка',
-      'Звіти',
     ];
     for (const title of titles) {
       const heading = page.getByRole('heading', { name: title });
@@ -115,7 +114,7 @@ for (const width of [1280, 390]) {
     const exactMatch = page.getByRole('checkbox', {
       name: 'Прапорець «точний збіг за еталонкою» на Аналізі увімкнений',
     });
-    const hideNetworks = page.getByRole('checkbox', { name: 'Приховати мережі' });
+    const hideNetworks = page.getByRole('checkbox', { name: 'Режим РЕР' });
     await expect(exactMatch).toBeChecked();
     await exactMatch.uncheck();
     await expect(exactMatch).not.toBeChecked();

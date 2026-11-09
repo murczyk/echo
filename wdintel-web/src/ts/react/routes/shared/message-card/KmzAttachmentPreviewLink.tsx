@@ -10,7 +10,7 @@ import {
 } from './MessageCardMedia';
 import { MessageCardAttachmentPreviewProvider } from './attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { KmzAttachmentPreviewSource } from './attachment-preview/message-card-preview.types';
-import { isNativeKmlOrKmz } from './kmz/kmz-preview-utils';
+import { getNativeMapFormat } from './kmz/kmz-preview-utils';
 
 type Props = KmzAttachmentPreviewSource & {
   selected?: boolean;
@@ -40,7 +40,7 @@ export function KmzAttachmentPreviewLink({
   onDownloadStart,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const nativeFormat = isNativeKmlOrKmz(fileName, contentType);
+  const nativeFormat = getNativeMapFormat(fileName, contentType);
   const downloadArchive = initialStatus === 'done' && nativeFormat !== 'kmz';
   const source = {
     mediaId,

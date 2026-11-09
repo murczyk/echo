@@ -25,7 +25,7 @@ flowchart LR
 
 - One optional Debian 13 analytics container per Echo source container.
 - Native packages and systemd only; no Docker or Podman.
-- `amd64` runtime.
+- `amd64` runtime with AVX2 support (x86-64-v3).
 - Source PostgreSQL 18 and local gateway PostgreSQL 18.
 - Tailscale or an equally private routed network in both directions.
 - The operator creates the container, DNS/IPs, storage, backups, and SSH
@@ -46,7 +46,8 @@ stopping the services is not sanitization.
 
 All pins and downloadable checksums live in [versions.env](versions.env):
 
-- ClickHouse `26.3.12.3` LTS from its signed apt repository.
+- ClickHouse `26.10.2.103` stable from its signed apt repository, including
+  the per-user memory-accounting fix in [upstream PR #113647](https://github.com/ClickHouse/ClickHouse/pull/113647).
 - PeerDB `v0.37.1` at its release commit.
 - `pg_clickhouse` `v0.3.2-echo.2`, built specifically for PostgreSQL 18 from
   the `codex/v0.3.2-search-backports` fork branch. The pinned commit
@@ -83,7 +84,86 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 - Builder Go `1.26.5`, Rust `1.93.0`, and buf `1.60.0`.
 
 Exact ClickHouse packages are held after installation. Upgrades are explicit:
-update pins/checksums, rebuild artifacts, test in development, then staging.
+update pins/checksums, rebuild affected artifacts, test in development, then
+staging. ClickHouse-only upgrades use the signed apt packages directly.
+
+### ClickHouse-only upgrades
+
+PR #113647 is forward-only; updating the old 26.3 LTS packages does not include
+the fix. Upgrade the paired analytics containers, starting with
+`echo-staging-clickhouse` and `echo-kharkiv2-clickhouse`. Observe each canary
+for ten minutes before advancing. Then upgrade `echo-siversk-clickhouse`,
+`echo-zp2-clickhouse`, `echo-skhid-clickhouse`, and `echo-pivnich-clickhouse`
+sequentially, observing each for five minutes. Instances without an analytics
+companion need no action.
+
+Before changing a host, record package versions/holds, service and timer states,
+configuration hashes, stored-table UUIDs, replication health, and recent
+errors. Save `/etc/clickhouse-server` and the ClickHouse apt source plus the old
+three packages in a root-only directory under `/var/backups/echo-analytics`.
+Review the intervening release compatibility notes and validate the target
+binary with upstream's `04757_user_memory_tracker_no_drift.sh` regression in an
+isolated local instance.
+
+Change only the ClickHouse apt source from `lts` to `stable`, keeping its existing
+`signed-by` key. Refresh that repository, then simulate the exact installation
+and reject unrelated package changes. Before installation, pause the active
+analytics health, reconcile, and memory-limit timers, wait for their current
+services to finish, then call `acquire_analytics_reconcile_lock` from the active
+bundle's `bin/lib.sh` to hold `/run/lock/echo-analytics-reconcile.lock`.
+Keep PeerDB and the PostgreSQL gateway running; ClickHouse briefly interrupts
+analytics reads and ingestion while restarting.
+
+If the service has no explicit CPU weight, install the following drop-in before
+restarting. `CPUWeight=100` is the default scheduling weight; making it explicit
+keeps systemd's CPU controller enabled after SSH logout and avoids the repeated
+`cpu.max: errno: 19` metrics errors described in [upstream issue #128137](https://github.com/ClickHouse/ClickHouse/issues/128137).
+Preserve an existing custom CPU weight. Provisioning installs this workaround
+automatically when the weight is unset.
+
+```bash
+sudo install -d -m 0755 /etc/systemd/system/clickhouse-server.service.d
+printf '[Service]\nCPUWeight=100\n' \
+  | sudo tee /etc/systemd/system/clickhouse-server.service.d/echo-cgroup-cpu.conf >/dev/null
+sudo systemctl daemon-reload
+```
+
+```bash
+version=26.10.2.103
+sudo env DEBIAN_FRONTEND=noninteractive apt-get -s install \
+  --no-install-recommends --allow-change-held-packages \
+  "clickhouse-common-static=$version" "clickhouse-client=$version" "clickhouse-server=$version"
+sudo env DEBIAN_FRONTEND=noninteractive apt-get -y install \
+  --no-install-recommends --allow-change-held-packages \
+  -o Dpkg::Options::=--force-confold \
+  "clickhouse-common-static=$version" "clickhouse-client=$version" "clickhouse-server=$version"
+sudo apt-mark hold clickhouse-common-static clickhouse-client clickhouse-server
+```
+
+Debian may replace unmodified default configuration files even with
+`--force-confold`. Restore the saved configuration files and verify their hashes
+before restarting:
+
+```bash
+sudo systemctl restart clickhouse-server
+```
+
+Restore each timer to its original state, including on failure. Require matching
+package and runtime versions, unchanged existing configuration and stored-table
+UUIDs, successful authenticated gateway reads, a running mirror, and fresh
+successful heartbeat records. Reconciliation may recreate current-state views;
+verify their reads while checking that stored tables retain their UUIDs.
+During observation, check ClickHouse, PeerDB,
+gateway, and Echo logs every thirty seconds along with user memory and exception
+counts. Run `bin/manage-system-logs.sh --check` before and after the upgrade;
+record pre-existing findings and compare diagnostic-table TTLs to detect new drift.
+Check `system.text_log` as well as service journals so errors emitted by the
+metrics collector are included. Stop promotion for crashes, recurring errors,
+replication lag, or retention drift. Inspect any failed/partial installation
+before attempting
+recovery; do not automatically downgrade across release lines. Retain backups
+until the rollout is verified. No resnapshot, application configuration change,
+or gateway/PeerDB upgrade is needed.
 
 ### Extension-only hotfixes
 
@@ -382,10 +462,17 @@ Changing the exclusion file remains the explicit day-two operation below;
 rerunning only `source-configure.sh` does not update an existing PeerDB mirror
 mapping.
 
-When a Tailscale address is used in `listen_addresses`, order the PostgreSQL
-unit after `tailscaled.service` on that host and verify the listener after a
-reboot. PostgreSQL skips an address that is absent when it starts. A stable
-private Proxmox address avoids that startup dependency in production.
+PostgreSQL skips a `listen_addresses` entry whose address does not exist yet and
+never retries it, so boot order matters on both hosts.
+`install-control-release.sh` therefore installs a `postgresql@.service` drop-in
+on the source and analytics hosts. Before PostgreSQL starts,
+`wait-postgres-listen-addresses.sh` reads the effective setting and waits up to
+30 seconds for each address, then starts PostgreSQL regardless so local services
+are not held back. The drop-in orders after `tailscaled.service` where that unit
+exists and does not require it, so private and Tailscale addresses behave the
+same way. Fresh instances get this from the steps below, and existing ones from
+`just deploy`; neither needs a manual step. Prefer a stable private Proxmox
+address in production.
 
 Before continuing, verify from the analytics host that the source TCP port is
 reachable and the replication credentials can run `SELECT 1`.
@@ -875,6 +962,33 @@ backup. An outage stalls replication and consequently increases retained
 source WAL.
 
 ## Day-two operations
+
+### After a host reboot
+
+PostgreSQL logs `listen addresses ready after Ns` from the drop-in on each start.
+Check that every configured address has a socket, on both hosts:
+
+```bash
+journalctl -b -u postgresql@18-main.service | grep 'listen addresses'
+sudo -u postgres psql -Atc 'SHOW listen_addresses'
+ss -ltn 'sport = :5432'
+```
+
+On the analytics host, `bin/status.sh` reports this as `gateway listen addresses`.
+`check-analytics-health.sh` also fails on a missing socket, so
+`echo-analytics-health.service` shows as failed and `just deploy` stops at its
+health wait.
+
+A missing address needs a restart, because PostgreSQL only binds at startup:
+
+```bash
+sudo systemctl restart postgresql@18-main.service
+```
+
+On the analytics host this takes a few seconds, and Temporal and PeerDB reconnect
+by themselves. On the source host it interrupts Echo, so plan it as downtime.
+
+### Routine commands
 
 ```bash
 bin/start.sh
@@ -1485,6 +1599,11 @@ Remove or disable `[analytics]` in Echo and restart it. PostgreSQL operation is
 unchanged. Stop the analytics target afterward if desired. Keep the source
 slot only while planning to resume; otherwise deliberately drop the mirror
 and verify the slot is gone so WAL is no longer retained.
+
+To remove the listen-address wait, delete
+`/etc/systemd/system/postgresql@.service.d/echo-wait-listen-addresses.conf` and
+run `sudo systemctl daemon-reload`. No restart is needed. The drop-in is safe to
+leave behind on an older control release: its `-` prefix ignores a missing script.
 
 To roll back the diagnostic-log policy, use the root-only backup printed by
 `manage-system-logs.sh`. For each surviving managed table, restore its prior

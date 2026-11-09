@@ -117,6 +117,11 @@ public.ai_agent_map_revision
 public.ai_agent_request_map_target
 public.ai_agent_security_review
 public.ai_agent_chat_mattermost_notification
+public.ai_agent_upload
+public.ai_agent_upload_chunk
+public.ai_agent_document
+public.ai_agent_document_revision
+public.ai_agent_request_document_target
 
 # Device integration secrets.
 public.device_settings
@@ -171,6 +176,9 @@ public.transcription_source
 # Durable Iggy unit visibility refresh jobs.
 public.api_integration_iggy_unit_refresh
 
+# Durable Iggy group visibility refresh jobs.
+public.api_integration_iggy_group_refresh
+
 public.device_audio_forwarding_settings
 public.device_audio_forwarding_group
 public.device_audio_forwarding_delivery
@@ -180,3 +188,9 @@ public.ai_transcript_analysis_test_message
 public.ai_transcript_analysis_test_result
 public.ai_transcript_analysis_job
 public.ai_worker_progress
+
+# Role policy for interactive message creation.
+public.role_message_settings
+
+# API sender attribution is resolved before messages enter analytics.
+public.api_sender

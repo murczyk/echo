@@ -1,8 +1,10 @@
-import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { Box, FormControlLabel, Stack, Switch, Tooltip, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import type {
   MessageAttachmentPreviewMode,
+  MessageCardQuickAction,
   MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
@@ -17,7 +19,37 @@ const cardSx = {
   p: { xs: 2, sm: 2.5 },
 };
 
+const IMPORTANT_ONLY_MY_ORGANISM_TOOLTIP =
+  'Позначку «Важливе» в Оперативному буде показано лише тоді, коли її поставив користувач вашого підрозділу. Позначки інших підрозділів, ШІ та автоматичні позначки приховано. Самі повідомлення залишаються в стрічці.';
+
+function ImportantOnlyMyOrganismLabel() {
+  return (
+    <Box
+      component="span"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, pt: 0.25 }}
+    >
+      <Typography component="span" variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+        Важливі лише мого підрозділу
+      </Typography>
+      <Tooltip title={IMPORTANT_ONLY_MY_ORGANISM_TOOLTIP} placement="top">
+        <Box
+          component="span"
+          tabIndex={0}
+          sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }}
+          aria-label={IMPORTANT_ONLY_MY_ORGANISM_TOOLTIP}
+          // The icon sits inside the switch's <label>; a click must not toggle it.
+          onClick={(event) => event.preventDefault()}
+        >
+          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+        </Box>
+      </Tooltip>
+    </Box>
+  );
+}
+
 export type SettingsDutySectionProps = {
+  messageCardQuickAction: MessageCardQuickAction;
+  onMessageCardQuickActionChange: (value: MessageCardQuickAction) => void;
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
@@ -33,8 +65,12 @@ export type SettingsDutySectionProps = {
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
+  importantOnlyMyOrganism: boolean;
+  onImportantOnlyMyOrganismChange: (value: boolean) => void;
   doNotPersistCurrentFilter: boolean;
   onDoNotPersistCurrentFilterChange: (value: boolean) => void;
+  minimalReportWindowEnabled: boolean;
+  onMinimalReportWindowEnabledChange: (value: boolean) => void;
   audioTranscriptionCollapsed: boolean;
   onAudioTranscriptionCollapsedChange: (value: boolean) => void;
   showAudioTranscriptionSettings: boolean;
@@ -48,6 +84,8 @@ export type SettingsDutySectionProps = {
 };
 
 export function SettingsDutySection({
+  messageCardQuickAction,
+  onMessageCardQuickActionChange,
   loadInProgress,
   prefsLoadError,
   saveError,
@@ -62,8 +100,12 @@ export function SettingsDutySection({
   onAiPositionHighlightsEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
+  importantOnlyMyOrganism,
+  onImportantOnlyMyOrganismChange,
   doNotPersistCurrentFilter,
   onDoNotPersistCurrentFilterChange,
+  minimalReportWindowEnabled,
+  onMinimalReportWindowEnabledChange,
   audioTranscriptionCollapsed,
   onAudioTranscriptionCollapsedChange,
   showAudioTranscriptionSettings,
@@ -110,6 +152,8 @@ export function SettingsDutySection({
           ) : null}
 
           <SettingsMessageCard
+            messageCardQuickAction={messageCardQuickAction}
+            onMessageCardQuickActionChange={onMessageCardQuickActionChange}
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}
@@ -133,6 +177,41 @@ export function SettingsDutySection({
               onCollapsedByDefaultChange={onAudioTranscriptionCollapsedChange}
             />
           ) : null}
+
+          <Box sx={cardSx}>
+            <Stack spacing={1.5}>
+              <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+                Розвіддонесення
+              </Typography>
+              <FormControlLabel
+                sx={{
+                  alignItems: 'flex-start',
+                  m: 0,
+                  gap: 1.5,
+                  '& .MuiFormControlLabel-label': { width: '100%' },
+                }}
+                control={
+                  <Switch
+                    checked={minimalReportWindowEnabled}
+                    onChange={(_, checked) => onMinimalReportWindowEnabledChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label={
+                  <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+                    <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                      Мінімалістичне вікно розвіддонесення
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                      На широких екранах розвіддонесення пишеться в невеликій панелі поверх стрічки,
+                      а колонки залишаються на місці. Панель показує оригінальне повідомлення й поле
+                      для тексту, а кнопка розгортання відкриває повну бічну панель.
+                    </Typography>
+                  </Stack>
+                }
+              />
+            </Stack>
+          </Box>
 
           <Box sx={cardSx}>
             <Stack spacing={1.5}>
@@ -166,6 +245,22 @@ export function SettingsDutySection({
                     </Typography>
                   </Stack>
                 }
+              />
+              <FormControlLabel
+                sx={{
+                  alignItems: 'flex-start',
+                  m: 0,
+                  gap: 1.5,
+                  '& .MuiFormControlLabel-label': { width: '100%' },
+                }}
+                control={
+                  <Switch
+                    checked={importantOnlyMyOrganism}
+                    onChange={(_, checked) => onImportantOnlyMyOrganismChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label={<ImportantOnlyMyOrganismLabel />}
               />
               <FormControlLabel
                 sx={{

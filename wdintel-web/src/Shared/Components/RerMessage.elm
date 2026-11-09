@@ -780,7 +780,7 @@ update vps msg model =
 
         ImportantRemove id_ ->
             { model = model
-            , cmds = E.sendCmd <| Api.rer_important_rm ImportantRemoveDone { messageId = id_ }
+            , cmds = E.sendCmd <| Api.rer_important_rm ImportantRemoveDone { messageId = id_, keepAiImportance = False }
             , sigs = []
             , messages =
                 updateV id_
@@ -885,6 +885,7 @@ sanitizeMessageForSubmit message =
         | tags = Nothing
         , inboxTags = Nothing
         , extendedForm = Nothing
+        , unitDisplay = Nothing
     }
 
 
@@ -1461,7 +1462,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 networkBlock =
                     if vps.hideNetworks then
                         div [ class "font-medium" ]
-                            [ message.unit
+                            [ MaybeX.orElse message.unit message.unitDisplay
                                 |> Maybe.map trim
                                 |> Maybe.andThen
                                     (\unit ->

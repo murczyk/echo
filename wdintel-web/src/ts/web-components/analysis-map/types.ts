@@ -7,12 +7,14 @@ export type Message = [
   number,
   {
     message_uid?: string | null;
+    message_uuid?: string | null;
     freq?: string | null;
     coords?: string | null;
     text: string;
     date?: string | null;
     time?: string | null;
     unit?: string | null;
+    unit_display?: string | null;
     unit_ids?: number[] | null;
     network_ids?: number[] | null;
     text_marked?: ContentNode[] | null;

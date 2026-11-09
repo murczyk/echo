@@ -38,6 +38,9 @@ beforeEach(() => {
       if (url === '/api/device/files/roots') {
         return jsonResponse({ roots: [] });
       }
+      if (url === '/api/device/audio/activity') {
+        return jsonResponse({ uploaded_count: 0, days: [] });
+      }
       if (url === '/api/device/analytics/tags') {
         return jsonResponse({ tags: [] });
       }

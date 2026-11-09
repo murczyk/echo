@@ -53,6 +53,8 @@ export function normalizeRerDutyQueryStateWf(raw: Record<string, unknown>): RerD
       ['deniedUnitIds', 'denied_unit_ids'],
     ),
     selectedUnitIds: null,
+    unitsIncludeChildren: (raw.unitsIncludeChildren ?? raw.units_include_children ?? null) as
+      boolean | null,
     deniedUnitIds: null,
     selectedDeviceNames: readFilterValues(raw, ['selectedDeviceNames', 'selected_device_names']),
     deniedDeviceNames: readFilterValues(raw, ['deniedDeviceNames', 'denied_device_names']),

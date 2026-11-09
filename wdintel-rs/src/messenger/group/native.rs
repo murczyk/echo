@@ -31,6 +31,8 @@ pub struct NativeGroupSettings {
     pub is_aviation_group: bool,
     #[serde(default)]
     pub ai_transcript_analysis_enabled: Option<bool>,
+    pub is_sigint_unit_mandatory: Option<bool>,
+    pub is_device_mandatory: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -471,6 +473,14 @@ async fn apply_settings(
     )
     .await
     .c(h!())?;
+    super::requirements::set(
+        txn,
+        master_key,
+        settings.is_sigint_unit_mandatory,
+        settings.is_device_mandatory,
+    )
+    .await
+    .c(h!())?;
     crate::ai_transcript_analysis::settings::set_group(
         txn,
         master_key,
@@ -556,6 +566,18 @@ pub async fn detail(
         .c(h!())?
         .remove(master_key)
         .unwrap_or_default();
+    let editable_logins = crate::ai_agent::unmanaged_login_ids(
+        txn,
+        login_ids(&user_logins)
+            .c(h!())?
+            .into_iter()
+            .chain(login_ids(&admin_logins).c(h!())?),
+    )
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(|id| id.to_string())
+    .collect::<HashSet<_>>();
     let area_of_responsibility_ids =
         super::resolve_group_aor_ids(txn, master_key)
             .await
@@ -585,14 +607,26 @@ pub async fn detail(
                 .and_then(|notes| notes.short_note.clone()),
             long_note: notes.and_then(|notes| notes.long_note),
             is_secret: group.is_secret,
-            user_logins,
+            user_logins: user_logins
+                .into_iter()
+                .filter(|id| editable_logins.contains(id))
+                .collect(),
             organism_ids,
-            admin_logins,
+            admin_logins: admin_logins
+                .into_iter()
+                .filter(|id| editable_logins.contains(id))
+                .collect(),
             area_of_responsibility_ids,
             zone_ids,
             interseption_kind: group.interseption_kind.into(),
             disable_network_assignment: group.disable_network_assignment,
             is_aviation_group: group.is_aviation_group.unwrap_or(false),
+            is_sigint_unit_mandatory: Some(
+                group.is_sigint_unit_mandatory.unwrap_or(false),
+            ),
+            is_device_mandatory: Some(
+                group.is_device_mandatory.unwrap_or(false),
+            ),
             ai_transcript_analysis_enabled: Some(
                 group.ai_transcript_analysis_enabled.unwrap_or(false),
             ),

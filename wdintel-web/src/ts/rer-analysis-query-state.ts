@@ -25,6 +25,7 @@ const QUERY_STATE_FIELD_CONFIGS: QueryStateFieldConfig[] = [
   { key: 'freqsSelected', param: 'freqs', type: 'string[]' },
   { key: 'callsignsSelected', param: 'callsigns', type: 'string[]' },
   { key: 'unitsSelected', param: 'units', type: 'string[]' },
+  { key: 'unitsIncludeChildren', param: 'unitsIncludeChildren', type: 'boolean' },
   { key: 'deviceNamesSelected', param: 'deviceNames', type: 'string[]' },
   { key: 'locationsSelected', param: 'locations', type: 'string[]' },
   { key: 'postsSelected', param: 'posts', type: 'string[]' },
@@ -71,6 +72,7 @@ const QUERY_STATE_DEFAULTS: RerAnalysisQueryState = {
   freqsSelected: [],
   callsignsSelected: [],
   unitsSelected: [],
+  unitsIncludeChildren: false,
   deviceNamesSelected: [],
   locationsSelected: [],
   postsSelected: [],
@@ -178,7 +180,9 @@ export function parseRerAnalysisQueryStateFromSearchParams(
     }
 
     if (field.type === 'string[]') {
-      parsed[field.key] = params.getAll(field.param).filter((value) => value !== '');
+      parsed[field.key] = params
+        .getAll(field.param)
+        .filter((value) => field.key === 'unitsSelected' || value !== '');
       continue;
     }
 

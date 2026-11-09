@@ -12,15 +12,15 @@ See [the frontend MRT skill](../../../.github/skills/frontend-mrt-tables/SKILL.m
 - **User role or permission:** any user who can access the table route.
 - **Preconditions:** the table has current internal columns and optional persisted local-storage state.
 - **User action or external event:** the user changes a table setting or the application restores stale saved state.
-- **Expected observable result:** selection, row number, and action columns retain their shared leading order; stale local-storage column order is normalized when column identities change.
-- **Loading/empty/error/success behavior:** tables remain usable when no saved state exists or stale state is discarded.
-- **Persistence:** filter/sorting URL state preserves unrelated parameters; visibility/order/sizing remains local-storage-backed.
+- **Expected observable result:** selection, row number, and action columns retain their shared leading order; stale local-storage column order is normalized when column identities change. Columns a route marks as dynamic (`isDynamicColumnId`, e.g. per-key device custom fields) are ignored when comparing column identities and keep their stored positions.
+- **Loading/empty/error/success behavior:** tables remain usable when no saved state exists, stale state is discarded, or browser storage is full or unavailable.
+- **Persistence:** filter/sorting URL state preserves unrelated parameters; visibility/order/sizing remains local-storage-backed. Storage failures are logged without interrupting table state updates; failed reads fall back to defaults, and changes that cannot be saved last until the table is unmounted. Reconciliation uses pending writes and removals ahead of stale saved values; a later successful write or removal clears that pending value. With `persistSorting`, the last non-default sorting is also stored in local storage and used when the URL has no sorting; URL sorting wins, and choosing the default clears it.
 - **API endpoint and compatibility requirements:** none.
 - **Responsive and keyboard requirements:** internal controls retain MRT's keyboard-accessible behavior.
 - **Known race/idempotency constraints:** normalization must not repeatedly rewrite already canonical saved state.
 - **Source implementation:** `wdintel-web/src/ts/react/components/mui-customized/table/`.
-- **Existing test(s):** `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/table-state-provider.spec.ts`, `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/mrt-overflow.spec.ts`
-- **Original Echo issue/PR, if known:** none recorded.
+- **Existing test(s):** `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/table-state-provider.spec.ts`, `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/table-state-provider-persistence.spec.tsx`, `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/mrt-overflow.spec.ts`, `wdintel-web/tests/e2e/messenger-alerts.spec.ts`
+- **Original Echo issue/PR, if known:** dynamic column order and persisted sorting: #3999.
 
 ## Row-action overflow
 

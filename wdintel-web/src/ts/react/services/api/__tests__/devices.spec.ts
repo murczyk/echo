@@ -105,6 +105,8 @@ describe('devices API service routes', () => {
             created_at: CREATED_AT,
             updated_at: UPDATED_AT,
             archived_at: null,
+            description: 'Roof antenna',
+            custom_fields: { inventory_id: 'inv-1', serial_no: 'SN-7' },
           },
         ],
         total: 1,
@@ -119,6 +121,8 @@ describe('devices API service routes', () => {
         archivedFilter: 'active_only',
         aorIds: [4],
         unitIds: [7],
+        createdBy: ['operator'],
+        tags: ['priority'],
         limit: 25,
         offset: 0,
         sortBy: ['updated_at_desc'],
@@ -133,6 +137,8 @@ describe('devices API service routes', () => {
       archived_filter: 'active_only',
       aor_ids: [4],
       unit_ids: [7],
+      created_by: ['operator'],
+      tags: ['priority'],
       limit: 25,
       offset: 0,
       sort_by: ['updated_at_desc'],
@@ -142,7 +148,10 @@ describe('devices API service routes', () => {
       aors: [{ id: 4, name: 'AOR' }],
       unit: { id: 7, name: 'Unit' },
       updatedAt: UPDATED_AT,
+      description: 'Roof antenna',
     });
+    // Custom field keys are user data and must keep their original casing.
+    expect(rsp.list[0]?.customFields).toEqual({ inventory_id: 'inv-1', serial_no: 'SN-7' });
     expect(rsp.statusCounts).toEqual({ active: 3, archived: 1 });
   });
   it('loads nested unit statistics without a request body', async () => {
@@ -220,7 +229,7 @@ describe('devices API service routes', () => {
       mattermostWebhookUrl: 'https://mattermost.example/hooks/device-secret',
     });
     expect(requestBody(2)).toEqual({ clearMattermostWebhook: true });
-    expect(settings).toEqual({ hasMattermostWebhook: true });
+    expect(settings).toEqual({ hasMattermostWebhook: true, activitySplitFilesAudio: false });
   });
 });
 

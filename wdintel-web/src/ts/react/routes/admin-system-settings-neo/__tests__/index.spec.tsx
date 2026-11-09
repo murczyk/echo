@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
 }));
 
+vi.mock('../RerReportSettings', () => ({ RerReportSettings: () => <div>Звіт РЕР</div> }));
+
 vi.mock('../../../services/api/system-settings', () => ({
   listSystemSettings: mocks.list,
   createSystemSettings: mocks.save,
@@ -90,6 +92,26 @@ function dutyTestSwitch(container: HTMLElement): HTMLInputElement | null {
       .find((label) => label.textContent?.includes('Увімкнути тестове надходження повідомлень'))
       ?.querySelector('input') ?? null
   );
+}
+
+function signozMetricsControls(container: HTMLElement) {
+  return {
+    enabled: Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Експорт метрик до SigNoz'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]'),
+    endpoint: container.querySelector<HTMLInputElement>('input[type="url"]'),
+  };
+}
+
+async function enableSignozMetrics(container: HTMLElement, endpoint: string) {
+  const controls = signozMetricsControls(container);
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  await act(async () => {
+    controls.enabled?.click();
+    setValue.call(controls.endpoint, endpoint);
+    controls.endpoint?.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => button(container, 'зберегти')?.click());
 }
 
 describe('AdminSystemSettingsNeoPage success notifications', () => {
@@ -192,8 +214,11 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => root.unmount());
   });
   it('loads report defaults and saves normalized report settings', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#reports');
     const { container, root } = await renderPage();
-    const hoursInput = container.querySelector<HTMLInputElement>('input[type="number"]');
+    const hoursInput = container.querySelector<HTMLInputElement>(
+      'input[type="number"][value="24"]',
+    );
     const limitLabel = Array.from(container.querySelectorAll('label')).find((label) =>
       label.textContent?.includes('Обмежити неоптимізовані звіти'),
     );
@@ -241,17 +266,20 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ disableBotTags: true }));
     await act(async () => root.unmount());
   });
-  it('saves the #3598 hide-networks toggle', async () => {
+  it('saves the #3940 РЕР mode toggle using the inverse hide-networks value', async () => {
     const { container, root } = await renderPage();
     const checkbox = Array.from(container.querySelectorAll('label'))
-      .find((label) => label.textContent?.includes('Приховати мережі'))
+      .find((label) => label.textContent?.includes('Режим РЕР'))
       ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
 
-    expect(checkbox?.checked).toBe(false);
+    expect(checkbox?.checked).toBe(true);
     await act(async () => checkbox?.click());
     await act(async () => button(container, 'зберегти')?.click());
 
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ hideNetworks: true }));
+    await act(async () => checkbox?.click());
+    await act(async () => button(container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenLastCalledWith(expect.objectContaining({ hideNetworks: false }));
     await act(async () => root.unmount());
   });
   it('persists disabling test message replay immediately', async () => {
@@ -320,6 +348,26 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.list.mockResolvedValue([{ id: 2, deleted: false, dutyExcludeMenuEnabled: false }]);
     const reloaded = await renderPage();
     expect(menuToggle(reloaded.container)?.checked).toBe(false);
+    await act(async () => reloaded.root.unmount());
+  });
+
+  it('saves the Duty selected-groups flag and reloads the disabled choice', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const first = await renderPage();
+    const groupsToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Відображати обрані групи в оперативному'))
+        ?.querySelector<HTMLInputElement>('input');
+    expect(groupsToggle(first.container)?.checked).toBe(true);
+    await act(async () => groupsToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ dutySelectedGroupsEnabled: false }),
+    );
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, dutySelectedGroupsEnabled: false }]);
+    const reloaded = await renderPage();
+    expect(groupsToggle(reloaded.container)?.checked).toBe(false);
     await act(async () => reloaded.root.unmount());
   });
 
@@ -394,6 +442,49 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(window.location.hash).toBe('#analysis');
     expect(replaceState).toHaveBeenCalledOnce();
     expect(pushState).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/4034
+  it('#4034 loads and saves SigNoz metrics export settings on the Monitoring tab', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#monitoring');
+    mocks.list.mockResolvedValue([
+      {
+        id: 1,
+        deleted: false,
+        signozMetricsEnabled: false,
+        signozMetricsEndpoint: 'http://old-signoz:4317',
+      },
+    ]);
+    const { container, root } = await renderPage();
+    const controls = signozMetricsControls(container);
+    expect(controls.enabled?.checked).toBe(false);
+    expect(controls.endpoint?.value).toBe('http://old-signoz:4317');
+    expect(container.textContent).toContain(
+      'Зміни діють після перезапуску Echo на вкладці «Керування» і воркера звітів на вкладці «Звіти».',
+    );
+
+    await enableSignozMetrics(container, ' http://signoz-echo.eagle-atria.ts.net:4317 ');
+
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signozMetricsEnabled: true,
+        signozMetricsEndpoint: 'http://signoz-echo.eagle-atria.ts.net:4317',
+      }),
+    );
+    await act(async () => root.unmount());
+  });
+  it.each([
+    ['', 'вкажіть адресу SigNoz'],
+    ['signoz-echo:4317', 'має бути http або https URL'],
+  ])('#4034 blocks enabling SigNoz metrics with endpoint %j', async (endpoint, message) => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#monitoring');
+    const { container, root } = await renderPage();
+
+    await enableSignozMetrics(container, endpoint);
+
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(message);
     await act(async () => root.unmount());
   });
 

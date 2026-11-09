@@ -1,8 +1,13 @@
-import { Box } from '@mui/material';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Box, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { VideoPreviewSource, VideoPlayerState } from '../message-card-video-utils';
 import { VideoFilePreview } from './VideoFilePreview';
+import { useVideoFullscreen } from './use-video-fullscreen';
+import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
+import { AudioPreviewContent } from '../attachment-preview/AudioPreviewContent';
+import { isAmbiguousAudioOnlyMedia } from '../audio-only-media';
 import { downloadOriginalVideo, formatVideoTime } from '../message-card-video-utils';
 import { clamp, formatSizeBytes } from '../message-card-image-utils';
 import { getNextWheelZoom, isInteractivePreviewTarget } from '../message-card-image-preview-utils';
@@ -15,7 +20,8 @@ import { isVideoPreviewStream } from '../use-video-preview-stream';
 import { loadManagedVideo } from '../message-card-video-loading';
 import { handleUnauthorizedMediaResponse } from '../message-card-media-fetch';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
-import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
+import { VideoAttachmentPreviewMobileControls } from './VideoAttachmentPreviewMobileControls';
+import { AudioPlayerHost, type MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import {
   ReportTextPreviewAction,
@@ -60,6 +66,7 @@ export function VideoAttachmentPreviewRenderer({
   onDownloadStart,
   onChildOverlayChange,
   dismissChildOverlay,
+  registerFullscreenExit,
   reportDraft,
   reportVisible,
   onReportVisibleChange,
@@ -69,17 +76,39 @@ export function VideoAttachmentPreviewRenderer({
   navigation: MessageCardPreviewNavigation;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
+  registerFullscreenExit?: (exit: (() => void) | null) => void;
   reportDraft?: AttachmentPreviewReportDraft;
 } & MessageCardDownloadGuardProps &
   AttachmentPreviewReportVisibility) {
+  const narrowViewport = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
+  const mobileVideo = narrowViewport || touchLandscape;
   const [src, setSrc] = useState<string | null>(null);
+  const [audioOnlySource, setAudioOnlySource] = useState<{
+    source: VideoPreviewSource['source'];
+    src: string;
+  } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { notify } = useOptionalPowerSnackbar();
+  const fullscreen = useVideoFullscreen(videoRef, src, () => {
+    notify({ severity: 'error', message: 'Не вдалося відкрити відео на весь екран' });
+  });
+  useLayoutEffect(() => {
+    registerFullscreenExit?.(fullscreen.active ? fullscreen.toggle : null);
+    return () => registerFullscreenExit?.(null);
+  }, [fullscreen.active, fullscreen.toggle, registerFullscreenExit]);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [needsPlayGesture, setNeedsPlayGesture] = useState(false);
+  const [buffering, setBuffering] = useState(true);
+  const [interacting, setInteracting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const infoOpen = infoAnchorEl !== null;
-  useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
+  useLayoutEffect(
+    () => onChildOverlayChange?.(infoOpen || menuOpen),
+    [infoOpen, menuOpen, onChildOverlayChange],
+  );
   useEffect(() => {
     if (dismissChildOverlay) setInfoAnchorEl(null);
   }, [dismissChildOverlay]);
@@ -282,20 +311,37 @@ export function VideoAttachmentPreviewRenderer({
   const hideControlsTimerRef = useRef<number | null>(null);
 
   const resetHideControlsTimer = useCallback(() => {
-    setControlsVisible(true);
-
     if (hideControlsTimerRef.current !== null) {
       window.clearTimeout(hideControlsTimerRef.current);
       hideControlsTimerRef.current = null;
     }
 
-    if (playerState.isPlaying) {
+    if (
+      playerState.isPlaying &&
+      !buffering &&
+      !needsPlayGesture &&
+      !playerState.error &&
+      !interacting &&
+      !menuOpen &&
+      !infoOpen &&
+      !(reportDraft && reportVisible)
+    ) {
       hideControlsTimerRef.current = window.setTimeout(() => {
         setControlsVisible(false);
         hideControlsTimerRef.current = null;
       }, 2000);
     }
-  }, [playerState.isPlaying]);
+  }, [
+    playerState.isPlaying,
+    buffering,
+    needsPlayGesture,
+    playerState.error,
+    interacting,
+    menuOpen,
+    infoOpen,
+    reportDraft,
+    reportVisible,
+  ]);
 
   useEffect(() => {
     resetHideControlsTimer();
@@ -306,6 +352,15 @@ export function VideoAttachmentPreviewRenderer({
       }
     };
   }, [playerState.isPlaying, resetHideControlsTimer]);
+
+  useEffect(() => {
+    setControlsVisible(true);
+  }, [playerState.isPlaying, buffering, needsPlayGesture, playerState.error, fullscreen.active]);
+
+  const revealControls = () => {
+    setControlsVisible(true);
+    resetHideControlsTimer();
+  };
 
   const [zoom, setZoom] = useState(100);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -422,23 +477,13 @@ export function VideoAttachmentPreviewRenderer({
     };
   }, [stageEl]);
 
-  const handleStageDoubleClick = () => {
-    setZoom((currentZoom) => {
-      if (currentZoom > 100) {
-        setPan({ x: 0, y: 0 });
-        return 100;
-      }
-      return 150;
-    });
-  };
-
   const controls = (
     <Box
-      onMouseMove={resetHideControlsTimer}
+      onMouseMove={revealControls}
       sx={{
-        opacity: controlsVisible || !playerState.isPlaying ? 1 : 0,
+        opacity: controlsVisible ? 1 : 0,
         transition: 'opacity 300ms ease-out',
-        pointerEvents: controlsVisible || !playerState.isPlaying ? 'auto' : 'none',
+        pointerEvents: controlsVisible ? 'auto' : 'none',
         width: '100%',
       }}
     >
@@ -455,18 +500,62 @@ export function VideoAttachmentPreviewRenderer({
     </Box>
   );
 
-  const sourceStage = (
+  const header = (
+    <MessageCardAttachmentPreviewHeader
+      fileName={video.name}
+      openHref={openHref}
+      download={{ onDownload: () => downloadOriginalVideo(video) }}
+      navigation={navigation}
+      additionalActions={
+        reportDraft != null ? (
+          <ReportTextPreviewAction
+            kind={reportDraft.kind}
+            active={reportVisible}
+            onClick={() => onReportVisibleChange(!reportVisible)}
+          />
+        ) : null
+      }
+      onClose={handleClose}
+      onInfoClick={(event) => {
+        setInfoAnchorEl(event.currentTarget);
+        onChildOverlayChange?.(true);
+      }}
+      downloadKey={`media:${String(video.id ?? '')}`}
+      isDownloadStarting={isDownloadStarting}
+      onDownloadStart={onDownloadStart}
+    />
+  );
+
+  const audioOnly =
+    src !== null && audioOnlySource?.source === video.source && audioOnlySource.src === src;
+  const sourceStage = audioOnly ? (
     <MessageCardAttachmentPreviewStage
-      ref={setStageEl}
-      kind="video"
-      onPointerDown={resetHideControlsTimer}
-      onDoubleClick={handleStageDoubleClick}
+      kind="audio"
       onPrimaryClick={(_, region) => {
         if (region === 'background') handleClose();
       }}
     >
+      <AudioPreviewContent>
+        <AudioPlayerHost
+          href={typeof video.source === 'string' ? video.source : src}
+          displayName={video.name}
+          mediaId={video.id}
+          sizeBytes={video.sizeBytes ?? null}
+          suppressInitialAutoplay
+          previewSizing
+        />
+      </AudioPreviewContent>
+    </MessageCardAttachmentPreviewStage>
+  ) : (
+    <MessageCardAttachmentPreviewStage
+      ref={setStageEl}
+      kind="video"
+      onPrimaryClick={(_, region) => {
+        if (!mobileVideo && region === 'background') handleClose();
+      }}
+    >
       <Box
-        onMouseMove={resetHideControlsTimer}
+        onMouseMove={!mobileVideo ? revealControls : undefined}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -477,6 +566,17 @@ export function VideoAttachmentPreviewRenderer({
         }}
       >
         <VideoFilePreview
+          fit={mobileVideo ? 'contain' : 'intrinsic'}
+          nativeControls={fullscreen.native}
+          onBufferingChange={setBuffering}
+          onSurfaceTap={() => {
+            if (menuOpen || infoOpen) return;
+            if (hideControlsTimerRef.current !== null) {
+              window.clearTimeout(hideControlsTimerRef.current);
+              hideControlsTimerRef.current = null;
+            }
+            setControlsVisible((visible) => !visible);
+          }}
           videoRef={videoRef}
           src={src}
           onRetry={retryLoad}
@@ -501,6 +601,12 @@ export function VideoAttachmentPreviewRenderer({
               ...state,
               duration: Number.isFinite(element.duration) ? element.duration : 0,
             }));
+            if (
+              src &&
+              element === videoRef.current &&
+              isAmbiguousAudioOnlyMedia(video.name, video.mimeType, element)
+            )
+              setAudioOnlySource({ source: video.source, src });
           }}
           onTimeUpdate={(event) => {
             const element = event.currentTarget;
@@ -533,62 +639,102 @@ export function VideoAttachmentPreviewRenderer({
           }}
         />
       </Box>
-      <AttachmentPreviewZoomBadge
-        zoom={zoom}
-        onResetZoom={() => {
-          setZoom(100);
-          setPan({ x: 0, y: 0 });
-        }}
-      />
-      <Box
-        data-attachment-preview-video-controls
-        onDoubleClick={(event) => event.stopPropagation()}
-        sx={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 1300,
-          width: '100%',
-          pointerEvents: 'none',
-          '& > *': {
-            pointerEvents: 'auto',
-          },
-        }}
-      >
-        {controls}
-      </Box>
+      {mobileVideo ? (
+        <VideoAttachmentPreviewMobileControls
+          fileName={video.name}
+          navigation={navigation}
+          playerState={playerState}
+          visible={controlsVisible}
+          onClose={handleClose}
+          onPlayPause={handlePlayPause}
+          onSeek={handleSeek}
+          onMuteToggle={handleMuteToggle}
+          onRateChange={handleRateChange}
+          onDownload={() => downloadOriginalVideo(video)}
+          downloadKey={`media:${String(video.id ?? '')}`}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
+          openHref={openHref}
+          onInfo={setInfoAnchorEl}
+          onMenuChange={setMenuOpen}
+          dismissChildOverlay={dismissChildOverlay}
+          onInteraction={setInteracting}
+          playbackAvailable={!buffering && !needsPlayGesture && !playerState.error}
+          fullscreenSupported={fullscreen.supported}
+          fullscreenActive={fullscreen.active}
+          fullscreenReady={(videoRef.current?.readyState ?? 0) > 0 && !playerState.error}
+          onFullscreen={fullscreen.toggle}
+          additionalActions={
+            reportDraft ? (
+              <ReportTextPreviewAction
+                kind={reportDraft.kind}
+                active={reportVisible}
+                onClick={() => onReportVisibleChange(!reportVisible)}
+              />
+            ) : null
+          }
+        />
+      ) : null}
+      {zoom > 100 ? (
+        <AttachmentPreviewZoomBadge
+          zoom={zoom}
+          onResetZoom={() => {
+            setZoom(100);
+            setPan({ x: 0, y: 0 });
+          }}
+        />
+      ) : null}
+      {!mobileVideo ? (
+        <Box
+          data-video-header
+          data-attachment-preview-content
+          onFocusCapture={() => setInteracting(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setInteracting(false);
+          }}
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 12,
+            visibility: controlsVisible ? 'visible' : 'hidden',
+          }}
+        >
+          {header}
+        </Box>
+      ) : null}
+      {!mobileVideo ? (
+        <Box
+          data-attachment-preview-video-controls
+          onFocusCapture={() => setInteracting(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setInteracting(false);
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+          sx={{
+            position: 'absolute',
+            visibility: controlsVisible ? 'visible' : 'hidden',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 1300,
+            width: '100%',
+            pointerEvents: 'none',
+            '& > *': {
+              pointerEvents: 'auto',
+            },
+          }}
+        >
+          {controls}
+        </Box>
+      ) : null}
     </MessageCardAttachmentPreviewStage>
   );
   const stage = (
     <ReportTextPreviewLayout source={sourceStage} draft={reportDraft} visible={reportVisible} />
   );
 
-  const header = (
-    <MessageCardAttachmentPreviewHeader
-      fileName={video.name}
-      openHref={openHref}
-      download={{ onDownload: () => downloadOriginalVideo(video) }}
-      navigation={navigation}
-      additionalActions={
-        reportDraft != null ? (
-          <ReportTextPreviewAction
-            kind={reportDraft.kind}
-            active={reportVisible}
-            onClick={() => onReportVisibleChange(!reportVisible)}
-          />
-        ) : null
-      }
-      onClose={handleClose}
-      onInfoClick={(event) => {
-        setInfoAnchorEl(event.currentTarget);
-        onChildOverlayChange?.(true);
-      }}
-      downloadKey={`media:${String(video.id ?? '')}`}
-      isDownloadStarting={isDownloadStarting}
-      onDownloadStart={onDownloadStart}
-    />
-  );
   const infoPopover = (
     <MessageCardAttachmentPreviewInfoPopover
       open={infoOpen}
@@ -616,11 +762,15 @@ export function VideoAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
+      immersive={!audioOnly}
+      header={audioOnly ? header : undefined}
+      mobileChrome={audioOnly ? 'toggle' : undefined}
+      headerInFlow={audioOnly && reportDraft != null && reportVisible}
       stage={stage}
-      header={header}
       infoPopover={infoPopover}
-      navigation={navigation}
+      navigation={fullscreen.active ? undefined : navigation}
       swipeEnabled={zoom <= 100}
+      onSwipeDismiss={mobileVideo ? handleClose : undefined}
     />
   );
 }

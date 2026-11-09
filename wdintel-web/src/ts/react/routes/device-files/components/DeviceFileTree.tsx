@@ -1,18 +1,12 @@
-import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { Collapse, List, Tooltip } from '@mui/material';
+import { Collapse, List } from '@mui/material';
 
 import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../Bindings';
-import { PowerChip } from '../../../components/PowerChip';
-import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
 import type { DeviceFilesState } from '../use-device-files';
 import { isDeviceArchive } from '../device-file-archive';
 import { DeviceArchiveTree } from './DeviceArchiveTree';
 import { DeviceFileTreePage } from './DeviceFileTreePage';
 import { DeviceFileTreeRow } from './DeviceFileTreeRow';
-
-const fileCountFormatter = new Intl.NumberFormat('uk-UA');
+import { DeviceFileIcon } from './DeviceFileIcon';
 
 type DirectoryNode = {
   entryId: string;
@@ -29,29 +23,6 @@ type DirectoryProps = {
 
 function joinScopeLabel(parent: string, name: string): string {
   return parent.endsWith('\\') ? `${parent}${name}` : `${parent}\\${name}`;
-}
-
-function fileCountDescription(fileCount: number): string {
-  return `Файлів у каталозі та вкладених каталогах: ${fileCountFormatter.format(fileCount)}`;
-}
-
-function DirectoryFileCount({ fileCount }: { fileCount: number | null }) {
-  if (fileCount === null) return null;
-  const description = fileCountDescription(fileCount);
-
-  return (
-    <Tooltip title="Файлів у каталозі та вкладених каталогах">
-      <span aria-label={description} className="inline-flex shrink-0">
-        <PowerChip
-          label={fileCountFormatter.format(fileCount)}
-          color="default"
-          interactive={false}
-          minWidth={24}
-          sx={{ height: 20, fontVariantNumeric: 'tabular-nums' }}
-        />
-      </span>
-    </Tooltip>
-  );
 }
 
 function toDirectoryNode(entry: DeviceFileTreeEntry, parent: DirectoryNode): DirectoryNode {
@@ -82,8 +53,7 @@ function DeviceFileRow({
         selected={selected}
         hasContent={entry.hasContent}
         onClick={() => files.selectFile(entry)}
-        icon={<InsertDriveFileOutlinedIcon color={selected ? 'primary' : 'action'} />}
-        trailing={<DeviceAnalyticsTagBadges tags={entry.tags} />}
+        icon={<DeviceFileIcon entry={entry} color={selected ? 'primary' : 'action'} />}
       />
     </li>
   );
@@ -92,11 +62,8 @@ function DeviceFileRow({
 function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
   const branch = files.tree.branches[node.entryId];
   const expanded = files.tree.expandedEntryIds.has(node.entryId);
-  const selected = files.searchScope?.entryId === node.entryId;
+  const selected = files.selectedDirectory === node.entryId;
   const childrenId = `device-file-tree-${node.entryId}-children`;
-  const subtreeFileCount = files.counts.countsByEntryId[node.entryId] ?? null;
-  const subtreeFileCountDescription =
-    subtreeFileCount === null ? null : fileCountDescription(subtreeFileCount);
 
   return (
     <li className="min-w-0">
@@ -106,21 +73,14 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
         selected={selected}
         expanded={expanded}
         childrenId={childrenId}
-        label={`Вибрати каталог ${node.name} як область пошуку${
-          subtreeFileCountDescription === null ? '' : `; ${subtreeFileCountDescription}`
-        }`}
+        label={`Відкрити папку ${node.name}`}
         toggleLabel={`${expanded ? 'Згорнути' : 'Розгорнути'} каталог ${node.name}`}
         onToggle={() => files.tree.toggleDirectory(node.entryId)}
         onClick={() => {
-          files.tree.toggleDirectory(node.entryId);
-          files.selectSearchScope({
-            entryId: node.entryId,
-            rootEntryId: node.rootEntryId,
-            label: node.scopeLabel,
-          });
+          if (!expanded) files.tree.toggleDirectory(node.entryId);
+          files.openDirectory(node.entryId);
         }}
-        icon={expanded ? <FolderOpenOutlinedIcon /> : <FolderOutlinedIcon />}
-        trailing={<DirectoryFileCount fileCount={subtreeFileCount} />}
+        icon={<DeviceFileIcon entry={{ kind: 'directory', name: node.name }} expanded={expanded} />}
       />
 
       <Collapse in={expanded} timeout="auto" unmountOnExit id={childrenId}>
@@ -143,12 +103,16 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
                   tagMatch: files.tagFilter.tagMatch,
                   untagged: files.tagFilter.untagged,
                   hasContent: files.contentFilter,
+                  filters: files.appliedListingFilters,
                 }}
                 depth={depth + 1}
-                selectedEntryId={files.selectedFile?.entryId}
+                selectedEntryId={
+                  files.selectedFile?.entryId ?? files.selectedDirectory ?? undefined
+                }
                 expandedEntryIds={files.tree.expandedEntryIds}
                 revealedBranches={files.tree.branches}
                 onSelectFile={files.selectFile}
+                onOpenDirectory={files.openDirectory}
                 onAccessDenied={files.clearSelectedFile}
               />
             ) : (
@@ -184,7 +148,7 @@ function rootToNode(root: DeviceFileRoot): DirectoryNode {
 export function DeviceFileTree({ files }: { files: DeviceFilesState }) {
   return (
     <div
-      className="min-w-0 py-echo-xs"
+      className="w-max min-w-full [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-0"
       data-testid="device-files-tree"
       aria-busy={files.tree.refreshing}
     >

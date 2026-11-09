@@ -11,11 +11,16 @@ export const AUTHOR_COLUMN_META = {
 
 export function mrtAuthorCell<TData extends MRT_RowData>(
   getLogin: (row: TData) => string | null | undefined,
+  interactive = true,
 ) {
   return mrtCustomCell<TData>(({ row }) => {
     const login = getLogin(row.original);
     return (
-      <MrtOverflowText interactive displayValue={<AuthorLabel login={login} />} fullValue={login} />
+      <MrtOverflowText
+        interactive={interactive}
+        displayValue={<AuthorLabel login={login} interactive={interactive} />}
+        fullValue={login}
+      />
     );
   });
 }

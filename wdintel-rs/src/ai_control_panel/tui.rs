@@ -178,9 +178,18 @@ fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_shared(frame: &mut Frame, app: &App, area: Rect) {
-    let shared = &app.data["shared"];
+    let connection = app
+        .rows()
+        .get(app.cursor)
+        .and_then(|row| row["agent_host"].as_str());
+    let shared = if app.data.get("shared_hosts").is_some() {
+        &app.data["shared_hosts"][connection.unwrap_or("")]
+    } else {
+        &app.data["shared"]
+    };
     let heading = format!(
-        "Dispatcher: {}   Default template: {}   Target: {}   Orphan backups: {}   {}",
+        "{}   Dispatcher: {}   Default template: {}   Target: {}   Orphan backups: {}   {}",
+        connection.unwrap_or("Agent host unknown"),
         string(shared, "dispatcher_release"),
         string(shared, "template_release"),
         app.target(),
@@ -217,6 +226,7 @@ fn render_fleet(frame: &mut Frame, app: &App, area: Rect) {
             string(host, "required_release").to_string(),
             host[app.eligibility()][app.target()]
                 .as_str()
+                .or_else(|| host["routing_error"].as_str())
                 .unwrap_or("Scan required")
                 .to_string(),
         ])
@@ -355,14 +365,15 @@ fn upgrade_preview(app: &App) -> String {
     ];
     for host in &hosts {
         lines.push(format!(
-            "{}: {}",
+            "{} via {}: {}",
             string(host, "host"),
+            string(host, "agent_host"),
             host[app.eligibility()][app.target()]
                 .as_str()
                 .unwrap_or("Unknown")
         ));
     }
-    lines.push("The shared dispatcher/template may be prepared once. Only selected namespaces are replaced; stopped backups and recovery journals are retained.".into());
+    lines.push("Each selected agent VM is prepared once. Only selected namespaces are replaced; stopped backups and recovery journals are retained.".into());
     lines.push(format!(
         "Retain stopped orphans as backups: {}",
         app.reconcile_orphans

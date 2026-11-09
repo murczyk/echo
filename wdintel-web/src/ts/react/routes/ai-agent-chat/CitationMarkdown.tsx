@@ -1,5 +1,6 @@
 import { FileCitationChip } from './FileCitationChip';
 import { fileCitationHref } from '../../services/api/device-documents';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import dayjs from 'dayjs';
 import {
   createContext,
@@ -15,6 +16,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import type {
+  AiAgentDocumentArtifact,
   AiAgentMapSummary,
   AiAgentMessageCitation,
   AiAgentFileCitation,
@@ -23,6 +25,7 @@ import type {
 } from '../../../../Bindings';
 import { MapPreview } from './MapPreview';
 import { ConversationMapsContext } from './map-documents';
+import { ConversationDocumentsContext, DocumentChip, documentHref } from './document-files';
 import { EchoChip } from '../../components/EchoChip';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-messages';
@@ -93,6 +96,8 @@ const CitationContext = createContext<{
   registered: Map<string, AiAgentMessageCitation>;
   files: Map<string, AiAgentFileCitation>;
   maps: Map<string, AiAgentMapSummary>;
+  documents: Map<string, AiAgentDocumentArtifact>;
+  inertMaps: boolean;
   resolved: Map<number, ResolvedCitation>;
   refresh: (id: number) => Promise<boolean>;
 } | null>(null);
@@ -103,6 +108,18 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
 
   if (href?.startsWith('echo-map:')) {
     const summary = context.maps.get(href);
+    if (summary && context.inertMaps)
+      return (
+        <EchoChip
+          label={
+            <span className="inline-flex items-center gap-echo-xs">
+              <MapOutlinedIcon fontSize="inherit" />
+              {summary.title}
+            </span>
+          }
+          title="Перегляд мапи доступний лише автору розмови"
+        />
+      );
     return summary ? (
       <MapPreview key={`${summary.requestId}:${summary.id}`} summary={summary} inline />
     ) : (
@@ -110,7 +127,17 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
     );
   }
 
-  const file = context.files.get(href ?? '');
+  if (href?.startsWith('echo-document:')) {
+    const document = context.documents.get(href);
+    return document ? (
+      <DocumentChip document={document} inert={context.inertMaps} />
+    ) : (
+      <EchoChip label="Документ недоступний" />
+    );
+  }
+
+  const fileHref = href?.replace(/^(\/devices\/[^/?]+)\?/, '$1/files?');
+  const file = context.files.get(fileHref ?? '');
   if (file) return <FileCitationChip source={file} />;
   if (href?.startsWith('/devices/') && href.includes('?file='))
     return <EchoChip label="Неперевірене джерело" />;
@@ -153,14 +180,20 @@ export function CitationMarkdown({
   citations = EMPTY_CITATIONS,
   fileCitations = [],
   maps = [],
+  documents = [],
+  inertMaps = false,
 }: {
   children: string;
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
+  /** Show map links as their titles instead of owner-only previews. */
+  inertMaps?: boolean;
 }) {
   const { notify } = usePowerSnackbar();
   const conversationMaps = useContext(ConversationMapsContext);
+  const conversationDocuments = useContext(ConversationDocumentsContext);
   const [resolved, setResolved] = useState(new Map<number, ResolvedCitation>());
   const resolvedRef = useRef(resolved);
   resolvedRef.current = resolved;
@@ -254,6 +287,13 @@ export function CitationMarkdown({
           maps: new Map(
             [...conversationMaps, ...maps].map((summary) => [`echo-map:${summary.id}`, summary]),
           ),
+          documents: new Map(
+            [...conversationDocuments, ...documents].map((document) => [
+              documentHref(document.documentId),
+              document,
+            ]),
+          ),
+          inertMaps,
         }}
       >
         <ReactMarkdown
@@ -261,7 +301,11 @@ export function CitationMarkdown({
           disallowedElements={['img']}
           remarkPlugins={MARKDOWN_PLUGINS}
           components={MARKDOWN_COMPONENTS}
-          urlTransform={(url) => (url.startsWith('echo-map:') ? url : defaultUrlTransform(url))}
+          urlTransform={(url) =>
+            url.startsWith('echo-map:') || url.startsWith('echo-document:')
+              ? url
+              : defaultUrlTransform(url)
+          }
         >
           {children}
         </ReactMarkdown>

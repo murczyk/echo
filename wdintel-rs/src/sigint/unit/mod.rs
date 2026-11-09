@@ -30,6 +30,7 @@ pub mod activity;
 pub mod attachment;
 pub mod changelog;
 pub mod combat_type;
+pub mod hierarchy;
 pub mod labels;
 mod merge_task;
 pub(crate) mod message_creation;
@@ -1190,14 +1191,9 @@ pub async fn list_units_by_id(
 pub(super) async fn ensure_unit_creation(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
-    req: &CreateUnitReq,
+    _req: &CreateUnitReq,
 ) -> Result<(), AppError> {
-    has_any_role(dbx, login, vec!["UnitsEditor", "Rer", "Cyber"])
-        .await
-        .c(h!())?;
-    if !req.duplicate_unit_ids.is_empty() {
-        has_role(dbx, login, "UnitsEditor").await.c(h!())?;
-    }
+    has_role(dbx, login, "UnitsEditor").await.c(h!())?;
     Ok(())
 }
 
@@ -1765,13 +1761,6 @@ where
     )
     .await
     .c(h!())?;
-    if !crate::sigint::unit_tag::sigint_network_unit_mask(network).is_empty() {
-        crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
-            db,
-        )
-        .await
-        .c(h!())?;
-    }
     Ok(())
 }
 
@@ -2633,12 +2622,15 @@ where
     )
     .await
     .context(h!())?;
-    Ok(
+    let unit =
         orbit::reconcile_sigint_unit_orbit(dbx, &login, unit_original.id, true)
             .await
             .c(h!())?
-            .unit,
-    )
+            .unit;
+    crate::rer_report_admin::validate_unit_metadata_parent(dbx, unit.id)
+        .await
+        .c(h!())?;
+    Ok(unit)
 }
 
 async fn find_units_for_merge<C>(
@@ -4043,10 +4035,11 @@ mod tests {
     async fn issue_3535_unit_creation_preserved_write_role_boundaries() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         for (roles, allowed) in [
-            (vec!["Rer"], true),
-            (vec!["Cyber"], true),
-            (vec!["Full"], true),
+            (vec!["Rer"], false),
+            (vec!["Cyber"], false),
+            (vec!["Full"], false),
             (vec!["Admin"], true),
+            (vec!["Rer", "UnitsEditor"], true),
             (vec!["CyberViewer", "UnitsEditor"], true),
             (vec!["CyberViewer"], false),
             (vec!["Basic"], false),
@@ -4156,6 +4149,9 @@ mod tests {
             report_chunking_hours: Set(
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
             ),
+            report_global_concurrency: Set(None),
+            report_kind_concurrency: Set(None),
+            report_etalonka_concurrency: Set(None),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),
@@ -4169,12 +4165,16 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            duty_selected_groups_enabled: Set(None),
+            important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),
             messenger_media_cache_retention_hours: Set(None),
             messenger_media_cache_max_size_gib: Set(None),
             messenger_media_cache_min_free_gib: Set(None),
+            signoz_metrics_enabled: Set(None),
+            signoz_metrics_endpoint: Set(None),
         }
         .insert(dbx)
         .await

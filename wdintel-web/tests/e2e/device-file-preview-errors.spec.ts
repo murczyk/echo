@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
@@ -72,7 +73,7 @@ for (const id of [
         ).toBeVisible();
       else if (id === 'unsupported-binary')
         await expect(
-          pane.getByRole('heading', { name: 'Перегляд формату BIN не підтримується', exact: true }),
+          pane.getByRole('heading', { name: 'Перегляд недоступний', exact: true }),
         ).toBeVisible();
       else if (id === 'password-zip') await expect(pane).toContainText(/парол|зашифров/i);
       else if (id === 'oversized-text' || id === 'oversized-document')
@@ -306,7 +307,7 @@ async function archiveFailureFixture(page: Page, kind: string, upload = true) {
     const open = async () => {
       await page.context().addCookies((await reader.storageState()).cookies);
       await page.goto(`/devices/${backend.fixtures.deviceId}`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+      await openDeviceSection(page, 'Файли');
       await page.getByRole('button', { name: 'Розгорнути каталог preview', exact: true }).click();
       await page
         .getByRole('button', { name: `Розгорнути каталог ${fixture.id}`, exact: true })

@@ -56,15 +56,7 @@ pub mod tests {
     pub async fn cleanup_locked(
     ) -> Result<(Arc<Env>, tokio::sync::MutexGuard<'static, ()>), AppError>
     {
-        MIGRATE
-            .get_or_init(|| async {
-                crate::migration::run_migration_1(Mode::Test).await.unwrap();
-                let config = crate::config::read_config(Mode::Test).unwrap();
-                crate::file_registry::run_migrations(&config, Mode::Test)
-                    .await
-                    .unwrap();
-            })
-            .await;
+        MIGRATE.get_or_init(migrate_test_databases).await;
         let guard = CLEANUP.lock().await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
         let env = if env.file_registry_db.is_none() {
@@ -91,6 +83,8 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
+                        public.file_favorite,
+                        public.file_view,
                         public.file_archive,
                         public.device_audio_forwarding_outbox,
                         public.device_upload_finalization_job,
@@ -143,6 +137,21 @@ pub mod tests {
         fill_initial_data(&env.dbx).await?;
 
         Ok((env, guard))
+    }
+
+    async fn migrate_test_databases() {
+        crate::migration::run_migration_1(Mode::Test).await.unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        crate::file_registry::run_migrations(&config, Mode::Test)
+            .await
+            .unwrap();
+    }
+
+    /// Lets CI migrate the template databases before cloning one per shard.
+    #[tokio::test]
+    #[ignore = "CI entry point for deploy/ci/run_rust_shards.py"]
+    async fn ci_migrate_test_databases() {
+        migrate_test_databases().await;
     }
 
     async fn ensure_test_database(

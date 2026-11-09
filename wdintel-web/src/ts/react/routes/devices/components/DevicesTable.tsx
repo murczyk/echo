@@ -2,15 +2,16 @@ import {
   AUTHOR_COLUMN_META,
   mrtAuthorCell,
 } from '../../../components/mui-customized/table/mrt-author-cell';
-import { Box, CircularProgress, Link, Typography } from '@mui/material';
+import { Link, Skeleton } from '@mui/material';
 import type { MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
 import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
-import { PowerChip } from '../../../components/PowerChip';
-import { PowerButton } from '../../../components/PowerButton';
+import { DeviceRating } from './DeviceRating';
+import { DeviceStatusIcon } from './DeviceStatusIcon';
+import { DeviceTagsCell } from './DeviceTagsCell';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
@@ -35,7 +36,14 @@ import { DeviceRowActions } from './DeviceRowActions';
 import { DeviceSizeLabel } from './DeviceSizeLabel';
 import { DeviceMobileList } from './DeviceMobileList';
 import { useDeviceMobileLayout } from '../use-device-mobile-layout';
-import type { DeviceRowView } from '../helpers';
+import {
+  customFieldColumnId,
+  mergeCustomFieldColumnOrder,
+  DEVICES_LOADING_PLACEHOLDER_COUNT,
+  DEVICES_LOADING_ROW_ID_PREFIX,
+  type DeviceRowView,
+} from '../helpers';
+import { useDeviceAutoLoad } from '../use-device-auto-load';
 
 const defaultMrtOptions = getDefaultMRTOptions<DeviceRowView>();
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -48,8 +56,12 @@ type Props = {
   refreshing: boolean;
   loadingMore: boolean;
   hasMore: boolean;
-  total: number;
+  startOffset: number;
+  scrollResetKey: string;
+  autoLoadBlocked: boolean;
   canEdit: boolean;
+  canRate: boolean;
+  onRate: (deviceId: string, rating: number) => void;
   mutatingDeviceId: string | null;
   hasFilters: boolean;
   tableStateContext: ReturnType<typeof useTableStateContext>;
@@ -58,9 +70,35 @@ type Props = {
   onClearFilters: () => void;
   onTableInitialized: (table: MRT_TableInstance<DeviceRowView>) => void;
   columnOrder: MRT_ColumnOrderState;
+  customFieldKeys: string[];
 };
 
-function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
+const EMPTY_CELL_VALUE = '—';
+
+function buildCustomFieldColumns(customFieldKeys: string[]): AppMrtColumnDef<DeviceRowView>[] {
+  return customFieldKeys.map((key) => ({
+    id: customFieldColumnId(key),
+    accessorFn: (row) => row.customFields[key] ?? '',
+    header: key,
+    size: 180,
+    enableSorting: false,
+    meta: { overflowMode: 'text' },
+    Cell: mrtTextCell<DeviceRowView>({
+      fullValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+      displayValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+    }),
+  }));
+}
+
+function useDevicesTableColumns({
+  canRate,
+  mutatingDeviceId,
+  onRate,
+  customFieldKeys,
+}: Pick<
+  Props,
+  'canRate' | 'mutatingDeviceId' | 'onRate' | 'customFieldKeys'
+>): AppMrtColumnDef<DeviceRowView>[] {
   return useMemo(
     () => [
       {
@@ -72,27 +110,55 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         Cell: mrtCustomCell<DeviceRowView>(({ row }) => {
           const href = `/devices/${row.original.id}`;
           return (
-            <MrtOverflowText
-              displayValue={row.original.name ?? 'Без назви'}
-              fullValue={row.original.name ?? 'Без назви'}
-              interactive
-              component="a"
-              componentProps={{
-                href,
-                onClick: (event: ReactMouseEvent<HTMLElement>) =>
-                  handleNavigateWithinSpaClick(event, href),
-              }}
-              sx={{ color: 'primary.main', fontWeight: 600, textDecoration: 'none' }}
-            />
+            <div className="flex min-w-0 items-center gap-echo-sm">
+              <DeviceStatusIcon archived={row.original.archived} />
+              <MrtOverflowText
+                displayValue={row.original.name ?? 'Без назви'}
+                fullValue={row.original.name ?? 'Без назви'}
+                interactive
+                component="a"
+                componentProps={{
+                  href,
+                  onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                    handleNavigateWithinSpaClick(event, href),
+                }}
+                sx={{ color: 'primary.main', fontWeight: 600, textDecoration: 'none' }}
+              />
+            </div>
           );
         }),
+      },
+      {
+        id: 'description',
+        accessorFn: (row) => row.description ?? '',
+        header: 'Опис',
+        size: 260,
+        enableSorting: false,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<DeviceRowView>({
+          fullValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+          displayValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+        }),
+      },
+      {
+        accessorKey: 'rating',
+        header: 'Рейтинг',
+        size: 160,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }) => (
+          <DeviceRating
+            row={row.original}
+            canRate={canRate}
+            disabled={mutatingDeviceId !== null}
+            onRate={onRate}
+          />
+        ),
       },
       {
         id: 'aors',
         accessorKey: 'aorLabel',
         header: 'Смуги',
-        size: 240,
-        enableSorting: false,
+        size: 160,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell<DeviceRowView>({
           fullValue: ({ cell }) => cell.getValue() as string,
@@ -104,7 +170,6 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         accessorKey: 'unitLabel',
         header: 'Підрозділ',
         size: 220,
-        enableSorting: false,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell<DeviceRowView>({
           fullValue: ({ cell }) => cell.getValue() as string,
@@ -115,10 +180,9 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         id: 'createdBy',
         accessorKey: 'createdBy',
         header: 'Створив',
-        meta: AUTHOR_COLUMN_META,
-        Cell: mrtAuthorCell((row) => row.createdBy),
+        meta: { ...AUTHOR_COLUMN_META, interactive: false },
+        Cell: mrtAuthorCell((row) => row.createdBy, false),
         size: 170,
-        enableSorting: false,
       },
       {
         id: 'createdAt',
@@ -135,36 +199,34 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         id: 'activity',
         accessorFn: (row) => row.activity,
         header: 'Активність',
-        size: 120,
-        enableSorting: false,
+        size: 180,
         meta: { overflowMode: 'none' },
-        Cell: ({ row }) => <DeviceRecentActivityCell activity={row.original.activity} />,
+        Cell: ({ row }) => (
+          <DeviceRecentActivityCell
+            activity={row.original.activity}
+            splitFilesAudio={row.original.activitySplitFilesAudio}
+          />
+        ),
       },
       {
         id: 'size',
         accessorKey: 'sizeLabel',
         header: 'Розмір',
-        size: 120,
-        enableSorting: false,
+        size: 160,
         meta: { overflowMode: 'none' },
         Cell: ({ row }) => <DeviceSizeLabel row={row.original} />,
       },
       {
-        id: 'lifecycle',
-        accessorKey: 'archived',
-        header: 'Стан',
-        size: 120,
+        accessorKey: 'tags',
+        header: 'Теги',
+        size: 160,
         enableSorting: false,
         meta: { overflowMode: 'none' },
-        Cell: ({ row }) =>
-          row.original.archived ? (
-            <PowerChip label="Архівний" color="warning" selected />
-          ) : (
-            <PowerChip label="Активний" color="success" selected />
-          ),
+        Cell: ({ row }) => <DeviceTagsCell tags={row.original.tags} />,
       },
+      ...buildCustomFieldColumns(customFieldKeys),
     ],
-    [],
+    [canRate, mutatingDeviceId, onRate, customFieldKeys],
   );
 }
 
@@ -174,8 +236,12 @@ export function DevicesTable({
   refreshing,
   loadingMore,
   hasMore,
-  total,
+  startOffset,
+  scrollResetKey,
+  autoLoadBlocked,
   canEdit,
+  canRate,
+  onRate,
   mutatingDeviceId,
   hasFilters,
   tableStateContext,
@@ -184,18 +250,53 @@ export function DevicesTable({
   onClearFilters,
   onTableInitialized,
   columnOrder,
+  customFieldKeys,
 }: Props) {
   const mobile = useDeviceMobileLayout();
-  const columns = useDevicesTableColumns();
+  const columns = useDevicesTableColumns({ canRate, mutatingDeviceId, onRate, customFieldKeys });
+  const baseColumnOrder = tableStateContext.columnOrder ?? columnOrder;
+  const customFieldColumnIds = useMemo(
+    () => customFieldKeys.map(customFieldColumnId),
+    [customFieldKeys],
+  );
+  const effectiveColumnOrder = useMemo(
+    () => mergeCustomFieldColumnOrder(baseColumnOrder, customFieldColumnIds),
+    [baseColumnOrder, customFieldColumnIds],
+  );
+  // Custom field columns are hidden unless the user enabled them (persisted by TableStateProvider).
+  const effectiveColumnVisibility = useMemo(
+    () => ({
+      ...Object.fromEntries(customFieldColumnIds.map((id) => [id, false])),
+      ...(tableStateContext.columnVisibility ?? {}),
+    }),
+    [customFieldColumnIds, tableStateContext.columnVisibility],
+  );
+  const tableRows = useMemo(() => {
+    const template = rows.at(-1);
+    if (!loadingMore || !template) return rows;
+    return [
+      ...rows,
+      ...Array.from({ length: DEVICES_LOADING_PLACEHOLDER_COUNT }, (_, index) => ({
+        ...template,
+        id: `${DEVICES_LOADING_ROW_ID_PREFIX}${index}`,
+      })),
+    ];
+  }, [loadingMore, rows]);
   const isInitialLoading = loading && rows.length === 0;
   const isEmptyResult = !isInitialLoading && rows.length === 0;
-  const showLoadMore = !isInitialLoading && hasMore;
-  const showTableOverlay =
-    !isInitialLoading && (loadingMore || refreshing || mutatingDeviceId !== null);
+  const showTableOverlay = !isInitialLoading && (refreshing || mutatingDeviceId !== null);
+
+  const scroll = useDeviceAutoLoad({
+    hasMore,
+    blocked: autoLoadBlocked || loading || refreshing || loadingMore || mutatingDeviceId !== null,
+    resetKey: scrollResetKey,
+    onLoadMore,
+  });
 
   const table = useAppMaterialReactTable({
-    data: rows,
+    data: tableRows,
     columns,
+    enableRowVirtualization: true,
     enableColumnActions: true,
     enableGlobalFilter: true,
     enableColumnFilters: false,
@@ -239,6 +340,7 @@ export function DevicesTable({
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
         enableResizing: false,
+        Cell: ({ row }) => <span>{startOffset + row.index + 1}</span>,
       },
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
@@ -262,7 +364,7 @@ export function DevicesTable({
           ...FULL_WIDTH_TABLE_PAPER_SX,
           width: '100%',
           maxWidth: '100%',
-          height: isInitialLoading || isEmptyResult ? '100%' : 'auto',
+          height: '100%',
           minHeight: isInitialLoading || isEmptyResult ? '100%' : 0,
           minWidth: 0,
           overflow: table.getState().isFullScreen
@@ -281,6 +383,9 @@ export function DevicesTable({
       };
     },
     muiTableContainerProps: {
+      ref: scroll.containerRef,
+      onScroll: scroll.onScroll,
+      id: 'devices-table-scroll',
       sx: getPageScrollTableContainerSx({
         loading: showTableOverlay,
         height: '100%',
@@ -299,12 +404,22 @@ export function DevicesTable({
         },
       },
     },
-    muiTableBodyCellProps: {
+    muiTableBodyRowProps: ({ row }) =>
+      row.id.startsWith(DEVICES_LOADING_ROW_ID_PREFIX)
+        ? { id: row.original.id, 'aria-hidden': true, className: 'pointer-events-none' }
+        : {},
+    muiTableBodyCellProps: ({ row }) => ({
       sx: {
         ...CUSTOM_STYLES.muiTableBodyCellProps.sx,
         verticalAlign: 'top',
       },
-    },
+      ...(row.id.startsWith(DEVICES_LOADING_ROW_ID_PREFIX)
+        ? {
+            tabIndex: -1,
+            children: <Skeleton animation="wave" variant="rounded" height={24} width="80%" />,
+          }
+        : {}),
+    }),
     muiTableBodyProps: {
       sx: {
         ...CUSTOM_STYLES.muiTableBodyProps.sx,
@@ -321,9 +436,9 @@ export function DevicesTable({
       showProgressBars: false,
       globalFilter: tableStateContext.globalFilter,
       sorting: tableStateContext.sorting,
-      columnOrder: tableStateContext.columnOrder ?? columnOrder,
+      columnOrder: effectiveColumnOrder,
       columnSizing: tableStateContext.columnSizing ?? {},
-      columnVisibility: tableStateContext.columnVisibility ?? {},
+      columnVisibility: effectiveColumnVisibility,
     },
   });
 
@@ -346,8 +461,12 @@ export function DevicesTable({
         refreshing={refreshing}
         loadingMore={loadingMore}
         hasMore={hasMore}
-        total={total}
+        startOffset={startOffset}
+        scrollResetKey={scrollResetKey}
+        autoLoadBlocked={autoLoadBlocked}
         canEdit={canEdit}
+        canRate={canRate}
+        onRate={onRate}
         mutatingDeviceId={mutatingDeviceId}
         hasFilters={hasFilters}
         onEdit={onEdit}
@@ -357,74 +476,14 @@ export function DevicesTable({
     );
 
   return (
-    <Box
-      sx={{
-        position: 'relative',
-        flex: 1,
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid',
-        borderColor: 'var(--bs-border-color)',
-        backgroundColor: 'var(--bs-body-bg)',
-        overflow: 'hidden',
-      }}
-    >
-      <SectionLoadingOverlay
-        open={showTableOverlay}
-        ariaLabel={isInitialLoading ? 'Завантаження пристроїв' : 'Оновлення пристроїв'}
-        showSpinner={!isInitialLoading}
-      />
-      <Box
-        sx={{
-          position: 'relative',
-          minHeight: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <MaterialReactTable table={table} />
-        {showLoadMore ? (
-          <Box
-            sx={{
-              borderTop: '1px solid',
-              borderColor: 'var(--bs-border-color)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 2,
-              p: '10px',
-            }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              Показано {rows.length} з {total}
-            </Typography>
-            <PowerButton
-              variant="outlined"
-              onClick={() => void onLoadMore()}
-              disabled={loadingMore || loading || refreshing}
-              startIcon={loadingMore ? <CircularProgress size={16} color="inherit" /> : null}
-            >
-              {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
-            </PowerButton>
-          </Box>
-        ) : rows.length > 0 ? (
-          <Box
-            sx={{
-              borderTop: '1px solid',
-              borderColor: 'var(--bs-border-color)',
-              display: 'flex',
-              justifyContent: 'center',
-              p: '10px',
-            }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              Показано {rows.length} з {total}
-            </Typography>
-          </Box>
-        ) : null}
-      </Box>
-    </Box>
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden border border-echo-border bg-echo-surface">
+      <SectionLoadingOverlay open={showTableOverlay} ariaLabel="Оновлення пристроїв" showSpinner />
+      <MaterialReactTable table={table} />
+      {loadingMore ? (
+        <span role="status" className="sr-only">
+          Завантаження наступних пристроїв
+        </span>
+      ) : null}
+    </div>
   );
 }

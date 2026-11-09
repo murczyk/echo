@@ -71,6 +71,24 @@ async fn issue_3913_government_cooldown_is_shared_across_engine_rows_and_respect
     }
 }
 
+#[tokio::test]
+async fn direct_openai_engine_is_refused_before_any_request() {
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let mut engine = metrics_test_engine("https://api.openai.com/v1");
+    engine.token = Some("stored-token".to_string());
+    let error = client
+        .send_agent_request_inner(
+            &engine,
+            json!({}),
+            Duration::from_secs(1),
+            false,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("OpenAI"), "{error:#}");
+}
+
 fn settings_request(secret: Option<&str>) -> SaveAiGovUaSettingsReq {
     SaveAiGovUaSettingsReq {
         enabled: true,
@@ -416,4 +434,263 @@ async fn issue_3913_government_cooldowns_are_model_scoped_and_survive_cancelled_
     waiting.abort();
     cooldown.wait().await;
     assert_eq!(started.elapsed(), Duration::from_secs(60));
+}
+
+const AI_PROVIDER_REQUESTS: &str = "echo.ai_provider.requests.count";
+const AI_PROVIDER_RESPONSE_START: &str =
+    "echo.ai_provider.response_start.duration";
+
+fn recording_client() -> (
+    AiEngineClient,
+    crate::telemetry::Metrics,
+    crate::telemetry::metrics::MetricsRecorder,
+) {
+    let config = crate::config::read_config(crate::types::Mode::Test).unwrap();
+    let (metrics, recorder) = crate::telemetry::Metrics::recording(&config);
+    let client = AiEngineClient::new(DatabaseConnection::default(), None)
+        .unwrap()
+        .with_metrics(Some(metrics.clone()), "echo-test");
+    (client, metrics, recorder)
+}
+
+fn metrics_test_engine(url: &str) -> ai_engine::Model {
+    ai_engine::Model {
+        id: uuid::Uuid::new_v4(),
+        name: "Metrics test".to_string(),
+        url: url.to_string(),
+        token: None,
+        model_name: "metrics-model".to_string(),
+        created_at: chrono::Utc::now().naive_utc(),
+        updated_at: chrono::Utc::now().naive_utc(),
+        enabled: true,
+        callsign_enabled: false,
+        ocr_enabled: false,
+        ocr_request_profile: "openai_vision".to_string(),
+    }
+}
+
+fn response_start_samples(
+    recorder: &crate::telemetry::metrics::MetricsRecorder,
+    outcome: &str,
+) -> Option<u64> {
+    recorder
+        .find_with_attributes(
+            AI_PROVIDER_RESPONSE_START,
+            &[("outcome", outcome)],
+        )
+        .map(|record| match record.value {
+            crate::telemetry::metrics::RecordedMetricValue::Histogram {
+                count,
+                ..
+            } => count,
+            value => panic!("unexpected response start value {value:?}"),
+        })
+}
+
+async fn status_server(
+    status_line: &'static str,
+) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_http_body(&mut stream).await;
+        let response = format!(
+            "HTTP/1.1 {status_line}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+    });
+    (url, task)
+}
+
+async fn rate_limit_government_model(
+    client: &AiEngineClient,
+    engine: &ai_engine::Model,
+) {
+    client
+        .government_cooldown(&engine.model_name)
+        .await
+        .observe(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            &reqwest::header::HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn issue_4029_records_provider_outcomes_by_status() {
+    for (status_line, outcome) in [
+        ("200 OK", "ok"),
+        ("400 Bad Request", "client_error"),
+        ("429 Too Many Requests", "rate_limited"),
+        ("500 Internal Server Error", "server_error"),
+    ] {
+        let (client, metrics, recorder) = recording_client();
+        let (url, task) = status_server(status_line).await;
+        client
+            .send(
+                &metrics_test_engine(&url),
+                json!({"stream": true}),
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+        task.await.unwrap();
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.counter_value(
+                AI_PROVIDER_REQUESTS,
+                &[
+                    ("provider", "internal"),
+                    ("model_name", "metrics-model"),
+                    ("process", "echo-test"),
+                    ("streaming", "true"),
+                    ("outcome", outcome),
+                ],
+            ),
+            Some(1),
+            "{status_line}"
+        );
+        assert_eq!(response_start_samples(&recorder, outcome), Some(1));
+    }
+}
+
+#[tokio::test]
+async fn issue_4029_records_connect_failures() {
+    let (client, metrics, recorder) = recording_client();
+    client
+        .send(
+            &metrics_test_engine("http://127.0.0.1:1/v1"),
+            json!({}),
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap_err();
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder.counter_value(
+            AI_PROVIDER_REQUESTS,
+            &[("streaming", "false"), ("outcome", "connect_error")],
+        ),
+        Some(1)
+    );
+    assert_eq!(response_start_samples(&recorder, "connect_error"), Some(1));
+}
+
+// A hung provider is cancelled by an outer timeout that drops the future. Those
+// calls must stay in the latency data, not vanish from it.
+#[tokio::test]
+async fn issue_4029_outer_timeout_still_records_the_hung_call() {
+    let (client, metrics, recorder) = recording_client();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let _connection = listener.accept().await.unwrap();
+        std::future::pending::<()>().await;
+    });
+    let hung = tokio::time::timeout(
+        Duration::from_millis(100),
+        client.send(
+            &metrics_test_engine(&url),
+            json!({}),
+            Duration::from_secs(30),
+        ),
+    )
+    .await;
+    assert!(hung.is_err());
+    server.abort();
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder
+            .counter_value(AI_PROVIDER_REQUESTS, &[("outcome", "cancelled")]),
+        Some(1)
+    );
+    assert_eq!(response_start_samples(&recorder, "cancelled"), Some(1));
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_4029_cooldown_wait_is_not_provider_time() {
+    let (client, metrics, recorder) = recording_client();
+    let engine = metrics_test_engine(AI_GOV_UA_API_BASE);
+    rate_limit_government_model(&client, &engine).await;
+
+    client
+        .send(&engine, json!({}), Duration::from_secs(10))
+        .await
+        .unwrap_err();
+    let dropped = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.send(&engine, json!({}), Duration::from_secs(45)),
+    )
+    .await;
+    assert!(dropped.is_err());
+
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder.counter_value(
+            AI_PROVIDER_REQUESTS,
+            &[("provider", "gov_ua"), ("outcome", "cooldown_expired")],
+        ),
+        Some(2)
+    );
+    assert_eq!(response_start_samples(&recorder, "cooldown_expired"), None);
+}
+
+// Disabled gateway settings fail after the cooldown ends, so the call never
+// left Echo.
+#[tokio::test(start_paused = true)]
+async fn issue_4029_local_failure_has_no_provider_time() {
+    let (client, metrics, recorder) = recording_client();
+    let client = client.preview(ai_gov_ua_settings::Model {
+        id: 1,
+        enabled: Some(false),
+        tenant_id: None,
+        client_id: None,
+        scope: None,
+        client_secret_encrypted: None,
+        updated_at: chrono::Utc::now().naive_utc(),
+    });
+    let engine = metrics_test_engine(AI_GOV_UA_API_BASE);
+    rate_limit_government_model(&client, &engine).await;
+
+    client
+        .send(&engine, json!({}), Duration::from_secs(120))
+        .await
+        .unwrap_err();
+
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder
+            .counter_value(AI_PROVIDER_REQUESTS, &[("outcome", "local_error")]),
+        Some(1)
+    );
+    assert_eq!(response_start_samples(&recorder, "local_error"), None);
+}
+
+// A token that can't be sent as a header fails while building the request.
+#[tokio::test]
+async fn issue_4029_request_builder_failure_has_no_provider_time() {
+    let (client, metrics, recorder) = recording_client();
+    let engine = ai_engine::Model {
+        token: Some("bad\ntoken".to_string()),
+        ..metrics_test_engine("http://127.0.0.1:1/v1")
+    };
+
+    client
+        .send(&engine, json!({}), Duration::from_secs(5))
+        .await
+        .unwrap_err();
+
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder
+            .counter_value(AI_PROVIDER_REQUESTS, &[("outcome", "local_error")]),
+        Some(1)
+    );
+    assert_eq!(response_start_samples(&recorder, "local_error"), None);
 }

@@ -44,6 +44,11 @@ pub(crate) async fn submit_generic_inbox_message(
     logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
+    if item.device_name_id.is_some() {
+        crate::devices::access::require_message_devices(&env.dbx, login)
+            .await
+            .c(h!())?;
+    }
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = datasource::Entity::find()
         .filter(datasource::Column::ApiLoginId.eq(*login))
@@ -72,7 +77,11 @@ pub(crate) async fn submit_generic_inbox_item(
     logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
-    super::validate_generic_submit_item(&item)?;
+    super::validate_generic_submit_item(&item).c(h!())?;
+    let sender_login =
+        crate::api_senders::resolve_login(txn, *login, item.sender_id)
+            .await
+            .c(h!())?;
     let groups = super::ensure_submit_groups(
         txn,
         datasource,
@@ -84,7 +93,21 @@ pub(crate) async fn submit_generic_inbox_item(
     let item = parse_missing_submit_unit(env, txn, &groups, item)
         .await
         .c(h!())?;
-    submit_inbox_item_with_groups(
+    let keys = groups
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let destination_groups = crate::entities::signal_group::Entity::find()
+        .filter(crate::entities::signal_group::Column::MasterKey.is_in(keys))
+        .all(txn)
+        .await
+        .c(h!())?;
+    for group in destination_groups {
+        crate::messenger::group::requirements::validate(&group, &item)
+            .c(h!())?;
+    }
+    let device_name_id = item.device_name_id;
+    let submitted = submit_inbox_item_with_groups(
         env.as_ref(),
         txn,
         Some(datasource.id),
@@ -95,6 +118,27 @@ pub(crate) async fn submit_generic_inbox_item(
         false,
     )
     .await
+    .c(h!())?;
+    if let Some(device_name_id) = device_name_id {
+        crate::entities::sigint_inbox_item::ActiveModel {
+            id: Set(submitted.inbox_id),
+            device_name_id: Set(Some(device_name_id)),
+            ..Default::default()
+        }
+        .update(txn)
+        .await
+        .c(h!())?;
+    }
+    if let Some(sender_login) = sender_login {
+        crate::api_senders::attribute_message(
+            txn,
+            submitted.signal_message_id,
+            sender_login,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(submitted)
 }
 
 async fn parse_missing_submit_unit(
@@ -191,6 +235,7 @@ pub(crate) async fn submit_inbox_item_with_groups_location_mode(
         keep_timestamp_missing,
         location_mode,
         None,
+        None,
     )
     .await
 }
@@ -223,6 +268,7 @@ pub(crate) async fn submit_inbox_item_with_groups_location_mode_context(
         keep_timestamp_missing,
         location_mode,
         signal_message_uuid,
+        None,
     )
     .await
 }
@@ -239,6 +285,7 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
     allow_empty_content: bool,
     keep_timestamp_missing: bool,
     location_mode: super::InboxLocationSubmitMode,
+    source_group_master_key: Option<&str>,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
         &env.config,
@@ -254,6 +301,7 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
         keep_timestamp_missing,
         location_mode,
         None,
+        source_group_master_key,
     )
     .await
 }
@@ -272,7 +320,16 @@ async fn submit_inbox_item_with_groups_inner(
     keep_timestamp_missing: bool,
     location_mode: super::InboxLocationSubmitMode,
     signal_message_uuid: Option<uuid::Uuid>,
+    source_group_master_key: Option<&str>,
 ) -> Result<SubmittedInboxItem, AppError> {
+    if let Some(device_name_id) = item.device_name_id {
+        crate::sigint::direct_submit::query::validate_device_name_id(
+            txn,
+            device_name_id,
+        )
+        .await
+        .c(h!())?;
+    }
     let mut prepared = prepare_inbox_submit_item(
         txn,
         groups,
@@ -303,6 +360,7 @@ async fn submit_inbox_item_with_groups_inner(
             prepared.timestamp,
             prepared.operator_tags,
             groups,
+            source_group_master_key,
         )
         .await
         .c(h!())?,

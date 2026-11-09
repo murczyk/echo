@@ -104,7 +104,9 @@ test('@regression #3780 legacy saved filters reconcile omitted and explicit fuzz
   await page.route('**/api/rer/analysis/saved-filters', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify(savedReq ? [{ id: 3780, name: 'Старий пошук', req: savedReq }] : []),
+      body: JSON.stringify(
+        savedReq ? [{ id: 3780, name: 'Старий пошук', req: savedReq, unit_filter: null }] : [],
+      ),
     });
   });
   await page.goto('/rer-analysis');
@@ -160,4 +162,9 @@ test('@regression #3780 Neo search modes and help remain reachable on a phone', 
   await expect(
     page.getByRole('link', { name: 'Докладніше на сторінці документації' }),
   ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Очистити й закрити пошук', exact: true }).click();
+  await expect(search).toHaveCount(0);
+  await page.getByRole('button', { name: 'Відкрити пошук', exact: true }).click();
+  await expect(search).toHaveValue('');
 });

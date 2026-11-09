@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Page } from '@playwright/test';
 import type { DeviceAudioAsrSettingsRsp } from '../../src/Bindings';
 import {
@@ -15,7 +16,7 @@ const checkbox = (page: Page) =>
   page.getByRole('menuitemcheckbox', { name: /Автотранскрибація аудіо/ });
 async function openSettings(page: Page, deviceId: string) {
   await page.goto(`/devices/${deviceId}`);
-  await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+  await openDeviceSection(page, 'Аудіо');
   await page.getByRole('button', { name: 'Налаштування списку аудіо', exact: true }).click();
   await expect(checkbox(page)).toBeVisible();
   await expect(checkbox(page)).not.toContainText('Завантаження');

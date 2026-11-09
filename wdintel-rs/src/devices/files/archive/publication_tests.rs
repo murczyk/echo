@@ -364,7 +364,8 @@ async fn cleanup_s3_denial_retains_debt_and_allows_next_archive_3830() {
         let scratch = tempfile::tempdir().unwrap();
         let result =
             super::cleanup::sweep(&db, &server.config, scratch.path()).await;
-        assert_eq!(result.is_err(), delayed);
+        // S3 failures are per-row warnings; an exhausted budget ends the pass.
+        assert!(result.is_ok());
 
         assert_eq!(server.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         let row = db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
@@ -374,4 +375,124 @@ async fn cleanup_s3_denial_retains_debt_and_allows_next_archive_3830() {
         let (attempt, _) = repository::claim(&db).await.unwrap().unwrap();
         assert_eq!(attempt.archive_id, next);
     }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn directory_dates_use_descendant_dates_from_the_selected_archive_revision_3930(
+) {
+    use crate::devices::files::query::dates;
+    use crate::file_registry::entities::file_entry;
+    let (db, device, file) = fixture().await;
+    let mut directory_id = None;
+    for (revision, day) in [(1, 10), (2, 20)] {
+        let attempt = running(&db, device, file, revision).await;
+        let mut outputs = outputs(
+            &attempt,
+            &["nested/", "nested/deep/", "nested/deep/a.txt", "empty/"],
+        );
+        let modified = chrono::NaiveDate::from_ymd_opt(2026, 7, day)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        for output in &mut outputs {
+            output.member.modified_at = Some(modified);
+            if let Some(bytes) = &mut output.bytes {
+                bytes.size = revision as u64 * 7;
+                output.member.size = bytes.size;
+                output.member.compressed_size = bytes.size;
+            }
+        }
+        repository::admit(
+            &db,
+            &attempt,
+            &Manifest {
+                members: outputs
+                    .iter()
+                    .map(|output| output.member.clone())
+                    .collect(),
+                records: outputs.len() as u64,
+                metadata_bytes: 0,
+            },
+        )
+        .await
+        .unwrap();
+        publication::publish(&db, &attempt, &outputs).await.unwrap();
+        let mut folders = file_entry::Entity::find()
+            .filter(file_entry::Column::ArchiveFileId.eq(file))
+            .filter(
+                file_entry::Column::Kind
+                    .eq(crate::devices::files::DomainFileEntryKind::Directory),
+            )
+            .all(&db)
+            .await
+            .unwrap();
+        dates::hydrate(&db, &mut folders).await.unwrap();
+        let nested = folders
+            .iter()
+            .find(|folder| folder.name == "nested")
+            .unwrap();
+        if let Some(id) = directory_id {
+            assert_eq!(nested.id, id);
+        }
+        directory_id = Some(nested.id);
+        assert_eq!(nested.file_metadata_modified_at, Some(modified));
+        assert!(nested.file_metadata_created_at.is_none());
+        let empty = folders
+            .iter()
+            .find(|folder| folder.name == "empty")
+            .unwrap();
+        assert!(empty.file_metadata_created_at.is_none());
+        assert!(empty.file_metadata_modified_at.is_none());
+        let mut entries = folders
+            .into_iter()
+            .map(|entry| {
+                crate::devices::files::bl::mapping::map_tree_entry(
+                    crate::devices::files::query::model::map_tree_model(entry)
+                        .unwrap(),
+                    vec![],
+                    vec![],
+                )
+            })
+            .collect::<Vec<_>>();
+        crate::devices::files::query::sizes::hydrate(&db, &mut entries)
+            .await
+            .unwrap();
+        for entry in entries {
+            assert_eq!(
+                entry.size_bytes,
+                Some(if entry.name == "empty" {
+                    0
+                } else {
+                    revision * 7
+                })
+            );
+        }
+    }
+    let mut historical = file_entry::Entity::find_by_id(directory_id.unwrap())
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    historical.revision = Some(1);
+    dates::hydrate(&db, std::slice::from_mut(&mut historical))
+        .await
+        .unwrap();
+    let mut entries = vec![crate::devices::files::bl::mapping::map_tree_entry(
+        crate::devices::files::query::model::map_tree_model(historical.clone())
+            .unwrap(),
+        vec![],
+        vec![],
+    )];
+    crate::devices::files::query::sizes::hydrate(&db, &mut entries)
+        .await
+        .unwrap();
+    assert_eq!(entries[0].size_bytes, Some(7));
+    assert_eq!(
+        historical.file_metadata_modified_at.unwrap(),
+        chrono::NaiveDate::from_ymd_opt(2026, 7, 10)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+    );
 }

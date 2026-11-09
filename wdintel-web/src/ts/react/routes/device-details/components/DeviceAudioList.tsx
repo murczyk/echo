@@ -4,6 +4,7 @@ import { CircularProgress, ListItemButton, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
 import { PowerButton } from '../../../components/PowerButton';
 import type { DeviceAudioState } from '../use-device-audio';
+import { deviceSidebarRowClassName } from './DeviceSidebar';
 
 export function DeviceAudioList({
   audio,
@@ -13,7 +14,7 @@ export function DeviceAudioList({
   showRecordingStart: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-echo-sm" data-testid="device-audio-list">
+    <div className="flex min-w-0 flex-col gap-echo-xs" data-testid="device-audio-list">
       {audio.loading ? (
         <div role="status">
           <CircularProgress size={24} aria-label="Завантаження аудіо" />
@@ -43,7 +44,7 @@ export function DeviceAudioList({
           data-audio-id={row.id}
           selected={audio.selectedAudioId === row.id}
           aria-pressed={audio.selectedAudioId === row.id}
-          className="w-full! min-w-0! gap-echo-sm rounded-echo-sm! px-echo-sm! py-echo-sm! max-echo-lg:min-h-echo-control-lg"
+          className={`${deviceSidebarRowClassName} w-full! min-w-0! gap-echo-sm! rounded-echo-sm! px-echo-sm! py-echo-sm! max-echo-lg:min-h-echo-control-lg!`}
           onClick={() => audio.selectAudio(row.id)}
         >
           <Tooltip title={row.processed ? 'Оброблене' : 'Необроблене'}>
@@ -59,7 +60,7 @@ export function DeviceAudioList({
               )}
             </span>
           </Tooltip>
-          <span className="min-w-0 break-words text-left text-echo-sm leading-normal [overflow-wrap:anywhere]">
+          <span className="min-w-0 break-words text-left leading-normal [overflow-wrap:anywhere]">
             {showRecordingStart ? (
               <time className="whitespace-nowrap tabular-nums" dateTime={row.recordingStartedAt}>
                 {dayjs(row.recordingStartedAt).format('DD.MM.YY HH:mm:ss')}

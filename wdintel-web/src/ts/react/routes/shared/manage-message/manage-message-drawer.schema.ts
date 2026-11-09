@@ -68,6 +68,7 @@ export function makeMessageSchema(
   groupOptional = false,
   reportTextRequired = false,
   radioFeaturesAllowed = true,
+  creationSettings?: { unitRequired: boolean; deviceRequired: boolean },
 ) {
   return z
     .object({
@@ -75,7 +76,10 @@ export function makeMessageSchema(
       signalGroupMasterKey: groupOptional
         ? z.string().optional().default('')
         : z.string().trim().min(1, 'Оберіть групу'),
-      deviceName: z.string().optional(),
+      deviceName:
+        !isEditMode && creationSettings?.deviceRequired
+          ? z.string().trim().min(1, 'Вкажіть назву пристрою')
+          : z.string().optional(),
       freq: z
         .string()
         .optional()
@@ -104,7 +108,10 @@ export function makeMessageSchema(
         : z.string().optional(),
       comment: z.string().optional(),
       post: z.string().optional(),
-      unit: z.string().optional(),
+      unit:
+        !isEditMode && creationSettings?.unitRequired
+          ? z.string().refine((unit) => unit.trim().length > 0, 'Оберіть підрозділ')
+          : z.string().optional(),
       unitSelection: z
         .object({
           name: z.string(),

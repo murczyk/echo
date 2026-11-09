@@ -74,6 +74,18 @@ pub enum DeviceArchivedFilter {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceListSortBy {
+    AorsAsc,
+    AorsDesc,
+    UnitAsc,
+    UnitDesc,
+    CreatedByAsc,
+    CreatedByDesc,
+    LastContentAtAsc,
+    LastContentAtDesc,
+    ContentBytesAsc,
+    ContentBytesDesc,
+    RatingAsc,
+    RatingDesc,
     DisplayTitleAsc,
     DisplayTitleDesc,
     #[serde(rename = "created_at_asc")]
@@ -101,10 +113,48 @@ pub struct ListDevicesReq {
     pub archived_filter: Option<DeviceArchivedFilter>,
     pub aor_ids: Option<Vec<i64>>,
     pub unit_ids: Option<Vec<i64>>,
+    pub created_by: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
     #[serde(default)]
     pub sort_by: Vec<DeviceListSortBy>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceCreatorFilterOption {
+    pub login: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceFilterOptions {
+    pub aors: Vec<AorSummary>,
+    pub creators: Vec<DeviceCreatorFilterOption>,
+    pub tags: Vec<String>,
+    pub custom_field_keys: Vec<String>,
 }
 
 #[derive(
@@ -138,7 +188,11 @@ pub struct DeviceStatusCounts {
 #[serde(deny_unknown_fields)]
 pub struct DeviceListItem {
     pub id: String,
+    pub rating: i32,
+    pub tags: Vec<String>,
     pub name: Option<String>,
+    pub description: Option<String>,
+    pub custom_fields: BTreeMap<String, String>,
     pub aors: Vec<AorSummary>,
     pub unit: Option<UnitSummary>,
     pub created_by: String,
@@ -148,6 +202,26 @@ pub struct DeviceListItem {
     pub archived_at: Option<String>,
     /// `None` when the file registry is not configured.
     pub stats: Option<DeviceStats>,
+    pub audio_days: Option<Vec<DeviceAudioDayStat>>,
+    pub activity_split_files_audio: bool,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioDayStat {
+    pub day: String,
+    pub content_count: u64,
+    pub content_bytes: u64,
 }
 
 #[derive(
@@ -183,6 +257,9 @@ pub struct ListDevicesRsp {
 #[serde(deny_unknown_fields)]
 pub struct DeviceDetails {
     pub id: String,
+    pub rating: i32,
+    pub tags: Vec<String>,
+    pub description: Option<String>,
     pub name: Option<String>,
     pub aors: Vec<AorSummary>,
     pub unit: Option<UnitSummary>,
@@ -281,6 +358,12 @@ pub struct CreateDeviceReq {
 pub struct UpdateDeviceReq {
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
+    #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
+    pub rating: RequiredPatch<i32>,
+    #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
+    pub tags: RequiredPatch<Vec<String>>,
+    #[serde(default, skip_serializing_if = "NullablePatch::is_missing")]
+    pub description: NullablePatch<String>,
     #[serde(default, skip_serializing_if = "NullablePatch::is_missing")]
     pub external_url: NullablePatch<String>,
     #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
@@ -317,6 +400,9 @@ mod domain {
     #[derive(Debug, PartialEq, Eq)]
     pub(in crate::devices) struct UpdateDeviceCommand {
         pub(in crate::devices) device_id: Uuid,
+        pub(in crate::devices) rating: DevicePatchField<i32>,
+        pub(in crate::devices) tags: DevicePatchField<Vec<String>>,
+        pub(in crate::devices) description: DevicePatchField<Option<String>>,
         pub(in crate::devices) external_url: DevicePatchField<Option<String>>,
         pub(in crate::devices) custom_fields:
             DevicePatchField<BTreeMap<String, Option<String>>>,
@@ -329,14 +415,15 @@ mod domain {
     impl UpdateDeviceCommand {
         pub(in crate::devices) fn field_groups(&self) -> DeviceFieldGroups {
             DeviceFieldGroups {
-                source_data: matches!(
-                    &self.external_url,
-                    DevicePatchField::Value(_)
-                ) || matches!(
-                    &self.custom_fields,
-                    DevicePatchField::Value(_)
-                ),
+                source_data: matches!(&self.rating, DevicePatchField::Value(_))
+                    || matches!(&self.description, DevicePatchField::Value(_))
+                    || matches!(&self.external_url, DevicePatchField::Value(_))
+                    || matches!(
+                        &self.custom_fields,
+                        DevicePatchField::Value(_)
+                    ),
                 analytical_data: self.audio_forwarding.is_some()
+                    || matches!(&self.tags, DevicePatchField::Value(_))
                     || matches!(&self.name, DevicePatchField::Value(_))
                     || matches!(&self.aor_ids, DevicePatchField::Value(_))
                     || matches!(&self.unit_id, DevicePatchField::Value(_)),
@@ -345,6 +432,9 @@ mod domain {
 
         pub(in crate::devices) fn is_structurally_empty(&self) -> bool {
             self.audio_forwarding.is_none()
+                && matches!(&self.rating, DevicePatchField::Missing)
+                && matches!(&self.tags, DevicePatchField::Missing)
+                && matches!(&self.description, DevicePatchField::Missing)
                 && matches!(&self.external_url, DevicePatchField::Missing)
                 && matches!(&self.name, DevicePatchField::Missing)
                 && matches!(&self.aor_ids, DevicePatchField::Missing)
@@ -366,6 +456,18 @@ mod domain {
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub(in crate::devices) enum DeviceListSort {
+        AorsAsc,
+        AorsDesc,
+        UnitAsc,
+        UnitDesc,
+        CreatedByAsc,
+        CreatedByDesc,
+        LastContentAtAsc,
+        LastContentAtDesc,
+        ContentBytesAsc,
+        ContentBytesDesc,
+        RatingAsc,
+        RatingDesc,
         DisplayTitleAsc,
         DisplayTitleDesc,
         CreatedAtAsc,
@@ -380,6 +482,8 @@ mod domain {
         pub(in crate::devices) archived_scope: DeviceArchivedScope,
         pub(in crate::devices) aor_ids: Vec<i64>,
         pub(in crate::devices) unit_ids: Vec<i64>,
+        pub(in crate::devices) created_by: Vec<String>,
+        pub(in crate::devices) tags: Vec<String>,
         pub(in crate::devices) limit: Option<u64>,
         pub(in crate::devices) offset: Option<u64>,
         pub(in crate::devices) sort_by: Vec<DeviceListSort>,
@@ -397,6 +501,7 @@ mod domain {
         pub(in crate::devices) total: u64,
         pub(in crate::devices) has_more: bool,
         pub(in crate::devices) status_counts: DeviceStatusCounts,
+        pub(in crate::devices) activity_split_files_audio: bool,
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -420,6 +525,9 @@ mod domain {
     #[derive(Debug, PartialEq, Eq)]
     pub(in crate::devices) struct DeviceCurrentState {
         pub(in crate::devices) id: Uuid,
+        pub(in crate::devices) rating: i32,
+        pub(in crate::devices) tags: Vec<String>,
+        pub(in crate::devices) description: Option<String>,
         pub(in crate::devices) name: Option<String>,
         pub(in crate::devices) aors: Vec<DeviceAorReference>,
         pub(in crate::devices) unit: Option<DeviceUnitReference>,

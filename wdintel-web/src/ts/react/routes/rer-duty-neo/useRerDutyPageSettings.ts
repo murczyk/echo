@@ -10,6 +10,7 @@ import {
   USER_SETTINGS_UPDATED_EVENT,
   fetchUserSettings,
   type MessageTextPreviewLineLimit,
+  type MessageCardQuickAction,
 } from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import { canUseMessageDevices } from '../../utils/roles';
@@ -25,11 +26,15 @@ export type RerDutyPageSettings = {
   hideNetworks: boolean;
   networkVisibilityReady: boolean;
   dutyExcludeMenuEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   collapseMediaPreviews: boolean;
   largeMediaPreviews: boolean;
   largeMessageCardText: boolean;
+  messageCardQuickAction: MessageCardQuickAction;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  minimalReportWindowEnabled: boolean;
+  importantOnlyMyOrganism: boolean;
 };
 
 export type DeviceAccess =
@@ -55,14 +60,19 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [hideBotTags, setHideBotTags] = useState(false);
   const [hideNetworks, setHideNetworks] = useState(false);
   const [dutyExcludeMenuEnabled, setDutyExcludeMenuEnabled] = useState(false);
+  const [dutySelectedGroupsEnabled, setDutySelectedGroupsEnabled] = useState(false);
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
   const [largeMediaPreviews, setLargeMediaPreviews] = useState(false);
   const [largeMessageCardText, setLargeMessageCardText] = useState(false);
+  const [messageCardQuickAction, setMessageCardQuickAction] =
+    useState<MessageCardQuickAction>('createReport');
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
+  const [minimalReportWindowEnabled, setMinimalReportWindowEnabled] = useState(false);
+  const [importantOnlyMyOrganism, setImportantOnlyMyOrganism] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,8 +87,11 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         );
         setLargeMediaPreviews(prefs.largeMediaPreviews ?? false);
         setLargeMessageCardText(prefs.largeMessageCardText ?? false);
+        setMessageCardQuickAction(prefs.messageCardQuickAction ?? 'createReport');
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
+        setMinimalReportWindowEnabled(prefs.minimalReportWindowEnabled ?? false);
+        setImportantOnlyMyOrganism(prefs.importantOnlyMyOrganism ?? false);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
@@ -86,8 +99,11 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(true);
         setLargeMediaPreviews(false);
         setLargeMessageCardText(false);
+        setMessageCardQuickAction('createReport');
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
+        setMinimalReportWindowEnabled(false);
+        setImportantOnlyMyOrganism(false);
       }
     };
     loadLayout();
@@ -105,8 +121,11 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           dutyCollapseMediaPreviews?: boolean;
           largeMediaPreviews?: boolean;
           largeMessageCardText?: boolean;
+          messageCardQuickAction?: MessageCardQuickAction;
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
+          minimalReportWindowEnabled?: boolean;
+          importantOnlyMyOrganism?: boolean;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -121,6 +140,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       if (typeof detail?.largeMediaPreviews === 'boolean') {
         setLargeMediaPreviews(detail.largeMediaPreviews);
       }
+      if (detail?.messageCardQuickAction != null) {
+        setMessageCardQuickAction(detail.messageCardQuickAction);
+      }
       if (typeof detail?.largeMessageCardText === 'boolean') {
         setLargeMessageCardText(detail.largeMessageCardText);
       }
@@ -133,6 +155,12 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         detail?.messageTextPreviewLines === null
       ) {
         setMessageTextPreviewLines(detail.messageTextPreviewLines);
+      }
+      if (typeof detail?.minimalReportWindowEnabled === 'boolean') {
+        setMinimalReportWindowEnabled(detail.minimalReportWindowEnabled);
+      }
+      if (typeof detail?.importantOnlyMyOrganism === 'boolean') {
+        setImportantOnlyMyOrganism(detail.importantOnlyMyOrganism);
       }
     };
 
@@ -153,6 +181,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setHideBotTags(settings.disableBotTags ?? false);
         setHideNetworks(settings.hideNetworks ?? false);
         setDutyExcludeMenuEnabled(settings.dutyExcludeMenuEnabled ?? true);
+        setDutySelectedGroupsEnabled(settings.dutySelectedGroupsEnabled ?? true);
         setDevicesSettingsStatus('success');
       })
       .catch((error) => {
@@ -161,6 +190,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setAudioTranscriptionEnabled(false);
         setHideBotTags(false);
         setHideNetworks(false);
+        setDutySelectedGroupsEnabled(true);
         setDevicesSettingsStatus('error');
         setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
@@ -213,10 +243,14 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     hideNetworks,
     networkVisibilityReady: devicesSettingsStatus === 'success',
     dutyExcludeMenuEnabled,
+    dutySelectedGroupsEnabled,
     collapseMediaPreviews,
     largeMediaPreviews,
     largeMessageCardText,
+    messageCardQuickAction,
     mediaSummaryEnabled,
     messageTextPreviewLines,
+    minimalReportWindowEnabled,
+    importantOnlyMyOrganism,
   };
 }

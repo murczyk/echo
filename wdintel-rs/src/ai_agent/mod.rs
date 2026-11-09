@@ -5,6 +5,7 @@ pub mod auth;
 mod chat_monitoring;
 mod citations;
 pub(crate) mod dispatcher;
+pub mod documents;
 pub mod evaluation;
 mod events;
 pub(crate) mod file_citations;
@@ -17,6 +18,7 @@ pub(crate) mod reasoning;
 mod review;
 mod route_registry;
 pub mod types;
+pub mod uploads;
 pub mod work_memory;
 pub mod worker;
 
@@ -369,12 +371,26 @@ pub async fn create_request(
                 .to_string(),
         });
     }
+    let document_task = reasoning::enabled(&env.config)
+        && documents::is_document_request(
+            &txn,
+            human.id,
+            existing_conversation
+                .as_ref()
+                .map(|conversation| conversation.id),
+            &prompt,
+            &req.upload_ids,
+            req.document_target.is_some(),
+        )
+        .await
+        .c(h!())?;
     let execution_policy = reasoning::enabled(&env.config)
         .then(|| {
             reasoning::resolve(
                 &env.config,
                 &ai_engine,
                 req.reasoning_preset.unwrap_or_default(),
+                document_task,
             )
         })
         .map(serde_json::to_value)
@@ -425,8 +441,28 @@ pub async fn create_request(
         settings.mattermost_chat_enabled,
     )
     .await?;
+    uploads::bind_to_request(
+        &txn,
+        human.id,
+        conversation.id,
+        request_id,
+        &req.upload_ids,
+    )
+    .await
+    .c(h!())?;
     if let Some(target) = &req.map_edit {
         maps::workspace::store_request_target(
+            &txn,
+            human.id,
+            conversation.id,
+            request_id,
+            target,
+        )
+        .await
+        .c(h!())?;
+    }
+    if let Some(target) = &req.document_target {
+        documents::store_request_target(
             &txn,
             human.id,
             conversation.id,
@@ -560,6 +596,15 @@ pub async fn request_events(
     let human = access::current_human_login(&env.dbx, &user, false).await?;
     let request_id = access::parse_uuid(&request_id)?;
     owned_request(&env.dbx, human.id, request_id).await?;
+    Ok(request_event_stream(&env, request_id, &query, &http_req))
+}
+
+fn request_event_stream(
+    env: &Env,
+    request_id: Uuid,
+    query: &SseQuery,
+    http_req: &HttpRequest,
+) -> HttpResponse {
     let last_event_id = http_req
         .headers()
         .get("Last-Event-ID")
@@ -580,10 +625,8 @@ pub async fn request_events(
             Err(err) => Some((Err(err), None)),
         }
     });
-    Ok(
-        event_stream_response(StatusCode::OK, "no-cache, no-transform")
-            .streaming(stream),
-    )
+    event_stream_response(StatusCode::OK, "no-cache, no-transform")
+        .streaming(stream)
 }
 
 fn event_stream_response(
@@ -786,6 +829,11 @@ pub(super) async fn conversation_detail(
     let mut file_citations =
         file_citations::load(dbx, &request_ids).await.c(h!())?;
     let mut maps = maps::load_summaries(dbx, &request_ids).await.c(h!())?;
+    let mut documents =
+        documents::load_artifacts(dbx, &request_ids).await.c(h!())?;
+    let mut attachments = uploads::context::by_request(dbx, &request_ids)
+        .await
+        .c(h!())?;
     let mut messages = Vec::new();
     for request in requests {
         let policy = reasoning::request_policy(&request).c(h!())?;
@@ -813,10 +861,22 @@ pub(super) async fn conversation_detail(
             citations: Vec::new(),
             file_citations: Vec::new(),
             maps: Vec::new(),
+            documents: Vec::new(),
+            attachments: attachments
+                .remove(&request.id)
+                .unwrap_or_default()
+                .iter()
+                .map(uploads::store_item)
+                .collect(),
             created_at: request.queued_at.and_utc().timestamp_millis(),
         });
         let request_maps = maps.remove(&request.id).unwrap_or_default();
-        if request.response.is_some() || !request_maps.is_empty() {
+        let request_documents =
+            documents.remove(&request.id).unwrap_or_default();
+        if request.response.is_some()
+            || !request_maps.is_empty()
+            || !request_documents.is_empty()
+        {
             let response = request.response.unwrap_or_default();
             messages.push(AiAgentMessageItem {
                 reasoning_preset: policy.as_ref().map(|policy| policy.preset),
@@ -837,6 +897,8 @@ pub(super) async fn conversation_detail(
                     .unwrap_or_default(),
                 content: response,
                 maps: request_maps,
+                documents: request_documents,
+                attachments: Vec::new(),
                 created_at: request
                     .completed_at
                     .unwrap_or(request.updated_at)

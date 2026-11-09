@@ -60,6 +60,9 @@ pub struct InboxMessage {
     pub important: bool,
     #[serde(default)]
     pub ai_important: bool,
+    /// Viewer-relative: someone in the viewer's organism marked this message.
+    #[serde(default)]
+    pub important_by_my_organism: bool,
     pub bookmarked: bool,
     pub timestamp: Option<i64>,
     #[serde(default)]
@@ -79,6 +82,8 @@ pub struct InboxMessage {
     pub post: Option<String>,
     pub post_id: Option<i64>,
     pub unit: Option<String>,
+    #[serde(default)]
+    pub unit_display: Option<String>,
     #[serde(default)]
     pub unit_ids: Vec<i64>,
     /// overwritten upon save (ignored upon submission)
@@ -202,6 +207,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             checked: payload.checked,
             important: payload.important,
             ai_important: false,
+            important_by_my_organism: false,
             bookmarked: payload.bookmarked,
             timestamp: payload.timestamp,
             created_at: None,
@@ -216,6 +222,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             post: payload.post,
             post_id: payload.post_id,
             unit: payload.unit,
+            unit_display: None,
             unit_ids: vec![],
             callsign_tokens: None,
             signal_tokens: None,
@@ -541,6 +548,8 @@ pub struct InboxMessagesReq {
     pub without_network: Option<bool>,
     #[serde(default)]
     pub only_with_network: Option<bool>,
+    #[serde(default)]
+    pub only_for_rer_report: Option<bool>,
     pub metadata_cc: Option<Vec<String>>,
     pub metadata_sender: Option<Vec<String>>,
     pub metadata_receiver: Option<Vec<String>>,
@@ -686,9 +695,13 @@ pub struct InboxSubmitItem {
     #[serde(default)]
     pub sender: Option<String>,
     #[serde(default)]
+    pub sender_id: Option<uuid::Uuid>,
+    #[serde(default)]
     pub post: Option<String>,
     #[serde(default)]
     pub unit: Option<String>,
+    #[serde(default)]
+    pub device_name_id: Option<i64>,
     #[serde(default)]
     pub locations: Vec<String>,
     #[serde(default)]
@@ -718,8 +731,10 @@ impl Default for InboxSubmitItem {
             tags: None,
             timestamp: "1970-01-01T00:00:00Z".to_string(),
             sender: None,
+            sender_id: None,
             post: None,
             unit: None,
+            device_name_id: None,
             locations: vec![],
             group_names: None,
             network: None,
@@ -998,6 +1013,8 @@ pub struct AnalysisStatsReq {
     pub without_network: Option<bool>,
     #[serde(default)]
     pub only_with_network: Option<bool>,
+    #[serde(default)]
+    pub only_for_rer_report: Option<bool>,
     pub metadata_cc: Option<Vec<String>>,
     pub metadata_sender: Option<Vec<String>>,
     pub metadata_receiver: Option<Vec<String>>,
@@ -1294,6 +1311,16 @@ pub struct MetadataStatsRsp {
 )]
 pub struct UnitStatsRsp {
     pub units: Vec<AnalysisStatsUnit>,
+    pub options: Vec<UnitStatsOption>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitStatsOption {
+    pub value: String,
+    pub label: String,
+    pub count: i64,
 }
 
 #[derive(
@@ -1521,6 +1548,23 @@ pub struct SummaryTableFreq {
     pub rows: Vec<SummaryTableFreqRow>,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+pub struct AiFrequencySummaryRow {
+    pub freq: String,
+    pub count: i64,
+    pub callsigns: Vec<String>,
+    pub units: Vec<String>,
+    pub locations: Vec<String>,
+}
+
+/// `rows` holds the most active frequencies; `total_rows` counts every match.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct AiFrequencySummary {
+    pub rows: Vec<AiFrequencySummaryRow>,
+    pub total_rows: usize,
+    pub row_values_truncated: bool,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
@@ -1593,10 +1637,20 @@ pub struct EditFreqUnitNameReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct AnalysisUnitFilter {
+    pub values: Vec<String>,
+    pub include_children: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct SavedFilter {
     pub id: i64,
     pub name: String,
     pub req: AnalysisStatsReq,
+    #[serde(default)]
+    pub unit_filter: Option<AnalysisUnitFilter>,
 }
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -1613,6 +1667,8 @@ pub struct SavedFilterDuty {
 pub struct SavedFilterUpsertReq {
     pub name: String,
     pub req: AnalysisStatsReq,
+    #[serde(default)]
+    pub unit_filter: Option<AnalysisUnitFilter>,
 }
 
 #[derive(
@@ -1656,6 +1712,8 @@ pub struct RerDutyQueryStateWf {
     pub units_selected: Option<Vec<String>>,
     #[serde(default)]
     pub units_denied: Option<Vec<String>>,
+    #[serde(default)]
+    pub units_include_children: Option<bool>,
     #[serde(default)]
     pub selected_unit_ids: Option<Vec<i64>>,
     #[serde(default)]
@@ -1962,6 +2020,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
             "ai_important".to_string(),
+            "important_by_my_organism".to_string(),
             "callsign_tokens".to_string(),
             "created_at".to_string(),
             "created_at_order".to_string(),
@@ -1980,6 +2039,7 @@ mod tests {
             "parent_messages".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),
+            "unit_display".to_string(),
             "unit_ids".to_string(),
         ]);
 

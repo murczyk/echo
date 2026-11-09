@@ -15,6 +15,65 @@ pub const KPI_MAX_CLOCK_SKEW_SECONDS: i64 = 300;
 pub const KPI_QUERY_TIMEOUT_MS: u64 = 10_000;
 pub const KPI_ACTIVITY_MAX_ROWS: usize = 100_000;
 pub const KPI_HISTORY_MAX_GROUPS: usize = 10_000;
+pub const KPI_METRICS_COLLECTION_INTERVAL_SECS: u64 = 3_600;
+pub const KPI_METRICS_MAX_AGE_SECS: u64 = 7_200;
+pub const KPI_METRICS_SOURCE_TIMEOUT_SECS: u64 = 300;
+pub const KPI_METRICS_REQUEST_CHUNK_HOURS: i64 = 6;
+pub const KPI_METRICS_MAX_GROUPS: usize = 500;
+pub const KPI_METRICS_PERIODS: [(i64, &str); 3] =
+    [(7, "7d"), (30, "30d"), (90, "90d")];
+pub const KPI_METRICS_RECENT_DAYS: i64 = 30;
+pub const KPI_METRICS_STALE_DAYS: i64 = 90;
+pub const KPI_METRICS_AVAILABLE: &str = "echo.kpi.source.available";
+pub const KPI_METRICS_UPDATED_AT: &str = "echo.kpi.source.updated_at";
+pub const KPI_METRICS_ACCOUNTS: &str = "echo.kpi.accounts.count";
+pub const KPI_METRICS_ACCOUNT_STATUS: &str = "echo.kpi.accounts.status.count";
+pub const KPI_METRICS_ACCOUNT_RECENCY: &str = "echo.kpi.accounts.recency.count";
+pub const KPI_METRICS_ACCOUNT_ROLE: &str = "echo.kpi.accounts.role.count";
+pub const KPI_METRICS_ACCOUNT_ORGANISM: &str =
+    "echo.kpi.accounts.organism.count";
+pub const KPI_METRICS_ACCOUNT_DIRECTION: &str =
+    "echo.kpi.accounts.direction.count";
+pub const KPI_METRICS_REPORTS: &str = "echo.kpi.reports.count";
+pub const KPI_METRICS_REPORT_KIND: &str = "echo.kpi.reports.kind.count";
+pub const KPI_METRICS_REPORT_DURATION: &str =
+    "echo.kpi.reports.generation.duration";
+pub const KPI_METRICS_REPORT_SAMPLES: &str =
+    "echo.kpi.reports.generation.samples";
+pub const KPI_METRICS_NOTIFICATIONS: &str = "echo.kpi.notifications.count";
+pub const KPI_METRICS_NOTIFICATION_DURATION: &str =
+    "echo.kpi.notifications.transport.duration";
+pub const KPI_METRICS_NOTIFICATION_SAMPLES: &str =
+    "echo.kpi.notifications.transport.samples";
+pub const KPI_METRICS_ACTIVITY: &str = "echo.kpi.activity.accounts.count";
+pub const KPI_METRICS_ACTIVITY_UNMAPPED: &str =
+    "echo.kpi.activity.unmapped_groups.count";
+pub const KPI_METRICS_ACTIVITY_QUEUE: &str = "echo.kpi.activity.queue.count";
+pub const KPI_METRICS_API_RESPONSES: &str = "echo.kpi.api.responses.count";
+pub const KPI_METRICS_API_ERROR_RATIO: &str = "echo.kpi.api.errors.ratio";
+
+pub const KPI_METRICS_INSTRUMENTS: &[(&str, &str, &str)] = &[
+    (KPI_METRICS_AVAILABLE, "1", "Whether the KPI source snapshot is available and fresh"),
+    (KPI_METRICS_UPDATED_AT, "s", "Unix timestamp of the KPI source snapshot"),
+    (KPI_METRICS_ACCOUNTS, "1", "Current accounts in the unfiltered admin KPI scope"),
+    (KPI_METRICS_ACCOUNT_STATUS, "1", "Current accounts by availability status"),
+    (KPI_METRICS_ACCOUNT_RECENCY, "1", "Current accounts by activity timestamp age and availability"),
+    (KPI_METRICS_ACCOUNT_ROLE, "1", "Current accounts by distinct system role"),
+    (KPI_METRICS_ACCOUNT_ORGANISM, "1", "Current accounts by organism ID"),
+    (KPI_METRICS_ACCOUNT_DIRECTION, "1", "Current accounts by direction ID"),
+    (KPI_METRICS_REPORTS, "1", "Retained report requests by current status in the creation window"),
+    (KPI_METRICS_REPORT_KIND, "1", "Retained successful reports by kind in the creation window"),
+    (KPI_METRICS_REPORT_DURATION, "s", "Successful worker report generation duration percentile"),
+    (KPI_METRICS_REPORT_SAMPLES, "1", "Included and excluded report generation duration samples"),
+    (KPI_METRICS_NOTIFICATIONS, "1", "Retained messenger transport jobs by current status"),
+    (KPI_METRICS_NOTIFICATION_DURATION, "s", "Messenger transport duration percentile"),
+    (KPI_METRICS_NOTIFICATION_SAMPLES, "1", "Included and excluded messenger transport duration samples"),
+    (KPI_METRICS_ACTIVITY, "1", "Distinct observed account IDs including keep-alives and technical accounts"),
+    (KPI_METRICS_ACTIVITY_UNMAPPED, "1", "Observation groups without a stable account UUID"),
+    (KPI_METRICS_ACTIVITY_QUEUE, "1", "Activity queue events in this API process since startup"),
+    (KPI_METRICS_API_RESPONSES, "1", "Recorded API responses deduplicated by request ID within each status"),
+    (KPI_METRICS_API_ERROR_RATIO, "1", "Recorded API responses with HTTP 4xx or 5xx divided by all responses"),
+];
 
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
 pub const MESSAGE_REPLY_MAX_ANCHORS: usize = 512;
@@ -87,7 +146,8 @@ pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
-pub const AI_WORKER_PRIMARY_TIMEOUT_SECS: u64 = 20;
+/// Tests with a stalled primary engine wait out this whole deadline.
+pub const AI_WORKER_PRIMARY_TIMEOUT_SECS: u64 = if cfg!(test) { 5 } else { 20 };
 pub const AI_WORKER_MONITORING_CACHE_TTL_SECS: u64 = 60;
 pub const AI_WORKER_FALLBACK_TIMEOUT_SECS: u64 = 20;
 pub const AI_WORKER_MAX_ERROR_CHARS: usize = 2_000;
@@ -95,6 +155,9 @@ pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
 pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
 pub const AI_ENGINE_GOVERNMENT_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
+pub const AI_PROVIDER_METRICS_OPENAI_HOST: &str = "api.openai.com";
+pub const AI_ENGINE_BLOCKED_OPENAI_DOMAIN: &str = "openai.com";
+pub const AI_PROVIDER_METRICS_PROCESS_ONEOFF: &str = "echo-oneoff";
 pub const AI_GOV_UA_AUTH_BASE: &str = "https://login.microsoftonline.com";
 pub const AI_GOV_UA_API_BASE: &str = "https://inference.ai.mod.gov.ua/v1";
 pub const AI_GOV_UA_SETTINGS_ID: i16 = 1;
@@ -392,11 +455,62 @@ pub const AI_AGENT_MAP_PLATFORM_TYPE: &str = "CAPDOC";
 pub const AI_AGENT_MAP_FALLBACK_SIDC: &str = "10061000001211020000";
 pub const AI_AGENT_MAP_UKRAINE_LAT_BOUNDS: (f64, f64) = (43.0, 53.0);
 pub const AI_AGENT_MAP_UKRAINE_LON_BOUNDS: (f64, f64) = (22.0, 42.0);
+pub const AI_AGENT_MAP_SYSTEM_GRID: &str = "msk2000";
+pub const AI_AGENT_MAP_SYSTEM_WGS84: &str = "wgs84";
+pub const AI_AGENT_MAP_SYSTEM_MGRS: &str = "mgrs";
+pub const AI_AGENT_MAP_MGRS_MAX_DIGITS: usize = 10;
+pub const AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS: usize = 120;
+pub const AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_MAX_CHARS: usize = 300;
+pub const AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_INPUT_MAX_CHARS: usize = 1_000;
+pub const AI_AGENT_DIAGNOSTIC_TOKEN_CHARS: usize = 43;
 pub const AI_AGENT_REQUEST_MAX_RUNNER_EVENTS: usize = 10_000;
 pub const AI_AGENT_REQUEST_MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
 pub const AI_AGENT_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_RESPONSE_MAX_CHARS: usize = 500_000;
 pub const AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES: usize = 500 * 1024;
+pub const AI_AGENT_UPLOAD_MAX_BYTES: usize = 50 * 1024 * 1024;
+pub const AI_AGENT_UPLOAD_MAX_PER_REQUEST: usize = 10;
+pub const AI_AGENT_UPLOAD_MAX_PER_CONVERSATION: u64 = 50;
+pub const AI_AGENT_UPLOAD_MAX_DRAFTS: u64 = 20;
+pub const AI_AGENT_UPLOAD_DRAFT_TTL_HOURS: i32 = 24;
+pub const AI_AGENT_UPLOAD_IMAGE_MAX_EDGE_PX: u32 = 1568;
+pub const AI_AGENT_UPLOAD_IMAGE_MAX_BYTES: usize = 350 * 1024;
+pub const AI_AGENT_UPLOAD_IMAGE_MAX_PIXELS: u64 = 40_000_000;
+pub const AI_AGENT_UPLOAD_IMAGE_JPEG_QUALITIES: &[u8] = &[85, 75, 60, 45];
+pub const AI_AGENT_UPLOAD_MAX_IMAGES_PER_TURN: usize = 4;
+pub const AI_AGENT_UPLOAD_INLINE_TEXT_MAX_CHARS: usize = 20_000;
+pub const AI_AGENT_UPLOAD_CONTEXT_MAX_ITEMS: u64 = 50;
+pub const AI_AGENT_UPLOAD_LOCAL_CHUNK_MAX_CHARS: usize = 8_000;
+pub const AI_AGENT_UPLOAD_WARNINGS_MAX: usize = 20;
+pub const AI_AGENT_UPLOAD_WARNING_MAX_CHARS: usize = 500;
+pub const AI_AGENT_UPLOAD_WORKER_SLEEP_SECS: u64 = 3;
+pub const AI_AGENT_UPLOAD_CLEANUP_INTERVAL_SECS: u64 = 300;
+pub const AI_AGENT_UPLOAD_CLEANUP_BATCH: i64 = 50;
+pub const AI_AGENT_UPLOAD_LEASE_SECS: i32 = 300;
+pub const AI_AGENT_UPLOAD_POLL_SECS: i32 = 5;
+pub const AI_AGENT_UPLOAD_RETRY_SECS: i32 = 30;
+pub const AI_AGENT_UPLOAD_MAX_ATTEMPTS: i32 = 5;
+pub const AI_AGENT_UPLOAD_EXTRACTION_MAX_MINUTES: i32 = 60;
+pub const AI_AGENT_UPLOAD_EXTRACTION_WAIT_SECS: u64 = 180;
+pub const AI_AGENT_UPLOAD_EXTRACTION_WAIT_RUNTIME_DIVISOR: u64 = 4;
+pub const AI_AGENT_UPLOAD_EXTRACTION_WAIT_POLL_MS: u64 = 2_000;
+pub const AI_AGENT_UPLOAD_READ_LIMIT: i32 = 4;
+pub const AI_AGENT_UPLOAD_READ_MAX_LIMIT: i32 = 8;
+pub const AI_AGENT_UPLOAD_SEARCH_LIMIT: i64 = 10;
+pub const AI_AGENT_UPLOAD_SEARCH_MAX_LIMIT: i64 = 25;
+pub const AI_AGENT_UPLOAD_QUERY_MAX_CHARS: usize = 500;
+pub const AI_AGENT_DOCUMENT_MAX_BYTES: usize = 32 * 1024 * 1024;
+pub const AI_AGENT_DOCUMENT_MAX_PER_CONVERSATION: u64 = 20;
+pub const AI_AGENT_DOCUMENT_MAX_REVISIONS: i32 = 100;
+pub const AI_AGENT_DOCUMENT_MAX_SAVES_PER_REQUEST: u64 = 16;
+pub const AI_AGENT_DOCUMENT_ARCHIVE_MAX_ENTRIES: usize = 1_000;
+pub const AI_AGENT_DOCUMENT_ARCHIVE_MAX_EXPANDED_BYTES: u64 = 256 * 1024 * 1024;
+pub const AI_AGENT_DOCUMENT_CONTENT_TYPES_MAX_BYTES: u64 = 1024 * 1024;
+pub const AI_AGENT_DOCUMENT_TITLE_MAX_CHARS: usize = 200;
+pub const AI_AGENT_DOCUMENT_FILE_STEM_MAX_CHARS: usize = 120;
+pub const AI_AGENT_DOCUMENT_SUMMARY_MAX_CHARS: usize = 500;
+pub const AI_AGENT_DOCUMENT_HISTORY_MAX_ITEMS: usize = 20;
+pub const AI_AGENT_DOCUMENT_CLEANUP_BATCH: i64 = 20;
 pub const AI_AGENT_ERROR_MAX_CHARS: usize = 12 * 1024;
 pub const AI_AGENT_PROGRESS_MAX_CHARS: usize = 500;
 pub const AI_AGENT_ACTIVITY_TITLE_MAX_CHARS: usize = 72;
@@ -493,28 +607,46 @@ pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
     AI_AGENT_DISPATCHER_TIMEOUT_SEC;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
-pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
+pub const AI_AGENT_OPENAI_MODEL_PREFIXES: &[&str] = &["gpt-", "o1", "o3", "o4"];
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_1_SOL: &str = "gpt-6.1-sol";
 pub const AI_AGENT_FAST_RUNTIME_SEC: u64 = 120;
 pub const AI_AGENT_BALANCED_RUNTIME_SEC: u64 = 300;
-pub const AI_AGENT_DEEP_RUNTIME_SEC: u64 = 1800;
+/// Balanced on non-OpenAI engines: 300 s stopped real research with work left.
+pub const AI_AGENT_BOUNDED_BALANCED_RUNTIME_SEC: u64 = 600;
+pub const AI_AGENT_DEEP_RUNTIME_SEC: u64 = 4 * 60 * 60;
+/// Fast and Balanced requests that build a document (template report).
+pub const AI_AGENT_DOCUMENT_RUNTIME_SEC: u64 = 1800;
 pub const AI_AGENT_FAST_FINALIZATION_SEC: u64 = 30;
 pub const AI_AGENT_BALANCED_FINALIZATION_SEC: u64 = 60;
-pub const AI_AGENT_DEEP_FINALIZATION_SEC: u64 = 120;
+pub const AI_AGENT_DOCUMENT_FINALIZATION_SEC: u64 = 120;
+pub const AI_AGENT_DEEP_FINALIZATION_SEC: u64 = 300;
+/// Counters of a 4-hour Deep request (the others use the base limits).
+pub const AI_AGENT_DEEP_API_CALL_LIMIT: i64 = 1024;
+pub const AI_AGENT_DEEP_PROVIDER_CAPABILITY_CALL_LIMIT: i64 = 2048;
+pub const AI_AGENT_DEEP_REQUEST_MAX_RUNNER_EVENTS: usize = 50_000;
+pub const AI_AGENT_DEEP_REQUEST_MAX_EVENT_BYTES: usize = 64 * 1024 * 1024;
+/// One maximum-effort model turn may think for a long time.
+pub const AI_AGENT_DEEP_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 30 * 60;
 pub const AI_AGENT_DEADLINE_CLEANUP_SEC: u64 = 5;
 pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
-pub const AI_AGENT_GLM_FLASH_FINALIZATION_MULTIPLIER: u64 = 2;
+pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.29.4";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.08.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
+/// The AI runner refuses a response over 2 MiB, and an unscoped month of
+/// frequency activity exceeds that without these bounds.
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS: usize = 128;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES: usize = 32;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS: usize = 200;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
 pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;
@@ -642,6 +774,10 @@ pub const API_INTEGRATION_IGGY_UNIT_REFRESH_BATCH_SIZE: u64 = 500;
 pub const API_INTEGRATION_IGGY_UNIT_REFRESH_ACTIVE_SLEEP_MS: u64 = 100;
 pub const API_INTEGRATION_IGGY_UNIT_REFRESH_IDLE_SLEEP_SECS: u64 = 5;
 pub const API_INTEGRATION_IGGY_UNIT_REFRESH_RETRY_SECS: i64 = 30;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_BATCH_SIZE: u64 = 500;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_ACTIVE_SLEEP_MS: u64 = 100;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_IDLE_SLEEP_SECS: u64 = 5;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_RETRY_SECS: i64 = 30;
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
 pub const ALPINE_CONVERSION_TIMEOUT_SECONDS: u64 = 60 * 60;
 pub const ALPINE_CONVERSION_MAX_TIMEOUT_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -658,11 +794,13 @@ pub const COORDS_PER_FREQ_PER_LOC_LIMIT: usize = 10;
 pub const SERVER_MONITORING_CACHE_TTL_SEC: u64 = 5;
 pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
+pub const SESSION_CLI_HOST_SUFFIX: &str = "-staging";
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";
 pub const ROLE_NO2FA: &str = "No2FA";
 pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
+
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
 pub const MESSENGER_INGEST_SYNC_MAX_ITEMS: usize = 200;
@@ -740,8 +878,12 @@ pub const REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS: u64 = 60 * 60;
 pub const REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS: u64 = 3 * 60 * 60;
 pub const REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS: u64 = 60;
 pub const REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC: u64 = 3;
-pub const REPORT_HISTORY_ETALONKA_WORKER_COUNT: usize = 2;
-pub const REPORT_HISTORY_GLOBAL_WORKER_COUNT: usize = 4;
+pub const REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT: i32 = 2;
+pub const REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT: i32 = 4;
+pub const REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT: i32 = 1;
+pub const REPORT_HISTORY_WORKER_SERVICE: &str =
+    "wdintel-rs-report-worker.service";
+pub const REPORT_HISTORY_CONCURRENCY_LOCK: &str = "report_history_concurrency";
 pub const ETALONKA_GEO_SCREENSHOT_CONCURRENCY: usize = 2;
 pub const XLSX_WORKSHEET_ROW_MAX: usize = 1_048_576;
 pub const RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM: usize = 1;
@@ -853,6 +995,10 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_TREE_REDIS_KEY: &str = "sigint:unit-tree:v1";
+pub const SIGINT_UNIT_TREE_DIRTY_REDIS_KEY: &str = "sigint:unit-tree:v1:dirty";
+pub const SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY: i64 = 3527_1104;
+pub const SIGINT_UNIT_TREE_RECONCILE_SECS: u64 = 300;
 pub const SIGINT_UNIT_SEARCH_DEFAULT_LIMIT: u64 = 50;
 pub const SIGINT_UNIT_SEARCH_INACTIVE_LIMIT: u64 = 250;
 pub const SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE: i32 = 3535;
@@ -892,6 +1038,8 @@ pub const LON_MAX: f64 = 50.0;
 pub const MAX_FREQS_GROUPS_BY_DAY: u64 = 10;
 pub const CORRELATED_FREQS_MAX_DAYS: i64 = 30;
 pub const ANALYSIS_AOR_FILTER_ENABLED_DEFAULT: bool = true;
+pub const IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT: bool = true;
+pub const DUTY_SELECTED_GROUPS_ENABLED_DEFAULT: bool = true;
 pub const ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT: u64 = 200;
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT: u64 = 50;
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_MAX: u64 = 100;
@@ -903,6 +1051,7 @@ pub const ANALYSIS_STATS_UNDEFINED_UNIT_ID: i64 = 0;
 pub const ANALYSIS_STATS_UNDEFINED_UNIT_NAME: &str = "Не визначено";
 pub const CLEANUP_NETWORKS_WORKER_SLEEP_DURATION: u64 = 600;
 pub const CLEANUP_NETWORKS_CUTOFF_TIME_DAYS: i64 = 10;
+pub const CLEANUP_NETWORKS_FREQUENCY_GRACE_PERIOD_HOURS: i64 = 2;
 pub const CLEANUP_NETWORKS_OTHER_BATCH_SIZE: i64 = 100;
 pub const CLEANUP_NETWORKS_OTHER_MAX_PER_PASS: usize = 500;
 pub const CLEANUP_NETWORKS_SYNTHETIC_REPAIR_BATCH_SIZE: i64 = 100;
@@ -1126,6 +1275,8 @@ pub const MESSENGER_MEDIA_PREVIEW_VIDEO_THREADS: &str = "2";
 pub const MESSENGER_MEDIA_PREVIEW_SOURCE_TIMEOUT_MICROS: &str = "10000000";
 
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
+pub const THUMBNAIL_LOCAL_FORMAT_WHITELIST: &str =
+    "image2,jpeg_pipe,png_pipe,webp_pipe,bmp_pipe,tiff_pipe,gif,apng,ico,mov,matroska,webm,avi,asf,flv,mpeg,mpegvideo,mpegts,ogg,hevc,h264";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
     ".source-budget.lock";
@@ -1208,6 +1359,7 @@ pub const NOTIFICATION_READ_BOUNDARY_TTL_MINUTES: i64 = 15;
 pub const NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT: i64 = 8;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
+pub const ANALYTICS_NETWORK_PERIOD_BOUNDS_MARGIN_DAYS: i64 = 1;
 pub const ANALYTICS_NETWORK_ACTIVITY_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
 pub const ANALYTICS_NETWORK_ACTIVITY_SOURCE_WINDOW_DAYS: i64 = 1;
 pub const ANALYTICS_NETWORK_ACTIVITY_OPERATION: &str = "network group activity";
@@ -1304,6 +1456,120 @@ pub const SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_POLL_MS: u64 = 100;
 pub const SIGNOZ_METRICS_EXPORT_INTERVAL_SECS: u64 = 60;
 pub const SIGNOZ_METRICS_SERVICE_NAME: &str = "wdintel-rs";
 pub const SIGNOZ_METRICS_SERVICE_NAMESPACE: &str = "echo";
+pub const OPERATIONAL_METRICS_INTERVAL_SECS: u64 = 60;
+pub const OPERATIONAL_METRICS_TIMEOUT_SECS: u64 = 10;
+pub const OPERATIONAL_METRICS_MAX_AGE_SECS: u64 = 180;
+pub const OPERATIONAL_METRICS_ACTIVITY_AGE: &str =
+    "echo.datasource.activity.age";
+pub const OPERATIONAL_METRICS_DATASOURCE_ACTIVE: &str =
+    "echo.datasource.active";
+pub const OPERATIONAL_METRICS_ROOT_BYTES: &str =
+    "echo.system.filesystem.available_bytes";
+pub const OPERATIONAL_METRICS_ACCOUNT_LINKED: &str =
+    "echo.messenger.account.linked";
+pub const OPERATIONAL_METRICS_ACCOUNT_ACTIVE: &str =
+    "echo.messenger.account.active";
+pub const OPERATIONAL_METRICS_ERRORS: &str =
+    "echo.messenger.restapi.errors.count";
+pub const OPERATIONAL_METRICS_REPORT_TIMEOUTS: &str =
+    "echo.report.timeouts.count";
+pub const OPERATIONAL_METRICS_AVAILABLE: &str =
+    "echo.operational.source.available";
+pub const OPERATIONAL_METRICS_UPDATED_AT: &str =
+    "echo.operational.source.updated_at";
+pub const OPERATIONAL_METRICS_QUEUE_ITEMS: &str = "echo.messenger.queue.items";
+pub const OPERATIONAL_METRICS_QUEUE_AGE: &str =
+    "echo.messenger.queue.oldest.age";
+pub const OPERATIONAL_METRICS_NLP_READY: &str = "echo.messenger.nlp.ready";
+pub const OPERATIONAL_METRICS_UNKNOWN_REPORT_KIND: &str = "unknown";
+pub const OPERATIONAL_METRICS_REPORT_KINDS: &[&str] = &[
+    "tags",
+    "interception",
+    "babak",
+    "mouse",
+    "pelengs",
+    "senders",
+    "posts",
+    "naushnom",
+    "reo",
+    "digest",
+    "posts_docx",
+    "active_networks",
+    "network_frequencies",
+    "report_125",
+    "report_1213",
+    "report_1217",
+    crate::report_history::KIND_SUMMARY_TABLE,
+    crate::report_history::KIND_KMZ,
+    crate::report_history::KIND_GEOJSON,
+    crate::report_history::KIND_ETALONKA,
+    crate::report_history::KIND_GOI,
+    crate::report_history::KIND_GOI_ASSOCIATIONS,
+    crate::report_history::KIND_RER_REPORT,
+    crate::report_history::KIND_SPOSOB,
+];
+pub const OPERATIONAL_METRICS_GAUGES: &[(&str, &str, &str, bool)] = &[
+    (
+        OPERATIONAL_METRICS_ACTIVITY_AGE,
+        "s",
+        "Datasource activity age at the observation time",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+        "1",
+        "Whether a datasource is active",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ROOT_BYTES,
+        "By",
+        "Available bytes on the root filesystem",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ACCOUNT_LINKED,
+        "1",
+        "Whether a messenger account is linked",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+        "1",
+        "Whether a messenger account has an active datasource",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_AVAILABLE,
+        "1",
+        "Whether an operational source has a fresh successful observation",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_UPDATED_AT,
+        "s",
+        "Unix time of the last successful operational observation",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_QUEUE_ITEMS,
+        "1",
+        "Number of messenger queue items",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_QUEUE_AGE,
+        "s",
+        "Age of the oldest messenger queue item",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_NLP_READY,
+        "1",
+        "Whether the local NLP dependency is ready",
+        true,
+    ),
+];
 // for xlsx import
 pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 /// Jun 1st 2024
@@ -1390,12 +1656,33 @@ pub const RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX: &str =
     "rer-duty:filters:hash:";
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
 pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
+pub const RER_REPORT_HIERARCHY_COLUMNS: [&str; 14] = [
+    "army_region",
+    "military_district",
+    "army",
+    "corps",
+    "division",
+    "brigade",
+    "regiment",
+    "battalion",
+    "company",
+    "platoon",
+    "squad",
+    "section",
+    "team_or_crew",
+    "other",
+];
+
+pub const RER_REPORT_PARENT_LEVELS: [usize; 2] = [4, 5];
+pub const RER_REPORT_HIERARCHY_WHITESPACE: &str = " \t\n\r\u{000b}\u{000c}\u{0085}\u{00a0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}";
+pub const RER_REPORT_HYDRATION_BATCH_SIZE: usize = 500;
 pub const RER_REPORT_OTHER_TAG_LABEL: &str = "інше";
 pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.7;
 pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+DELETE FROM api_sender;
 DELETE FROM ai_worker_progress;
 DELETE FROM ai_transcript_analysis_job;
 DELETE FROM ai_transcript_analysis_test_message;
@@ -1523,6 +1810,7 @@ DELETE FROM api_integration;
 UPDATE area_of_responsibility SET updated_by_login_id = NULL;
 DELETE FROM sigint_key_share_policy;
 DELETE FROM device;
+DELETE FROM ai_agent_upload;
 DELETE FROM ai_agent_map;
 DELETE FROM ai_agent_request;
 DELETE FROM ai_agent_conversation;
@@ -1642,6 +1930,7 @@ pub const SIGINT_NETWORK_ACTIVITY_EARLIEST_YEAR: i32 = 2000;
 pub const UNIT_TAG_RECALC_HISTORY_DAYS: i64 = 40;
 pub const UNIT_TAG_QUEUE_WORKER_SLEEP_SECS: u64 = 5;
 pub const UNIT_TAG_QUEUE_WORKER_BATCH_SIZE: u64 = 100;
+pub const UNIT_TAG_QUERY_PARAM_CHUNK_SIZE: usize = 20_000;
 pub const FAILED_INBOX_UNIT_WORKER_SLEEP_SECS: u64 = 10;
 pub const FAILED_INBOX_UNIT_WORKER_ERROR_SLEEP_SECS: u64 = 2;
 pub const FAILED_INBOX_UNIT_WORKER_BATCH_SIZE: u64 = 100;
@@ -1778,6 +2067,7 @@ pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS: u64 = 5_000;
 pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYTICS_COUNT_FALLBACK_QUEUE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYTICS_UNIT_FILTER_CACHE_TTL_MS: u64 = 5_000;
+pub const ANALYTICS_UNIT_FILTER_IDS_CHUNK_SIZE: usize = 10_000;
 pub const ANALYTICS_UNIT_FILTER_CACHE_MAX_ENTRIES: usize = 2_048;
 /// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
 /// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
@@ -1904,10 +2194,15 @@ pub struct Config {
     pub signoz_logs_enabled: Option<bool>,
     /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
     pub signoz_logs_endpoint: Option<String>,
-    /// Enable device metrics export to Signoz over OTLP gRPC.
+    /// Legacy: metrics export is set on the Monitoring tab of the admin
+    /// system settings. Startup imports this value there once; remove it
+    /// from config.toml afterwards.
     pub signoz_metrics_enabled: Option<bool>,
-    /// Signoz OTLP gRPC endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:4317.
+    /// Legacy, imported like `signoz_metrics_enabled`; an OTLP gRPC endpoint
+    /// such as http://signoz-echo.eagle-atria.ts.net:4317.
     pub signoz_metrics_endpoint: Option<String>,
+    /// Collect hourly admin KPI snapshots through the enabled metrics exporter.
+    pub signoz_kpi_metrics_enabled: Option<bool>,
     pub session_activity_queue_capacity: Option<usize>,
     pub session_activity_payload_max_bytes: Option<usize>,
     pub session_activity_greptime_get_timeout_ms: Option<u64>,
@@ -2589,6 +2884,22 @@ pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
 pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
 pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
 pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
+/// Delay before a job that made progress is due again.
+pub const ATTACHMENT_REQUEUE_SECS: u64 = 10;
+/// Upper bound for polling a still-working extractor job or map conversion.
+pub const ATTACHMENT_DEPENDENCY_POLL_MAX_SECS: u64 = 600;
+/// Back-off after the extractor answers 429 or 503.
+pub const ATTACHMENT_EXTRACTOR_BUSY_SECS: u64 = 60;
+/// How often waiting OCR jobs are checked for failed or missing OCR.
+pub const ATTACHMENT_OCR_WAIT_SWEEP_SECS: u64 = 300;
+/// How often jobs of deleted messages are parked and jobs of restored
+/// messages resumed.
+pub const ATTACHMENT_DELETED_JOB_SWEEP_SECS: u64 = 3600;
+/// Jobs of deleted messages are parked only after this much inactivity, so
+/// briefly staged messages are left alone.
+pub const ATTACHMENT_DELETED_JOB_MIN_IDLE_SECS: u64 = 3600;
+pub const ATTACHMENT_DELETED_JOB_SWEEP_MAX_BATCHES: usize = 20;
+pub const ATTACHMENT_QUEUE_SWEEP_BATCH: i64 = 10_000;
 pub const ATTACHMENT_LEASE_SECS: i64 = 900;
 pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
 pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;

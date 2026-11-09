@@ -29,6 +29,8 @@ pub(crate) fn routes() -> impl actix_web::dev::HttpServiceFactory {
                 crate::devices::upload_finalization::ingress::audio,
             ))
             .route(actix_web::web::post().to(receive_http)),
+        actix_web::web::resource("/api/device/audio/activity")
+            .route(actix_web::web::post().to(activity_http)),
         actix_web::web::resource("/api/device/audio/list")
             .route(actix_web::web::post().to(list_http)),
         actix_web::web::resource("/api/device/audio/detail")
@@ -69,6 +71,39 @@ async fn prepare_http(
         .await
         .c(h!())?,
     ))
+}
+
+async fn activity_http(
+    env: actix_web::web::Data<crate::types::Env>,
+    user: actix_identity::Identity,
+    request: actix_web::web::Json<types::DeviceAudioActivityReq>,
+) -> Result<HttpResponse, DeviceAudioHttpError> {
+    let actor = crate::users::login_id_from_identity(&user).c(h!())?;
+    Ok(HttpResponse::Ok().json(
+        read_activity(
+            &env.device_audio,
+            actor,
+            crate::devices::types::parse_uuid(&request.device_id),
+        )
+        .await
+        .c(h!())?,
+    ))
+}
+
+pub(crate) async fn read_activity(
+    runtime: &DeviceAudioRuntime,
+    actor: Uuid,
+    device_id: Uuid,
+) -> anyhow::Result<types::DeviceAudioActivityRsp> {
+    authorize_read(runtime, actor, device_id).await.c(h!())?;
+    let days = activity::read_full(runtime.file_database().c(h!())?, device_id)
+        .await
+        .c(h!())?;
+    authorize_read(runtime, actor, device_id).await.c(h!())?;
+    Ok(types::DeviceAudioActivityRsp {
+        uploaded_count: days.iter().map(|day| day.content_count).sum(),
+        days,
+    })
 }
 
 async fn list_http(
@@ -712,3 +747,4 @@ pub(crate) async fn shared_bytes(
     .await
     .c(h!())
 }
+pub(in crate::devices) mod activity;

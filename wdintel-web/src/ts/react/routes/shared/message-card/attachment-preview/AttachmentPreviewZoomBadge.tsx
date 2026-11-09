@@ -1,13 +1,21 @@
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { Box, ButtonBase, Tooltip } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
+import {
+  MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_HEIGHT_PX,
+  MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_BOTTOM_PX,
+} from './message-card-preview-config';
 
 export function AttachmentPreviewZoomBadge({
   zoom,
   onResetZoom,
+  alignWithCarousel = false,
+  bottom,
 }: {
   zoom: number;
   onResetZoom?: () => void;
+  alignWithCarousel?: boolean;
+  bottom?: string;
 }) {
   const [visible, setVisible] = useState(false);
   const isFirstMount = useRef(true);
@@ -87,8 +95,15 @@ export function AttachmentPreviewZoomBadge({
     <Box
       sx={{
         position: 'absolute',
-        bottom: 16,
+        bottom:
+          bottom ??
+          (alignWithCarousel
+            ? `calc(${MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_BOTTOM_PX}px + env(safe-area-inset-bottom, 0px))`
+            : 16),
         left: 16,
+        minHeight: alignWithCarousel ? MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_HEIGHT_PX : undefined,
+        display: alignWithCarousel ? 'flex' : undefined,
+        alignItems: alignWithCarousel ? 'center' : undefined,
         zIndex: 1300,
         opacity: visible ? 1 : 0,
         transition: 'opacity 400ms ease-out',

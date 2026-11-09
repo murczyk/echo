@@ -55,6 +55,21 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
     Ok(Some(listener))
 }
 
+pub(crate) fn identity_middleware() -> IdentityMiddleware {
+    IdentityMiddleware::builder()
+        .visit_deadline(Some(std::time::Duration::from_secs(
+            IDENTITY_DURATION_HOURS * 60 * 60,
+        )))
+        .build()
+}
+
+pub(crate) fn session_middleware(
+    store: RedisSessionStore,
+    secret: &str,
+) -> SessionMiddleware<RedisSessionStore> {
+    SessionMiddleware::new(store, Key::from(secret.as_bytes()))
+}
+
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     Ok(new_env_with_initialization(mode, true).await.c(h!())?)
 }
@@ -109,12 +124,35 @@ async fn new_env_with_initialization(
         .c(h!())?)
 }
 
+async fn new_metrics(
+    dbx: &sea_orm::DatabaseConnection,
+    config: &Config,
+    initialize: bool,
+) -> Option<crate::telemetry::Metrics> {
+    use crate::system_settings::signoz_metrics;
+    if initialize {
+        if let Err(error) =
+            signoz_metrics::import_legacy_config(dbx, config).await
+        {
+            warn!("Importing Signoz metrics settings failed: {error:?}");
+        }
+    }
+    let settings = signoz_metrics::effective(dbx, config).await;
+    crate::telemetry::Metrics::from_settings(config, &settings)
+}
+
+fn ai_provider_metrics_process() -> &'static str {
+    crate::pg_runtime_pool_role().map_or(
+        crate::config::AI_PROVIDER_METRICS_PROCESS_ONEOFF,
+        crate::PgRuntimePoolRole::application_name,
+    )
+}
+
 async fn new_env_from_config(
     mode: Mode,
     initialize: bool,
     config: Config,
 ) -> Result<Arc<Env>, AppError> {
-    let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await
@@ -136,6 +174,7 @@ async fn new_env_from_config(
         .await
         .c(h!())?;
     }
+    let metrics = new_metrics(&dbx, &config, initialize).await;
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -256,7 +295,8 @@ async fn new_env_from_config(
             dbx.clone(),
             config.totp_strongbox_key.clone(),
         )
-        .c(h!())?,
+        .c(h!())?
+        .with_metrics(metrics.clone(), ai_provider_metrics_process()),
     );
     let env = Env {
         ai_engine_client,
@@ -641,6 +681,14 @@ fn spawn_background_workers(
     should_spawn_goi_workers: bool,
     bg_set: &mut JoinSet<()>,
 ) {
+    if env.metrics.is_some() {
+        let metrics_env = env.clone();
+        let metrics_cancel = cancel_token.clone();
+        spawn_named_worker("operational_metrics_worker", bg_set, async move {
+            crate::telemetry::operational::run(metrics_env, metrics_cancel)
+                .await;
+        });
+    }
     let config = env.config.clone();
     let config1 = config.clone();
     let dbx4 = env.dbx.clone();
@@ -726,6 +774,10 @@ fn spawn_background_workers(
     let unit_refresh_env = env.clone();
     spawn_named_worker("iggy_unit_refresh_worker", bg_set, async move {
         crate::iggy::unit_refresh::run_nofail(unit_refresh_env).await;
+    });
+    let group_refresh_env = env.clone();
+    spawn_named_worker("iggy_group_refresh_worker", bg_set, async move {
+        crate::iggy::group_refresh::run_nofail(group_refresh_env).await;
     });
     spawn_named_worker("aor_assignments_worker", bg_set, async move {
         crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10).await;
@@ -967,6 +1019,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_agent_upload_env = env.clone();
+    let ai_agent_upload_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_upload_worker", bg_set, async move {
+        crate::ai_agent::uploads::worker::run_nofail(
+            ai_agent_upload_env,
+            ai_agent_upload_cancellation,
+        )
+        .await;
+    });
+
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(err) = echo_im::enable_signal_cli_verbose_logging(
@@ -1173,6 +1235,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(self::monitoring::monitoring)
             // .service(api_logout)
             .service(crate::server::admin::restart_echo)
+            .service(crate::server::admin::restart_report_worker)
             .service(crate::server::admin::restart_datasource)
             .service(
                 crate::stats::cache_backfill::start_group_stats_cache_backfill,
@@ -1254,6 +1317,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::get_inbox_map)
             .service(crate::rer_importer::inbox::map_settlement_messages)
             .service(crate::rer_importer::inbox::inbox_messages_count)
+            .service(crate::rer_importer::inbox::inbox_unit_stats)
             .service(crate::rer_importer::inbox::delete_message)
             .service(crate::rer_importer::inbox::comment_save)
             .service(crate::rer_importer::inbox::inbox_submit)
@@ -1304,6 +1368,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::sender_stats_count)
             .service(crate::rer_importer::analysis::group_stats_count)
             .service(crate::rer_importer::analysis::summary_table_freq)
+            .service(crate::rer_importer::analysis::ai_frequency_summary)
             .service(crate::rer_importer::analysis::summary_table_task_launch)
             .service(crate::rer_importer::analysis::correlated_freqs)
             .service(crate::rer_importer::analysis::kmz_task_launch)
@@ -1385,6 +1450,21 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::delete_conversation)
             .service(crate::ai_agent::create_request)
             .service(crate::ai_agent::cancel_request)
+            .service(crate::ai_agent::uploads::api::create_upload)
+            .service(crate::ai_agent::uploads::api::list_uploads)
+            .service(crate::ai_agent::uploads::api::delete_upload)
+            .service(crate::ai_agent::uploads::api::download_upload)
+            .service(crate::ai_agent::uploads::agent_api::agent_list)
+            .service(crate::ai_agent::uploads::agent_api::agent_read)
+            .service(crate::ai_agent::uploads::agent_api::agent_search)
+            .service(crate::ai_agent::uploads::agent_api::agent_image)
+            .service(crate::ai_agent::documents::api::list_documents)
+            .service(crate::ai_agent::documents::api::document_workspace)
+            .service(crate::ai_agent::documents::api::set_document_head)
+            .service(crate::ai_agent::documents::api::download_document)
+            .service(crate::ai_agent::documents::agent_api::agent_list)
+            .service(crate::ai_agent::documents::agent_api::agent_source)
+            .service(crate::ai_agent::documents::agent_api::agent_save)
             .service(crate::ai_agent::work_memory::append)
             .service(crate::ai_agent::work_memory::list)
             .service(crate::ai_agent::work_memory::read)
@@ -1414,6 +1494,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::admin::list_containers)
             .service(crate::ai_agent::admin::list_requests)
             .service(crate::ai_agent::admin::get_request)
+            .service(crate::ai_agent::admin::request_events)
             .service(crate::ai_agent::admin::retry_review)
             .service(crate::ai_agent::admin::get_user_agent)
             .service(crate::ai_agent::admin::start_user_agent)
@@ -1578,8 +1659,16 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::devices::detail)
             .service(crate::devices::devices::create)
             .service(crate::devices::devices::update)
+            .service(crate::devices::devices::tags)
+            .service(crate::devices::devices::filter_options)
+            .service(crate::devices::devices::archive)
+            .service(crate::devices::devices::unarchive)
             .service(crate::devices::settings::update)
             .service(crate::devices::files::roots)
+            .service(crate::devices::files::filter_options)
+            .service(crate::devices::files::markers::favorite)
+            .service(crate::devices::files::markers::viewed)
+            .service(crate::devices::files::markers::unviewed)
             .service(crate::devices::files::locate::locate)
             .service(crate::devices::files::sessions::list)
             .service(crate::devices::files::sessions::get)
@@ -1649,6 +1738,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::zone::my_admin_group_edit_reference)
             .service(crate::sigint::zone::my_admin_group_update)
             .service(crate::sigint::unit::list_units)
+            .service(crate::sigint::unit::hierarchy::unit_hierarchy)
             .service(crate::sigint::unit::combat_type::list_combat_types)
             .service(crate::sigint::unit::unit_status_counts)
             .service(crate::sigint::unit::list_units_by_id)
@@ -1838,6 +1928,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
+            .service(crate::api_senders::fetch_senders)
+            .service(crate::api_senders::list_senders)
+            .service(crate::api_senders::upsert_sender)
+            .service(crate::api_senders::delete_sender)
             .service(crate::messenger_ingest::accounts_sync)
             .service(crate::messenger_ingest::chats_sync)
             .service(crate::messenger_ingest::chat_members_sync)
@@ -1927,6 +2021,23 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    if env.metrics.is_some()
+        && config.signoz_kpi_metrics_enabled.unwrap_or(false)
+    {
+        let kpi_env = env.clone();
+        let kpi_cancel = cancel_token.clone();
+        spawn_named_worker(
+            "kpi_metrics_worker",
+            &mut background_tasks,
+            async move {
+                crate::kpi::metrics::run_nofail(kpi_env, kpi_cancel).await;
+            },
+        );
+    } else if config.signoz_kpi_metrics_enabled.unwrap_or(false) {
+        log::warn!(
+            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check the Monitoring tab in system settings"
+        );
+    }
     let deployment_maintenance = web::Data::new(
         crate::event_stream::DeploymentMaintenanceState::default(),
     );
@@ -2053,19 +2164,13 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 api_rate_limit::throttle_api_users,
             ))
-            .wrap(
-                IdentityMiddleware::builder()
-                    .visit_deadline(Some(std::time::Duration::from_secs(
-                        IDENTITY_DURATION_HOURS * 60 * 60,
-                    )))
-                    .build(),
-            )
+            .wrap(identity_middleware())
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
             ))
-            .wrap(SessionMiddleware::new(
+            .wrap(session_middleware(
                 redis_session_store.clone(),
-                Key::from(cookie_secret.as_bytes()),
+                &cookie_secret,
             ))
             .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(

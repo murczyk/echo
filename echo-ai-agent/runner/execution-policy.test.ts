@@ -5,9 +5,12 @@ import { Type } from "typebox";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
+  BUDGET_INABILITY,
   budgetFallback,
   chooseBudgetAnswer,
   synthesizeBudgetEvidence,
+  toolCallLimit,
+  validateExecutionPolicy,
   type ExecutionPolicy,
 } from "./execution-policy.ts";
 import { fileCitationHref } from "./devices.ts";
@@ -69,7 +72,7 @@ test("#3746 validates partial follow-ups against current evidence, retaining his
     "Earlier message [джерело](/rer-analysis-neo?m=source-42)";
   assert.equal(
     chooseBudgetAnswer(oldMessageAnswer, files, evidence.messages),
-    budgetFallback(files),
+    budgetFallback(),
   );
   assert.equal(
     chooseBudgetAnswer(oldMessageAnswer, evidence, evidence.messages),
@@ -77,7 +80,7 @@ test("#3746 validates partial follow-ups against current evidence, retaining his
   );
   assert.equal(
     chooseBudgetAnswer("Uncited summary", evidence, evidence.messages),
-    budgetFallback(evidence),
+    budgetFallback(),
   );
   const historical = { messageId: 7, messageIdentifier: "historical-7" };
   const mixed = `${fileAnswer}\n${oldMessageAnswer}\nEarlier [source](/rer-analysis-neo?m=7)`;
@@ -88,6 +91,27 @@ test("#3746 validates partial follow-ups against current evidence, retaining his
     ]),
     `${fileAnswer}\n${oldMessageAnswer}\nEarlier [джерело](/rer-analysis-neo?m=historical-7)`,
   );
+});
+
+test("#3998 final synthesis keeps parsed DMR metadata beside the message text", async () => {
+  let serialized = "";
+  await synthesizeBudgetEvidence(
+    {
+      engine,
+      apiKey: "fixture-capability",
+      policy,
+      systemPrompt: "Summarize evidence",
+      prompt: "144.8450 Мишаня Якудза, СС3",
+      evidence: { messages: [{ ...evidence.messages[0], dmr: { colorCodes: ["3"], callGroups: [{ id: "24538" }] } }], files: [] },
+      maxTokens: 8192,
+      signal: new AbortController().signal,
+    },
+    async (_engine, context) => {
+      serialized = JSON.stringify(context.messages);
+      return { stopReason: "stop", content: [{ type: "text", text: "done" }] } as any;
+    },
+  );
+  assert.match(serialized, /\\"dmr\\":\{\\"colorCodes\\":\[\\"3\\"\]/);
 });
 
 test("#3724 reserves finalization after the original deadline without restarting on checkpoints", (t) => {
@@ -109,7 +133,7 @@ test("#3724 reserves finalization after the original deadline without restarting
   }
 });
 
-test("#3724 returns a cited fallback when synthesis ignores cancellation", async () => {
+test("#3724 returns a short notice, never raw excerpts, when synthesis ignores cancellation", async () => {
   const cancellation = new AbortController();
   let calls = 0;
   const response = synthesizeBudgetEvidence(
@@ -131,10 +155,11 @@ test("#3724 returns a cited fallback when synthesis ignores cancellation", async
   cancellation.abort();
   assert.equal(await response, null);
   assert.equal(calls, 1);
-  const fallback = budgetFallback(evidence);
-  assert.ok(fallback.includes("Verified source text"));
-  assert.ok(fallback.includes("[джерело](/rer-analysis-neo?m=source-42)"));
-  assert.ok(fallback.includes("не завершено"));
+  const fallback = budgetFallback();
+  assert.equal(fallback, BUDGET_INABILITY);
+  assert.ok(!fallback.includes("Verified source text"));
+  assert.ok(!fallback.includes("уривки джерел"));
+  assert.ok(!fallback.includes("/rer-analysis-neo"));
 });
 
 test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds context", async () => {
@@ -190,7 +215,7 @@ test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds co
       );
       assert.equal(
         chooseBudgetAnswer("Uncited summary", oversized, evidence.messages),
-        budgetFallback(oversized),
+        budgetFallback(),
       );
     } else assert.equal(answer, null);
   }
@@ -379,4 +404,23 @@ test("#3724 bounds early context recovery by the finalization allowance", (t) =>
   } finally {
     budget.dispose();
   }
+});
+
+test("#3985 document requests in short modes and Deep runs get their own budgets", () => {
+  const balanced = { ...policy, preset: "balanced" as const, maxRuntimeSeconds: 300, finalizationSeconds: 60 };
+  const document = { ...balanced, maxRuntimeSeconds: 1800, finalizationSeconds: 240, documentTask: true };
+  // A bounded engine's document request keeps Balanced effort with the doubled 30-minute reserve.
+  assert.equal(validateExecutionPolicy(document, 1000, [1, 2])?.maxRuntimeSeconds, 1800);
+  assert.throws(() => validateExecutionPolicy({ ...document, documentTask: false }, 1000, [1, 2]));
+  assert.throws(() => validateExecutionPolicy({ ...document, preset: "deep" }, 1000, [1, 2]));
+  assert.throws(() => validateExecutionPolicy({ ...document, documentTask: "yes" }, 1000, [1, 2]));
+  const deep = { ...policy, preset: "deep" as const, maxRuntimeSeconds: 14_400, finalizationSeconds: 600 };
+  assert.equal(validateExecutionPolicy(deep, 1000, [1, 2])?.maxRuntimeSeconds, 14_400);
+  // Deep requests queued before the 4-hour budget still run on their 30-minute policy.
+  const queued = { ...deep, maxRuntimeSeconds: 1800, finalizationSeconds: 240 };
+  assert.equal(validateExecutionPolicy(queued, 1000, [1, 2])?.maxRuntimeSeconds, 1800);
+  assert.deepEqual(
+    [toolCallLimit(undefined), toolCallLimit(balanced), toolCallLimit(document), toolCallLimit(queued), toolCallLimit(deep)],
+    [128, 128, 128, 128, 1024],
+  );
 });

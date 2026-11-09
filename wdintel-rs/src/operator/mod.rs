@@ -28,17 +28,18 @@ async fn message_submit(
     env: actix_web::web::Data<Env>,
     req: Json<types::OperatorInboxMessage>,
 ) -> Result<Json<types::SubmitMessageRsp>, AppError> {
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "Api")
+    let login_id = login_id_from_identity(&user).c(h!())?;
+    has_role(&env.dbx, &login_id, crate::config::ROLE_API)
         .await
         .c(h!())?;
-    let login_id = login_id_from_identity(&user)?;
-
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = ensure_api_datasource(&login_id, &txn).await.c(h!())?;
     let mut changed_inbox_item_ids = vec![];
     let message_uid = if datasource.enabled.unwrap_or(false) {
-        let sender_id =
-            ensure_profile(&txn, req.profile.clone()).await.c(h!())?;
+        let (sender_id, sender_login_id) =
+            resolve_profile(&txn, login_id, req.profile.clone(), req.sender_id)
+                .await
+                .c(h!())?;
         let group_master_key =
             ensure_group(datasource.id, &txn, req.group.clone())
                 .await
@@ -54,7 +55,7 @@ async fn message_submit(
             inbox_message_id: None,
         };
         let signal_message_result =
-            crate::message_queue::process_signal_message_queue_item(
+            crate::message_queue::process_signal_message_queue_item_with_options(
                 message,
                 Vec::<MessageAttachmentF1>::new(),
                 &mut env.redis.clone(),
@@ -65,6 +66,11 @@ async fn message_submit(
                 &txn,
                 true,
                 &mut changed_inbox_item_ids,
+                crate::message_queue::ProcessSignalMessageQueueItemOptions {
+                    login_id: sender_login_id,
+                    skip_dedupe: sender_login_id.is_some(),
+                    ..Default::default()
+                },
             )
             .await
             .c(h!())?;
@@ -191,6 +197,34 @@ async fn ensure_api_datasource(
         let datasource = new_datasource.insert(txn).await.c(h!())?;
         Ok(datasource)
     }
+}
+
+async fn resolve_profile(
+    txn: &DatabaseTransaction,
+    api_id: uuid::Uuid,
+    profile: types::Profile,
+    sender_id: Option<uuid::Uuid>,
+) -> anyhow::Result<(String, Option<uuid::Uuid>)> {
+    let sender_login_id = if sender_id.is_some() {
+        crate::api_senders::resolve_login(txn, api_id, sender_id)
+            .await
+            .c(h!())?
+    } else {
+        crate::api_senders::find(txn, api_id, &profile.id)
+            .await
+            .c(h!())?
+            .map(|sender| sender.login_id)
+    };
+    if let Some(login_id) = sender_login_id {
+        let sender_id =
+            crate::sigint::direct_submit::query::ensure_current_user_sender(
+                txn, &login_id,
+            )
+            .await
+            .c(h!())?;
+        return Ok((sender_id, Some(login_id)));
+    }
+    Ok((ensure_profile(txn, profile).await.c(h!())?, None))
 }
 
 async fn ensure_profile(

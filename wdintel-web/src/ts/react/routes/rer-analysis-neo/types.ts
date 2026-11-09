@@ -1,3 +1,4 @@
+import type { MessageCardQuickAction } from '../../../../Bindings';
 import type {
   AnalysisCallsignFrequencyMatchesRsp,
   CallsignInfoRes,
@@ -21,6 +22,7 @@ import type {
   Unit,
   ReportHistoryRow,
 } from '../../../../Bindings';
+import type { UnitHierarchyIndex } from '../shared/unit-children-filter';
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -91,6 +93,9 @@ export type AnalysisQueryState = Omit<
   RerAnalysisQueryState,
   'dateFromStr' | 'timeFromStr' | 'dateToStr' | 'timeToStr'
 > & {
+  unitsIncludeChildren?: boolean;
+  unitHierarchy?: UnitHierarchyIndex | null;
+  unitHierarchyLoading?: boolean;
   fromDateTimeStr: string;
   toDateTimeStr: string;
   filterTagsOption: TagFilterOption;
@@ -117,6 +122,7 @@ export type AnalysisFilterOptions = {
   newFreqs: AnalysisFilterOption[];
   callsigns: AnalysisFilterOption[];
   units: AnalysisFilterOption[];
+  unitParentCount?: number;
   locations: AnalysisFilterOption[];
   posts: AnalysisFilterOption[];
   networks: AnalysisFilterOption[];
@@ -212,6 +218,8 @@ export type AnalysisPageState = {
   copiedFeedbackId: string | null;
   directMessageError: string | null;
   error: string | null;
+  errorPersistent: boolean;
+  errorOccurrence: number;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
   editTargetLoadState: ReportEditLoadState;
@@ -279,6 +287,7 @@ export type AnalysisPageState = {
   messagePageNavigationTarget: number | null;
   messageViewportPreservationKey: number;
   messageEdgeLoadRetryKey: number;
+  linkedMessageLandingKey: number;
   messageViewportPreserving: boolean;
   visibleMessagesPageIndex: number;
   newestFirst: boolean;
@@ -299,6 +308,7 @@ export type AnalysisPageState = {
   collapseMediaPreviews: boolean;
   largeMediaPreviews: boolean;
   largeMessageCardText: boolean;
+  messageCardQuickAction: MessageCardQuickAction;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;

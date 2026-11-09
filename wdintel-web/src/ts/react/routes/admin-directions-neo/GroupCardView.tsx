@@ -89,6 +89,7 @@ function buildGroupMessagesRequest(masterKey: string): InboxMessagesReq {
     selectedNetworks: null,
     withoutNetwork: null,
     onlyWithNetwork: null,
+    onlyForRerReport: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,
@@ -175,7 +176,9 @@ function GroupMessagesTable({ masterKey }: { masterKey: string }) {
         id: 'post',
         header: 'Пост / підрозділ',
         accessorFn: (row) =>
-          [row.message.post, row.message.unit].filter(Boolean).join(' / ') || NO_DATA_LABEL,
+          [row.message.post, row.message.unitDisplay ?? row.message.unit]
+            .filter(Boolean)
+            .join(' / ') || NO_DATA_LABEL,
         size: 220,
       },
     ],

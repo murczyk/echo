@@ -26,6 +26,7 @@ pub mod ai_transcript_analysis;
 mod ai_worker;
 pub(crate) mod alpine;
 pub mod api_integrations;
+pub mod api_senders;
 pub mod atak;
 pub mod attachments;
 pub mod aws;
@@ -85,6 +86,7 @@ pub mod tags;
 pub mod telemetry;
 pub mod terminal;
 pub mod tests;
+mod thumbnail;
 pub mod transcriber;
 pub mod transcription;
 pub mod ts;
@@ -1075,6 +1077,23 @@ pub struct OneoffRebuildDeviceStatsPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live oneoff-complete-spooled-device-files\n  wdintel-rs --mode=live oneoff-complete-spooled-device-files --upload-id <uuid> --apply"
+)]
+pub struct OneoffCompleteSpooledDeviceFilesPs {
+    /// Upload to recover; repeat for several. Scans the whole spool when omitted.
+    #[arg(long = "upload-id")]
+    pub upload_ids: Vec<Uuid>,
+    /// Inspect at most this many uploads.
+    #[arg(long)]
+    pub limit: Option<usize>,
+    /// Reopen expired uploads and create async finalization jobs; only reports
+    /// when omitted.
+    #[arg(long, action)]
+    pub apply: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffReprocessAudioTranscriberPs {
     #[arg(long)]
     pub source_id: Uuid,
@@ -1151,6 +1170,8 @@ pub struct OrbitReviewWorkflowPs {
 enum Cmd {
     /// Inspect harness releases and roll out selected AI namespaces.
     AiControlPanel(ai_control_panel::Options),
+    /// Print a session cookie for a staging check. Refused on other hosts.
+    IssueSession(users::cli_session::IssueSessionPs),
     /// Compile an inbox search for isolated evaluation fixtures.
     AiEvalSearchQuery,
     /// Prepare map fixtures and parse production CSV/KMZ exports without a database.
@@ -1311,6 +1332,8 @@ enum Cmd {
     ),
     /// Rebuilds device stats one device at a time (all devices by default).
     OneoffRebuildDeviceStats(OneoffRebuildDeviceStatsPs),
+    /// Create async finalization jobs for fully spooled device file uploads.
+    OneoffCompleteSpooledDeviceFiles(OneoffCompleteSpooledDeviceFilesPs),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
@@ -1823,10 +1846,19 @@ async fn async_main(
             .map_err(Into::into);
     }
 
+    if let Cmd::IssueSession(ps) = action {
+        return users::cli_session::issue_session(mode, ps)
+            .await
+            .map_err(Into::into);
+    }
+
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
-        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps
+        Cmd::AiControlPanel(_)
+        | Cmd::AiEvalSearchQuery
+        | Cmd::AiEvalMaps
+        | Cmd::IssueSession(_)
         | Cmd::OneoffReplicateHistoricalAttachments => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
@@ -1964,7 +1996,13 @@ async fn async_main(
             oneoff::oneoff_test_logging_error_macro(mode)
         }
         Cmd::ExportUnit(ps) => rer_importer::unit::export_unit(mode, &ps).await,
-        Cmd::ImportUnit(ps) => rer_importer::unit::import_unit(mode, &ps).await,
+        Cmd::ImportUnit(ps) => {
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                rer_importer::unit::import_unit(mode, &ps),
+            )
+            .await
+        }
         Cmd::OneoffMergeAllNetworks => {
             sigint::network::oneoff::oneoff_merge_all_possible_networks(mode)
                 .await
@@ -1983,11 +2021,14 @@ async fn async_main(
                 .await
         }
         Cmd::OneoffImportEtalonData(ps) => {
-            sigint::import::oneoff_import_etalon_data(
+            sigint::unit::hierarchy::invalidate_after(
                 mode,
-                ps.path,
-                ps.origin,
-                ps.autocommit.unwrap_or(false),
+                sigint::import::oneoff_import_etalon_data(
+                    mode,
+                    ps.path,
+                    ps.origin,
+                    ps.autocommit.unwrap_or(false),
+                ),
             )
             .await
         }
@@ -2177,14 +2218,42 @@ async fn async_main(
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
-        Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
+        Cmd::TuiImportOrbitUnits => {
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                orbit::run_import_tui(mode),
+            )
+            .await
+        }
         Cmd::TuiMergeOrbitUnitDuplicates(ps) => {
-            orbit::tui_merge_unit_duplicates(mode, ps.dry_run).await
+            if ps.dry_run {
+                orbit::tui_merge_unit_duplicates(mode, true).await
+            } else {
+                sigint::unit::hierarchy::invalidate_after(
+                    mode,
+                    orbit::tui_merge_unit_duplicates(mode, false),
+                )
+                .await
+            }
         }
         Cmd::TuiResolveOrbitUnparsedUnits(ps) => {
-            orbit::tui_resolve_unparsed_units(mode, ps.dry_run).await
+            if ps.dry_run {
+                orbit::tui_resolve_unparsed_units(mode, true).await
+            } else {
+                sigint::unit::hierarchy::invalidate_after(
+                    mode,
+                    orbit::tui_resolve_unparsed_units(mode, false),
+                )
+                .await
+            }
         }
-        Cmd::TuiFixOrbitUnitNames => orbit::tui_fix_unit_names(mode).await,
+        Cmd::TuiFixOrbitUnitNames => {
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                orbit::tui_fix_unit_names(mode),
+            )
+            .await
+        }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }
@@ -2192,16 +2261,32 @@ async fn async_main(
             oneoff::oneoff_kill_old_queries(mode, &ps).await
         }
         Cmd::TuiImportUnit(ps) => {
-            sigint::import::tui::run_import_unit_tui(mode, ps).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::run_import_unit_tui(mode, ps),
+            )
+            .await
         }
         Cmd::TuiImportNetwork(ps) => {
-            sigint::import::tui::run_import_network_tui(mode, ps).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::run_import_network_tui(mode, ps),
+            )
+            .await
         }
         Cmd::OneoffImportNetworkDetails(ps) => {
-            sigint::import::tui::oneoff_import_network_details(mode, ps).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::oneoff_import_network_details(mode, ps),
+            )
+            .await
         }
         Cmd::TuiMergeUnit => {
-            sigint::import::tui::run_merge_unit_tui(mode).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::run_merge_unit_tui(mode),
+            )
+            .await
         }
         Cmd::TuiMergeNetwork => {
             sigint::import::tui::run_merge_network_tui(mode).await
@@ -2256,6 +2341,10 @@ async fn async_main(
         }
         Cmd::OneoffRebuildDeviceStats(ps) => {
             devices::files::stats::rebuild_oneoff(mode, ps).await
+        }
+        Cmd::OneoffCompleteSpooledDeviceFiles(ps) => {
+            devices::files::content::recover::complete_spooled_oneoff(mode, ps)
+                .await
         }
         Cmd::OneoffRequeueAudioTranscriber(ps) => {
             transcriber::backfill::requeue_terminal(mode, ps).await

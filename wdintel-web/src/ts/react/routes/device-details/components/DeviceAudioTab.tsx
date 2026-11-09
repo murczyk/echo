@@ -35,8 +35,8 @@ export function DeviceAudioTab({
   return (
     <div
       id="device-details-audio-panel"
-      role="tabpanel"
-      aria-labelledby="device-details-audio-tab"
+      role="region"
+      aria-label="Аудіо"
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
       data-testid="device-audio-tab"
     >

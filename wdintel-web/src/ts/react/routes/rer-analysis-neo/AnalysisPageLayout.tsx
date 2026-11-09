@@ -1,3 +1,4 @@
+import { MessageCardQuickActionContext } from '../shared/message-card/MessageCardQuickAction';
 import {
   MessageRepliesProvider,
   ReplyMessageEditor,
@@ -9,10 +10,10 @@ import {
 } from '../shared/message-card/MessageWriteAccess';
 import { canWriteMessages, hasRole } from '../../utils/roles';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
-import { Box } from '@mui/material';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Box, GlobalStyles } from '@mui/material';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { ThemeProvider, useTheme } from '@mui/material/styles';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
@@ -32,7 +33,7 @@ import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
   useManageMessageEditorPresentation,
 } from '../shared/manage-message/ManageMessageEditorSurface';
-import { getAnalysisCenterTabs } from './types';
+import { getAnalysisCenterTabs, type AnalysisPageViewModel } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import {
   parseAnalysisPanelQueryStateFromWindow,
@@ -45,6 +46,7 @@ import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { AnalysisRightDock } from './AnalysisRightDock';
 import { analysisWorkspaceColumns, shouldInlineAnalysisLeftPanel } from './analysis-editor-layout';
+import { useRouteUrlOwnership } from './use-route-url-ownership';
 import {
   recordAnalysisDebugPageSnapshot,
   summarizeAnalysisDebugFilters,
@@ -56,11 +58,56 @@ export type RerAnalysisNeoPageProps = {
   authUserRoles?: string[];
 };
 
+const inputGlobalStyles = {
+  '@keyframes mui-auto-fill': { from: { display: 'block' } },
+  '@keyframes mui-auto-fill-cancel': { from: { display: 'block' } },
+};
+
 export function RerAnalysisNeoPage({
   authUserName = null,
   authUserRoles = [],
 }: RerAnalysisNeoPageProps = {}) {
   const page = useRerAnalysisNeoPage(authUserName, authUserRoles);
+  const theme = useTheme();
+  const analysisTheme = useMemo(
+    () => ({
+      ...theme,
+      components: {
+        ...theme.components,
+        MuiInputBase: {
+          ...theme.components?.MuiInputBase,
+          defaultProps: {
+            ...theme.components?.MuiInputBase?.defaultProps,
+            disableInjectingGlobalStyles: true,
+          },
+          styleOverrides: {
+            ...theme.components?.MuiInputBase?.styleOverrides,
+            input: [
+              theme.components?.MuiInputBase?.styleOverrides?.input,
+              {
+                animationName: 'mui-auto-fill-cancel',
+                animationDuration: '10ms',
+                '&:-webkit-autofill': {
+                  animationName: 'mui-auto-fill',
+                  animationDuration: '5000s',
+                },
+              },
+            ],
+          },
+        },
+      },
+    }),
+    [theme],
+  );
+  return (
+    <ThemeProvider theme={analysisTheme}>
+      <GlobalStyles styles={inputGlobalStyles} />
+      <AnalysisPageLayout page={page} />
+    </ThemeProvider>
+  );
+}
+
+function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
@@ -73,6 +120,7 @@ export function RerAnalysisNeoPage({
   );
   const [filterPanelOpen, setFilterPanelOpen] = useState(initialFilterPanelOpen ?? false);
   const filterPanelTouchedRef = useRef(initialFilterPanelOpen != null);
+  const ownsWindowUrl = useRouteUrlOwnership();
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
@@ -80,7 +128,16 @@ export function RerAnalysisNeoPage({
   const reportFocusTargetRef = useRef<HTMLElement | null>(null);
   const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
   const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
-  const { notify } = usePowerSnackbar();
+  const { notify, dismiss } = usePowerSnackbar();
+  useEffect(() => {
+    if (!page.error) return;
+    const id = notify({
+      severity: 'error',
+      message: page.error,
+      durationMs: page.errorPersistent ? null : undefined,
+    });
+    return () => dismiss(id);
+  }, [notify, dismiss, page.error, page.errorPersistent, page.errorOccurrence]);
   useEffect(() => {
     if (!page.directMessageError) return;
     notify({ severity: 'error', message: page.directMessageError });
@@ -147,11 +204,11 @@ export function RerAnalysisNeoPage({
     filterPanelTouchedRef.current = true;
     const next = !page.hideNetworks;
     setFilterPanelOpen(editorOpen ? false : next);
-    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
-  }, [editorOpen, page.hideNetworks, page.networkVisibilityReady]);
+    if (ownsWindowUrl()) replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [editorOpen, ownsWindowUrl, page.hideNetworks, page.networkVisibilityReady]);
   useEffect(() => {
     if (!filterPanelOpen) return;
-    const sections = ['tags', 'groups', 'senders'] as const;
+    const sections = ['tags', 'groups', 'senders', 'units'] as const;
     void Promise.all(sections.map((section) => page.loadFilterSection(section)));
   }, [filterPanelOpen, page.loadFilterSection]);
   useEffect(() => {
@@ -453,11 +510,6 @@ export function RerAnalysisNeoPage({
           />
         </Box>
 
-        {page.error ? (
-          <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
-            {page.error}
-          </PowerAlert>
-        ) : null}
         {page.validationError ? (
           <PowerAlert severity="warning" role="status" sx={{ mx: { xs: 1, lg: 2 } }}>
             {page.validationError}
@@ -690,7 +742,9 @@ export function RerAnalysisNeoPage({
           }
           currentUser={page.currentUser}
         >
-          {content}
+          <MessageCardQuickActionContext.Provider value={page.messageCardQuickAction}>
+            {content}
+          </MessageCardQuickActionContext.Provider>
         </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>

@@ -5,9 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  frequencySummaryRequestBody,
   mapOutcomeNotices,
   mapOutcomeRepairPrompt,
   observeMapOutcome,
+  scriptFailure,
+  toolErrorReason,
   toolErrorSummary,
   analysisPeriodRequestBody,
   callsignFrequencyMatchesRequestBody,
@@ -20,6 +23,9 @@ import {
   dailyActivityRequestBody,
   directionFindingsRequestBody,
   inboxMessagesRequestBody,
+  mentionedColorCodes,
+  mentionedFrequencies,
+  normalizeFrequency,
   unitLookupRequestBody,
   interceptionContextRequestBody,
   messagesByIdRequestBody,
@@ -34,8 +40,10 @@ import {
   formatEchoHttpError,
   validatePayload,
   validateSkill,
+  validationFields,
   writeModelsFile,
 } from "./runner.ts";
+import { createGroupScope, resolveGroups } from "./group-scope.ts";
 import { EDIT_GUIDANCE, MAP_GUIDANCE, MapRegistry } from "./maps.ts";
 
 test("accepts a non-empty final assistant response", () => {
@@ -617,6 +625,61 @@ test("passes an inherited callsign through applicable analysis tools", () => {
   });
 });
 
+test("#4070 frequency summary accepts the filters its route supports", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 31 },
+    selectedFrequencies: ["163,935", "3330"],
+    selectedUnitIds: [7, 7],
+    selectedUnits: ["8 дшр"],
+  };
+  assert.deepEqual(frequencySummaryRequestBody(params, context), {
+    since_date_inclusive_ms: Date.parse("2026-07-04T21:00:00Z"),
+    till_date_noninclusive_ms: Date.parse("2026-08-04T21:00:00Z"),
+    selected_freqs: ["163.9350", "3330"],
+    selected_unit_ids: [7],
+    selected_units: ["8 дшр"],
+  });
+  assert.throws(
+    () => frequencySummaryRequestBody({ ...params, search: "x" }, context),
+    /unsupported field/,
+  );
+  assert.throws(
+    () => analysisPeriodRequestBody(params, context),
+    /unsupported field/,
+  );
+});
+
+test("#4070 frequency summary compaction keeps ranked rows and shows they are partial", () => {
+  const route = { skill: "frequency_summary", requestKind: "analysisPeriod" as const };
+  const value = {
+    rows: Array.from({ length: 128 }, (_, index) => ({
+      freq: `${index}`,
+      count: 1000 - index,
+      callsigns: Array.from({ length: 32 }, (_, item) => `позивний ${item}`),
+      units: ["підрозділ"],
+      locations: [],
+    })),
+    total_rows: 11636,
+    row_values_truncated: false,
+  };
+
+  const tiny = JSON.parse(compactToolResponse(route, value, 1));
+  assert.equal(tiny.rows.length, 1);
+  assert.equal(tiny.rows[0].count, 1000);
+  assert.equal(tiny.total_rows, 11636);
+  assert.equal(tiny.row_values_truncated, false);
+
+  const bounded = JSON.parse(compactToolResponse(route, value, 128, 3000));
+  assert.ok(bounded.rows.length >= 1 && bounded.rows.length < 128);
+  assert.deepEqual(bounded.rows[0].units, ["підрозділ"]);
+  assert.equal(bounded.rows[0].callsigns.length, 4);
+  assert.equal(bounded.rows[0].count, 1000);
+  assert.equal(bounded.total_rows, 11636);
+  assert.equal(bounded.row_values_truncated, true);
+  assert.ok(JSON.stringify(bounded).length <= 3000);
+});
+
 test("passes unit filters to inbox requests and validates them", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   const params = {
@@ -631,6 +694,111 @@ test("passes unit filters to inbox requests and validates them", () => {
   assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnitIds: [] }, context));
   assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnitIds: [0] }, context));
   assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnits: [" "] }, context));
+});
+
+test("incident 01a1a1d8: normalizes user-written frequencies to the stored four-decimal form", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 1 },
+    selectedFrequencies: ["163.935", "163,9350", " 163.93 ", "27.135", "3330"],
+  };
+  const body = inboxMessagesRequestBody(params, context);
+  // Integer-only values stay unchanged, as Echo stores «Частота: 3330».
+  assert.deepEqual(body.selected_freqs, ["163.9350", "163.9300", "27.1350", "3330"]);
+  assert.equal(body.search, undefined);
+  assert.equal(normalizeFrequency("163.9350"), "163.9350");
+  for (const invalid of ["16", "163.93501", "abc", "163.935 МГц"])
+    assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [invalid] }, context));
+  assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [] }, context));
+});
+
+test("incident 01a1a1d8: tells the agent that mentioned frequencies equal their stored form", () => {
+  assert.deepEqual(
+    mentionedFrequencies([
+      "02.11.2026, 13:49:43\n150.4750\n47.392477 36.056984 449.500.000",
+      "Проаналізуй з іншими частотами 163.935 та 163,935, хвиля 169.3500МГц",
+    ]),
+    [
+      { written: "150.4750", stored: "150.4750" },
+      { written: "163.935", stored: "163.9350" },
+      { written: "163,935", stored: "163.9350" },
+      { written: "169.3500", stored: "169.3500" },
+    ],
+  );
+  const prompt = systemPrompt(
+    validatePayload(
+      {
+        ...normalPayload,
+        history: [{ role: "user", content: "Що на 165.55?" }],
+        prompt: "Проаналізуй з іншими частотами 163.935 та дай прив'язку де найбільше схожих позивних",
+      },
+      false,
+    ),
+  );
+  assert.match(prompt, /stored Echo form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
+  assert.match(prompt, /only the frequencies the current request is about/);
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Frequencies named in this conversation/);
+});
+
+test("#3998 reads СС3 in a user query as the DMR color code", () => {
+  assert.deepEqual(
+    mentionedColorCodes([
+      "144.8450 Мишаня Якудза, СС3",
+      "CC: 7 і код кольору 12, 🎨5, cc03, СС-300, сс16, ссылка 3",
+    ]),
+    [
+      { written: "СС3", colorCode: "3" },
+      { written: "CC: 7", colorCode: "7" },
+      { written: "код кольору 12", colorCode: "12" },
+      { written: "🎨5", colorCode: "5" },
+      { written: "cc03", colorCode: "3" },
+    ],
+  );
+  const prompt = systemPrompt(
+    validatePayload({ ...normalPayload, history: [], prompt: "144.8450 Мишаня Якудза, СС3" }, false),
+  );
+  assert.match(prompt, /stored Echo form: 144\.8450\./);
+  assert.match(prompt, /DMR color codes named in this conversation: СС3 = color code 3\. They are radio network metadata, not callsigns/);
+  assert.match(prompt, /is the DMR color code \(0–15\) of a radio network/);
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /DMR color codes named/);
+});
+
+test("#3998 exposes parsed DMR metadata on retrieved messages", async () => {
+  const item = (id: number, metadata: unknown) => [id, { message_uid: `uid-${id}`, freq: "144.8450", text: "СС: 3 👥: 24538🔐", metadata }];
+  const response = compactInboxResponse({
+    inbox_items: [
+      item(2, [
+        { color_code: "3", color_code_start_index: 0, call_group_id: "24538", sender_id: null, hash_id: "2324D327" },
+        { color_code: "3", call_group_id: "24538" },
+        { color_code: " ", call_group_id: null },
+      ]),
+      item(1, []),
+      item(4, [{ color_code: "03" }, { color_code: "3" }]),
+    ],
+    page_limit: 20,
+  });
+  const messages = response.messages as Array<Record<string, unknown>>;
+  assert.deepEqual(messages[0].dmr, { colorCodes: ["3"], callGroups: [{ id: "24538" }] });
+  assert.equal("dmr" in messages[1], false);
+  // Retained evidence for final synthesis keeps the same projection.
+  const { prepareMessageCitations } = await import("./citations.ts");
+  const prepared = prepareMessageCitations("inbox_messages", { inbox_items: [item(2, [{ color_code: "03", sender_id: "7" }]), item(1, [])] });
+  assert.deepEqual(prepared.messages.map((message) => message.dmr), [{ colorCodes: ["3"], senders: [{ id: "7" }] }, undefined]);
+  // A zero-padded source code equals the user's «СС3».
+  assert.deepEqual(messages[2].dmr, { colorCodes: ["3"] });
+  // Every color code of a nine-code list survives; long id lists are marked truncated.
+  const wide = compactInboxResponse({
+    inbox_items: [item(3, [
+      ...Array.from({ length: 9 }, (_, code) => ({ color_code: String(code), sender_id: "7" })),
+      ...Array.from({ length: 40 }, (_, index) => ({ call_group_id: String(1000 + index) })),
+    ])],
+    page_limit: 20,
+  });
+  const dmr = (wide.messages as Array<Record<string, any>>)[0].dmr;
+  assert.deepEqual(dmr.colorCodes, ["0", "1", "2", "3", "4", "5", "6", "7", "8"]);
+  assert.deepEqual(dmr.senders, [{ id: "7" }]);
+  assert.equal(dmr.callGroups.length, 32);
+  assert.equal(dmr.truncated, true);
 });
 
 test("builds bounded read-only unit lookup requests", () => {
@@ -763,6 +931,64 @@ test("builds bounded paginated inbox requests with an inclusive upper boundary",
       ),
     /between 1 and 31/,
   );
+});
+
+test("#4083 a blank inbox search means no text filter", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const period = { kind: "relative_days", days: 3 };
+  const unfiltered = inboxMessagesRequestBody({ period }, context);
+  assert.equal("search" in unfiltered, false);
+  for (const search of ["", "   "])
+    assert.deepEqual(inboxMessagesRequestBody({ period, search }, context), unfiltered);
+  assert.equal(inboxMessagesRequestBody({ period, search: "  удар  " }, context).search, "удар");
+  assert.throws(() => inboxMessagesRequestBody({ period, search: "x".repeat(2001) }, context), /at most 2000/);
+});
+
+test("#4083 Echo's own argument checks name the parameter and never the values", async () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const parameterNames = new Map([
+    ["echo_inbox_messages", new Set(["period", "search", "selectedGroups", "selectedCallsigns", "selectedFrequencies", "selectedUnitIds", "selectedUnits", "cursor", "maxItems"])],
+  ]);
+  const fieldsOf = (message: string) =>
+    validationFields(
+      { content: [{ type: "text", text: message.startsWith("Invalid Echo tool arguments: ") ? message : `Invalid Echo tool arguments: ${message}` }] },
+      "echo_inbox_messages",
+      parameterNames,
+    );
+  const rejection = (params: Record<string, unknown>) => {
+    try {
+      inboxMessagesRequestBody({ period: { kind: "relative_days", days: 3 }, ...params }, context);
+    } catch (error) {
+      return fieldsOf((error as Error).message);
+    }
+    assert.fail(`accepted ${JSON.stringify(params)}`);
+  };
+  assert.equal(rejection({ period: { kind: "relative_days", days: 32 } }), "period:size");
+  assert.equal(rejection({ period: { kind: "relative_hours", hours: 0 } }), "period:size");
+  assert.equal(rejection({ period: { kind: "relative_days", days: 3, extra: 1 } }), "period:additional");
+  assert.equal(rejection({ period: { kind: "date_range", sinceDate: "2026-08-04", tillDateInclusive: "2026-08-01" } }), "period:order");
+  assert.equal(rejection({ period: { kind: "date_range", sinceDate: "SENSITIVE", tillDateInclusive: "2026-08-01" } }), "period.sinceDate:invalid");
+  assert.equal(rejection({ period: { kind: "weeks" } }), "period:invalid");
+  assert.equal(rejection({ cursor: 0 }), "cursor:invalid");
+  assert.equal(rejection({ maxItems: 500 }), "maxItems:size");
+  assert.equal(rejection({ search: 7 }), "search:size");
+  assert.equal(rejection({ selectedCallsigns: ["  "] }), "selectedCallsigns:blank");
+  assert.equal(rejection({ selectedFrequencies: ["SENSITIVE"] }), "selectedFrequencies:invalid");
+  assert.equal(rejection({ selectedUnitIds: [] }), "selectedUnitIds:size");
+  assert.equal(rejection({ SENSITIVE: 1 }), "root:additional");
+
+  const groups = [{ master_key: "group.devops", name: "DEVOPS" }];
+  assert.throws(() => resolveGroups(["SENSITIVE"], groups), (error: Error) => {
+    assert.equal(fieldsOf(error.message), "selectedGroups:unknown");
+    return true;
+  });
+  const scope = createGroupScope(async () => groups, () => {});
+  await scope.resolve({ selectedGroups: ["DEVOPS"] }, true);
+  await assert.rejects(scope.resolve({}, true), (error: Error) => {
+    assert.equal(fieldsOf(error.message), "selectedGroups:required");
+    return true;
+  });
+  assert.equal(fieldsOf("SENSITIVE text from an unknown check"), undefined);
 });
 
 test("normalizes safe period forms emitted by the configured model", () => {
@@ -991,7 +1217,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.10.29.4",
+    harnessRelease: "2026.11.08.1",
   });
 });
 
@@ -1058,6 +1284,7 @@ test("suppresses progress lifecycle and labels route lifecycle events", () => {
       toolLabel: "Перевірка профілю користувача",
       is_error: true,
       errorSummary: "Не вдалося завантажити дані за вказаними параметрами.",
+      errorReason: "tool_error",
     },
   );
 });
@@ -1271,14 +1498,17 @@ test("reports validated query scope and actual delivered message counts", () => 
     label: "Перевіряю доступні джерела",
     requestKind: "json",
   });
-  const groupResponse = [{ name: "Радіомережа А" }, { name: "Радіомережа Б" }];
+  const groupResponse = [
+    { master_key: "group.a", name: "Радіомережа А" },
+    { master_key: "group.b", name: "Радіомережа Б" },
+  ];
   const groupResult = tracker.finish(
     groupRoute,
     tracker.start(groupRoute, undefined),
     groupResponse,
     compactToolResponse(groupRoute, groupResponse, 1),
   );
-  assert.equal(groupResult, "Отримано груп джерел для перегляду: 1");
+  assert.equal(groupResult, "Отримано груп джерел для перегляду: 2");
 });
 
 // Regression: https://github.com/echoua/echo/issues/3064
@@ -1313,9 +1543,10 @@ test("keeps enriched tool labels through later updates and failure", () => {
     isError: true,
     result: { details: {} },
   });
-  assert.equal(events.length, 3);
+  const publicEvents = events.filter((event) => event.type !== "tool_diagnostic");
+  assert.equal(publicEvents.length, 3);
   assert.deepEqual(
-    events.map((event) => event.toolLabel),
+    publicEvents.map((event) => event.toolLabel),
     [label, label, label],
   );
 });
@@ -1605,12 +1836,39 @@ test("discards a truncated or empty citation repair", () => {
 
 test("#3064 map tool errors get specific labels while route errors stay generic", () => {
   const result = (text: string) => ({ content: [{ type: "text", text }] });
+  assert.equal(toolErrorReason(result("Echo response is too large")), "response_too_large");
+  assert.equal(toolErrorReason(result("The operation was aborted due to timeout")), "timeout");
+  assert.equal(toolErrorReason(result("Echo redirects are not allowed")), "echo_redirect");
+  assert.equal(toolErrorReason(result("Unexpected end of JSON input")), "invalid_response");
+  assert.equal(toolErrorReason(result("terminated")), "network_error");
+  assert.equal(toolErrorReason(result("anything")), "tool_error");
   assert.equal(toolErrorSummary("echo_inbox_messages", result("anything")), "Не вдалося завантажити дані за вказаними параметрами.");
   assert.equal(toolErrorSummary("echo_map_edit", result('Невідома операція «retype». Допустимі op: add, setSidc. Приклад: {"sidc":"10031000001211000000"}')), "Некоректні параметри зміни мапи");
   assert.equal(toolErrorSummary("echo_map_edit", result("Echo returned HTTP 409: Мапа змінилася.")), "Мапа змінилася; потрібно перечитати її");
   assert.equal(toolErrorSummary("echo_map_script", result("Script failed (exit 1). Traceback ...")), "Скрипт обробки завершився помилкою");
   assert.equal(toolErrorSummary("echo_map_set_symbol", result("SIDC має містити рівно 20 цифр")), "Некоректна позначка");
   assert.equal(toolErrorSummary("echo_map_edit", result("secret payload")), "Не вдалося змінити мапу");
+});
+
+test("#4038 script failures report their exception and only script tools report text", () => {
+  const result = (text: string) => ({ content: [{ type: "text", text }] });
+  const traceback = "Script failed (exit 1). Fix it and retry.\nTraceback (most recent call last):\n  File \"script.py\", line 14, in <module>\nKeyError: 'latitude'\n";
+  assert.deepEqual(scriptFailure("echo_map_script", result(traceback)), { detail: "KeyError: 'latitude'", exception: "KeyError" });
+  assert.deepEqual(scriptFailure("echo_document_script", result(traceback)), { detail: "KeyError: 'latitude'", exception: "KeyError" });
+  assert.deepEqual(scriptFailure("echo_map_from_reports", result("Не вдалося застосувати рецепт. ValueError: bad")), { detail: "Не вдалося застосувати рецепт. ValueError: bad", exception: "ValueError" });
+  assert.deepEqual(scriptFailure("echo_map_script", result("Script failed (exit null). Fix it and retry.\n")), { detail: "Script failed (exit null). Fix it and retry." });
+  assert.equal((scriptFailure("echo_map_script", result(`ValueError: ${"x".repeat(2_000)}`)).detail as string).length, 1_000);
+  assert.deepEqual(scriptFailure("echo_map_append", result("ValueError: secret payload")), {});
+  assert.deepEqual(scriptFailure("echo_inbox_messages", result("secret")), {});
+  assert.deepEqual(scriptFailure("echo_map_script", result("")), {});
+});
+
+test("#4038 an undelivered map adds one notice", () => {
+  const registry = new MapRegistry();
+  assert.deepEqual(mapOutcomeNotices(registry, false).notices, []);
+  const { notices } = mapOutcomeNotices(registry, false, true);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /Мапу не створено/);
 });
 
 test("#3064 failed map edits and count mismatches are stated in the answer", () => {

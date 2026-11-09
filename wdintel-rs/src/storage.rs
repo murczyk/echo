@@ -209,20 +209,26 @@ impl S3Config {
 /// Build an S3 operator from configuration
 pub fn build_s3_operator(config: &S3Config) -> Result<Operator, AppError> {
     let b = s3_builder(config).c(h!())?;
-    // Add OpenDAL retry layer: 3 retries with exponential backoff to soften S3 throttling
-    let retry = opendal::layers::RetryLayer::new()
-        .with_min_delay(Duration::from_secs(1))
-        .with_factor(2.0)
-        .with_jitter()
-        .with_max_times(3)
-        .with_notify(|_err: &opendal::Error, _dur: Duration| {});
     let op = Operator::new(b)
         .map_err(|e| AppError::BL {
             msg: format!("s3 store build error: {e}"),
         })?
-        .layer(retry)
+        .layer(s3_retry_layer())
         .finish();
     Ok(op)
+}
+
+/// OpenDAL retry layer: 3 retries with exponential backoff to soften S3
+/// throttling and transient 5xx responses.
+fn s3_retry_layer() -> opendal::layers::RetryLayer<
+    impl opendal::layers::RetryInterceptor,
+> {
+    opendal::layers::RetryLayer::new()
+        .with_min_delay(Duration::from_secs(1))
+        .with_factor(2.0)
+        .with_jitter()
+        .with_max_times(3)
+        .with_notify(|_err: &opendal::Error, _dur: Duration| {})
 }
 
 fn s3_builder(config: &S3Config) -> Result<opendal::services::S3, AppError> {
@@ -1526,6 +1532,8 @@ mod tests {
         ));
     }
 
+    // Holds the shared decryption permits, which other media tests need.
+    #[serial_test::serial]
     #[tokio::test]
     async fn unrestricted_download_ignores_messenger_decryption_limit() {
         let op = Operator::new(Memory::default()).unwrap().finish();

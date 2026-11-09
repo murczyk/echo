@@ -22,6 +22,8 @@ pub(in crate::devices::files) fn map_root_model(
         device_id: entry.device_id,
         name: entry.name,
         hierarchy_path: entry.hierarchy_path,
+        file_metadata_created_at: entry.file_metadata_created_at,
+        file_metadata_modified_at: entry.file_metadata_modified_at,
         created_at: entry.created_at,
         updated_at: entry.updated_at,
     })
@@ -52,6 +54,8 @@ pub(in crate::devices::files) fn map_directory_model(
         parent_entry_id,
         name: entry.name,
         hierarchy_path: entry.hierarchy_path,
+        file_metadata_created_at: entry.file_metadata_created_at,
+        file_metadata_modified_at: entry.file_metadata_modified_at,
         created_at: entry.created_at,
         updated_at: entry.updated_at,
     })
@@ -171,8 +175,6 @@ fn ensure_directory_metadata_absent(
 ) -> Result<(), FilesystemError> {
     if entry.mime_type.is_none()
         && entry.extension.is_none()
-        && entry.file_metadata_created_at.is_none()
-        && entry.file_metadata_modified_at.is_none()
         && entry.content_path.is_none()
         && (entry.archive_file_id.is_some()
             || (entry.revision.is_none() && entry.sync_id.is_none()))

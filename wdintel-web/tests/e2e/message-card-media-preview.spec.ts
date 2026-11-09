@@ -1222,10 +1222,14 @@ test.describe('message card media preview contract', () => {
     ]);
     expect(videoStage).not.toBeNull();
     expect(videoBox).not.toBeNull();
-    expect((videoStage?.y ?? 0) + 4).toBeLessThan(videoBox?.y ?? 0);
+    const headerBottom = await videoDialog
+      .locator('[data-video-header]')
+      .evaluate((element) => element.getBoundingClientRect().bottom);
+    expect(headerBottom).toBeLessThan(videoBox?.y ?? 0);
+    const backgroundY = (headerBottom + (videoBox?.y ?? 0)) / 2 - (videoStage?.y ?? 0);
     await videoDialog
       .locator('[data-attachment-preview-stage="video"]')
-      .click({ position: { x: 4, y: 4 }, force: true });
+      .click({ position: { x: 4, y: backgroundY }, force: true });
     await expect(videoDialog).toHaveCount(0);
 
     const documentDialog = await openTextPreview(page);
@@ -2425,7 +2429,6 @@ for (const width of [1280, 390]) {
         await copyButton.click();
       } else {
         await card.getByRole('button', { name: 'Більше дій' }).click();
-        await page.getByRole('menuitem', { name: /^Копіювати/ }).click();
       }
       await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
       const link = new URL(await page.evaluate(() => navigator.clipboard.readText()));

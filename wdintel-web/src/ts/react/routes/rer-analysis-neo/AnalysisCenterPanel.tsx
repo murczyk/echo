@@ -465,12 +465,12 @@ export function AnalysisCenterPanel({
               page.groupNavigation.scope.kind === 'group'
                 ? page.groupNavigation.scope.masterKey
                 : 'all'
-            }`}
+            }|${page.linkedMessageLandingKey}`}
             noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
             onMarkBotTagWrong={page.onMarkBotTagWrong}
-            onOpenEditor={(messageId, focusTarget) => page.openEditor(messageId, focusTarget)}
+            onOpenEditor={page.openEditor}
             onCreateReport={page.openReportCreator}
             onEditReport={page.openReportEditor}
             onLoadMoreMessages={page.loadMoreMessages}

@@ -5,7 +5,7 @@ import {
   normalizeUnknownUnitFilterValue,
   normalizeUnknownUnitDisplayValue,
 } from '../../react/routes/shared/analysis-unit-filter';
-import { updateStateUrl } from './url-state';
+import { buildMessageLinkHref } from '../../react/routes/shared/message-card/message-card.utils';
 import { escapeHtml } from '../../utils/html-utils';
 
 function collectPointEtalons(nodes: ContentNode[]): string[] {
@@ -45,7 +45,7 @@ function renderMarkedText(nodes: ContentNode[]): string {
         const text = node.CNCallsignC.text.trim();
         return text === ''
           ? ''
-          : `<span class="badge-highlighed-token badge-highlighed-token--callsign">${escapeHtml(text)}</span>`;
+          : `<span style="font-weight: 600;">${escapeHtml(text.toUpperCase())}</span>`;
       }
 
       if ('CNSignalC' in node) {
@@ -86,10 +86,17 @@ function renderMessageText(message: Message[1]): string {
   return escapeHtml(message.text).replace(/\n/g, '<br>');
 }
 
+function messageLinkTemplate(messageUuid: string | null | undefined): string {
+  const uuid = messageUuid?.trim();
+  if (!uuid) return '';
+  const href = buildMessageLinkHref({ messageUuid: uuid }, 'analysis');
+  return `<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання: </span><a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(uuid)}</a></p>`;
+}
+
 function liTemplate(message_: Message, selectedUnits: string[], battleLineDistance?: number) {
   const rawUnit = message_[1].unit;
   const unitValue = normalizeUnknownUnitFilterValue(rawUnit);
-  const unitDisplay = normalizeUnknownUnitDisplayValue(rawUnit);
+  const unitDisplay = normalizeUnknownUnitDisplayValue(message_[1].unit_display ?? rawUnit);
   const escapedDisplay = escapeHtml(unitDisplay);
   const escapedAttr = escapeHtml(unitValue);
   const isUnitSelected = selectedUnits.some(
@@ -107,7 +114,7 @@ function liTemplate(message_: Message, selectedUnits: string[], battleLineDistan
 
   return `
           <li>
-            ${message_[1].message_uid ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання: </span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${escapeHtml(message_[1].message_uid)}</a></p>` : ''}
+            ${messageLinkTemplate(message_[1].message_uuid)}
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${escapeHtml(message_[1].freq)}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${escapeHtml(String(message_[1].coords))}</p>` : ''}
             ${battleLineDistance == null ? '' : `<p style="line-height: 16px;"><span style="font-weight: 700;">Відстань до ЛБЗ:</span> ${(battleLineDistance / 1000).toFixed(2)}км</p>`}

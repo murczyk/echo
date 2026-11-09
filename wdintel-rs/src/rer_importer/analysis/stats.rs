@@ -147,6 +147,7 @@ where
                 SearchTimeBasis::Interception
             },
             groups: master_keys,
+            media_presence_filtered: false,
         }),
     )
 }
@@ -600,10 +601,15 @@ fn filter_selected_networks_for_scope<E>(
     without_network: &Option<bool>,
     only_with_network: &Option<bool>,
     scope: Option<&AnalyticsMessageIdScope>,
+    only_for_rer_report: Option<bool>,
 ) -> Result<Select<E>, AppError>
 where
     E: EntityTrait,
 {
+    let query = crate::rer_report_admin::scope::filter_query(
+        query,
+        only_for_rer_report,
+    );
     if scope.is_some() {
         filter_selected_networks_analytics(
             query,
@@ -972,7 +978,7 @@ async fn resolve_or_borrow_analysis_unit_filters<'a>(
     .map(Cow::Owned))
 }
 
-fn effective_groups_with_access(
+pub(in crate::rer_importer) fn effective_groups_with_access(
     selected_groups: &Option<Vec<String>>,
     allowed_groups: &[String],
 ) -> Vec<String> {
@@ -1222,6 +1228,7 @@ fn apply_group_stats_filters(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, req)?;
@@ -2055,6 +2062,7 @@ fn build_senders_filtered_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
@@ -2212,6 +2220,7 @@ where
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, &req.0)?;
@@ -2567,6 +2576,7 @@ fn build_posts_filtered_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
@@ -3043,6 +3053,7 @@ fn build_freqs_filtered_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let freqs_res = apply_metadata_filters(freqs_res, &req)?;
@@ -4377,6 +4388,7 @@ fn build_callsigns_filtered_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, &req)?;
@@ -5135,6 +5147,10 @@ fn build_tags_filtered_query_with_owner_condition(
             scope,
         )?
     };
+    let tags_res = crate::rer_report_admin::scope::filter_query(
+        tags_res,
+        req.only_for_rer_report,
+    );
     let tags_res = if analytics_tag_access.is_some() {
         filter_selected_networks_analytics(
             tags_res,
@@ -5679,6 +5695,7 @@ fn build_units_filtered_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let units_res = apply_metadata_filters(units_res, &req.0)?;
@@ -6042,6 +6059,7 @@ fn build_facet_messages_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let locations_res = apply_metadata_filters(locations_res, &req).c(h!())?;
@@ -7183,6 +7201,7 @@ fn build_network_analytics_messages_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
@@ -7910,6 +7929,10 @@ fn build_networks_query_for_login(
             .context(h!())?;
     let messages_q =
         filter_selected_aors(messages_q, &req.selected_aors).context(h!())?;
+    let messages_q = crate::rer_report_admin::scope::filter_query(
+        messages_q,
+        req.only_for_rer_report,
+    );
     let messages_q = filter_selected_networks(
         messages_q,
         &req.selected_networks,
@@ -8366,6 +8389,7 @@ fn build_selected_count_query(
         &req.without_network,
         &req.only_with_network,
         scope,
+        req.only_for_rer_report,
     )
     .context(h!())?;
     let selected_count_res =
@@ -9431,6 +9455,7 @@ mod tests {
             &Some(true),
             &None,
             Some(&scope),
+            None,
         )
         .unwrap()
         .build(DbBackend::Postgres)

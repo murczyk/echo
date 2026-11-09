@@ -90,6 +90,7 @@ beforeEach(() => {
     showClassicDuty: true,
     showClassicAnalysis: true,
     devicesSectionEnabled: false,
+    importantNotifyAllEnabled: true,
   });
   fetchUserSettings.mockResolvedValue({ showClassicDuty: false, showClassicAnalysis: false });
 });

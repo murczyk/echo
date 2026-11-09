@@ -23,10 +23,12 @@ export function RequestDuration({
   createdAt,
   finishedAt,
   active,
+  variant = 'caption',
 }: {
   createdAt: number;
   finishedAt?: number;
   active: boolean;
+  variant?: 'caption' | 'body2';
 }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -41,7 +43,7 @@ export function RequestDuration({
   return (
     <Typography
       component="span"
-      variant="caption"
+      variant={variant}
       aria-label="Час виконання"
       sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
     >

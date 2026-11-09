@@ -22,23 +22,52 @@ export interface ExecutionPolicy {
   synthesisEffort: string | null;
   maxRuntimeSeconds: number;
   finalizationSeconds: number;
+  /** A Fast or Balanced request that builds a document runs on the document tier. */
+  documentTask?: boolean;
 }
 
-const PRESETS = {
-  fast: [120, 30],
-  balanced: [300, 60],
-  deep: [1800, 120],
-} as const;
+interface BudgetTier {
+  runtime: number;
+  finalization: number;
+  toolCalls: number;
+}
+
+// Wall-clock runtime, base finalization reserve and tool calls of each budget tier;
+// they must match the backend's AI_AGENT_*_RUNTIME_SEC and request limits.
+export const TIERS = {
+  fast: { runtime: 120, finalization: 30, toolCalls: 128 },
+  balanced: { runtime: 300, finalization: 60, toolCalls: 128 },
+  // Non-OpenAI engines: 300 s stopped real research with work left on GLM-5.3.
+  boundedBalanced: { runtime: 600, finalization: 60, toolCalls: 128 },
+  document: { runtime: 1800, finalization: 120, toolCalls: 128 },
+  deep: { runtime: 14_400, finalization: 300, toolCalls: 1024 },
+} as const satisfies Record<string, BudgetTier>;
+// Deep requests queued before the 4-hour budget keep their 30-minute policy.
+const LEGACY_DEEP: BudgetTier = { runtime: 1800, finalization: 120, toolCalls: 128 };
+const DEFAULT_TOOL_CALLS = 128;
+
+function tiersFor(policy: ExecutionPolicy): readonly BudgetTier[] {
+  if (policy.documentTask === true)
+    return policy.preset === "deep" ? [] : [TIERS.document];
+  if (policy.preset === "deep") return [TIERS.deep, LEGACY_DEEP];
+  if (policy.preset === "balanced")
+    return [TIERS.boundedBalanced, TIERS.balanced];
+  return Object.hasOwn(TIERS, policy.preset) ? [TIERS[policy.preset]] : [];
+}
+
+/** Tool calls one request may make under its policy. */
+export function toolCallLimit(policy?: ExecutionPolicy): number {
+  if (!policy) return DEFAULT_TOOL_CALLS;
+  return tiersFor(policy).find((tier) => tier.runtime === policy.maxRuntimeSeconds)?.toolCalls ?? DEFAULT_TOOL_CALLS;
+}
 const EFFORTS = new Set([null, "none", "low", "medium", "high", "max"]);
-const FALLBACK_MAX_SOURCES = 8;
-const FALLBACK_EXCERPT_CHARACTERS = 600;
 const FINALIZATION_CLEANUP_MS = 1000;
 export const PURPOSE_HEADER = "x-echo-ai-purpose";
 
 export function validateExecutionPolicy(
   value: unknown,
   deadline: unknown,
-  flash = false,
+  finalizationMultipliers: readonly number[] = [1],
 ): ExecutionPolicy | undefined {
   if (value === undefined) {
     if (deadline !== undefined)
@@ -48,19 +77,22 @@ export function validateExecutionPolicy(
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("invalid executionPolicy");
   const policy = value as ExecutionPolicy;
-  const limits = Object.hasOwn(PRESETS, policy.preset)
-    ? PRESETS[policy.preset]
+  const tier = ["fast", "balanced", "deep"].includes(policy.preset) &&
+    [undefined, true, false].includes(policy.documentTask)
+    ? tiersFor(policy).find((candidate) =>
+        candidate.runtime === policy.maxRuntimeSeconds &&
+        finalizationMultipliers.some(
+          (multiplier) => policy.finalizationSeconds === candidate.finalization * multiplier,
+        ))
     : undefined;
   if (
-    !limits ||
+    !tier ||
     !["openai-completions", "openai-responses"].includes(policy.api) ||
     ![
       policy.reasoningEffort,
       policy.checkpointEffort,
       policy.synthesisEffort,
     ].every((effort) => EFFORTS.has(effort)) ||
-    policy.maxRuntimeSeconds !== limits[0] ||
-    policy.finalizationSeconds !== limits[1] * (flash ? 2 : 1) ||
     !Number.isSafeInteger(deadline) ||
     (deadline as number) < 1
   ) {
@@ -143,16 +175,6 @@ export class ResearchBudget {
   }
 }
 
-function quoteExcerpt(text: string): string {
-  const excerpt = Array.from(text)
-    .slice(0, FALLBACK_EXCERPT_CHARACTERS)
-    .join("");
-  return `${excerpt.replace(/[\\`*_{}\[\]<>()!|#]/g, "\\$&")}${excerpt.length < text.length ? "…" : ""}`
-    .split("\n")
-    .map((line) => `> ${line}`)
-    .join("\n");
-}
-
 export interface BudgetEvidence {
   messages: CitedMessage[];
   files: FileSection[];
@@ -161,11 +183,12 @@ export interface BudgetEvidence {
 
 function evidenceRecords(
   evidence: BudgetEvidence,
-): { text: string; citation: string }[] {
+): { text: string; citation: string; dmr?: Record<string, unknown> }[] {
   return [
     ...evidence.messages.map((message) => ({
       text: message.text,
       citation: citationHref(message),
+      ...(message.dmr ? { dmr: message.dmr } : {}),
     })),
     ...evidence.files.map((section) => ({
       text: section.text,
@@ -174,13 +197,12 @@ function evidenceRecords(
   ];
 }
 
-export function budgetFallback(evidence: BudgetEvidence): string {
-  const records = evidenceRecords(evidence)
-    .filter((record) => record.text.trim())
-    .slice(0, FALLBACK_MAX_SOURCES);
-  if (!records.length)
-    return "Не вдалося підготувати перевірену відповідь за зібраними джерелами.";
-  return `Встиг отримати такі уривки джерел; їх узагальнення не завершено.\n\n${records.map((record) => `${quoteExcerpt(record.text)}\n\n[джерело](${record.citation})`).join("\n\n")}`;
+// Raw source excerpts are never an answer: without a validated draft, say so briefly.
+export const BUDGET_INABILITY =
+  "Не вдалося підготувати перевірену відповідь за зібраними джерелами.";
+
+export function budgetFallback(): string {
+  return BUDGET_INABILITY;
 }
 
 export function chooseBudgetAnswer(
@@ -202,7 +224,7 @@ export function chooseBudgetAnswer(
       ));
   return valid
     ? canonicalizeAnswer(candidate, canonicalCitations, canonicalFileLinks)
-    : budgetFallback(evidence);
+    : budgetFallback();
 }
 
 export class SynthesisAuthorizationError extends Error {}
@@ -234,17 +256,52 @@ export interface CompletionDiagnostic {
     | "tool_error"
     | "context_limit"
     | "time_limit"
-    | "tool_limit";
+    | "tool_limit"
+    | "continued"
+    | "draft_refresh";
   stopReason?: string;
   rawStopReason?: string;
   inputTokens?: number;
   outputTokens?: number;
   textCharacters?: number;
   toolCalls?: number;
+  /** Why a saved draft failed citation validation. */
+  draftIssue?: "no_citation" | "unknown_link" | "bare_link";
   durationMs?: number;
   remainingMs?: number;
   maxTokens?: number;
   attempt?: number;
+  failureKind?: string;
+  httpStatus?: number;
+}
+
+export function providerFailureKind(value: string): string {
+  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
+    return "rate_limit";
+  if (
+    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
+      value,
+    )
+  )
+    return "authorization";
+  if (
+    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
+      value,
+    )
+  )
+    return "interrupted_stream";
+  return "provider_error";
+}
+
+function providerFailureFacts(
+  error: unknown,
+): Pick<CompletionDiagnostic, "failureKind" | "httpStatus"> {
+  const message = typeof error === "string" ? error : "";
+  const status = message.match(/\b[45]\d{2}\b/)?.[0];
+  return {
+    failureKind: message.trim() ? providerFailureKind(message) : "empty",
+    ...(status ? { httpStatus: Number(status) } : {}),
+  };
 }
 
 export function completionFailure(error: unknown): CompletionStatus {
@@ -309,6 +366,9 @@ export function providerCompletion(
     toolCalls:
       response?.content?.filter((item: any) => item.type === "toolCall")
         .length ?? 0,
+    ...(response?.stopReason === "error"
+      ? providerFailureFacts(response?.errorMessage)
+      : {}),
   };
 }
 
@@ -325,6 +385,8 @@ type SynthesisOptions = {
   prepareContext?: (context: Context) => Context;
   purpose?: "research" | "synthesis";
   allowUserEvidence?: boolean;
+  /** Images attached to the current message, kept for final synthesis. */
+  images?: { type: "image"; data: string; mimeType: string }[];
   onOutcome?: (outcome: CompletionDiagnostic) => void;
 };
 
@@ -337,7 +399,13 @@ function synthesisContext(options: SynthesisOptions): Context | null {
   )
     return null;
   const messages: Context["messages"] = [
-    { role: "user", content: options.prompt, timestamp: Date.now() },
+    {
+      role: "user",
+      content: options.images?.length
+        ? [{ type: "text", text: options.prompt }, ...options.images]
+        : options.prompt,
+      timestamp: Date.now(),
+    },
   ];
   const context: Context = { systemPrompt: options.systemPrompt, messages };
   let remaining =

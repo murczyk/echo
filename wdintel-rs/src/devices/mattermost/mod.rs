@@ -276,7 +276,7 @@ fn device_link(
         .context(h!())?;
     let link = format!("https://{public_host}/devices/{device_id}");
     Ok(match sync_id {
-        Some(sync_id) => format!("{link}?sync_id={sync_id}"),
+        Some(sync_id) => format!("{link}/files?sync_id={sync_id}"),
         None => link,
     })
 }
@@ -290,6 +290,9 @@ mod tests {
 
     fn device_fixture(device_id: Uuid) -> DeviceCurrentState {
         DeviceCurrentState {
+            rating: 0,
+            tags: Vec::new(),
+            description: None,
             id: device_id,
             name: Some("Ймовірно 57 орб 2 рр БпС комп 2 （MSI)".to_string()),
             aors: Vec::new(),
@@ -372,7 +375,7 @@ mod tests {
             format!(
                 "Завершено аналіз пристрою \
                  [Ймовірно 57 орб 2 рр БпС комп 2 （MSI）]\
-                 (https://localhost/devices/{device_id}?sync_id={sync_id}) \
+                 (https://localhost/devices/{device_id}/files?sync_id={sync_id}) \
                  ([Джерело](https://secret.example/device))\n\
                  Файли: 12573, Тег 1: 123, Тег 2: 321"
             )

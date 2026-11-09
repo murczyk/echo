@@ -10,17 +10,41 @@ import {
   Typography,
 } from '@mui/material';
 import { useOptionalPowerSnackbar } from '../PowerSnackbar';
+import type { ImportantMutationRsp } from '../../../../Bindings';
 import { importantAdd } from '../../services/api/inbox-message-actions';
+import { currentSystemSettings } from '../../services/api/system-settings';
 
 export const IMPORTANT_MESSAGE_REQUEST_EVENT = 'echo-important-message-request';
 export const IMPORTANT_MESSAGE_UPDATED_EVENT = 'echo-important-message-updated';
 
 type ImportantMessageRequest = { messageId: number; groupMasterKey?: string | null };
 
+export type ImportantMessageUpdate = ImportantMutationRsp & { messageId: number };
+
 export function requestImportantMessage(request: ImportantMessageRequest) {
   window.dispatchEvent(
     new CustomEvent<ImportantMessageRequest>(IMPORTANT_MESSAGE_REQUEST_EVENT, { detail: request }),
   );
+}
+
+function dispatchImportantUpdated(messageId: number, response: ImportantMutationRsp) {
+  window.dispatchEvent(
+    new CustomEvent(IMPORTANT_MESSAGE_UPDATED_EVENT, { detail: { messageId, ...response } }),
+  );
+}
+
+async function markImportantWithoutNotification(messageId: number) {
+  const response = await importantAdd({
+    messageId,
+    groupMasterKey: null,
+    notifyGroup: false,
+    operationId: crypto.randomUUID(),
+  });
+  dispatchImportantUpdated(messageId, response);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Не вдалося позначити повідомлення.';
 }
 
 export function ImportantMessageDialog() {
@@ -35,18 +59,34 @@ export function ImportantMessageDialog() {
   const closingRequestVersion = useRef<number | null>(null);
 
   useEffect(() => {
-    const open = (event: Event) => {
-      requestVersion.current += 1;
+    const openDialog = (detail: ImportantMessageRequest) => {
       closingRequestVersion.current = null;
-      setRequest((event as CustomEvent<ImportantMessageRequest>).detail);
+      setRequest(detail);
       setOpen(true);
       setNotifyGroup(false);
       setOperationId(crypto.randomUUID());
       setError(null);
     };
-    window.addEventListener(IMPORTANT_MESSAGE_REQUEST_EVENT, open);
-    return () => window.removeEventListener(IMPORTANT_MESSAGE_REQUEST_EVENT, open);
-  }, []);
+    const handleRequest = async (event: Event) => {
+      const detail = (event as CustomEvent<ImportantMessageRequest>).detail;
+      requestVersion.current += 1;
+      const version = requestVersion.current;
+      try {
+        const { importantNotifyAllEnabled } = await currentSystemSettings();
+        if (version !== requestVersion.current) return;
+        if (importantNotifyAllEnabled) {
+          openDialog(detail);
+          return;
+        }
+        await markImportantWithoutNotification(detail.messageId);
+      } catch (requestError) {
+        notify({ severity: 'error', message: errorMessage(requestError) });
+      }
+    };
+    const listener = (event: Event) => void handleRequest(event);
+    window.addEventListener(IMPORTANT_MESSAGE_REQUEST_EVENT, listener);
+    return () => window.removeEventListener(IMPORTANT_MESSAGE_REQUEST_EVENT, listener);
+  }, [notify]);
 
   const close = (force = false) => {
     if (pending && !force) return;
@@ -64,21 +104,16 @@ export function ImportantMessageDialog() {
     setPending(true);
     setError(null);
     try {
-      const important = await importantAdd({
+      const response = await importantAdd({
         messageId: request.messageId,
         groupMasterKey: notifyGroup ? (request.groupMasterKey ?? null) : null,
         notifyGroup,
         operationId,
       });
-      window.dispatchEvent(
-        new CustomEvent(IMPORTANT_MESSAGE_UPDATED_EVENT, {
-          detail: { messageId: request.messageId, important },
-        }),
-      );
+      dispatchImportantUpdated(request.messageId, response);
       close(true);
     } catch (submitError) {
-      const message =
-        submitError instanceof Error ? submitError.message : 'Не вдалося позначити повідомлення.';
+      const message = errorMessage(submitError);
       setError(message);
       notify({ severity: 'error', message });
     } finally {

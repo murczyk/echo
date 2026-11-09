@@ -392,6 +392,14 @@ async fn sync_client_once(
             cli.id, e
         );
     }
+    let error_observer = metrics.as_ref().map(|metrics| {
+        Arc::new(crate::telemetry::operational::SignalObserver {
+            metrics: metrics.clone(),
+            client_id: cli.client_id,
+            account_id: cli.echo_account_id.clone(),
+            datasource_id: cli.id,
+        }) as Arc<dyn echo_im::observation::SignalErrorObserver>
+    });
     let Some(client_name) = cli.system_service_name else {
         trace!("client name is missing, skipping: {:?}", cli);
         return SyncResult {
@@ -409,6 +417,7 @@ async fn sync_client_once(
         dbx,
         redis,
         metrics,
+        error_observer,
     )
     .await;
     let (num_synced_inbox_messages, maintenance_skipped) = match receive_result
@@ -646,6 +655,7 @@ async fn receive_thread(
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
     metrics: &Option<crate::telemetry::Metrics>,
+    error_observer: Option<Arc<dyn echo_im::observation::SignalErrorObserver>>,
 ) -> Result<ReceiveThreadResult, AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -662,15 +672,17 @@ async fn receive_thread(
         crate::system_settings::get_echo_restapi_error_discord_webhook_url(dbx)
             .await
             .c(h!())?;
+    let mut options = crate::messenger::signal_restart::signal_worker_options(
+        crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
+            redis.clone(),
+        ),
+        restapi_error_discord_webhook_url,
+    );
+    options.error_observer = error_observer;
     let tick_outcome = echo_im::worker::signal_worker_tick_once_with_options(
         client_name,
         dbx,
-        crate::messenger::signal_restart::signal_worker_options(
-            crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
-                redis.clone(),
-            ),
-            restapi_error_discord_webhook_url,
-        ),
+        options,
     )
     .await
     .c(h!())?;
@@ -850,6 +862,7 @@ async fn sync_inbox(
             queued_item_count += 1;
         }
     }
+    sync_senders(&txn, senders).await.c(h!())?;
     echo_im::mark_inbox_as_seen(client_name, ids, &txn)
         .await
         .c(h!())?;
@@ -860,7 +873,6 @@ async fn sync_inbox(
     }
 
     notify_private_messages(config, client_name, private_message_bodies).await;
-    sync_senders(db, senders).await.c(h!())?;
     Ok(synced_item_count)
 }
 
@@ -1283,8 +1295,8 @@ where
         .c(h!())
 }
 
-async fn sync_senders(
-    db: &DatabaseConnection,
+async fn sync_senders<C: ConnectionTrait>(
+    db: &C,
     input_senders: BTreeMap<String, echo_im::types::SenderF1>,
 ) -> anyhow::Result<()> {
     let mut senders = BTreeMap::new();
@@ -1300,22 +1312,32 @@ async fn sync_senders(
         .select_only()
         .column(signal_profile::Column::Uuid)
         .column(signal_profile::Column::GivenName)
-        .into_tuple::<(String, Option<String>)>()
+        .column(signal_profile::Column::FamilyName)
+        .into_tuple::<(String, Option<String>, Option<String>)>()
         .all(db)
         .await
         .c(h!())?
         .into_iter()
-        .map(|(uuid, given_name)| {
-            (clear_messenger_login_string(&uuid), (uuid, given_name))
+        .map(|(uuid, given_name, family_name)| {
+            (
+                clear_messenger_login_string(&uuid),
+                (uuid, given_name, family_name),
+            )
         })
         .collect::<BTreeMap<_, _>>();
     for (uuid, sender) in senders {
         let name = normalize_sender_profile_name(sender.name);
         match existing_senders.remove(&uuid) {
-            Some((existing_uuid, old_name)) => {
-                update_sender_profile_name(db, existing_uuid, old_name, name)
-                    .await
-                    .c(h!())?;
+            Some((existing_uuid, old_name, old_family_name)) => {
+                update_sender_profile_name(
+                    db,
+                    existing_uuid,
+                    old_name,
+                    old_family_name,
+                    name,
+                )
+                .await
+                .c(h!())?;
             }
             None => {
                 signal_profile::ActiveModel {
@@ -1333,19 +1355,20 @@ async fn sync_senders(
     Ok(())
 }
 
-async fn update_sender_profile_name(
-    db: &DatabaseConnection,
+async fn update_sender_profile_name<C: ConnectionTrait>(
+    db: &C,
     uuid: String,
     old_name: Option<String>,
+    old_family_name: Option<String>,
     name: Option<String>,
 ) -> anyhow::Result<()> {
-    if name.is_none() || old_name == name {
+    if name.is_none() || (old_name == name && old_family_name.is_none()) {
         return Ok(());
     }
     signal_profile::ActiveModel {
         uuid: Set(uuid.clone()),
         given_name: Set(name.clone()),
-        family_name: NotSet,
+        family_name: Set(None),
         created_at: NotSet,
     }
     .update(db)
@@ -1505,6 +1528,192 @@ mod tests {
         );
         assert_eq!(normalize_sender_profile_name(Some(" ".to_string())), None);
         assert_eq!(normalize_sender_profile_name(None), None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn sender_renames_3957_follow_echo_im_for_signal_and_whatsapp() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        for (source, kind, sender_id) in [
+            (
+                EchoMessageSource::Signal,
+                "signal",
+                Uuid::new_v4().to_string(),
+            ),
+            (
+                EchoMessageSource::Whatsapp,
+                "whatsapp",
+                format!("{}:22@lid", Uuid::new_v4().as_u64_pair().0),
+            ),
+        ] {
+            let (client_name, sender, group_id) =
+                mk_sender_rename_source(&env, source, kind, sender_id).await;
+            for (incoming_name, expected_name) in [
+                (Some("Support"), "Support"),
+                (Some("Oscar"), "Oscar"),
+                (Some(" Oscar Renamed "), "Oscar Renamed"),
+                (Some(" "), "Oscar Renamed"),
+                (None, "Oscar Renamed"),
+            ] {
+                assert_ingested_sender_name(
+                    &env,
+                    &client_name,
+                    &sender,
+                    group_id,
+                    incoming_name,
+                    expected_name,
+                )
+                .await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn sender_names_3957_use_echo_im_when_synced_profile_is_empty() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, _) = mk_linked_datasource(&env.dbx).await;
+        let sender_id = Uuid::new_v4().to_string();
+        echo_sender::ActiveModel {
+            uuid: Set(sender_id.clone()),
+            name: Set(Some("Oscar".into())),
+            account_id: Set(account.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        signal_profile::ActiveModel {
+            uuid: Set(sender_id.clone()),
+            given_name: Set(Some(" ".into())),
+            family_name: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let profiles = crate::rer_importer::collect_profiles_data(
+            &env.dbx,
+            vec![sender_id.clone()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            profiles[&sender_id].as_ref().unwrap().given_name.as_deref(),
+            Some("Oscar"),
+        );
+    }
+
+    async fn mk_sender_rename_source(
+        env: &Arc<Env>,
+        source: EchoMessageSource,
+        kind: &str,
+        sender_id: String,
+    ) -> (String, echo_sender::Model, i32) {
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let mut account = account.into_active_model();
+        account.source = Set(source);
+        let account = account.update(&env.dbx).await.unwrap();
+        let mut datasource = datasource.into_active_model();
+        datasource.kind = Set(kind.into());
+        let datasource = datasource.update(&env.dbx).await.unwrap();
+        let client_name = list_echo_accounts(None, &env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.id == datasource.id)
+            .unwrap()
+            .system_service_name
+            .unwrap();
+        let canonical_id = clear_messenger_login_string(&sender_id);
+        if canonical_id != sender_id {
+            echo_sender::ActiveModel {
+                uuid: Set(canonical_id.clone()),
+                name: Set(Some("Support".into())),
+                account_id: Set(account.id),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        signal_profile::ActiveModel {
+            uuid: Set(canonical_id),
+            given_name: Set(Some("Support".into())),
+            family_name: Set(Some("Old surname".into())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let sender = echo_sender::ActiveModel {
+            uuid: Set(sender_id),
+            name: Set(Some("Support".into())),
+            account_id: Set(account.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let group = echo_group::ActiveModel {
+            group_id: Set(format!("3957-{kind}")),
+            account_id: Set(account.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        (client_name, sender, group.id)
+    }
+
+    async fn assert_ingested_sender_name(
+        env: &Arc<Env>,
+        client_name: &str,
+        sender: &echo_sender::Model,
+        group_id: i32,
+        incoming_name: Option<&str>,
+        expected_name: &str,
+    ) {
+        let mut sender_update = sender.clone().into_active_model();
+        sender_update.name = Set(incoming_name.map(str::to_string));
+        sender_update.update(&env.dbx).await.unwrap();
+        let mut inbox = mk_echo_inbox_message(&env.dbx, sender.account_id)
+            .await
+            .into_active_model();
+        inbox.sender_id = Set(Some(sender.id));
+        inbox.group_id = Set(Some(group_id));
+        let inbox = inbox.update(&env.dbx).await.unwrap();
+
+        sync_inbox(&env.config, Utc::now(), &env.dbx, client_name, &None)
+            .await
+            .unwrap();
+
+        let sender_id = clear_messenger_login_string(&sender.uuid);
+        let profiles = crate::rer_importer::collect_profiles_data(
+            &env.dbx,
+            vec![sender_id.clone()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            profiles[&sender_id].as_ref().unwrap().given_name.as_deref(),
+            Some(expected_name),
+        );
+        assert_eq!(profiles[&sender_id].as_ref().unwrap().family_name, None);
+        let inbox = echo_inbox_message::Entity::find_by_id(inbox.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(inbox.seen);
+        let queued = signal_message_queue::Entity::find()
+            .filter(signal_message_queue::Column::InternalId.eq(inbox.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(queued.sender_id.as_deref(), Some(sender_id.as_str()));
     }
 
     #[test]

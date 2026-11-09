@@ -38,6 +38,8 @@ type PreviewSnapshot = {
   state: DeviceFilePreviewState;
   error: string | null;
   sizeBytes: number | null;
+  imageSize?: { width: number; height: number };
+  durationSeconds?: number;
   errorRetryable?: boolean;
   attempt: number;
 };
@@ -242,9 +244,35 @@ export function useDeviceFilePreview({
   }, [session, sessionIsCurrent, fail]);
   const canDownload = !!source && matches && state !== 'loading' && state !== 'denied';
   const { downloading, download } = useDeviceFileDownload(canDownload ? source : null, onError);
+  const onImageLoad = useCallback(
+    (image: HTMLImageElement) => {
+      if (!sessionIsCurrent(session) || image.naturalWidth <= 0 || image.naturalHeight <= 0) return;
+      const imageSize = { width: image.naturalWidth, height: image.naturalHeight };
+      setSnapshot((previous) =>
+        previous.session === session ? { ...previous, imageSize } : previous,
+      );
+    },
+    [session, sessionIsCurrent],
+  );
+  const onDurationChange = useCallback(
+    (durationSeconds: number) => {
+      if (!sessionIsCurrent(session) || !Number.isFinite(durationSeconds) || durationSeconds < 0)
+        return;
+      setSnapshot((previous) =>
+        previous.session === session && previous.durationSeconds !== durationSeconds
+          ? { ...previous, durationSeconds }
+          : previous,
+      );
+    },
+    [session, sessionIsCurrent],
+  );
 
   return {
     state,
+    imageSize: matches && state === 'ready' ? (snapshot.imageSize ?? null) : null,
+    onImageLoad,
+    durationSeconds: matches && state === 'ready' ? (snapshot.durationSeconds ?? null) : null,
+    onDurationChange,
     source:
       matches && session && state !== 'denied'
         ? { ...session.source, sizeBytes: snapshot.sizeBytes }

@@ -2,7 +2,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import { Autocomplete, InputAdornment, Popover, TextField, Tooltip } from '@mui/material';
-import { useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { ANALYSIS_SEARCH_DOC_URL, ANALYSIS_SEARCH_MODES } from '../config';
@@ -22,15 +22,26 @@ export function AnalysisSearchControls({
 }: Props) {
   const [helpAnchor, setHelpAnchor] = useState<HTMLElement | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const search = queryState.search ?? '';
+  const [search, setSearch] = useState(queryState.search ?? '');
+  const [searchPending, startSearchTransition] = useTransition();
+
+  useEffect(() => {
+    if (!searchPending) setSearch(queryState.search ?? '');
+  }, [queryState.search, searchPending]);
+
+  const updateSearch = (search: string) => {
+    setSearch(search);
+    startSearchTransition(() => updateQueryState({ search }));
+  };
 
   return (
     <div className="flex min-w-0 items-center gap-echo-xs">
       <Autocomplete
         className={isCompactLayout ? 'w-[180px] min-w-0' : 'w-[220px] min-w-0'}
         freeSolo
+        disableClearable
         forcePopupIcon={false}
-        value={null}
+        value=""
         inputValue={search}
         open={suggestionsOpen && search.trim().length > 0}
         onOpen={() => setSuggestionsOpen(true)}
@@ -53,12 +64,14 @@ export function AnalysisSearchControls({
         )}
         onInputChange={(_event, value, reason) => {
           if (reason === 'input') {
-            updateQueryState({ search: value.trim() === '' ? '' : value });
+            updateSearch(value.trim() === '' ? '' : value);
             setSuggestionsOpen(true);
           }
         }}
         onChange={(_event, option) => {
-          if (option && typeof option !== 'string') updateQueryState({ searchMode: option.mode });
+          if (option && typeof option !== 'string') {
+            startSearchTransition(() => updateQueryState({ searchMode: option.mode }));
+          }
         }}
         slotProps={{
           popper: { placement: 'bottom-start', className: 'w-max! max-w-[calc(100vw-24px)]' },
@@ -90,8 +103,10 @@ export function AnalysisSearchControls({
                         size="small"
                         onClick={() => {
                           setSuggestionsOpen(false);
-                          if (isCompactLayout) onClose();
-                          else updateQueryState({ search: '' });
+                          if (isCompactLayout) {
+                            setSearch('');
+                            onClose();
+                          } else updateSearch('');
                         }}
                       >
                         <ClearOutlinedIcon fontSize="small" />

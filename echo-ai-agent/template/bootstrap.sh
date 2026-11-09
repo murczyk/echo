@@ -35,6 +35,7 @@ apt-get install --yes --no-install-recommends \
   curl \
   dnsutils \
   file \
+  fonts-dejavu-core \
   git \
   jq \
   less \
@@ -42,6 +43,10 @@ apt-get install --yes --no-install-recommends \
   nginx \
   procps \
   python3 \
+  python3-docx \
+  python3-lxml \
+  python3-matplotlib \
+  python3-openpyxl \
   ripgrep \
   sudo \
   xz-utils
@@ -111,10 +116,14 @@ install -m 0644 "$STAGE/execution-policy.ts" "$PI_ROOT/execution-policy.ts"
 install -m 0644 "$STAGE/flash-research.ts" "$PI_ROOT/flash-research.ts"
 install -m 0644 "$STAGE/citations.ts" "$PI_ROOT/citations.ts"
 install -m 0644 "$STAGE/attachments.ts" "$PI_ROOT/attachments.ts"
+install -m 0644 "$STAGE/uploads.ts" "$PI_ROOT/uploads.ts"
 install -m 0644 "$STAGE/devices.ts" "$PI_ROOT/devices.ts"
 install -m 0644 "$STAGE/maps.ts" "$PI_ROOT/maps.ts"
 install -m 0644 "$STAGE/map-script.ts" "$PI_ROOT/map-script.ts"
+install -m 0644 "$STAGE/python-sandbox.ts" "$PI_ROOT/python-sandbox.ts"
+install -m 0644 "$STAGE/documents.ts" "$PI_ROOT/documents.ts"
 install -m 0644 "$STAGE/sidc-resolver.ts" "$PI_ROOT/sidc-resolver.ts"
+install -m 0644 "$STAGE/group-scope.ts" "$PI_ROOT/group-scope.ts"
 install -m 0644 "$STAGE/search-guidance.ts" "$PI_ROOT/search-guidance.ts"
 node --experimental-strip-types --input-type=module \
   -e "await import('file://$PI_ROOT/runner.ts')"
@@ -123,8 +132,14 @@ install -m 0755 "$STAGE/echo-ai-agent-runner" /usr/local/bin/echo-ai-agent-runne
 install -d -m 0755 /opt/echo-ai-agent/python/echomap
 install -m 0644 "$STAGE"/python/echomap/*.py "$STAGE/python/echomap/app6d-catalog.json" \
   /opt/echo-ai-agent/python/echomap/
+# Shared sandbox hardening and the document-script library (python-docx).
+install -m 0644 "$STAGE/python/echosandbox.py" /opt/echo-ai-agent/python/echosandbox.py
+install -d -m 0755 /opt/echo-ai-agent/python/echodoc
+install -m 0644 "$STAGE"/python/echodoc/*.py /opt/echo-ai-agent/python/echodoc/
 runuser -u "$AGENT_USER" -- unshare --user --map-root-user --net -- true \
-  || printf '[echo-ai-agent-template] WARNING: no unprivileged namespaces; map scripts disabled\n' >&2
+  || printf '[echo-ai-agent-template] WARNING: no unprivileged namespaces; map and document scripts disabled\n' >&2
+python3 -I -c 'import docx, matplotlib; print("python-docx", getattr(docx, "__version__", "unknown"))' \
+  || printf '[echo-ai-agent-template] WARNING: python-docx or matplotlib unavailable; document scripts will fail\n' >&2
 install -m 0755 "$STAGE/configure-network.sh" \
   /usr/local/sbin/echo-ai-agent-configure-network
 

@@ -4,6 +4,8 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import { Badge, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
+import { useUnitParentOptions } from '../../shared/use-unit-children-filter';
+
 import { PowerChip } from '../../../components/PowerChip';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 import {
@@ -114,6 +116,31 @@ export function AnalysisFiltersPanel({
     ],
   );
 
+  const unitOptions = useMemo(() => {
+    const optionsByValue = new Map(derived.unitsOptions.map((option) => [option.value, option]));
+    queryState.unitHierarchy?.parents.forEach((parent) => {
+      if (queryState.unitsSelected.includes(parent.value) && !optionsByValue.has(parent.value)) {
+        optionsByValue.set(parent.value, { value: parent.value, label: parent.label, count: 0 });
+      }
+    });
+    return [...optionsByValue.values()];
+  }, [derived.unitsOptions, queryState.unitHierarchy, queryState.unitsSelected]);
+  const localParents = useUnitParentOptions(
+    options.unitParentCount === undefined && unitOptions.length > 0,
+    unitOptions,
+    queryState.unitHierarchy,
+  );
+  const derivedWithParents = { ...derived, unitsOptions: localParents.options };
+  const countsWithParents = useMemo(() => {
+    if (counts?.unitsCount == null) return counts;
+    const leafValues = new Set(derived.unitsOptions.map((option) => option.value));
+    const parentCount =
+      options.unitParentCount ??
+      localParents.options.filter((option) => option.count > 0 && !leafValues.has(option.value))
+        .length;
+    return { ...counts, unitsCount: counts.unitsCount + parentCount };
+  }, [counts, derived.unitsOptions, options.unitParentCount, localParents.options]);
+
   const toggleSection = (section: FilterSectionId) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
@@ -215,9 +242,9 @@ export function AnalysisFiltersPanel({
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
                   threadOnly={page.threadMode != null}
-                  counts={counts}
+                  counts={countsWithParents}
                   cyberEchoEnabled={cyberEchoEnabled}
-                  derived={derived}
+                  derived={derivedWithParents}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}
@@ -280,9 +307,9 @@ export function AnalysisFiltersPanel({
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
                   threadOnly={page.threadMode != null}
-                  counts={counts}
+                  counts={countsWithParents}
                   cyberEchoEnabled={cyberEchoEnabled}
-                  derived={derived}
+                  derived={derivedWithParents}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}

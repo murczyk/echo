@@ -113,6 +113,10 @@ do
     || fail_health "required service is not active: $unit"
 done
 
+missing_addresses=$(gateway_missing_listen_addresses)
+[[ -z "$missing_addresses" ]] \
+  || fail_health "PostgreSQL has no socket on configured address: $missing_addresses"
+
 flow_status=$(catalog_psql -Atq \
   -v ON_ERROR_STOP=1 \
   -v mirror="$MIRROR_NAME" <<'SQL' 2>"$health_error_file"

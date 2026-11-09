@@ -10,6 +10,7 @@ import { MessageCardAttachmentPreviewDialog } from '../MessageCardAttachmentPrev
 import type { MessageCardPreviewItem } from '../message-card-preview.types.ts';
 
 vi.mock('@mui/material', () => ({
+  useMediaQuery: () => false,
   Dialog: ({ children, open }: { children?: ReactNode; open: boolean }) =>
     open ? <div role="dialog">{children}</div> : null,
   IconButton: ({

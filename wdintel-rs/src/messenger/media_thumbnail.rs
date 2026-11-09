@@ -56,11 +56,11 @@ use std::ffi::OsStr;
 use std::future::Future;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(test)]
 use tokio::process::Command;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
@@ -2278,7 +2278,7 @@ async fn discard_thumbnail_source_reference_locked(
 async fn generate_thumbnail(
     input_path: &Path,
     thumbnail_path: &Path,
-    media_id: Uuid,
+    _media_id: Uuid,
     is_image: bool,
 ) -> Result<(), AppError> {
     let _generation_permit = THUMBNAIL_GENERATION_SEMAPHORE
@@ -2286,102 +2286,51 @@ async fn generate_thumbnail(
         .acquire_owned()
         .await
         .c(h!())?;
-    ensure_private_dir(thumbnail_path.parent().c(h!())?).await?;
-    let temp_path = temporary_path(thumbnail_path, Some("jpg"));
-    create_empty_private_file(&temp_path).await?;
-    let temp_file = TemporaryFile::new(temp_path.clone());
-
-    let status = match tokio::time::timeout(
-        Duration::from_secs(MESSENGER_MEDIA_THUMBNAIL_FFMPEG_TIMEOUT_SECS),
-        build_thumbnail_command(input_path, &temp_path, is_image).status(),
-    )
-    .await
-    {
-        Ok(status) => status.c(h!())?,
-        Err(_) => {
-            return Err(AppError::BL {
-                msg: format!(
-                    "ffmpeg timed out generating thumbnail for media {media_id}"
-                ),
-            });
-        }
-    };
-    if !status.success() {
-        return Err(AppError::BL {
-            msg: format!(
-                "ffmpeg failed generating thumbnail for media {media_id} with status {status}"
-            ),
-        });
-    }
-    if !jpeg_file_is_ready(&temp_path).await? {
-        return Err(AppError::BL {
-            msg: format!(
-                "ffmpeg produced an invalid thumbnail for media {media_id}"
-            ),
-        });
-    }
-    fs::set_permissions(
-        &temp_path,
-        std::fs::Permissions::from_mode(MESSENGER_MEDIA_THUMBNAIL_FILE_MODE),
+    let filter = thumbnail_filter(is_image);
+    crate::thumbnail::generate(
+        input_path,
+        thumbnail_path,
+        &thumbnail_options(&filter),
     )
     .await
     .c(h!())?;
-    temp_file.publish(thumbnail_path).await
+    Ok(())
 }
 
-fn build_thumbnail_command(
-    input_path: &Path,
-    output_path: &Path,
-    is_image: bool,
-) -> Command {
-    let mut command = Command::new(MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN);
-    let filter = if is_image {
+fn thumbnail_filter(is_image: bool) -> String {
+    if is_image {
         format!(
             "scale={0}:{0}:force_original_aspect_ratio=increase",
             MESSENGER_MEDIA_IMAGE_THUMBNAIL_SHORT_SIDE_PX
         )
     } else {
         MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER.to_string()
-    };
-    command
-        .kill_on_drop(true)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .arg("-nostdin")
-        .arg("-y")
-        .arg("-hide_banner")
-        .arg("-loglevel")
-        .arg("error")
-        .arg("-i")
-        .arg(input_path)
-        .arg("-map")
-        .arg("0:v:0")
-        .arg("-vf")
-        .arg(filter)
-        .arg("-frames:v")
-        .arg("1")
-        .arg("-an")
-        .arg("-sn")
-        .arg("-threads")
-        .arg("1")
-        .arg("-f")
-        .arg("image2")
-        .arg("-c:v")
-        .arg("mjpeg")
-        .arg(output_path);
-    command
+    }
 }
 
-async fn create_empty_private_file(path: &Path) -> Result<(), AppError> {
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(MESSENGER_MEDIA_THUMBNAIL_FILE_MODE)
-        .open(path)
-        .await
-        .c(h!())?;
-    Ok(())
+fn thumbnail_options(filter: &str) -> crate::thumbnail::Options<'_> {
+    crate::thumbnail::Options {
+        binary: MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN,
+        filter,
+        timeout: Duration::from_secs(
+            MESSENGER_MEDIA_THUMBNAIL_FFMPEG_TIMEOUT_SECS,
+        ),
+        max_bytes: None,
+        local_media_only: false,
+    }
+}
+
+#[cfg(test)]
+fn build_thumbnail_command(
+    input_path: &Path,
+    output_path: &Path,
+    is_image: bool,
+) -> Command {
+    crate::thumbnail::command(
+        input_path,
+        output_path,
+        &thumbnail_options(&thumbnail_filter(is_image)),
+    )
 }
 
 async fn ensure_private_dir(path: &Path) -> Result<(), AppError> {

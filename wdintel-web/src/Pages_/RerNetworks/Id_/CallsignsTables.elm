@@ -232,7 +232,7 @@ loadCatalogAndNetworkCallsigns networkId =
         , section = Just B.Everything
         , period = Just B.Unlimited
         }
-    , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing, period = Just B.Unlimited }
+    , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing, period = Just B.Unlimited, includeActivityInfo = Nothing }
     ]
 
 

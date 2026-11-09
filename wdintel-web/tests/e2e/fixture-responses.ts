@@ -29,6 +29,7 @@ export function systemSettingsCurrentResponse({
   enableAudioTranscription = false,
   shortUrlEnabled = false,
   dutyExcludeMenuEnabled = true,
+  dutySelectedGroupsEnabled = true,
   analysisAorFilterEnabled = true,
   rerReportEnabled = false,
   hideNetworks = false,
@@ -36,6 +37,7 @@ export function systemSettingsCurrentResponse({
   enableAudioTranscription?: boolean;
   shortUrlEnabled?: boolean;
   dutyExcludeMenuEnabled?: boolean;
+  dutySelectedGroupsEnabled?: boolean;
   analysisAorFilterEnabled?: boolean;
   rerReportEnabled?: boolean;
   hideNetworks?: boolean;
@@ -73,9 +75,11 @@ export function systemSettingsCurrentResponse({
     excludeOrbitOtherUnits: false,
     disableBotTags: false,
     dutyExcludeMenuEnabled,
+    dutySelectedGroupsEnabled,
     analysisAorFilterEnabled,
     hideNetworks,
     aiPositionHighlightsEnabled: false,
+    importantNotifyAllEnabled: true,
     twoFactorAuthEnabled: true,
     apiRateLimitReplenishIntervalMs: 500,
     apiRateLimitBurstSize: 5,

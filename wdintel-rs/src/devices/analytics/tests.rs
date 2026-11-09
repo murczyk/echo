@@ -415,6 +415,8 @@ async fn insert_analytics_test_device(env: &Env) -> Uuid {
         created_by: Set(owner.login),
         unit_id: Set(None),
         tags: Set(json!([])),
+        rating: Set(None),
+        description: Set(None),
         external_url: Set(None),
         archived: Set(false),
         archived_at: Set(None),
@@ -1785,4 +1787,95 @@ async fn archive_tags_do_not_change_physical_totals_or_link_pagination() {
         .is_none());
     }
     sqlx::Postgres::drop_database(&url).await.unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn search_filters_keep_tagged_descendants_without_legacy_tag_prefilter_3930(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let db = env.file_registry_db().unwrap().connection();
+    let tag = bl::create_tag(db, "Важливе".to_owned()).await.unwrap();
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    save_extension_rule(&env, tag_id, "pdf").await;
+    let device = device::Entity::find_by_id(device_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let owner = login::Entity::find()
+        .filter(login::Column::Login.eq(device.created_by))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let actor = access::login_with_roles(&owner, &[ROLE_CYBER]);
+    let result = crate::devices::files::sync::automatic(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &actor,
+        device_id,
+        vec![RawSyncDeviceFileItem {
+            absolute_path: r"C:\Scope\Звіти\scan.pdf".to_owned(),
+            mime_type: Some("application/pdf".to_owned()),
+            extension: Some("pdf".to_owned()),
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
+            source_file_state: None,
+        }],
+    )
+    .await
+    .unwrap();
+    let cache = worker::RuleCache::default();
+    for _ in 0..20 {
+        if !worker::run_tick(&env, &cache, 100, 100, 60).await.unwrap() {
+            break;
+        }
+    }
+    let scope = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::Name.eq("Scope"))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let file = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::Name.eq("scan.pdf"))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(file_links(&env, file.id).await.len(), 1);
+    for sync in [None, Some(result.sync.sync_id.as_str())] {
+        for global in [false, true] {
+            for (name, legacy_ids, legacy_untagged, expected) in [
+                ("Звіти", Some(vec![tag_id]), None, "Звіти"),
+                ("scan", None, Some(true), "scan.pdf"),
+            ] {
+                let request = serde_json::json!({
+                    "device_id":device_id,"scope_entry_id":scope.id,"sync_id":sync,
+                    "name_query":name,"rank_by_relevance":true,"global_search":global,
+                    "filters":{"tag_ids":[tag_id],"tag_match":"all"},
+                    "tag_ids":legacy_ids,"tag_match":"all","untagged":legacy_untagged
+                });
+                let page = crate::devices::files::search_marked(
+                    &env,
+                    &actor,
+                    serde_json::from_value(request).unwrap(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    page.entries
+                        .iter()
+                        .map(|entry| entry.name.as_str())
+                        .collect::<Vec<_>>(),
+                    [expected],
+                    "sync={sync:?}, global={global}, name={name}"
+                );
+            }
+        }
+    }
 }

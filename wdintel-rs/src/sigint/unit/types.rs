@@ -30,6 +30,41 @@ pub struct UnitCombatTypesRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnitHierarchyGroup {
+    pub id: String,
+    pub label: String,
+    pub level: u32,
+    pub parent_index: Option<u32>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitHierarchyUnit {
+    pub id: i64,
+    pub name: String,
+    pub group_index: Option<u32>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitHierarchyRsp {
+    pub revision: String,
+    pub groups: Vec<UnitHierarchyGroup>,
+    pub units: Vec<UnitHierarchyUnit>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitHierarchyReq {
+    pub known_revision: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct Unit {
     pub id: i64,
     #[serde(default)]

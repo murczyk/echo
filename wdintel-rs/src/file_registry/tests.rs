@@ -707,6 +707,9 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261027_093747_file_finalization_ownership".to_string(),
             "m20261027_112601_synchronous_finalization_adoption".to_string(),
             "m20261028_153759_finalization_terminal_metrics".to_string(),
+            "m20261030_143441_device_audio_activity_index".to_string(),
+            "m20261031_111058_device_list_activity_order".to_string(),
+            "m20261103_101213_file_markers".to_string(),
         ]
     );
 }
@@ -3206,15 +3209,10 @@ mod async_finalization_migration {
                     .await
                     .unwrap()
                     .unwrap();
-            let migrations = wdfiles_migration::Migrator::migrations();
-            let index = migrations
-                .iter()
-                .position(|migration| migration.name() == ADOPTION_VERSION)
-                .unwrap();
             let transaction = connection.begin().await.unwrap();
-            let error = wdfiles_migration::Migrator::down(
+            let error = downgrade_migration_in_transaction(
                 &transaction,
-                Some(u32::try_from(migrations.len() - index).unwrap()),
+                ADOPTION_VERSION,
             )
             .await
             .unwrap_err();
@@ -3434,10 +3432,14 @@ END $test$;
             let before = publication_snapshot(connection).await;
 
             let transaction = connection.begin().await.unwrap();
-            let error = downgrade_finalization(&transaction).await.unwrap_err();
+            let error =
+                downgrade_migration_in_transaction(&transaction, VERSION)
+                    .await
+                    .unwrap_err();
             transaction.rollback().await.unwrap();
             assert!(
-                format!("{error:?}").contains("finalization"),
+                format!("{error:?}")
+                    .contains("cannot downgrade while finalization evidence or noncanonical publications exist"),
                 "unexpected downgrade error: {error:?}"
             );
             assert_eq!(
@@ -3479,6 +3481,19 @@ END $test$;
             .unwrap();
         let steps = u32::try_from(migrations.len() - index).unwrap();
         wdfiles_migration::Migrator::down(connection, Some(steps)).await
+    }
+
+    async fn downgrade_migration_in_transaction(
+        transaction: &DatabaseTransaction,
+        version: &str,
+    ) -> Result<(), DbErr> {
+        let migration = wdfiles_migration::Migrator::migrations()
+            .into_iter()
+            .find(|migration| migration.name() == version)
+            .unwrap();
+        migration
+            .down(&sea_orm_migration::SchemaManager::new(transaction))
+            .await
     }
 
     #[tokio::test]
@@ -4083,8 +4098,16 @@ END $test$;
 
             let before = publication_snapshot(connection).await;
             let transaction = connection.begin().await.unwrap();
-            assert!(downgrade_finalization(&transaction).await.is_err());
+            let error =
+                downgrade_migration_in_transaction(&transaction, VERSION)
+                    .await
+                    .unwrap_err();
             transaction.rollback().await.unwrap();
+            assert!(
+                format!("{error:?}")
+                    .contains("cannot downgrade while finalization evidence or noncanonical publications exist"),
+                "unexpected downgrade error: {error:?}"
+            );
             assert_eq!(publication_snapshot(connection).await, before);
             assert_eq!(
                 table_count(connection, "file_content_upload_object").await,

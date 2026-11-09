@@ -156,8 +156,8 @@ describe('AddUserDialog', () => {
     });
 
     await act(async () => {
-      change(input('Логін'), 'local-login');
       change(input('Delta логін'), 'delta-login');
+      change(input('Логін'), 'local-login');
       const passwordSwitch = Array.from(document.querySelectorAll('input')).find(
         (candidate) => candidate.type === 'checkbox',
       );
@@ -197,8 +197,8 @@ describe('AddUserDialog', () => {
     });
 
     await act(async () => {
-      change(input('Логін'), 'local-login');
       change(input('Delta логін'), 'delta-login');
+      change(input('Логін'), 'local-login');
     });
     const createButton = Array.from(document.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Додати',
@@ -359,8 +359,8 @@ describe('AddUserDialog', () => {
       );
     });
     await act(async () => {
-      change(input('Логін'), 'local-login');
       change(input('Delta логін'), 'delta-login');
+      change(input('Логін'), 'local-login');
     });
     const createButton = Array.from(document.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Додати',
@@ -397,8 +397,8 @@ describe('AddUserDialog', () => {
       );
     });
     await act(async () => {
-      change(input('Логін'), 'local-login');
       change(input('Delta логін'), 'delta-login');
+      change(input('Логін'), 'local-login');
     });
     const createButton = Array.from(document.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Додати',
@@ -429,8 +429,8 @@ describe('AddUserDialog', () => {
       );
     });
     await act(async () => {
-      change(input('Логін'), 'local-login');
       change(input('Delta логін'), 'delta-login');
+      change(input('Логін'), 'local-login');
     });
     const createButton = Array.from(document.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Додати',
@@ -445,7 +445,8 @@ describe('AddUserDialog', () => {
 
     await act(async () => change(input('Delta логін'), ''));
     expect(document.body.textContent).not.toContain('Оновіть налаштування входу');
-    expect(helperTextFor(input('Логін'))).toContain('Логін зайнятий');
+    expect(helperTextFor(input('Логін'))).not.toContain('Логін зайнятий');
+    expect(input('Логін').value).toBe('');
     expect(document.body.textContent).toContain(
       'Вкажіть Delta логін або увімкніть вхід за паролем',
     );

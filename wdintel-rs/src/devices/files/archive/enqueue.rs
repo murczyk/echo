@@ -9,14 +9,15 @@ use uuid::Uuid;
 
 mod connection;
 
+pub(in crate::devices::files) use connection::SqlxConnection;
+
 pub(in crate::devices::files) async fn ensure_sqlx_in(
     transaction: &mut sqlx::PgConnection,
     device_id: Uuid,
     file_id: Uuid,
     revision: i64,
 ) -> Result<Option<Uuid>> {
-    let connection =
-        connection::EnqueueConnection(tokio::sync::Mutex::new(transaction));
+    let connection = SqlxConnection(tokio::sync::Mutex::new(transaction));
     ensure_in(&connection, device_id, file_id, revision)
         .await
         .context(h!())

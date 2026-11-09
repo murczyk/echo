@@ -26,6 +26,7 @@ const dutyApiMocks = vi.hoisted(() => ({
   cancelDutyNotificationPollCycle: vi.fn(),
   recordLastSuccessfulDutyCountCheck: vi.fn(),
   removeLastSuccessfulDutyCountCheck: vi.fn(),
+  getUnitHierarchy: vi.fn(),
 }));
 
 export function getDutyApiMocks() {
@@ -68,6 +69,8 @@ vi.mock('../../services/api/networks', () => ({
 }));
 
 vi.mock('../../services/api/units', () => ({
+  getUnitHierarchy: dutyApiMocks.getUnitHierarchy,
+  getAllUnitsList: vi.fn(() => Promise.resolve([])),
   getUnitsList: vi.fn(() => Promise.resolve([])),
   getUnitsByIds: vi.fn(() => Promise.resolve([])),
 }));
@@ -218,6 +221,7 @@ export function createDutyFeedStateFixture() {
     });
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.clearAllMocks();
+    dutyApiMocks.getUnitHierarchy.mockResolvedValue({ revision: 'test', groups: [], units: [] });
     dutyApiMocks.fetchInboxMessages.mockReset();
     dutyApiMocks.fetchMessagesByIds.mockReset();
     dutyApiMocks.fetchMessagesByIdsWithMetadata.mockReset();

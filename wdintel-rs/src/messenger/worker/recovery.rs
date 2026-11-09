@@ -3116,6 +3116,9 @@ mod tests {
             report_chunking_hours: Set(
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
             ),
+            report_global_concurrency: Set(None),
+            report_kind_concurrency: Set(None),
+            report_etalonka_concurrency: Set(None),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),
@@ -3129,12 +3132,16 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            duty_selected_groups_enabled: Set(None),
+            important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),
             messenger_media_cache_retention_hours: Set(None),
             messenger_media_cache_max_size_gib: Set(None),
             messenger_media_cache_min_free_gib: Set(None),
+            signoz_metrics_enabled: Set(None),
+            signoz_metrics_endpoint: Set(None),
         }
         .insert(dbx)
         .await

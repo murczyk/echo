@@ -91,5 +91,7 @@ pub(crate) enum Reconciliation {
     Published,
     Verified(VerifiedFinalizationObject),
     Retired,
+    /// The attempt's object is absent; its write never completed.
+    Missing(uuid::Uuid),
     Unresolved,
 }

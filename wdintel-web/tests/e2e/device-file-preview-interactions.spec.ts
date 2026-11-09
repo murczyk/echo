@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -13,7 +14,11 @@ import {
   loadDeviceFilePreviewFixture,
   type DeviceFilePreviewFixture,
 } from './device-file-preview.fixtures';
-import { openDeviceFilePreview, type FilePreviewBackend } from './device-file-preview.ui';
+import {
+  openDeviceArchiveFolder,
+  openDeviceFilePreview,
+  type FilePreviewBackend,
+} from './device-file-preview.ui';
 
 type Source = { fixture: DeviceFilePreviewFixture; bytes: Buffer };
 
@@ -286,7 +291,7 @@ for (const id of [
         try {
           const reference = await openReferenceHost(referencePage, host, referenceSource);
           expect(await documentObservation(reference, kind)).toBe(deviceText);
-          if (!kind.endsWith('docx')) await zoomDocument(reference, kind, referencePage);
+          await zoomDocument(reference, kind, referencePage);
           if (id === 'document-xlsx') {
             await reference.getByRole('button', { name: 'Підсумок', exact: true }).press('Enter');
             await expect(
@@ -466,8 +471,6 @@ async function viewerReady(owner: Locator, id: string) {
     await expect(owner.locator('.react-pdf__Page__canvas').first()).toBeVisible();
   else if (id === 'document-xlsx')
     await expect(owner.getByRole('cell', { name: 'Київ', exact: true })).toBeVisible();
-  else if (id === 'archive-zip')
-    await expect(owner.getByRole('button', { name: 'Звіт.txt', exact: true })).toBeEnabled();
   else if (id === 'native-map-kml')
     await expect(owner.locator('.leaflet-overlay-pane canvas').first()).toBeAttached();
   else if (id === 'audio-wav')
@@ -494,7 +497,6 @@ for (const width of [390, 1440]) {
     'image-png',
     'audio-wav',
     'video-mp4',
-    'archive-zip',
     'native-map-kml',
   ]) {
     test(`@regression @new-api keyboard-only file actions and retained context ${width}px ${id}`, async ({
@@ -645,7 +647,7 @@ async function customSource(
 async function openCustom(page: Page, backend: FilePreviewBackend, source: Source) {
   await page.context().addCookies((await (await backend.login('reader')).storageState()).cookies);
   await page.goto(`/devices/${backend.fixtures.deviceId}`);
-  await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+  await openDeviceSection(page, 'Файли');
   await page
     .getByRole('button', { name: /Вибрати каталог C:/ })
     .first()
@@ -852,10 +854,16 @@ test('@regression same-byte ZIP reference-host listing and nested member downloa
   const backend = await localFilePreviewBackend();
   try {
     const source = await loadDeviceFilePreviewFixture('archive-zip');
-    const { pane } = await openDeviceFilePreview(page, backend, source.fixture.id);
-    await expect(pane.getByRole('button', { name: 'Звіт.txt', exact: true })).toBeVisible();
-    await pane.getByRole('button', { name: 'Розгорнути каталог nested', exact: true }).click();
-    await pane.getByRole('button', { name: 'Дані.csv', exact: true }).click();
+    const { folder } = await openDeviceArchiveFolder(page, backend, source.fixture.id);
+    const pane = page.getByTestId('device-file-content-pane');
+    await expect(
+      folder.getByRole('button', { name: 'Відкрити файл Звіт.txt', exact: true }),
+    ).toBeVisible();
+    await folder.getByRole('button', { name: 'Відкрити папку nested', exact: true }).click();
+    await page
+      .getByRole('region', { name: 'Вміст папки', exact: true })
+      .getByRole('button', { name: 'Відкрити файл Дані.csv', exact: true })
+      .click();
     const save = pane.getByRole('button', { name: 'Скачати файл', exact: true });
     await expect(save).toBeEnabled();
     const pending = page.waitForEvent('download');
@@ -918,6 +926,49 @@ async function observeMapDrawing(page: Page) {
         });
       return fill.apply(this, args);
     } as typeof fill;
+  });
+}
+
+for (const id of ['converted-map-gpx', 'converted-map-geojson']) {
+  test(`#3930 @regression native GPX and GeoJSON geometry matches Messages ${id}`, async ({
+    page,
+    context,
+  }) => {
+    const backend = await localFilePreviewBackend();
+    const checkGeometry = async (owner: Locator) => {
+      await expect(owner.locator('.leaflet-container')).toBeVisible();
+      const geometry = owner.locator('[data-map-preview-points]');
+      await expect(geometry).toHaveAttribute('data-map-preview-points', '1');
+      await expect(geometry).toHaveAttribute('data-map-preview-lines', '1');
+      await expect(geometry).toHaveAttribute(
+        'data-map-preview-polygons',
+        id.endsWith('geojson') ? '1' : '0',
+      );
+      await expect(owner.locator('.leaflet-overlay-pane canvas').first()).toBeAttached();
+    };
+    try {
+      const source = await loadDeviceFilePreviewFixture(id);
+      const { pane } = await openDeviceFilePreview(page, backend, id);
+      await checkGeometry(pane);
+      await pane.getByRole('button', { name: 'На весь екран', exact: true }).click();
+      await checkGeometry(page.getByRole('dialog'));
+      await page.screenshot({
+        path: test.info().outputPath(`${id}-device.png`),
+        animations: 'disabled',
+      });
+      for (const host of ['duty', 'analysis'] as const) {
+        const referencePage = await context
+          .browser()!
+          .newPage({ baseURL: process.env.PLAYWRIGHT_BASE_URL, viewport: page.viewportSize()! });
+        try {
+          await checkGeometry(await openReferenceHost(referencePage, host, source));
+        } finally {
+          await referencePage.close();
+        }
+      }
+    } finally {
+      await backend.dispose();
+    }
   });
 }
 

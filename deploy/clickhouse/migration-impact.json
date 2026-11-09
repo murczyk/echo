@@ -1,5 +1,61 @@
 {
   "migrations": {
+    "echo:m20261108_090102_signoz_metrics_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261107_175132_important_only_my_organism": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261107_175019_duty_selected_groups_flag": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261104_064753_minimal_report_window": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261105_212108_iggy_group_refresh_queue": { "changes": [{ "table": "public.api_integration_iggy_group_refresh", "strategy": "excluded" }] },
+    "echo:m20261104_165252_rer_report_unit_selection": { "changes": [{ "table": "public.sigint_unit_rer_report_metadata", "strategy": "excluded" }] },
+    "echo:m20261104_083000_group_message_requirements": {
+      "changes": [
+        { "table": "public.signal_group", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
+        { "table": "public.role_message_settings", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261103_073829_important_notify_all_flag": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261031_080043_message_card_quick_action": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261030_143441_device_activity_breakdown": {
+      "changes": [{ "table": "public.device_settings", "strategy": "excluded" }]
+    },
+    "echo:m20261030_114640_device_rating_description": {
+      "changes": [{ "table": "public.device", "strategy": "cdc_additive" }]
+    },
     "echo:m20261026_190000_message_card_text_size": {
       "changes": [
         {
@@ -120,6 +176,11 @@
     },
     "echo:m20261013_094137_inbox_unit_selection": {
       "changes": [{ "table": "public.sigint_inbox_item_unit_selection", "strategy": "excluded" }]
+    },
+    "echo:m20261102_131738_report_concurrency_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
     },
     "echo:m20261012_155351_api_rate_limit": {
       "changes": [
@@ -945,6 +1006,31 @@
       ]
     },
     "echo:m20261021_131746_echo_native_datasource": { "changes": [] },
+    "echo:m20261031_104502_role_message_settings": {
+      "changes": [
+        { "table": "public.role_message_settings", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261031_155820_api_sender": {
+      "changes": [
+        { "table": "public.api_sender", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261103_120000_ai_agent_documents": {
+      "changes": [
+        { "table": "public.ai_agent_document", "strategy": "excluded" },
+        { "table": "public.ai_agent_document_revision", "strategy": "excluded" },
+        { "table": "public.ai_agent_request_document_target", "strategy": "excluded" },
+        { "table": "public.ai_agent_request_event", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261101_151245_ai_agent_uploads": {
+      "changes": [
+        { "table": "public.ai_agent_engine_runtime_profile", "strategy": "excluded" },
+        { "table": "public.ai_agent_upload", "strategy": "excluded" },
+        { "table": "public.ai_agent_upload_chunk", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261029_104825_message_reply_component_locks": { "changes": [] },
     "echo:m20261027_153932_ai_worker_fallback_monitoring": {
       "changes": [
@@ -956,6 +1042,8 @@
     }
   },
   "dependencies": {
+    "echo-im:ce0222279ef36d09b3d24d35db16e6639908f58e": { "changes": [] },
+    "echo-im:b45d9d6a78a4f2de3e745897c30bfd7b4a3c7f88": { "changes": [] },
     "echo-im:06ac23803f4dbc7bc5e9db471609e89703870125": { "changes": [] },
     "echo-im:80589feab5a9afbe6e474f76b39cc563506c9262": { "changes": [] },
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {

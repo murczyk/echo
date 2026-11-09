@@ -18,6 +18,25 @@ confirmation and removes the row only after the server accepts deletion. Deletin
 the viewed conversation replaces its URL with `/`; deleting another preserves the
 current view. The backend rejects deletion while a request is queued or running.
 
+The composer remembers the last chosen provider in `localStorage`
+(`echo.ai-agent.provider-id`) and uses it for new dialogues. A missing or
+disabled provider falls back to the configured default; opening an existing
+conversation uses its own provider without changing the remembered one. See
+[reasoning presets](../../../../../../docs/ai/reasoning-presets.md) for the
+remembered depth.
+
+## Attachments
+
+The composer accepts files from the paperclip button, drag-and-drop and pasted
+clipboard images (`ComposerAttachments.tsx`, `composer-attachments.ts`). Files
+upload immediately as drafts; chips show upload and extraction progress, and
+removing a chip deletes the draft. A message may be sent once every upload has
+finished, even while extraction continues, and with empty text. Switching
+conversations discards unsent drafts. Sent messages show attachment chips that
+open the stored original. The backend pipeline, limits and agent tools are
+described in
+[`wdintel-rs/src/ai_agent/uploads/README.md`](../../../../../../wdintel-rs/src/ai_agent/uploads/README.md).
+
 ## Point-map documents
 
 Registered map links render lazy inline thumbnails. Each answer's latest main
@@ -49,6 +68,24 @@ Regression coverage:
 - `wdintel-web/src/ts/react/services/api/__tests__/ai-agent.spec.ts`
 - `wdintel-web/tests/e2e/ai-agent-maps.spec.ts`
 
+## Generated documents
+
+Answers that save a Word document link it as `[title](echo-document:<id>)`;
+`CitationMarkdown` renders the link as a `DocumentChip`, and documents the text
+does not link are listed below the answer. A chip, or the «Файли розмови» button
+beside the paperclip, opens `DocumentWorkspace` with the same layout as the map
+workspace. The centre shows `DocxPagePreview`: docx-preview renders the pages in
+a script-less sandboxed iframe whose CSP blocks every network load, and links do
+not navigate. The right panel lists the conversation's documents, the selected
+document's versions and the sent uploads; a .docx upload can prefill a «use as
+template» prompt. Restoring a version, undo and redo move the document head
+(`use-document-workspace.ts`). While a document is open, `DocumentEditContext` in
+the composer sends it as `documentTarget`; the agent may still change any document
+of the conversation. See the
+[agent tools and rollout](../../../../../../echo-ai-agent/DOCUMENTS.md).
+
+Regression coverage: `wdintel-web/tests/e2e/ai-agent-documents.spec.ts`.
+
 ## Live progress
 
 The composer shows **Зупинити** while this conversation has queued or running
@@ -59,6 +96,12 @@ and remain retryable, and a completed request keeps its final answer if it wins
 the cancellation race. Stopping preserves the composer draft, partial response
 and published maps. The backend revokes request credentials and terminates the
 runner; switching conversations only detaches the browser stream.
+
+The mode menu shows each mode's time limit (`runtimeLimitLabel`): Deep runs up
+to 4 hours, and while it runs the user's next messages wait in the queue. The
+event stream (`stream.ts`) reconnects after each drop; only consecutive failed
+connections count toward its retry limit, so a multi-hour request survives
+network interruptions.
 
 Each request shows a softly pulsating current-action title beside elapsed time
 and cancel/reconnect controls. An optional second line contains factual dates,
@@ -87,6 +130,15 @@ Retry submits the original prompt as a new request in the same conversation
 with its provider and preserves any unsent composer draft. Retry is disabled
 while a submission or another request is active; stream interruptions retain
 their separate reconnect action.
+
+The newest answer offers **Продовжити в глибокому режимі** when its metadata
+reports incomplete coverage, it ran below Deep, and the provider offers Deep. The
+button works for a just-finished answer and after reload (`DeepContinuation.tsx`).
+It sends a fixed follow-up prompt through the same path as retry, so the composer
+draft and the remembered mode are kept. Because that prompt only says "previous",
+submission first confirms on the server that the request is still the newest; if
+another tab moved the conversation on, the view refreshes and nothing is sent. See
+[reasoning presets](../../../../../../docs/ai/reasoning-presets.md).
 
 Regression coverage (#3064):
 

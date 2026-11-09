@@ -1,7 +1,7 @@
 # Kharkiv government AI canary
 
-`echo-kharkiv2` uses government `gpt-6-sol` as the default agent provider,
-with `glm-5.3` selectable for agents. GLM is also used for reviews, callsigns,
+`echo-kharkiv2` uses government `glm-5.3` as the default agent provider,
+with government Sol selectable for agents. GLM is also used for reviews, callsigns,
 settlements, positions, summaries, and report suggestions. Government
 `gpt-6-luna` supplies vision through the `openai_vision` OCR profile. Azure
 application credentials are reused from Tsur, decrypted for transfer, and
@@ -80,10 +80,13 @@ and its extractor allowlist entry. Keep the direct Kharkiv entry.
 
 ## Configuration and processing scope
 
-All government engines retain Tsur's context of 65,536 tokens, compaction
-reserve of 16,384 and recent history of 8,192. Kharkiv's GLM generation budget
-is 16,384 tokens, including reasoning and visible output; Sol and Luna use 8,192.
-Sol is the default agent provider; GLM remains selectable and is the reviewer.
+Government Sol and Luna retain Tsur's context of 65,536 tokens, compaction
+reserve of 16,384 and recent history of 8,192, with an 8,192-token generation
+budget. The `glm-5.3` runtime profile has a 262,144-token (256k) context, a
+16,384-token generation budget (including reasoning and visible output), a
+compaction reserve of 32,768 and recent history of 16,384, matching
+`glm-5.3-flash-uncensored`.
+`glm-5.3` is the default agent provider and the reviewer; Sol remains selectable.
 Only government engines are allowed for agent conversations;
 the old Gemma engine registration is retained for rollback.
 
@@ -185,9 +188,9 @@ only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health
 procedure, then verify the authenticated agent connection before reopening.
 Keep government Luna enabled, allowed for agents, and configured with its
-65,536-token context and 8,192-token output profile. Set only the government GLM
+65,536-token context and 8,192-token output profile. Set the government GLM
 runtime profile's `max_output_tokens` to 16,384;
-its context, reserve and recent-history values remain as listed above. An
+keep its other values as listed above. An
 8,192-token budget can exhaust maximum reasoning before the first tool call.
 Validate the original fixed report period in a new conversation; retain the
 failed request and its audit. Rollback restores the saved application and

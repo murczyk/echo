@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Dialog, DialogContent, DialogTitle } from '@mui/material';
+import { Dialog, DialogContent, DialogTitle, Typography } from '@mui/material';
 import type { AiAgentFileCitation, DeviceDocumentReadRsp } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
@@ -13,7 +13,6 @@ import {
   resolveMediaSummaryCoordinatePoint,
   type CoordinatePreviewPoint,
 } from '../../shared/message-card/message-coordinate-preview';
-import { useDeviceFileDownload } from '../use-device-file-download';
 
 const CoordinatePreviewMapSurface = lazy(async () => ({
   default: (await import('../../shared/message-card/CoordinatePreviewMapSurface'))
@@ -31,10 +30,6 @@ export function DeviceDocumentPreview({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const pending = useRef<AbortController | null>(null);
-  const download = useDeviceFileDownload(
-    result?.document.hasContent ? source : null,
-    lifecycle?.onError,
-  );
   const { notify } = usePowerSnackbar();
   const key = JSON.stringify(source);
   const signal = lifecycle?.signal;
@@ -107,16 +102,8 @@ export function DeviceDocumentPreview({
   return (
     <div className="flex flex-col gap-echo-md p-echo-lg">
       {error && <PowerAlert severity="error">{error}</PowerAlert>}
-      <PowerButton disabled={loading} onClick={() => void load()}>
-        {loading ? 'Завантаження…' : 'Оновити'}
-      </PowerButton>
       {result && (
         <>
-          <h3 className="break-all text-echo-lg font-semibold">{result.document.fileName}</h3>
-          <p className="break-all text-echo-sm text-echo-text-muted">
-            {result.document.path} · Ревізія {result.document.revision}
-            {result.document.current ? '' : ' · Історична версія'}
-          </p>
           <p>
             {result.document.hasContent
               ? `${documentState(result.document.state)} · ${result.document.complete ? 'Повний вміст' : 'Неповний вміст'}`
@@ -126,15 +113,6 @@ export function DeviceDocumentPreview({
             Підсумок: {documentState(result.document.summaryState)} · Позиції:{' '}
             {documentState(result.document.positionState)}
           </p>
-          {result.document.hasContent && (
-            <PowerButton
-              disabled={download.downloading}
-              aria-busy={download.downloading}
-              onClick={() => void download.download()}
-            >
-              Скачати оригінал
-            </PowerButton>
-          )}
           {result.document.summary && (
             <p className="whitespace-pre-wrap">{result.document.summary}</p>
           )}
@@ -145,7 +123,9 @@ export function DeviceDocumentPreview({
           ))}
           {result.positions.length > 0 && (
             <section aria-label="Позиції">
-              <h4 className="font-semibold">Позиції</h4>
+              <Typography component="h4" variant="subtitle2">
+                Позиції
+              </Typography>
               <ul>
                 {result.positions.map((position, index) => (
                   <li key={index}>
@@ -163,7 +143,9 @@ export function DeviceDocumentPreview({
           )}
           {result.coordinates.length > 0 && (
             <section aria-label="Координати">
-              <h4 className="font-semibold">Координати</h4>
+              <Typography component="h4" variant="subtitle2">
+                Координати
+              </Typography>
               <ul>
                 {result.coordinates.map((coordinate, index) => (
                   <li key={index}>
@@ -184,9 +166,9 @@ export function DeviceDocumentPreview({
           )}
           {result.sections.map((section) => (
             <section key={section.id} id={`file-section-${section.ordinal}`}>
-              <h4 className="font-semibold">
+              <Typography component="h4" variant="subtitle2">
                 {section.member} — {section.locator}
-              </h4>
+              </Typography>
               <div className="overflow-x-auto break-words text-echo-sm">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}

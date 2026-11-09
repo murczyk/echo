@@ -41,6 +41,8 @@ import { APP_TIME_ZONE } from '../../utils/misc';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
 import { CacheBackfillSection } from './CacheBackfillSection';
+import { RerReportSettings } from './RerReportSettings';
+import { ReportWorkerRestart } from './ReportWorkerRestart';
 import {
   readSystemSettingsTab,
   replaceSystemSettingsTabUrl,
@@ -58,8 +60,10 @@ type SystemSettingsForm = {
   disableBotTags: boolean;
   hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  importantNotifyAllEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
   apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
@@ -80,6 +84,9 @@ type SystemSettingsForm = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency: SystemSettingsItem['reportGlobalConcurrency'];
+  reportKindConcurrency: SystemSettingsItem['reportKindConcurrency'];
+  reportEtalonkaConcurrency: SystemSettingsItem['reportEtalonkaConcurrency'];
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
@@ -88,6 +95,8 @@ type SystemSettingsForm = {
   pelengBoundsBottomRightLat: string;
   pelengBoundsBottomRightLng: string;
   echoRestapiErrorDiscordWebhookUrl: string;
+  signozMetricsEnabled: boolean;
+  signozMetricsEndpoint: string;
 };
 
 type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
@@ -103,8 +112,10 @@ type SystemSettingsPayload = {
   disableBotTags: boolean;
   hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  importantNotifyAllEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
   apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
@@ -125,6 +136,9 @@ type SystemSettingsPayload = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency: SystemSettingsItem['reportGlobalConcurrency'];
+  reportKindConcurrency: SystemSettingsItem['reportKindConcurrency'];
+  reportEtalonkaConcurrency: SystemSettingsItem['reportEtalonkaConcurrency'];
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
@@ -133,6 +147,8 @@ type SystemSettingsPayload = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  signozMetricsEnabled: boolean;
+  signozMetricsEndpoint: string | null;
 };
 
 const DUTY_POLL_INTERVAL_SEC_MIN = 5;
@@ -148,8 +164,10 @@ const EMPTY_FORM: SystemSettingsForm = {
   disableBotTags: false,
   hideNetworks: false,
   dutyExcludeMenuEnabled: true,
+  dutySelectedGroupsEnabled: true,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
+  importantNotifyAllEnabled: true,
   apiRateLimitReplenishIntervalMs: 500,
   apiRateLimitBurstSize: 5,
   twoFactorAuthEnabled: true,
@@ -170,6 +188,9 @@ const EMPTY_FORM: SystemSettingsForm = {
   doNotStoreDuplicateEchoimFailures: false,
   goiAssociationMessageUidWorkerEnabled: false,
   reportChunkingHours: 24,
+  reportGlobalConcurrency: 4,
+  reportKindConcurrency: 1,
+  reportEtalonkaConcurrency: 2,
   limitBigReports: false,
   enableAudioTranscription: false,
   pelengBoundsEnabled: false,
@@ -178,6 +199,8 @@ const EMPTY_FORM: SystemSettingsForm = {
   pelengBoundsBottomRightLat: '',
   pelengBoundsBottomRightLng: '',
   echoRestapiErrorDiscordWebhookUrl: '',
+  signozMetricsEnabled: false,
+  signozMetricsEndpoint: '',
 };
 
 const SUPPORT_NON_RER_TOOLTIP =
@@ -196,6 +219,7 @@ const DUTY_POLL_INTERVAL_TOOLTIP =
   'Резервна перевірка нових повідомлень; події надходять одразу між перевірками.';
 const DUTY_TEST_REPLAY_INTERVAL_TOOLTIP =
   'Пауза між тестовими повідомленнями. Перше повідомлення надходить одразу, після останнього цикл починається знову.';
+const SIGNOZ_METRICS_ENDPOINT_EXAMPLE = 'http://signoz-echo.eagle-atria.ts.net:4317';
 const DISABLE_BOT_TAGS_TOOLTIP =
   'Приховує теги, додані ботом, на сторінках «Аналіз» та «Оперативний Neo» і призупиняє створення нових. Після вимкнення наявні теги знову відображатимуться, а бот продовжить роботу.';
 
@@ -243,8 +267,10 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     disableBotTags: item?.disableBotTags ?? false,
     hideNetworks: item?.hideNetworks ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
+    dutySelectedGroupsEnabled: item?.dutySelectedGroupsEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
+    importantNotifyAllEnabled: item?.importantNotifyAllEnabled ?? true,
     apiRateLimitReplenishIntervalMs: item?.apiRateLimitReplenishIntervalMs ?? 500,
     apiRateLimitBurstSize: item?.apiRateLimitBurstSize ?? 5,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
@@ -268,6 +294,9 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     doNotStoreDuplicateEchoimFailures: item?.doNotStoreDuplicateEchoimFailures ?? false,
     goiAssociationMessageUidWorkerEnabled: item?.goiAssociationMessageUidWorkerEnabled ?? false,
     reportChunkingHours: item?.reportChunkingHours ?? 24,
+    reportGlobalConcurrency: item?.reportGlobalConcurrency ?? 4,
+    reportKindConcurrency: item?.reportKindConcurrency ?? 1,
+    reportEtalonkaConcurrency: item?.reportEtalonkaConcurrency ?? 2,
     limitBigReports: item?.limitBigReports ?? false,
     enableAudioTranscription: item?.enableAudioTranscription ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
@@ -276,6 +305,8 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     pelengBoundsBottomRightLat: coordinateToInput(item?.pelengBoundsBottomRightLat ?? null),
     pelengBoundsBottomRightLng: coordinateToInput(item?.pelengBoundsBottomRightLng ?? null),
     echoRestapiErrorDiscordWebhookUrl: item?.echoRestapiErrorDiscordWebhookUrl ?? '',
+    signozMetricsEnabled: item?.signozMetricsEnabled ?? false,
+    signozMetricsEndpoint: item?.signozMetricsEndpoint ?? '',
   };
 }
 
@@ -291,8 +322,10 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.disableBotTags === b.disableBotTags &&
     a.hideNetworks === b.hideNetworks &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
+    a.dutySelectedGroupsEnabled === b.dutySelectedGroupsEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
+    a.importantNotifyAllEnabled === b.importantNotifyAllEnabled &&
     a.apiRateLimitReplenishIntervalMs === b.apiRateLimitReplenishIntervalMs &&
     a.apiRateLimitBurstSize === b.apiRateLimitBurstSize &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
@@ -313,6 +346,9 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.doNotStoreDuplicateEchoimFailures === b.doNotStoreDuplicateEchoimFailures &&
     a.goiAssociationMessageUidWorkerEnabled === b.goiAssociationMessageUidWorkerEnabled &&
     a.reportChunkingHours === b.reportChunkingHours &&
+    a.reportGlobalConcurrency === b.reportGlobalConcurrency &&
+    a.reportKindConcurrency === b.reportKindConcurrency &&
+    a.reportEtalonkaConcurrency === b.reportEtalonkaConcurrency &&
     a.limitBigReports === b.limitBigReports &&
     a.enableAudioTranscription === b.enableAudioTranscription &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
@@ -320,7 +356,9 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
     a.pelengBoundsBottomRightLat === b.pelengBoundsBottomRightLat &&
     a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng &&
-    a.echoRestapiErrorDiscordWebhookUrl === b.echoRestapiErrorDiscordWebhookUrl
+    a.echoRestapiErrorDiscordWebhookUrl === b.echoRestapiErrorDiscordWebhookUrl &&
+    a.signozMetricsEnabled === b.signozMetricsEnabled &&
+    a.signozMetricsEndpoint === b.signozMetricsEndpoint
   );
 }
 
@@ -380,6 +418,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
     pelengBoundsBottomRightLat: normalizeCoordinateInput(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: normalizeCoordinateInput(form.pelengBoundsBottomRightLng),
     echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl.trim(),
+    signozMetricsEndpoint: form.signozMetricsEndpoint.trim(),
   };
 }
 
@@ -395,8 +434,10 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     disableBotTags: form.disableBotTags,
     hideNetworks: form.hideNetworks,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
+    dutySelectedGroupsEnabled: form.dutySelectedGroupsEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
+    importantNotifyAllEnabled: form.importantNotifyAllEnabled,
     apiRateLimitReplenishIntervalMs: form.apiRateLimitReplenishIntervalMs,
     apiRateLimitBurstSize: form.apiRateLimitBurstSize,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
@@ -417,6 +458,9 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     doNotStoreDuplicateEchoimFailures: form.doNotStoreDuplicateEchoimFailures,
     goiAssociationMessageUidWorkerEnabled: form.goiAssociationMessageUidWorkerEnabled,
     reportChunkingHours: form.reportChunkingHours,
+    reportGlobalConcurrency: form.reportGlobalConcurrency,
+    reportKindConcurrency: form.reportKindConcurrency,
+    reportEtalonkaConcurrency: form.reportEtalonkaConcurrency,
     limitBigReports: form.limitBigReports,
     enableAudioTranscription: form.enableAudioTranscription,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
@@ -425,6 +469,8 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     pelengBoundsBottomRightLat: coordinateToPayload(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: coordinateToPayload(form.pelengBoundsBottomRightLng),
     echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl || null,
+    signozMetricsEnabled: form.signozMetricsEnabled,
+    signozMetricsEndpoint: form.signozMetricsEndpoint || null,
   };
 }
 
@@ -567,6 +613,16 @@ function ApiSettingsSection({
   );
 }
 
+function validateReportConcurrencySettings(form: SystemSettingsForm): string | null {
+  return [
+    form.reportGlobalConcurrency,
+    form.reportKindConcurrency,
+    form.reportEtalonkaConcurrency,
+  ].every((value) => Number.isInteger(value) && value > 0 && value <= 2147483647)
+    ? null
+    : 'Кількість одночасних звітів має бути додатним цілим числом до 2147483647.';
+}
+
 function validateApiRateLimitSettings(form: SystemSettingsForm): string | null {
   if (
     ![form.apiRateLimitReplenishIntervalMs, form.apiRateLimitBurstSize].every(
@@ -604,14 +660,14 @@ function MainSettingsSection({
           onChange={(checked) => patchForm({ defaultNeoAnalysis: checked })}
         />
         <MainSettingsSwitchRow
-          checked={form.hideNetworks}
+          checked={!form.hideNetworks}
           label={
             <InfoLabel
-              label="Приховати мережі"
-              tooltip="Приховує мережі в картках повідомлень і фільтр «Мережі» в оперативному та аналізі, у класичному й новому інтерфейсах. Сторінка «База даних → Мережі» залишається без змін."
+              label="Режим РЕР"
+              tooltip="показати радіомережі. групи за замовчуванням закриті, фільтри за замовчуванням відкриті. оптимізований дизайн картки перехопення під роботу РЕР"
             />
           }
-          onChange={(checked) => patchForm({ hideNetworks: checked })}
+          onChange={(checked) => patchForm({ hideNetworks: !checked })}
         />
         <MainSettingsSwitchRow
           checked={form.aiPositionHighlightsEnabled}
@@ -686,28 +742,61 @@ function MainSettingsSection({
           onChange={(checked) => patchForm({ goiAssociationMessageUidWorkerEnabled: checked })}
         />
       </MainSettingsGroup>
-
-      <MainSettingsGroup title="Звіти">
-        <TextField
-          label={
-            <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
-          }
-          type="number"
-          value={form.reportChunkingHours}
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
-          }}
-          inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
-        />
-
-        <MainSettingsSwitchRow
-          checked={form.limitBigReports}
-          label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
-          onChange={(checked) => patchForm({ limitBigReports: checked })}
-        />
-      </MainSettingsGroup>
     </Stack>
+  );
+}
+
+function ReportSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <MainSettingsGroup title="Звіти">
+      <TextField
+        label="Одночасних звітів загалом"
+        type="number"
+        value={form.reportGlobalConcurrency}
+        onChange={(event) => patchForm({ reportGlobalConcurrency: Number(event.target.value) })}
+        inputProps={{ min: 1, max: 2147483647, step: 1 }}
+        helperText="Зміни застосовуються до нових завдань. Поточні звіти завершуються без переривання."
+      />
+      <TextField
+        label="Одночасних звітів кожного типу (крім еталонки)"
+        type="number"
+        value={form.reportKindConcurrency}
+        onChange={(event) => patchForm({ reportKindConcurrency: Number(event.target.value) })}
+        inputProps={{ min: 1, max: 2147483647, step: 1 }}
+      />
+      <TextField
+        label="Одночасних звітів еталонки"
+        type="number"
+        value={form.reportEtalonkaConcurrency}
+        onChange={(event) => patchForm({ reportEtalonkaConcurrency: Number(event.target.value) })}
+        inputProps={{ min: 1, max: 2147483647, step: 1 }}
+        helperText="Звіти еталонки одного користувача виконуються послідовно."
+      />
+      <TextField
+        label={
+          <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
+        }
+        type="number"
+        value={form.reportChunkingHours}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
+        }}
+        inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
+      />
+
+      <MainSettingsSwitchRow
+        checked={form.limitBigReports}
+        label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
+        onChange={(checked) => patchForm({ limitBigReports: checked })}
+      />
+    </MainSettingsGroup>
   );
 }
 
@@ -741,6 +830,15 @@ function DutySettingsSection({
           />
         }
         label="Меню «—» (мінус) в оперативному"
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.dutySelectedGroupsEnabled}
+            onChange={(_, checked) => patchForm({ dutySelectedGroupsEnabled: checked })}
+          />
+        }
+        label="Відображати обрані групи в оперативному"
       />
       <FormControlLabel
         control={
@@ -1021,6 +1119,16 @@ function NotificationsSettingsSection({
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Нотифікації
       </Typography>
+      <MainSettingsSwitchRow
+        checked={form.importantNotifyAllEnabled}
+        label={
+          <InfoLabel
+            label="«Сповістити всіх» при позначенні важливим"
+            tooltip="Коли вимкнено, вікно «Сповістити всіх?» не показується: повідомлення одразу позначається важливим без сповіщення групи."
+          />
+        }
+        onChange={(checked) => patchForm({ importantNotifyAllEnabled: checked })}
+      />
       <TextField
         fullWidth
         label="Discord webhook для помилок Echo REST API"
@@ -1038,6 +1146,86 @@ function NotificationsSettingsSection({
         }}
         helperText="Порожнє значення вимикає Discord нотифікації"
       />
+    </>
+  );
+}
+
+function isValidSignozMetricsEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function validateSignozMetricsSettings(form: SystemSettingsForm): string | null {
+  if (form.signozMetricsEndpoint && !isValidSignozMetricsEndpoint(form.signozMetricsEndpoint)) {
+    return `Моніторинг: адреса SigNoz має бути http або https URL, наприклад ${SIGNOZ_METRICS_ENDPOINT_EXAMPLE}.`;
+  }
+  if (form.signozMetricsEnabled && !form.signozMetricsEndpoint) {
+    return 'Моніторинг: вкажіть адресу SigNoz, щоб увімкнути експорт метрик.';
+  }
+  return null;
+}
+
+function MonitoringSettingsSection({
+  form,
+  patchForm,
+  onOpenControlTab,
+  onOpenReportsTab,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+  onOpenControlTab: () => void;
+  onOpenReportsTab: () => void;
+}) {
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Моніторинг
+      </Typography>
+      <MainSettingsSwitchRow
+        checked={form.signozMetricsEnabled}
+        label="Експорт метрик до SigNoz"
+        onChange={(checked) => patchForm({ signozMetricsEnabled: checked })}
+      />
+      <TextField
+        fullWidth
+        label="Адреса OTLP gRPC"
+        type="url"
+        placeholder={SIGNOZ_METRICS_ENDPOINT_EXAMPLE}
+        value={form.signozMetricsEndpoint}
+        onChange={(event) => {
+          patchForm({ signozMetricsEndpoint: event.target.value });
+        }}
+        onBlur={(event) => {
+          patchForm({ signozMetricsEndpoint: event.target.value.trim() });
+        }}
+      />
+      <Typography variant="body2" color="text.secondary">
+        Зміни діють після перезапуску Echo на вкладці{' '}
+        <Link
+          href="#control"
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenControlTab();
+          }}
+        >
+          «Керування»
+        </Link>{' '}
+        і воркера звітів на вкладці{' '}
+        <Link
+          href="#reports"
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenReportsTab();
+          }}
+        >
+          «Звіти»
+        </Link>
+        .
+      </Typography>
     </>
   );
 }
@@ -1203,6 +1391,7 @@ function OrbitIntegrationsSection({
 }
 
 export function AdminSystemSettingsNeoPage() {
+  const [rerSettingSaving, setRerSettingSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(readSystemSettingsTab);
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [form, setForm] = useState<SystemSettingsForm>(EMPTY_FORM);
@@ -1286,6 +1475,12 @@ export function AdminSystemSettingsNeoPage() {
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
+  function selectTab(tab: SystemSettingsTab) {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
+    replaceSystemSettingsTabUrl(tab);
+  }
+
   async function saveSystemSettings(nextForm: SystemSettingsForm) {
     const payload = formToPayload(nextForm);
     await createSystemSettings({
@@ -1306,8 +1501,10 @@ export function AdminSystemSettingsNeoPage() {
       disableBotTags: payload.disableBotTags,
       hideNetworks: payload.hideNetworks,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
+      dutySelectedGroupsEnabled: payload.dutySelectedGroupsEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
+      importantNotifyAllEnabled: payload.importantNotifyAllEnabled,
       apiRateLimitReplenishIntervalMs: payload.apiRateLimitReplenishIntervalMs,
       apiRateLimitBurstSize: payload.apiRateLimitBurstSize,
       twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
@@ -1322,6 +1519,9 @@ export function AdminSystemSettingsNeoPage() {
       doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
       goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
       reportChunkingHours: payload.reportChunkingHours,
+      reportGlobalConcurrency: payload.reportGlobalConcurrency,
+      reportKindConcurrency: payload.reportKindConcurrency,
+      reportEtalonkaConcurrency: payload.reportEtalonkaConcurrency,
       limitBigReports: payload.limitBigReports,
       enableAudioTranscription: payload.enableAudioTranscription,
       pelengBoundsEnabled: payload.pelengBoundsEnabled,
@@ -1330,6 +1530,8 @@ export function AdminSystemSettingsNeoPage() {
       pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
       pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
       echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
+      signozMetricsEnabled: payload.signozMetricsEnabled,
+      signozMetricsEndpoint: payload.signozMetricsEndpoint,
     });
   }
 
@@ -1361,14 +1563,16 @@ export function AdminSystemSettingsNeoPage() {
 
   async function handleSaveSystemSettings(event?: FormEvent) {
     event?.preventDefault();
-    if (saveInProgress) return;
+    if (saveInProgress || rerSettingSaving) return;
     if (!isDirty) return;
 
     const nextForm = normalizeForm(form);
     const validationError =
+      validateReportConcurrencySettings(nextForm) ??
       validateApiRateLimitSettings(nextForm) ??
       validateMediaCacheSettings(nextForm) ??
-      validatePelengBounds(nextForm);
+      validatePelengBounds(nextForm) ??
+      validateSignozMetricsSettings(nextForm);
     if (validationError) {
       setForm(nextForm);
       setSaveError(validationError);
@@ -1405,11 +1609,7 @@ export function AdminSystemSettingsNeoPage() {
           <Box component="form" onSubmit={handleSaveSystemSettings} noValidate>
             <Tabs
               value={activeTab}
-              onChange={(_, value: SystemSettingsTab) => {
-                if (value === activeTab) return;
-                setActiveTab(value);
-                replaceSystemSettingsTabUrl(value);
-              }}
+              onChange={(_, value: SystemSettingsTab) => selectTab(value)}
               variant="scrollable"
               allowScrollButtonsMobile
               sx={{
@@ -1442,6 +1642,12 @@ export function AdminSystemSettingsNeoPage() {
                 aria-controls="system-settings-neo-panel-analysis"
               />
               <Tab
+                value="reports"
+                label="Звіти"
+                id="system-settings-neo-tab-reports"
+                aria-controls="system-settings-neo-panel-reports"
+              />
+              <Tab
                 value="control"
                 label="Керування"
                 id="system-settings-neo-tab-control"
@@ -1464,6 +1670,12 @@ export function AdminSystemSettingsNeoPage() {
                 label="Нотифікації"
                 id="system-settings-neo-tab-notifications"
                 aria-controls="system-settings-neo-panel-notifications"
+              />
+              <Tab
+                value="monitoring"
+                label="Моніторинг"
+                id="system-settings-neo-tab-monitoring"
+                aria-controls="system-settings-neo-panel-monitoring"
               />
               <Tab
                 value="cache"
@@ -1554,6 +1766,20 @@ export function AdminSystemSettingsNeoPage() {
                   </Box>
 
                   <Box
+                    id="system-settings-neo-panel-reports"
+                    role="tabpanel"
+                    hidden={activeTab !== 'reports'}
+                    aria-labelledby="system-settings-neo-tab-reports"
+                  >
+                    {activeTab === 'reports' ? (
+                      <Stack spacing={3}>
+                        <ReportSettingsSection form={form} patchForm={patchForm} />
+                        <ReportWorkerRestart />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
                     id="system-settings-neo-panel-control"
                     role="tabpanel"
                     hidden={activeTab !== 'control'}
@@ -1600,6 +1826,24 @@ export function AdminSystemSettingsNeoPage() {
                   </Box>
 
                   <Box
+                    id="system-settings-neo-panel-monitoring"
+                    role="tabpanel"
+                    hidden={activeTab !== 'monitoring'}
+                    aria-labelledby="system-settings-neo-tab-monitoring"
+                  >
+                    {activeTab === 'monitoring' ? (
+                      <Stack spacing={3}>
+                        <MonitoringSettingsSection
+                          form={form}
+                          patchForm={patchForm}
+                          onOpenControlTab={() => selectTab('control')}
+                          onOpenReportsTab={() => selectTab('reports')}
+                        />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
                     id="system-settings-neo-panel-integrations"
                     role="tabpanel"
                     hidden={activeTab !== 'integrations'}
@@ -1621,7 +1865,7 @@ export function AdminSystemSettingsNeoPage() {
                   <PowerButton
                     variant="contained"
                     type="submit"
-                    disabled={saveInProgress || loadInProgress || !isDirty}
+                    disabled={saveInProgress || rerSettingSaving || loadInProgress || !isDirty}
                     startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
                   >
                     зберегти
@@ -1631,6 +1875,23 @@ export function AdminSystemSettingsNeoPage() {
             </CardContent>
           </Box>
         </Card>
+        {activeTab === 'reports' ? (
+          <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: 'none', minWidth: 0 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Звіт РЕР
+              </Typography>
+              <RerReportSettings
+                disabled={saveInProgress}
+                onSavingChange={setRerSettingSaving}
+                onEnabledChange={(enabled) => {
+                  setForm((previous) => ({ ...previous, rerReportEnabled: enabled }));
+                  setSaved((previous) => ({ ...previous, rerReportEnabled: enabled }));
+                }}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
       </Stack>
     </Box>
   );

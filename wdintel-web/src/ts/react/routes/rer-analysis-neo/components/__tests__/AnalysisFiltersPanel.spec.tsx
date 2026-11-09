@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SavedFilter, SignalGroupEntry } from '../../../../../../Bindings';
 import type { AnalysisPageActions, AnalysisPageState } from '../../types';
 import { emptyQueryState } from '../../helpers';
+import { buildUnitHierarchyIndex } from '../../../shared/unit-children-filter';
+import { buildUnitFilterOptions } from '../../../../utils/unit-search';
 
 const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 
@@ -955,6 +957,53 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).toContain('155');
   });
 
+  it.each([false, true])(
+    '#3527 counts parent unit options in the section total (selected parent: %s)',
+    async (selectParent) => {
+      const template = buildUnitFilterOptions([])[0];
+      const units = [21, 22, 23, 24].map((id, index) => ({
+        ...template,
+        id,
+        name: `${index + 1} мср 1 мсб 27 омсбр`,
+        army: '6 А',
+        brigade: '27 омсбр',
+        battalion: '1 мсб',
+        company: `${index + 1} мср`,
+      }));
+      const unitHierarchy = buildUnitHierarchyIndex(units);
+      const parent = unitHierarchy.parents.find((parent) => parent.label === '6 А')!;
+      const view = await renderComponent(
+        buildProps({
+          counts: { unitsCount: 4 },
+          options: {
+            ...buildOptions(),
+            units: [
+              ...units.map((unit) => ({
+                value: `unit-id:${unit.id}`,
+                label: unit.name,
+                count: 1,
+              })),
+              ...unitHierarchy.parents.map(({ value, label }) => ({ value, label, count: 4 })),
+            ],
+            unitParentCount: 3,
+          },
+          queryState: {
+            ...emptyQueryState(),
+            unitHierarchy,
+            unitsSelected: selectParent ? [parent.value] : [],
+          },
+        }),
+      );
+      rendered.push(view);
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(view.container.textContent).toContain(`Підрозділи${selectParent ? '1 з 7' : '7'}`);
+    },
+  );
+
   it('#3001 shows placeholders for absent counters while preserving completed zeroes', async () => {
     const view = await renderComponent(
       buildProps({
@@ -1118,7 +1167,6 @@ describe('AnalysisFiltersPanel', () => {
 
       expect(updateQueryState).toHaveBeenCalledWith({
         onlyWithNetwork: true,
-        withoutNetwork: false,
       });
     }
   });

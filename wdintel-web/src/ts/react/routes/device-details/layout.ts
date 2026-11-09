@@ -1,0 +1,2 @@
+export const DEVICE_SIDEBAR_WIDTH = 280;
+export const DEVICE_OVERVIEW_SIDEBAR_WIDTH = 176;

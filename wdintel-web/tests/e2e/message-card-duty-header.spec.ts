@@ -119,6 +119,7 @@ async function installTaggedVisualFixture(page: Page): Promise<void> {
     { id: 1, tagId: 1, confidence: 1, login: 'operator', model: null, organismId: null },
   ];
   await installRerDutyShortStateMocks(page, {
+    hideNetworks: true,
     inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
     inboxResponseForRequest: () => ({
       ...buildInboxResponse([]),
@@ -353,9 +354,8 @@ test.describe('message card Duty header @regression', () => {
                 ?.getBoundingClientRect();
               return (
                 contentBounds != null &&
-                detailsBounds != null &&
                 footerBounds != null &&
-                footerBounds.top >= detailsBounds.bottom &&
+                (detailsBounds == null || footerBounds.top >= detailsBounds.bottom) &&
                 footerBounds.bottom >= contentBounds.bottom - 1
               );
             }),

@@ -132,7 +132,7 @@ async fn device_document_storage_pressure_keeps_retry_budget_3743() {
     assert_eq!(state.state, "retry_wait");
     assert_eq!(state.attempts, 1);
     assert_eq!(next.load(Ordering::SeqCst), responses.len());
-    handle.stop(true).await;
+    handle.stop(false).await;
     server.await.unwrap().unwrap();
 }
 

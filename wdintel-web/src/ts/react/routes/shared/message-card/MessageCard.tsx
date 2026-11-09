@@ -1,13 +1,12 @@
 import { useMessageReplies } from '../message-replies/MessageRepliesProvider';
 import { MessageReplyChain } from '../message-replies/MessageReplyChain';
 import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
-import { useContext } from 'react';
 import { DutyExcludeMenuContext } from './DutyExcludeMenu';
 import { useRadioFeatures } from '../RadioFeatures';
 import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { memo, useMemo } from 'react';
+import { memo, useContext, useMemo } from 'react';
 import type { MouseEvent } from 'react';
 import type {
   CallsignInfoRes,
@@ -25,11 +24,13 @@ import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message
 import {
   MessageCardHeader,
   MessageCardMetadata,
+  MessageCardMetadataPlacement,
   MessageCardTimestampFooter,
   type MessageCardDisplayMode,
   type MessageCardHeaderProps,
 } from './MessageCardHeader';
 import { MessageCardDmrMetadataPopover } from './MessageCardDmrMetadataPopover';
+import { useMessageDeviceAccess } from './MessageDeviceAccess';
 import { hasVisibleDmrMetadata } from './message-card-metadata';
 import { APP_TIME_ZONE, isPresent, NO_DATA_LABEL } from '../../../utils/misc';
 import {
@@ -267,8 +268,10 @@ function MessageCardComponent({
   );
   const visibleEtalonDisplayModel = useMemo(
     () =>
-      hideNetworks ? hideMessageCardNetworks(etalonDisplayModel, msg.unit) : etalonDisplayModel,
-    [hideNetworks, etalonDisplayModel, msg.unit],
+      hideNetworks
+        ? hideMessageCardNetworks(etalonDisplayModel, msg.unitDisplay ?? msg.unit)
+        : etalonDisplayModel,
+    [hideNetworks, etalonDisplayModel, msg.unitDisplay, msg.unit],
   );
   const onCopyEtalonAction =
     visibleEtalonDisplayModel.copyEtalonValue == null || onCopyEtalon == null
@@ -280,6 +283,7 @@ function MessageCardComponent({
       : () => onCopyLocation(visibleEtalonDisplayModel.copyLocationValue!);
   const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
   const radioFeaturesAllowed = useRadioFeatures();
+  const canUseMessageDevices = useMessageDeviceAccess();
   const dutyExcludeMenuEnabled = useContext(DutyExcludeMenuContext);
   const excludeSources = useMemo(
     () => ({
@@ -333,6 +337,26 @@ function MessageCardComponent({
     radioFeaturesAllowed && displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
     ) : undefined;
+  const showContentMetadata =
+    hideNetworks ||
+    isPresent(visibleEtalonDisplayModel.headerUnit) ||
+    (radioFeaturesAllowed && isPresent(msg.freq)) ||
+    (canUseMessageDevices && Boolean(msg.deviceName?.trim())) ||
+    metadataTrigger != null;
+  const headerMetadata = useMemo(
+    () =>
+      hideNetworks ? undefined : (
+        <MessageCardMetadata
+          msg={msg}
+          groupName={hideGroupName ? null : groupName}
+          senderName={senderName}
+          etalonDisplayModel={visibleEtalonDisplayModel}
+          placement={MessageCardMetadataPlacement.Header}
+          wrapText
+        />
+      ),
+    [hideNetworks, msg, hideGroupName, groupName, senderName, visibleEtalonDisplayModel],
+  );
   const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
   const archiveDownloadStarting = downloadGuard.isDownloadStarting(
     MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY,
@@ -361,6 +385,7 @@ function MessageCardComponent({
     msg,
     copiedFeedbackId,
     etalonDisplayModel: visibleEtalonDisplayModel,
+    metadata: headerMetadata,
     mapHref,
     analysisHref,
     onReply:
@@ -413,14 +438,21 @@ function MessageCardComponent({
         <MessageCardContentWithDownloadGuard
           timestampFooter={visibleMessageComments.length === 0 ? timestampFooter : undefined}
           metadata={
-            <MessageCardMetadata
-              msg={msg}
-              groupName={hideGroupName ? null : groupName}
-              senderName={senderName}
-              etalonDisplayModel={visibleEtalonDisplayModel}
-              metadataTrigger={metadataTrigger}
-              hideExplicitUnit
-            />
+            showContentMetadata ? (
+              <MessageCardMetadata
+                msg={msg}
+                groupName={hideGroupName ? null : groupName}
+                senderName={senderName}
+                etalonDisplayModel={visibleEtalonDisplayModel}
+                metadataTrigger={metadataTrigger}
+                placement={
+                  hideNetworks
+                    ? MessageCardMetadataPlacement.All
+                    : MessageCardMetadataPlacement.Content
+                }
+                hideExplicitUnit
+              />
+            ) : undefined
           }
           replyContent={
             replies.snapshot.relations.length ? (

@@ -112,6 +112,55 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/ai-agent/uploads/ai/list",
+        skill: "upload_list",
+        label: "Переглядаю вкладені файли",
+        request_kind: "uploadList",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/uploads/ai/read",
+        skill: "upload_read",
+        label: "Читаю вкладений файл",
+        request_kind: "uploadRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/uploads/ai/search",
+        skill: "upload_search",
+        label: "Шукаю у вкладених файлах",
+        request_kind: "uploadSearch",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/uploads/ai/image",
+        skill: "upload_image",
+        label: "Розглядаю вкладене зображення",
+        request_kind: "uploadImage",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/documents/ai/list",
+        skill: "document_list",
+        label: "Переглядаю документи розмови",
+        request_kind: "documentList",
+    },
+    ReadOnlyRoute {
+        method: "GET",
+        path: "/api/ai-agent/documents/ai/source",
+        skill: "document_source",
+        label: "Відкриваю документ",
+        request_kind: "documentSource",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/documents/ai/save",
+        skill: "document_save",
+        label: "Зберігаю документ",
+        request_kind: "documentSave",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/ai-agent/maps/prepare",
         skill: "map_prepare",
         label: "Готую точки мапи",
@@ -196,7 +245,7 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
-        path: "/api/rer/analysis/summary-table-freq",
+        path: "/api/rer/analysis/ai/frequency-summary",
         skill: "frequency_summary",
         label: "Аналізую активність частот",
         request_kind: "analysisPeriod",
@@ -321,6 +370,13 @@ mod tests {
                     | "deviceFileStatus"
                     | "workList"
                     | "workRead"
+                    | "uploadList"
+                    | "uploadRead"
+                    | "uploadSearch"
+                    | "uploadImage"
+                    | "documentList"
+                    | "documentSource"
+                    | "documentSave"
             ));
         }
         let daily_activity = ROUTES

@@ -1,5 +1,6 @@
 use super::auth;
 use super::reasoning::{ProviderApi, ProviderPurpose};
+use crate::ai_engine::StreamBodyTimer;
 use crate::config::{
     AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_LUNA,
     AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
@@ -116,6 +117,22 @@ async fn provider_call(
             "Provider request is invalid",
         ));
     };
+    let images_allowed = match image_parts(&body) {
+        ImageParts::None => true,
+        ImageParts::Invalid => false,
+        ImageParts::Inline => super::uploads::agent_api::vision_enabled(
+            &env,
+            authorization.ai_engine.id,
+        )
+        .await
+        .c(h!())?,
+    };
+    if !images_allowed {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider request is invalid",
+        ));
+    }
     if !purpose_request_is_allowed(
         &body,
         api,
@@ -170,6 +187,10 @@ async fn provider_call(
             api,
             deadline,
             request_id: Some(authorization.request_id),
+            turn_timeout_sec: super::reasoning::limits(
+                authorization.execution_policy.as_ref(),
+            )
+            .provider_turn_timeout_sec,
         },
     )
     .await
@@ -253,12 +274,7 @@ fn responses_input_is_allowed(item: &Value) -> bool {
             ) && item.get("content").is_some_and(|content| {
                 content.is_string()
                     || content.as_array().is_some_and(|parts| {
-                        parts.iter().all(|part| {
-                            matches!(
-                                part.get("type").and_then(Value::as_str),
-                                Some("input_text" | "output_text")
-                            ) && part.get("text").is_some_and(Value::is_string)
-                        })
+                        parts.iter().all(responses_part_is_allowed)
                     })
             })
         }
@@ -267,13 +283,95 @@ fn responses_input_is_allowed(item: &Value) -> bool {
             .all(|key| item.get(*key).is_some_and(Value::is_string)),
         Some("function_call_output") => {
             item.get("call_id").is_some_and(Value::is_string)
-                && item.get("output").is_some_and(Value::is_string)
+                && item.get("output").is_some_and(|output| {
+                    output.is_string()
+                        || output.as_array().is_some_and(|parts| {
+                            parts.iter().all(responses_part_is_allowed)
+                        })
+                })
         }
         Some("reasoning") => {
             item.get("encrypted_content").is_some_and(Value::is_string)
         }
         _ => false,
     }
+}
+
+fn responses_part_is_allowed(part: &Value) -> bool {
+    match part.get("type").and_then(Value::as_str) {
+        Some("input_text" | "output_text") => {
+            part.get("text").is_some_and(Value::is_string)
+        }
+        Some("input_image") => part
+            .get("image_url")
+            .and_then(Value::as_str)
+            .is_some_and(is_inline_image_url),
+        _ => false,
+    }
+}
+
+/// Images may only arrive inline; remote URLs would let the agent make the
+/// provider fetch arbitrary addresses.
+fn is_inline_image_url(url: &str) -> bool {
+    ["image/jpeg", "image/png", "image/webp"]
+        .iter()
+        .any(|mime| {
+            url.strip_prefix("data:")
+                .and_then(|rest| rest.strip_prefix(mime))
+                .and_then(|rest| rest.strip_prefix(";base64,"))
+                .is_some_and(|data| !data.is_empty())
+        })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ImageParts {
+    None,
+    Inline,
+    Invalid,
+}
+
+/// Scans a provider body for image parts of either OpenAI API shape.
+fn image_parts(body: &Value) -> ImageParts {
+    fn visit(value: &Value, found: &mut ImageParts) {
+        match value {
+            Value::Array(values) => {
+                values.iter().for_each(|value| visit(value, found))
+            }
+            Value::Object(object) => {
+                let url = match object.get("type").and_then(Value::as_str) {
+                    Some("input_image") => {
+                        Some(object.get("image_url").and_then(Value::as_str))
+                    }
+                    Some("image_url") => Some(
+                        object
+                            .get("image_url")
+                            .and_then(|image| image.get("url"))
+                            .and_then(Value::as_str),
+                    ),
+                    _ => None,
+                };
+                match url {
+                    Some(Some(url)) if is_inline_image_url(url) => {
+                        if *found == ImageParts::None {
+                            *found = ImageParts::Inline;
+                        }
+                    }
+                    Some(_) => *found = ImageParts::Invalid,
+                    None => {
+                        object.values().for_each(|value| visit(value, found))
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = ImageParts::None;
+    for key in ["messages", "input"] {
+        if let Some(value) = body.get(key) {
+            visit(value, &mut found);
+        }
+    }
+    found
 }
 
 fn purpose_request_is_allowed(
@@ -465,6 +563,7 @@ async fn proxy_provider_request(
             api: ProviderApi::OpenaiCompletions,
             deadline: None,
             request_id: None,
+            turn_timeout_sec: None,
         },
     )
     .await
@@ -474,6 +573,8 @@ struct ProviderCallContext {
     api: ProviderApi,
     deadline: Option<i64>,
     request_id: Option<uuid::Uuid>,
+    /// Longer turn timeout of a 4-hour Deep request; still capped by its deadline.
+    turn_timeout_sec: Option<u64>,
 }
 
 async fn proxy_provider_call(
@@ -487,6 +588,7 @@ async fn proxy_provider_call(
         api,
         deadline,
         request_id,
+        turn_timeout_sec,
     } = context;
     let started_at = Instant::now();
     let reasoning_effort_present = body.get("reasoning_effort").is_some()
@@ -502,7 +604,10 @@ async fn proxy_provider_call(
         .or_else(|| body.get("max_tokens"))
         .and_then(Value::as_u64);
     let request_bytes = body.to_string().len();
-    let timeout = provider_request_timeout(&ai_engine, streamed);
+    let timeout = turn_timeout_sec.map_or_else(
+        || provider_request_timeout(&ai_engine, streamed),
+        Duration::from_secs,
+    );
     let timeout = deadline.map_or(timeout, |deadline| {
         timeout.min(Duration::from_millis(
             deadline
@@ -605,6 +710,9 @@ async fn proxy_provider_call(
         ));
     }
     let engine_id = ai_engine.id;
+    let stream_timer = streamed
+        .then(|| client.start_stream_body_timer(&ai_engine))
+        .flatten();
     let response_limit = if streamed {
         AI_AGENT_PROVIDER_STREAM_MAX_BYTES
     } else {
@@ -657,7 +765,30 @@ async fn proxy_provider_call(
             .insert_header((header::CACHE_CONTROL, "no-store"));
         response
     };
-    Ok(response.streaming(enforce_stream_deadline(stream, stream_deadline)))
+    Ok(response.streaming(observe_stream_body(
+        enforce_stream_deadline(stream, stream_deadline),
+        stream_timer,
+    )))
+}
+
+fn observe_stream_body(
+    stream: impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>>,
+    timer: Option<StreamBodyTimer>,
+) -> impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>> {
+    futures_util::stream::unfold(
+        (Box::pin(stream), timer),
+        |(mut stream, mut timer)| async move {
+            let chunk = stream.next().await;
+            if let Some(timer) = timer.as_mut() {
+                match &chunk {
+                    None => timer.completed(),
+                    Some(Err(_)) => timer.failed(),
+                    Some(Ok(_)) => {}
+                }
+            }
+            chunk.map(|chunk| (chunk, (stream, timer)))
+        },
+    )
 }
 
 fn enforce_stream_deadline(
@@ -792,6 +923,34 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3962_image_parts_must_be_inline() {
+        let inline = "data:image/jpeg;base64,/9j/4AAQ";
+        let chat = json!({"messages":[{"role":"user","content":[
+            {"type":"text","text":"Що на фото?"},
+            {"type":"image_url","image_url":{"url":inline}}
+        ]}]});
+        assert_eq!(image_parts(&chat), ImageParts::Inline);
+        let mut remote = chat.clone();
+        remote["messages"][0]["content"][1]["image_url"]["url"] =
+            json!("https://example.invalid/a.png");
+        assert_eq!(image_parts(&remote), ImageParts::Invalid);
+        let mut svg = chat.clone();
+        svg["messages"][0]["content"][1]["image_url"]["url"] =
+            json!("data:image/svg+xml;base64,PHN2Zz4=");
+        assert_eq!(image_parts(&svg), ImageParts::Invalid);
+        assert_eq!(
+            image_parts(&json!({"messages":[{"role":"user","content":"hi"}]})),
+            ImageParts::None
+        );
+        let tool_output = json!({"input":[{"type":"function_call_output","call_id":"c1",
+            "output":[{"type":"input_text","text":"ok"},{"type":"input_image","detail":"auto","image_url":inline}]}]});
+        assert_eq!(image_parts(&tool_output), ImageParts::Inline);
+        assert!(responses_input_is_allowed(&tool_output["input"][0]));
+        let user = json!({"role":"user","content":[{"type":"input_image","image_url":"https://example.invalid/a.png"}]});
+        assert!(!responses_input_is_allowed(&user));
+    }
 
     #[test]
     fn issue_3724_checkpoint_scope_rejected_tools_and_excess_output() {
@@ -1019,8 +1178,111 @@ mod tests {
         .await
         .unwrap();
         assert!(to_bytes(response.into_body()).await.is_err());
-        handle.stop(true).await;
+        handle.stop(false).await;
         task.await.unwrap().unwrap();
+    }
+
+    fn recording_engine_client() -> (
+        crate::ai_engine::AiEngineClient,
+        crate::telemetry::Metrics,
+        crate::telemetry::metrics::MetricsRecorder,
+    ) {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let (metrics, recorder) = crate::telemetry::Metrics::recording(&config);
+        let client = crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .unwrap()
+        .with_metrics(Some(metrics.clone()), "echo-test");
+        (client, metrics, recorder)
+    }
+
+    fn assert_one_stream_sample(
+        recorder: &crate::telemetry::metrics::MetricsRecorder,
+        outcome: &str,
+    ) {
+        let record = recorder
+            .find_with_attributes(
+                "echo.ai_provider.stream.duration",
+                &[("outcome", outcome), ("process", "echo-test")],
+            )
+            .unwrap_or_else(|| panic!("no stream sample for {outcome}"));
+        assert!(matches!(
+            record.value,
+            crate::telemetry::metrics::RecordedMetricValue::Histogram {
+                count: 1,
+                ..
+            }
+        ));
+    }
+
+    #[actix_web::test]
+    async fn issue_4029_stream_metrics_record_how_the_body_ended() {
+        let (client, metrics, recorder) = recording_engine_client();
+        let ai_engine =
+            checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
+        let chunk = Ok::<_, actix_web::Error>(Bytes::from_static(b"data"));
+
+        let completed = observe_stream_body(
+            futures_util::stream::iter([chunk]),
+            client.start_stream_body_timer(&ai_engine),
+        );
+        assert_eq!(completed.collect::<Vec<_>>().await.len(), 1);
+
+        let failed = observe_stream_body(
+            enforce_stream_deadline(
+                futures_util::stream::pending(),
+                Duration::from_millis(1),
+            ),
+            client.start_stream_body_timer(&ai_engine),
+        )
+        .collect::<Vec<_>>()
+        .await;
+        assert!(failed[0].is_err());
+
+        drop(observe_stream_body(
+            futures_util::stream::pending(),
+            client.start_stream_body_timer(&ai_engine),
+        ));
+
+        metrics.force_flush_for_test();
+        for outcome in ["completed", "failed", "cancelled"] {
+            assert_one_stream_sample(&recorder, outcome);
+        }
+    }
+
+    #[actix_web::test]
+    async fn issue_4029_gateway_records_a_streamed_call() {
+        use actix_web::body::to_bytes;
+        let events = Bytes::from_static(b"data: [DONE]\n\n");
+        let (server, address) = checkpoint_fixture_server(events.clone());
+        let handle = server.handle();
+        let task = actix_web::rt::spawn(server);
+        let (client, metrics, recorder) = recording_engine_client();
+
+        let response = proxy_provider_request(
+            &client,
+            checkpoint_fixture_engine(address),
+            json!({"stream": true}),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(to_bytes(response.into_body()).await.unwrap(), events);
+        handle.stop(false).await;
+        task.await.unwrap().unwrap();
+
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.counter_value(
+                "echo.ai_provider.requests.count",
+                &[("streaming", "true"), ("outcome", "ok")],
+            ),
+            Some(1)
+        );
+        assert_one_stream_sample(&recorder, "completed");
     }
 
     #[test]

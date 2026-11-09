@@ -694,6 +694,31 @@ mod tests {
     use crate::functest::tests::{cleanup, mk_sigint_network, mk_sigint_unit};
     use serial_test::serial;
 
+    /// A rejected registration drops its transaction, and the rollback that
+    /// frees the merge locks finishes in the background.
+    async fn register_after_rejection(
+        dbx: &DatabaseConnection,
+        unit_to_delete_id: i64,
+        original_id: i64,
+    ) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                match register_merge_task(dbx, unit_to_delete_id, original_id)
+                    .await
+                {
+                    Err(AppError::BL { msg })
+                        if msg.ends_with("retry after it finishes") =>
+                    {
+                        tokio::task::yield_now().await
+                    }
+                    result => break result.unwrap(),
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     #[serial]
     async fn staged_merge_moves_rer_report_metadata_to_survivor() {
@@ -709,6 +734,7 @@ mod tests {
             sigint_unit_id: Set(duplicate.id),
             locations: Set(serde_json::json!(["location"])),
             labels: Set(serde_json::json!(["label"])),
+            report_name: Set(Some("label".into())),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -734,6 +760,77 @@ mod tests {
                 .sigint_unit_id,
             survivor.id
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3940_staged_merge_revalidates_final_report_parent() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let source = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set("West".into()),
+                division: Set("1 мсд".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let target =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let peer = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set("East".into()),
+                division: Set("1 мсд".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for unit_id in [target.id, peer.id] {
+            sigint_unit_rer_report_metadata::ActiveModel {
+                sigint_unit_id: Set(unit_id),
+                locations: Set(serde_json::json!([])),
+                labels: Set(serde_json::json!(["Shared"])),
+                report_name: Set(Some("Shared".into())),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let login = source.created_by_login_id;
+        move_step(
+            &env.dbx,
+            login,
+            source.id,
+            target.id,
+            UnitReferenceStep::RerReportMetadata,
+        )
+        .await
+        .unwrap();
+        crate::rer_report_admin::scope::capture(&env.dbx)
+            .await
+            .unwrap();
+        let error = finalize(&env.dbx, login, source.id, target.id)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:?}").contains("іншою ієрархією"));
+        for unit in [&source, &target] {
+            assert_eq!(
+                sigint_unit::Entity::find_by_id(unit.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                Some(unit)
+            );
+        }
+        crate::rer_report_admin::scope::capture(&env.dbx)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1455,9 +1552,7 @@ mod tests {
         assert!(register_merge_task(&env.dbx, duplicate.id, middle.id)
             .await
             .is_err());
-        register_merge_task(&env.dbx, duplicate.id, survivor.id)
-            .await
-            .unwrap();
+        register_after_rejection(&env.dbx, duplicate.id, survivor.id).await;
     }
 
     #[tokio::test]
@@ -1556,8 +1651,6 @@ mod tests {
         assert!(register_merge_task(&env.dbx, duplicate.id, unrelated.id)
             .await
             .is_err());
-        register_merge_task(&env.dbx, duplicate.id, survivor.id)
-            .await
-            .unwrap();
+        register_after_rejection(&env.dbx, duplicate.id, survivor.id).await;
     }
 }
