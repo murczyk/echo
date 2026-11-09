@@ -1,3 +1,7 @@
+use crate::config::{
+    MESSENGER_GROUP_SEND_ATTACHMENTS_TOTAL_MAX_BYTES,
+    MESSENGER_GROUP_SEND_ATTACHMENT_MAX_BYTES,
+};
 use crate::entities::{signal_message, signal_message_media};
 use crate::types::*;
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -87,6 +91,7 @@ async fn attachments(
     )
     .await
     .c(h!())?;
+    validate_attachment_sizes(&media).c(h!())?;
     let mut attachments = Vec::with_capacity(media.len());
     for media in media {
         let bytes = attachment_bytes(env, txn, &media).await.c(h!())?;
@@ -101,6 +106,25 @@ async fn attachments(
         });
     }
     Ok(attachments)
+}
+
+fn validate_attachment_sizes(
+    media: &[signal_message_media::Model],
+) -> anyhow::Result<()> {
+    let mut total_bytes = 0;
+    for media in media {
+        let size = u64::try_from(media.size_bytes).c(h!())?;
+        anyhow::ensure!(
+            size <= MESSENGER_GROUP_SEND_ATTACHMENT_MAX_BYTES,
+            "Вкладення перевищує 25 МіБ для надсилання в месенджер."
+        );
+        total_bytes += size;
+        anyhow::ensure!(
+            total_bytes <= MESSENGER_GROUP_SEND_ATTACHMENTS_TOTAL_MAX_BYTES,
+            "Загальний розмір вкладень перевищує 100 МіБ для надсилання в месенджер."
+        );
+    }
+    Ok(())
 }
 
 async fn attachment_bytes(

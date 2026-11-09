@@ -281,3 +281,66 @@ async fn issue_4103_text_and_attachment_queue_rolls_back_with_the_item() {
     );
     assert_eq!(attachment.extension.as_deref(), Some("txt"));
 }
+
+#[actix_web::test]
+#[serial]
+async fn issue_4103_attachment_limits_reject_before_reading_any_content() {
+    use crate::config::{
+        MESSENGER_GROUP_SEND_ATTACHMENTS_TOTAL_MAX_BYTES,
+        MESSENGER_GROUP_SEND_ATTACHMENT_MAX_BYTES,
+    };
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (login_id, key, _) = configure(&env, EchoMessageSource::Signal).await;
+    let txn = env.dbx.begin().await.unwrap();
+    set(&txn, &key, Some(false), None).await.unwrap();
+    txn.commit().await.unwrap();
+    let item = bl::submit_signal_message(
+        &login_id,
+        &env,
+        payload(&key, "Oversized attachments"),
+    )
+    .await
+    .unwrap();
+    let max_file = MESSENGER_GROUP_SEND_ATTACHMENT_MAX_BYTES as i64;
+    let mut oversized_total = vec![
+        max_file;
+        (MESSENGER_GROUP_SEND_ATTACHMENTS_TOTAL_MAX_BYTES
+            / MESSENGER_GROUP_SEND_ATTACHMENT_MAX_BYTES)
+            as usize
+    ];
+    oversized_total.push(1);
+    let before = outbox_count(&env.dbx).await;
+    for is_encrypted in [false, true] {
+        for (sizes, expected_error) in [
+            (vec![1, max_file + 1], "Вкладення перевищує 25 МіБ"),
+            (
+                oversized_total.clone(),
+                "Загальний розмір вкладень перевищує 100 МіБ",
+            ),
+            (vec![1, -1], "out of range"),
+        ] {
+            let txn = env.dbx.begin().await.unwrap();
+            set(&txn, &key, Some(true), None).await.unwrap();
+            for size in sizes {
+                signal_message_media::ActiveModel {
+                    id: Set(uuid::Uuid::now_v7()),
+                    signal_message_id: Set(item.signal_message_id),
+                    content_type: Set("application/octet-stream".into()),
+                    size_bytes: Set(size),
+                    is_encrypted: Set(is_encrypted),
+                    storage_key: Set(Some("missing-attachment".into())),
+                    ..Default::default()
+                }
+                .insert(&txn)
+                .await
+                .unwrap();
+            }
+            let error = enqueue(&env, &txn, &login_id, item.signal_message_id)
+                .await
+                .unwrap_err();
+            assert!(format!("{error:#}").contains(expected_error), "{error:#}");
+            txn.rollback().await.unwrap();
+            assert_eq!(outbox_count(&env.dbx).await, before);
+        }
+    }
+}
