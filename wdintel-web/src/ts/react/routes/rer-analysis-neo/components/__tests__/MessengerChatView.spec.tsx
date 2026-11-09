@@ -118,6 +118,22 @@ describe('MessengerChatView', () => {
     expect(latestFeed().items.map((item) => item.id)).toEqual(['msg1', 'msg2']);
   });
 
+  it('goes to the start of the chat through the feed arrow', async () => {
+    apiMock.listMessengersMessages
+      .mockResolvedValueOnce({ items: [message('msg9')], olderCursor: 'o', newerCursor: 'n' })
+      .mockResolvedValueOnce({ items: [message('msg1')], olderCursor: null, newerCursor: 'n1' });
+    await mount();
+    expect(latestFeed().oldestNavigation).toMatchObject({ oldestLoaded: false });
+
+    await act(async () => latestFeed().oldestNavigation?.onClick());
+    expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ direction: 'Oldest', cursor: null }),
+      expect.anything(),
+    );
+    expect(latestFeed().items.map((item) => item.id)).toEqual(['msg1']);
+    expect(latestFeed().oldestNavigation).toMatchObject({ oldestLoaded: true });
+  });
+
   it('does not ask for pages beyond the ends of the chat', async () => {
     apiMock.listMessengersMessages.mockResolvedValueOnce({
       items: [message('msg1')],

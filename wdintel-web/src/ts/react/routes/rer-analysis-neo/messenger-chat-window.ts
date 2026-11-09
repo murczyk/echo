@@ -29,6 +29,12 @@ export function newestPage(rsp: MessengersMessagesListRsp): MessengerChatPage {
   return toPage(rsp, true);
 }
 
+// The first page of the chat (`Oldest`): nothing older exists, and a page shorter than the limit means
+// the chat ends there too.
+export function oldestPage(rsp: MessengersMessagesListRsp, limit: number): MessengerChatPage {
+  return toPage(rsp, rsp.items.length < limit);
+}
+
 // The API returns `limit / 2` newer messages, so a shorter newer side means the chat ends there.
 export function aroundPage(
   rsp: MessengersMessagesListRsp,

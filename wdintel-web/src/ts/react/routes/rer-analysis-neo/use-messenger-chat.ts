@@ -13,6 +13,7 @@ import {
   hasMoreAbove,
   hasMoreBelow,
   newestPage,
+  oldestPage,
   prependOlder,
   windowMessages,
   type MessengerChatPage,
@@ -68,6 +69,7 @@ export function useMessengerChat(args: Args) {
   const [loadingBelow, setLoadingBelow] = useState(false);
   // True while "go to the end" fetches the newest page or fresh messages.
   const [jumpingToEnd, setJumpingToEnd] = useState(false);
+  const [jumpingToStart, setJumpingToStart] = useState(false);
   const [pagingError, setPagingError] = useState<string | null>(null);
   // True while the header refresh is fetching, it stays disabled meanwhile.
   const [refreshing, setRefreshing] = useState(false);
@@ -191,6 +193,46 @@ export function useMessengerChat(args: Args) {
     }
   }, [accountId, chatId, setPages]);
 
+  // The first page of the chat replaces the window. Resolves to false when the request failed.
+  const loadOldestPage = useCallback(async (): Promise<boolean> => {
+    const signal = controllerRef.current?.signal;
+    if (signal == null) return false;
+    try {
+      const rsp = await listMessengersMessages(
+        {
+          accountId,
+          chatId,
+          cursor: null,
+          limit: MESSENGER_PAGE_SIZE,
+          direction: 'Oldest',
+          aroundMessageId: null,
+        },
+        { signal },
+      );
+      epochRef.current += 1;
+      setPages([oldestPage(rsp, MESSENGER_PAGE_SIZE)]);
+      setPagingError(null);
+      return true;
+    } catch (reason) {
+      if (!isAbortError(reason)) setPagingError(toErrorMessage(reason));
+      return false;
+    }
+  }, [accountId, chatId, setPages]);
+
+  // "Go to the start": jump to the first page, or, when it is already loaded, there is nothing to fetch.
+  // Resolves to false when the request failed, so the view does not scroll to a stale start.
+  const goToStart = useCallback(async (): Promise<boolean> => {
+    const pages = pagesRef.current;
+    if (pages == null || jumpingToStart) return false;
+    if (!hasMoreAbove(pages)) return true;
+    setJumpingToStart(true);
+    try {
+      return await loadOldestPage();
+    } finally {
+      setJumpingToStart(false);
+    }
+  }, [jumpingToStart, loadOldestPage]);
+
   // "Go to the end": jump to the newest page, or, when it is already loaded, fetch what arrived since.
   // Resolves to false when the request failed, so the view does not scroll to a stale end.
   const goToEnd = useCallback(async (): Promise<boolean> => {
@@ -257,6 +299,8 @@ export function useMessengerChat(args: Args) {
     loadNewer,
     goToEnd,
     jumpingToEnd,
+    goToStart,
+    jumpingToStart,
     retry,
   };
 }

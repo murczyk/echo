@@ -8,6 +8,7 @@ import {
   hasMoreBelow,
   MESSENGER_MAX_PAGES,
   newestPage,
+  oldestPage,
   prependOlder,
   windowMessages,
 } from '../messenger-chat-window';
@@ -48,6 +49,21 @@ describe('messenger chat window', () => {
   it('reports no more in either direction for an empty window', () => {
     expect(hasMoreAbove([])).toBe(false);
     expect(hasMoreBelow([])).toBe(false);
+  });
+
+  describe('oldest page', () => {
+    it('has nothing above and more below when it is full', () => {
+      const page = oldestPage(rsp(['c', 'b', 'a'], null, 'n'), 3);
+      expect(ids([page])).toEqual(['a', 'b', 'c']);
+      expect(hasMoreAbove([page])).toBe(false);
+      expect(hasMoreBelow([page])).toBe(true);
+    });
+
+    it('is the whole chat when the page is short', () => {
+      const page = oldestPage(rsp(['b', 'a'], null, 'n'), 3);
+      expect(hasMoreAbove([page])).toBe(false);
+      expect(hasMoreBelow([page])).toBe(false);
+    });
   });
 
   describe('around pages', () => {

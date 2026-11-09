@@ -204,6 +204,85 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(feedRef.current?.highlightLinkedMessage('123')).toBe(true);
   });
 
+  describe('jump-to-oldest control', () => {
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const renderFeed = (
+      oldestNavigation: React.ComponentProps<typeof MessageFeed>['oldestNavigation'],
+      extra: Partial<React.ComponentProps<typeof MessageFeed>> = {},
+    ) =>
+      act(async () =>
+        root.render(
+          <MessageFeed
+            items={[1, 2]}
+            getMessageId={getId}
+            scrollOptions={scrollOptions}
+            oldestNavigation={oldestNavigation}
+            {...extra}
+          >
+            <div data-message-id="1">first</div>
+            <div data-message-id="2">second</div>
+          </MessageFeed>,
+        ),
+      );
+    const labels = () =>
+      [...container.querySelectorAll('[data-message-feed-floating-controls] button')].map(
+        (button) => button.getAttribute('aria-label'),
+      );
+
+    it('is absent unless a host asks for it', async () => {
+      await renderFeed(undefined, {
+        newestNavigation: { edge: 'bottom', newestLoaded: false, onClick: () => undefined },
+      });
+      expect(labels()).toEqual(['До найновіших повідомлень']);
+    });
+
+    it('shows an up arrow while the start is not loaded and calls the handler', async () => {
+      const onClick = vi.fn();
+      await renderFeed({ onClick, oldestLoaded: false, label: 'To the start' });
+      expect(labels()).toEqual(['To the start']);
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[data-message-feed-scroll-fab]')?.click(),
+      );
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides when the start is loaded and the feed is at its top', async () => {
+      await renderFeed({ onClick: () => undefined, oldestLoaded: true });
+      const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+      await act(async () => {
+        scroller.scrollTop = 0;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+      expect(labels()).toEqual([]);
+
+      // Scrolled away from the top, the arrow is back even though the start is loaded.
+      await act(async () => {
+        scroller.scrollTop = 150;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+      expect(labels()).toEqual(['До найстаріших повідомлень']);
+    });
+
+    it('stacks create, up and down in that order when all three are present', async () => {
+      await renderFeed(
+        { onClick: () => undefined, oldestLoaded: false },
+        {
+          newestNavigation: { edge: 'bottom', newestLoaded: false, onClick: () => undefined },
+          onCreateMessage: () => undefined,
+        },
+      );
+      expect(labels()).toEqual([
+        'Додати повідомлення',
+        'До найстаріших повідомлень',
+        'До найновіших повідомлень',
+      ]);
+    });
+  });
+
   describe('default jump-to-newest control', () => {
     const scrollOptions = {
       hasReachedStart: true,

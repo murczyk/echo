@@ -239,6 +239,8 @@ describe('useMessengerChat', () => {
       'n1',
     );
 
+  const fullPageIds = () => Array.from({ length: MESSENGER_PAGE_SIZE }, (_, i) => `s${i}`);
+
   describe('go to the end', () => {
     it('replaces the window with the newest page and drops a page request in flight', async () => {
       let resolveOlder!: (value: MessengersMessagesListRsp) => void;
@@ -321,6 +323,61 @@ describe('useMessengerChat', () => {
       expect(latest.jumpingToEnd).toBe(true);
       await act(async () => resolve(rsp([], null, 'n1')));
       expect(latest.jumpingToEnd).toBe(false);
+    });
+  });
+
+  describe('go to the start', () => {
+    it('replaces the window with the first page and continues downwards from its newer cursor', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['z', 'y'], 'o9', 'n9'))
+        .mockResolvedValueOnce(rsp(fullPageIds(), null, 'n1'))
+        .mockResolvedValueOnce(rsp(['x'], 'o2', 'n2'));
+      await mount();
+      expect(latest.hasMoreAbove).toBe(true);
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await latest.goToStart();
+      });
+      expect(ok).toBe(true);
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: null, direction: 'Oldest', aroundMessageId: null }),
+        expect.anything(),
+      );
+      expect(latest.hasMoreAbove).toBe(false);
+      expect(latest.hasMoreBelow).toBe(true);
+      expect(latest.jumpingToStart).toBe(false);
+
+      await act(async () => latest.loadNewer());
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: 'n1', direction: 'Newer' }),
+        expect.anything(),
+      );
+      expect(ids().at(-1)).toBe('x');
+    });
+
+    it('asks for nothing when the start of the chat is already loaded', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(rsp(['b', 'a'], null, 'n'));
+      await mount();
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await latest.goToStart();
+      });
+      expect(ok).toBe(true);
+      expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a failed request, so the view does not scroll, and keeps the window', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['b', 'a'], 'o1', 'n'))
+        .mockRejectedValueOnce(new Error('offline'));
+      await mount();
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await latest.goToStart();
+      });
+      expect(ok).toBe(false);
+      expect(latest.pagingError).toBe('offline');
+      expect(ids()).toEqual(['a', 'b']);
     });
   });
 

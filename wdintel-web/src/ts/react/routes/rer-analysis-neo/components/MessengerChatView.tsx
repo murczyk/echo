@@ -149,6 +149,15 @@ export function MessengerChatView({
     }
   }, [loadEnd]);
 
+  const { goToStart: loadStart } = chatState;
+  const goToStart = useCallback(async () => {
+    if (await loadStart()) {
+      requestAnimationFrame(() =>
+        feedRef.current?.getScrollerElement()?.scrollTo({ top: 0, behavior: 'smooth' }),
+      );
+    }
+  }, [loadStart]);
+
   const privateChat = isPrivateChat(chat.chatType);
   const handleCopy = (event: ClipboardEvent<HTMLElement>) => {
     if (!privateChat) return;
@@ -290,6 +299,12 @@ export function MessengerChatView({
               onLoadOlder: chatState.loadOlder,
               onLoadNewer: chatState.loadNewer,
               onFirstVisibleMessage,
+            }}
+            oldestNavigation={{
+              onClick: () => void goToStart(),
+              oldestLoaded: !hasMoreAbove,
+              loading: chatState.jumpingToStart,
+              label: 'На початок чату',
             }}
             newestNavigation={{
               edge: 'bottom',

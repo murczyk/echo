@@ -1,5 +1,14 @@
-export { MessageFeed, MessageFeedRows, shouldShowNewestNavigation } from './MessageFeed';
-export type { MessageFeedNewestNavigation, MessageFeedProps } from './MessageFeed';
+export {
+  MessageFeed,
+  MessageFeedRows,
+  shouldShowNewestNavigation,
+  shouldShowOldestNavigation,
+} from './MessageFeed';
+export type {
+  MessageFeedNewestNavigation,
+  MessageFeedOldestNavigation,
+  MessageFeedProps,
+} from './MessageFeed';
 export { MessageFeedItem } from './MessageFeedItem';
 export { MessageFeedScrollFab } from './MessageFeedScrollFab';
 export { MessageFeedSkeletons } from './MessageFeedSkeletons';
