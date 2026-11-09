@@ -12,7 +12,7 @@ pub struct Model {
     pub sigint_inbox_item_id: i64,
     pub candidate_network_ids: Vec<i64>,
     #[sea_orm(column_type = "Text")]
-    pub body_md5: String,
+    pub input_md5: String,
     #[sea_orm(column_type = "JsonBinary")]
     pub certainties: Json,
     pub ai_engine_id: Option<Uuid>,

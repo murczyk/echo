@@ -21,14 +21,17 @@ use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 
 pub(super) struct MatchContext {
-    pub input: MatchInput,
+    /// The model's user message.
+    pub input_json: String,
     /// Candidate `key` N is `network_ids[N - 1]`; sorted and unique.
     pub network_ids: Vec<i64>,
-    pub body_md5: String,
+    /// Changes with anything the model reads: the message, its metadata, or
+    /// a candidate's attributes.
+    pub input_md5: String,
 }
 
 #[derive(Serialize)]
-pub(super) struct MatchInput {
+struct MatchInput {
     message: MessageInput,
     candidates: Vec<CandidateInput>,
 }
@@ -92,10 +95,6 @@ pub(super) async fn current_network_ids<C: ConnectionTrait>(
     Ok(candidate_set(&network_ids))
 }
 
-pub(super) fn body_md5(body: &str) -> String {
-    format!("{:x}", Md5::digest(body.as_bytes()))
-}
-
 /// `None` when the message is gone.
 pub(super) async fn load<C: ConnectionTrait>(
     dbx: &C,
@@ -120,15 +119,15 @@ pub(super) async fn load<C: ConnectionTrait>(
         return Ok(None);
     };
     let body = message.body.unwrap_or_default();
-    let message = message_input(dbx, &body, item).await.c(h!())?;
-    let candidates = candidate_inputs(dbx, &network_ids).await.c(h!())?;
+    let input = MatchInput {
+        message: message_input(dbx, &body, item).await.c(h!())?,
+        candidates: candidate_inputs(dbx, &network_ids).await.c(h!())?,
+    };
+    let input_json = serde_json::to_string(&input).c(h!())?;
     Ok(Some(MatchContext {
-        input: MatchInput {
-            message,
-            candidates,
-        },
+        input_md5: format!("{:x}", Md5::digest(input_json.as_bytes())),
+        input_json,
         network_ids,
-        body_md5: body_md5(&body),
     }))
 }
 

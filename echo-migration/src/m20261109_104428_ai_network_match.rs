@@ -47,7 +47,7 @@ create table ai_network_match_result (
     sigint_inbox_item_id bigint primary key
         references sigint_inbox_item(id) on delete cascade,
     candidate_network_ids bigint[] not null,
-    body_md5 text not null,
+    input_md5 text not null,
     certainties jsonb not null,
     ai_engine_id uuid references ai_engine(id) on delete set null,
     created_at timestamp without time zone

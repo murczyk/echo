@@ -59,9 +59,9 @@ pub(crate) async fn enabled<C: ConnectionTrait>(
             .c(h!())?)
 }
 
-/// Queues scoring for freshly recalculated messages that match several
-/// networks. Called by `calculate_sigint_inbox_item_networks`, the only
-/// writer of message–network links, so every candidate change passes here.
+/// Queues scoring for messages whose links were just written and that match
+/// several networks. Every writer of message–network links calls it:
+/// `calculate_sigint_inbox_item_networks` and the direct-submit link copy.
 pub async fn enqueue_for_calculated<C: ConnectionTrait>(
     dbx: &C,
     networks_by_item: &HashMap<i64, Vec<i64>>,

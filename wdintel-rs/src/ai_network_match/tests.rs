@@ -195,7 +195,7 @@ async fn enqueue_follows_flag_worker_age_and_stored_candidates_4095() {
     clear_job(dbx, item.id).await;
 
     dbx.execute_raw(sql(
-        "insert into ai_network_match_result (sigint_inbox_item_id, candidate_network_ids, body_md5, certainties) values ($1, $2, '', '[]')",
+        "insert into ai_network_match_result (sigint_inbox_item_id, candidate_network_ids, input_md5, certainties) values ($1, $2, '', '[]')",
         vec![item.id.into(), candidate_set(&[ids[0], ids[1]]).into()],
     ))
     .await
@@ -241,8 +241,10 @@ async fn worker_stores_scores_and_cards_follow_current_candidates_4095() {
         .await
         .unwrap()
         .unwrap();
-    let input = serde_json::to_string(&context.input).unwrap();
-    assert!(input.contains("Має CC 3"), "instructions reach the model");
+    assert!(
+        context.input_json.contains("Має CC 3"),
+        "instructions reach the model"
+    );
 
     enqueue_for_calculated(dbx, &scores(item.id, &ids[..2]))
         .await
@@ -319,7 +321,7 @@ async fn worker_retries_bad_replies_and_skips_stale_results_4095() {
         .unwrap()
         .unwrap();
     dbx.execute_raw(sql(
-        "update signal_message set body = 'Сосна' where id = $1",
+        "update sigint_inbox_item set freq = '999.0000' where id = $1",
         vec![item.id.into()],
     ))
     .await
@@ -333,7 +335,7 @@ async fn worker_retries_bad_replies_and_skips_stale_results_4095() {
     )
     .await
     .unwrap();
-    assert!(!stored, "a body edit during the call drops the reply");
+    assert!(!stored, "a metadata edit during the call drops the reply");
     let rescheduled = job(dbx, item.id).await.unwrap();
     assert_eq!(rescheduled.attempts, 1);
     assert!(rescheduled.next_attempt_at <= chrono::Utc::now().naive_utc());

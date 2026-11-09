@@ -10,7 +10,7 @@ use crate::config::{
     AI_NETWORK_MATCH_WORKER_RETRY_MAX_SECS,
 };
 use crate::entities::{
-    ai_engine, ai_network_match_worker_job, sigint_inbox_item, signal_message,
+    ai_engine, ai_network_match_worker_job, sigint_inbox_item,
 };
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
@@ -218,7 +218,7 @@ async fn score(
             inference::score(
                 ai_client,
                 &engine,
-                &context.input,
+                &context.input_json,
                 &context.network_ids,
             )
             .await
@@ -230,8 +230,8 @@ async fn score(
     Ok((candidates, engine.id))
 }
 
-/// Stores the scores if the message and its candidates did not change during
-/// the model call; otherwise the job runs again on the current state.
+/// Stores the scores if nothing the model read changed during the call;
+/// otherwise the job runs again on the current state.
 /// `true` when scores were stored.
 pub(super) async fn complete(
     dbx: &DatabaseConnection,
@@ -285,25 +285,23 @@ async fn lock_item_and_job(
     Ok(item.is_some() && job.is_some())
 }
 
+/// Rebuilds the model input under the locks: an edit to the message, its
+/// metadata or a candidate network changes the hash.
 async fn is_current(
     transaction: &DatabaseTransaction,
     item_id: i64,
     context: &MatchContext,
 ) -> anyhow::Result<bool> {
-    let message = signal_message::Entity::find_by_id(item_id)
-        .filter(signal_message::Column::Deleted.eq(false))
-        .one(transaction)
-        .await
-        .c(h!())?;
-    let Some(message) = message else {
-        return Ok(false);
-    };
-    let body_md5 =
-        context::body_md5(message.body.as_deref().unwrap_or_default());
     let network_ids = context::current_network_ids(transaction, item_id)
         .await
         .c(h!())?;
-    Ok(body_md5 == context.body_md5 && network_ids == context.network_ids)
+    if network_ids != context.network_ids {
+        return Ok(false);
+    }
+    let current = context::load(transaction, item_id, network_ids)
+        .await
+        .c(h!())?;
+    Ok(current.is_some_and(|current| current.input_md5 == context.input_md5))
 }
 
 /// Runs the job again right away without counting an attempt; a later pick
@@ -332,11 +330,11 @@ async fn save_result(
     let certainties = serde_json::to_value(candidates).c(h!())?;
     transaction
         .execute_raw(sql(
-            "insert into ai_network_match_result (sigint_inbox_item_id, candidate_network_ids, body_md5, certainties, ai_engine_id) values ($1, $2, $3, $4, $5) on conflict (sigint_inbox_item_id) do update set candidate_network_ids = excluded.candidate_network_ids, body_md5 = excluded.body_md5, certainties = excluded.certainties, ai_engine_id = excluded.ai_engine_id, created_at = now() at time zone 'utc'",
+            "insert into ai_network_match_result (sigint_inbox_item_id, candidate_network_ids, input_md5, certainties, ai_engine_id) values ($1, $2, $3, $4, $5) on conflict (sigint_inbox_item_id) do update set candidate_network_ids = excluded.candidate_network_ids, input_md5 = excluded.input_md5, certainties = excluded.certainties, ai_engine_id = excluded.ai_engine_id, created_at = now() at time zone 'utc'",
             vec![
                 item_id.into(),
                 context.network_ids.clone().into(),
-                context.body_md5.clone().into(),
+                context.input_md5.clone().into(),
                 certainties.into(),
                 engine_id.into(),
             ],

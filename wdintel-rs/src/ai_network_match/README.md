@@ -22,13 +22,14 @@ compiled prompt lives in
 
 ## Queueing
 
-`calculate_sigint_inbox_item_networks` is the only writer of message–network
-links, and it calls `enqueue_for_calculated` with the new links. A message is
-queued in `ai_network_match_worker_job` when it has 2–12 distinct networks, it
-has no stored result for exactly that candidate set, and both its receive time
-and intercept time are within the last 48 hours. The age limit stops network
-edits, which recalculate old messages in bulk, and historical imports from
-flooding the engine.
+Both writers of message–network links call `enqueue_for_calculated` with the
+new links: `calculate_sigint_inbox_item_networks` and the direct-submit copy of
+a source message's links (`copy_inbox_networks`). A message is queued in
+`ai_network_match_worker_job` when it has 2–12 distinct networks, it has no
+stored result for exactly that candidate set, and both its receive time and
+intercept time are within the last 48 hours. The age limit stops network edits,
+which recalculate old messages in bulk, and historical imports from flooding
+the engine.
 
 Message edits (body, frequency, post) delete the stored result before the
 links are recalculated, so the message is queued again.
@@ -43,12 +44,14 @@ posts, callsigns and «Опис для ШІ». Candidates are numbered keys, so 
 cannot name a network outside the set. A reply with unknown or duplicate keys
 fails the attempt; a candidate the model leaves out scores 0.
 
-Before storing, the worker locks the message and the job and checks that the
-body and the candidate set did not change during the call. If they did, the
-job runs again without counting an attempt. Failures back off exponentially
-(5 s doubling to 300 s) and the job is dropped after 8 attempts. Progress and
-the last error are recorded in `ai_worker_progress` under `network_match` and
-published in `POST /api/monitoring` as `ai.networkMatch`.
+Before storing, the worker locks the message and the job, rebuilds the model
+input, and checks that its hash and the candidate set did not change during the
+call, so edits to the message, its metadata or a candidate network are not
+lost. If they did, the job runs again without counting an attempt. Failures
+back off exponentially (5 s doubling to 300 s) and the job is dropped after 8
+attempts. Progress and the last error are recorded in `ai_worker_progress`
+under `network_match` and published in `POST /api/monitoring` as
+`ai.networkMatch`.
 
 ## Display
 

@@ -2,7 +2,6 @@
 //! network ids here, so the model cannot name a network that is not a
 //! candidate.
 
-use super::context::MatchInput;
 use super::NetworkMatchCandidate;
 use crate::ai_engine::{
     extraction_output_tokens, request_structured_ai_response, AiEngineMessage,
@@ -42,14 +41,13 @@ struct ModelNetwork {
 pub(super) async fn score(
     ai_client: &crate::ai_engine::AiEngineClient,
     engine: &ai_engine::Model,
-    input: &MatchInput,
+    input_json: &str,
     network_ids: &[i64],
 ) -> anyhow::Result<Vec<NetworkMatchCandidate>> {
-    let input = serde_json::to_string(input).c(h!())?;
     let base = || {
         vec![
             message(AI_CHAT_ROLE_SYSTEM, AI_NETWORK_MATCH_PROMPT),
-            message(AI_CHAT_ROLE_USER, &input),
+            message(AI_CHAT_ROLE_USER, input_json),
         ]
     };
     let response = request(ai_client, engine, base()).await.c(h!())?;
