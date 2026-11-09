@@ -2908,7 +2908,7 @@ async fn acceptance_final_authorization_revocation_removes_unpublished_object()
 {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let fixture = Fixture::new(&env).await;
-    for revocation in ["role", "archived", "section"] {
+    for revocation in ["role", "section"] {
         let file = fixture.file(revocation).await;
         let upload = fixture.upload(&file, b"private bytes").await;
         let locked = fixture.seed_bytes(&upload, b"private bytes").await;
@@ -2924,10 +2924,6 @@ async fn acceptance_final_authorization_revocation_removes_unpublished_object()
                 "update login set roles = '[]'::jsonb where id = '{}'",
                 fixture.login.id
             ),
-            "archived" => format!(
-                "update device set archived = true, archived_at = now() where id = '{}'",
-                fixture.device.id
-            ),
             _ => "update system_settings set devices_section_enabled = false"
                 .to_owned(),
         };
@@ -2942,15 +2938,7 @@ async fn acceptance_final_authorization_revocation_removes_unpublished_object()
         .await
         .unwrap_err();
         let response = protocol::render(Err(error), false);
-        assert_eq!(
-            response.status(),
-            if revocation == "archived" {
-                StatusCode::BAD_REQUEST
-            } else {
-                StatusCode::FORBIDDEN
-            },
-            "{revocation}"
-        );
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{revocation}");
         assert!(file_content::Entity::find_by_id((file.id, 1))
             .one(fixture.db())
             .await
@@ -2978,7 +2966,6 @@ async fn acceptance_final_authorization_revocation_removes_unpublished_object()
             ))
             .await
             .unwrap();
-        env.dbx.execute_unprepared(&format!("update device set archived = false, archived_at = null where id = '{}'", fixture.device.id)).await.unwrap();
         env.dbx
             .execute_unprepared(
                 "update system_settings set devices_section_enabled = true",
@@ -5377,7 +5364,7 @@ async fn acceptance_content_read_preserves_historical_identity_on_archived_devic
             crate::devices::devices::query::FileRegistryDeviceAccess::FileSync,
         )
         .await,
-        Err(crate::error::AppError::Form(_))
+        Ok(device_id) if device_id == fixture.device.id
     ));
     let mut other_device = fixture.device.clone().into_active_model();
     other_device.id = Set(Uuid::new_v4());

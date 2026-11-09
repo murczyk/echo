@@ -273,7 +273,10 @@ test.describe('@smoke @regression', () => {
       }
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ units: [{ unit_id: 1, name: 'Старий підрозділ', count: 3 }] }),
+        body: JSON.stringify({
+          units: [{ unit_id: 1, name: 'Старий підрозділ', count: 3 }],
+          options: [{ value: 'unit-id:1', label: 'Старий підрозділ', count: 3 }],
+        }),
       });
     });
     await page.route('**/api/rer/analysis/stats/locations', async (route) => {

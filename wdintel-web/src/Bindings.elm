@@ -1316,6 +1316,7 @@ type alias InboxMessage =
     , checked : Bool
     , important : Bool
     , aiImportant : Bool
+    , importantByMyOrganism : Bool
     , bookmarked : Bool
     , timestamp : Maybe (Int)
     , createdAt : Maybe (Int)
@@ -1330,6 +1331,7 @@ type alias InboxMessage =
     , post : Maybe (String)
     , postId : Maybe (Int)
     , unit : Maybe (String)
+    , unitDisplay : Maybe (String)
     , unitIds : List (Int)
     , callsignTokens : Maybe (List (CnCallsign))
     , signalTokens : Maybe (List (CnSignal))
@@ -1370,6 +1372,7 @@ inboxMessageEncoder struct =
         , ( "checked", (Json.Encode.bool) struct.checked )
         , ( "important", (Json.Encode.bool) struct.important )
         , ( "ai_important", (Json.Encode.bool) struct.aiImportant )
+        , ( "important_by_my_organism", (Json.Encode.bool) struct.importantByMyOrganism )
         , ( "bookmarked", (Json.Encode.bool) struct.bookmarked )
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
         , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
@@ -1384,6 +1387,7 @@ inboxMessageEncoder struct =
         , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.post )
         , ( "post_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.postId )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unit )
+        , ( "unit_display", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitDisplay )
         , ( "unit_ids", (Json.Encode.list (Json.Encode.int)) struct.unitIds )
         , ( "callsign_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (cnCallsignEncoder))) struct.callsignTokens )
         , ( "signal_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (cnSignalEncoder))) struct.signalTokens )
@@ -5317,6 +5321,7 @@ importantAddReqEncoder struct =
 
 type alias ImportantRmReq =
     { messageId : Int
+    , keepAiImportance : Bool
     }
 
 
@@ -5324,11 +5329,13 @@ importantRmReqEncoder : ImportantRmReq -> Json.Encode.Value
 importantRmReqEncoder struct =
     Json.Encode.object
         [ ( "message_id", (Json.Encode.int) struct.messageId )
+        , ( "keep_ai_importance", (Json.Encode.bool) struct.keepAiImportance )
         ]
 
 
 type alias ImportantMutationRsp =
     { important : Bool
+    , importantByMyOrganism : Bool
     }
 
 
@@ -5336,6 +5343,7 @@ importantMutationRspEncoder : ImportantMutationRsp -> Json.Encode.Value
 importantMutationRspEncoder struct =
     Json.Encode.object
         [ ( "important", (Json.Encode.bool) struct.important )
+        , ( "important_by_my_organism", (Json.Encode.bool) struct.importantByMyOrganism )
         ]
 
 
@@ -15194,6 +15202,7 @@ tagStatsRspEncoder struct =
 
 type alias UnitStatsRsp =
     { units : List (AnalysisStatsUnit)
+    , options : List (UnitStatsOption)
     }
 
 
@@ -15201,6 +15210,23 @@ unitStatsRspEncoder : UnitStatsRsp -> Json.Encode.Value
 unitStatsRspEncoder struct =
     Json.Encode.object
         [ ( "units", (Json.Encode.list (analysisStatsUnitEncoder)) struct.units )
+        , ( "options", (Json.Encode.list (unitStatsOptionEncoder)) struct.options )
+        ]
+
+
+type alias UnitStatsOption =
+    { value : String
+    , label : String
+    , count : Int
+    }
+
+
+unitStatsOptionEncoder : UnitStatsOption -> Json.Encode.Value
+unitStatsOptionEncoder struct =
+    Json.Encode.object
+        [ ( "value", (Json.Encode.string) struct.value )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "count", (Json.Encode.int) struct.count )
         ]
 
 
@@ -15341,6 +15367,7 @@ type alias SystemSettingsCurrentRsp =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
+    , dutySelectedGroupsEnabled : Bool
     , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Int
@@ -15386,6 +15413,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
+        , ( "duty_selected_groups_enabled", (Json.Encode.bool) struct.dutySelectedGroupsEnabled )
         , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
@@ -15436,6 +15464,7 @@ type alias SystemSettingsItem =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
+    , dutySelectedGroupsEnabled : Bool
     , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Int
@@ -15445,6 +15474,8 @@ type alias SystemSettingsItem =
     , messengerMediaCacheRetentionHours : Int
     , messengerMediaCacheMaxSizeGib : Int
     , messengerMediaCacheMinFreeGib : Int
+    , signozMetricsEnabled : Bool
+    , signozMetricsEndpoint : Maybe (String)
     }
 
 
@@ -15492,6 +15523,7 @@ systemSettingsItemEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
+        , ( "duty_selected_groups_enabled", (Json.Encode.bool) struct.dutySelectedGroupsEnabled )
         , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
@@ -15501,6 +15533,8 @@ systemSettingsItemEncoder struct =
         , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
         , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
+        , ( "signoz_metrics_enabled", (Json.Encode.bool) struct.signozMetricsEnabled )
+        , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
         ]
 
 
@@ -15553,6 +15587,7 @@ type alias CreateSystemSettingsReq =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Maybe (Bool)
+    , dutySelectedGroupsEnabled : Maybe (Bool)
     , importantNotifyAllEnabled : Maybe (Bool)
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Maybe (Int)
@@ -15562,6 +15597,8 @@ type alias CreateSystemSettingsReq =
     , messengerMediaCacheRetentionHours : Int
     , messengerMediaCacheMaxSizeGib : Int
     , messengerMediaCacheMinFreeGib : Int
+    , signozMetricsEnabled : Maybe (Bool)
+    , signozMetricsEndpoint : Maybe (String)
     }
 
 
@@ -15604,6 +15641,7 @@ createSystemSettingsReqEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiPositionHighlightsEnabled )
+        , ( "duty_selected_groups_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.dutySelectedGroupsEnabled )
         , ( "important_notify_all_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.apiRateLimitReplenishIntervalMs )
@@ -15613,6 +15651,8 @@ createSystemSettingsReqEncoder struct =
         , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
         , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
+        , ( "signoz_metrics_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.signozMetricsEnabled )
+        , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
         ]
 
 
@@ -21782,6 +21822,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "checked" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_important" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_by_my_organism" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bookmarked" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
@@ -21796,6 +21837,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "unit_display" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_tokens" (Json.Decode.nullable (Json.Decode.list (cnCallsignDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_tokens" (Json.Decode.nullable (Json.Decode.list (cnSignalDecoder)))))
@@ -24015,12 +24057,14 @@ importantRmReqDecoder : Json.Decode.Decoder ImportantRmReq
 importantRmReqDecoder =
     Json.Decode.succeed ImportantRmReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keep_ai_importance" (Json.Decode.bool)))
 
 
 importantMutationRspDecoder : Json.Decode.Decoder ImportantMutationRsp
 importantMutationRspDecoder =
     Json.Decode.succeed ImportantMutationRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_by_my_organism" (Json.Decode.bool)))
 
 
 importantListReqDecoder : Json.Decode.Decoder ImportantListReq
@@ -30876,6 +30920,15 @@ unitStatsRspDecoder : Json.Decode.Decoder UnitStatsRsp
 unitStatsRspDecoder =
     Json.Decode.succeed UnitStatsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (analysisStatsUnitDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "options" (Json.Decode.list (unitStatsOptionDecoder))))
+
+
+unitStatsOptionDecoder : Json.Decode.Decoder UnitStatsOption
+unitStatsOptionDecoder =
+    Json.Decode.succeed UnitStatsOption
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
 
 
 locationStatsRspDecoder : Json.Decode.Decoder LocationStatsRsp
@@ -30966,6 +31019,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
@@ -31017,6 +31071,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
@@ -31026,6 +31081,8 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -31073,6 +31130,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.nullable (Json.Decode.int))))
@@ -31082,6 +31140,8 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
@@ -34251,6 +34311,8 @@ type alias UserDutySettingsDto =
     , messageSortBy : MessageTimeBasis
     , messageAutoParseEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
+    , minimalReportWindowEnabled : Bool
+    , importantOnlyMyOrganism : Bool
     }
 
 
@@ -34274,3 +34336,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiPositionHighlightsEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]))

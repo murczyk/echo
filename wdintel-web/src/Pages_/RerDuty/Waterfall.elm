@@ -2515,7 +2515,7 @@ updateMessage shared user msg model =
                     case Messages.getItem id model.messages of
                         Just ( message, _ ) ->
                             if message.important then
-                                E.sendCmd <| Api.rer_important_rm (ImportantRemoveDone id) { messageId = id }
+                                E.sendCmd <| Api.rer_important_rm (ImportantRemoveDone id) { messageId = id, keepAiImportance = False }
 
                             else
                                 E.sendCmd <| Api.rer_important_add (ImportantAddDone id) { messageId = id, groupMasterKey = Nothing, notifyGroup = False, operationId = Nothing }

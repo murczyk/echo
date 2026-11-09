@@ -17,6 +17,7 @@ fn has_read_deadline(path: &str) -> bool {
             "/api/rer/analysis/stats"
                 | "/api/rer/analysis/callsigns-page"
                 | "/api/rer/analysis/summary-table-freq"
+                | "/api/rer/analysis/ai/frequency-summary"
                 | "/api/rer/analysis/correlated-freqs"
                 | "/api/rer/analysis/new-callsigns"
                 | "/api/rer/analysis/activity-daily"

@@ -222,6 +222,7 @@ export function MessageCardAttachmentPreviewHeader({
 
       {/* Center: Fixed Carousel Navigation & Counter (< 1 / 6 >) */}
       <Stack
+        data-attachment-preview-header-navigation
         direction="row"
         spacing={0.5}
         alignItems="center"

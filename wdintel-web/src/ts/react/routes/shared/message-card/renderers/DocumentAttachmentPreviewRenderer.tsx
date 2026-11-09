@@ -39,6 +39,7 @@ import {
 } from '../attachment-preview/ReportTextPreview';
 import { DocumentFilePreview } from './DocumentFilePreview';
 import { ZipDocumentPreview } from './ZipDocumentPreview';
+import { MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_CONTROLS_BOTTOM_PX } from '../attachment-preview/message-card-preview-config';
 
 function NonZipDocumentAttachmentPreviewRenderer({
   document,
@@ -68,8 +69,11 @@ function NonZipDocumentAttachmentPreviewRenderer({
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
+  const mobileViewport = isMobile || touchLandscape;
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
+  const carouselAboveControls = currentDocumentKind === 'xls' || currentDocumentKind === 'xlsx';
   const currentDocumentCapabilities = getDocumentPreviewCapabilities(currentDocument.kind);
   const canZoom = currentDocumentCapabilities?.zoomable === true;
   const canSwipeCarousel = currentDocumentCapabilities?.carouselSwipeable === true;
@@ -260,7 +264,16 @@ function NonZipDocumentAttachmentPreviewRenderer({
         zoom={dialogZoom}
       />
       {canZoom ? (
-        <AttachmentPreviewZoomBadge zoom={dialogZoom} onResetZoom={() => setZoom(100)} />
+        <AttachmentPreviewZoomBadge
+          zoom={dialogZoom}
+          onResetZoom={() => setZoom(100)}
+          alignWithCarousel={mobileViewport}
+          bottom={
+            mobileViewport && carouselAboveControls
+              ? `calc(${MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_CONTROLS_BOTTOM_PX}px + env(safe-area-inset-bottom, 0px))`
+              : undefined
+          }
+        />
       ) : null}
     </MessageCardAttachmentPreviewStage>
   );
@@ -372,11 +385,22 @@ function NonZipDocumentAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
+      mobileChrome={ocrVisible && ocrFullPane && !isMobile ? 'fixed' : 'toggle'}
+      carouselAboveControls={carouselAboveControls}
+      headerInFlow={ocrVisible || summaryVisible || (reportDraft != null && reportVisible)}
       stage={stage}
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={canSwipeCarousel && dialogZoom <= 100}
+      onScrollBoundaryDismiss={
+        dialogZoom <= 100 &&
+        !ocrVisible &&
+        !summaryVisible &&
+        !(reportDraft != null && reportVisible)
+          ? closeDialog
+          : undefined
+      }
     />
   );
 }

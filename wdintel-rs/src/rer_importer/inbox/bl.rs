@@ -851,7 +851,7 @@ pub async fn aggregate_to_inbox_messages(
             .into_iter()
             .map(|entry| (entry.message_id, entry.comments))
             .collect();
-    let important_ids = sigint_important::Entity::find()
+    let important_marks = sigint_important::Entity::find()
         .filter(
             sigint_important::Column::SignalMessageId
                 .eq_any(message_ids.clone()),
@@ -859,8 +859,18 @@ pub async fn aggregate_to_inbox_messages(
         .filter(sigint_important::Column::Deleted.eq(false))
         .all(&env.dbx)
         .await
-        .c(h!())?
-        .into_iter()
+        .c(h!())?;
+    let important_ids = important_marks
+        .iter()
+        .map(|imp| imp.signal_message_id)
+        .collect::<HashSet<_>>();
+    let organism_logins = logins.iter().collect::<HashSet<_>>();
+    let my_organism_important_ids = important_marks
+        .iter()
+        .filter(|imp| {
+            imp.login_id
+                .is_some_and(|login| organism_logins.contains(&login))
+        })
         .map(|imp| imp.signal_message_id)
         .collect::<HashSet<_>>();
     #[derive(sea_orm::FromQueryResult)]
@@ -965,9 +975,8 @@ pub async fn aggregate_to_inbox_messages(
     let messages_networks = load_messages_networks(&messages, &env.dbx)
         .await
         .context(h!())?;
-    let mut message_unit_ids = load_message_unit_ids(&message_ids, &env.dbx)
-        .await
-        .c(h!())?;
+    let mut message_units =
+        load_message_units(&message_ids, &env.dbx).await.c(h!())?;
     let media_entries =
         crate::messenger::audio_ref::for_messages(env, &env.dbx, &message_ids)
             .await
@@ -1065,6 +1074,7 @@ pub async fn aggregate_to_inbox_messages(
             .c(h!())?;
 
     for message in messages {
+        let units = message_units.remove(&message.id).unwrap_or_default();
         // for message in messages {
         // let m_inbox: Option<sigint_inbox_item::Model> =
         //     SigintInboxItem::find_by_id(message.id)
@@ -1218,6 +1228,8 @@ pub async fn aggregate_to_inbox_messages(
                 checked: message.checked.unwrap_or(false),
                 important: important_ids.contains(&message.id),
                 ai_important: ai_important_ids.contains(&message.id),
+                important_by_my_organism: my_organism_important_ids
+                    .contains(&message.id),
                 bookmarked: bookmarked_ids.contains(&message.id),
                 timestamp: message
                     .timestamp
@@ -1247,6 +1259,8 @@ pub async fn aggregate_to_inbox_messages(
                     .cloned()
                     .unwrap_or_default(),
                 unit: message.unit_v2.clone(),
+                unit_display: (!units.is_empty())
+                    .then(|| units.values().unique().join(", ")),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
                 point_tokens: m_point_tokens,
@@ -1255,9 +1269,7 @@ pub async fn aggregate_to_inbox_messages(
                 text_marked: Some(text_marked),
                 post: message.post_name.clone(),
                 post_id: message.post_id,
-                unit_ids: message_unit_ids
-                    .remove(&message.id)
-                    .unwrap_or_default(),
+                unit_ids: units.into_keys().collect(),
                 datasource_id: group_entry
                     .as_ref()
                     .and_then(|(_, datasource_group)| datasource_group.as_ref())
@@ -1805,11 +1817,11 @@ pub async fn load_messages_networks(
     load_messages_networks_by_ids(&message_ids, dbx).await
 }
 
-async fn load_message_unit_ids(
+async fn load_message_units(
     message_ids: &[i64],
     dbx: &DatabaseConnection,
-) -> Result<HashMap<i64, Vec<i64>>, AppError> {
-    let mut unit_ids_by_message = HashMap::<i64, BTreeSet<i64>>::new();
+) -> anyhow::Result<HashMap<i64, BTreeMap<i64, String>>> {
+    let mut units_by_message = HashMap::<i64, BTreeMap<i64, String>>::new();
     for message_ids in message_ids.chunks(20000) {
         let links = sigint_inbox_item_unit::Entity::find()
             .join(
@@ -1819,28 +1831,24 @@ async fn load_message_unit_ids(
             .select_only()
             .column(sigint_inbox_item_unit::Column::ItemId)
             .column(sigint_inbox_item_unit::Column::UnitId)
+            .column(sigint_unit::Column::Name)
             .filter(
                 sigint_inbox_item_unit::Column::ItemId
                     .is_in(message_ids.to_vec()),
             )
             .filter(sigint_unit::Column::Deleted.eq(false))
-            .into_tuple::<(i64, i64)>()
+            .into_tuple::<(i64, i64, String)>()
             .all(dbx)
             .await
             .c(h!())?;
-        for (message_id, unit_id) in links {
-            unit_ids_by_message
+        for (message_id, unit_id, unit_name) in links {
+            units_by_message
                 .entry(message_id)
                 .or_default()
-                .insert(unit_id);
+                .insert(unit_id, unit_name);
         }
     }
-    Ok(unit_ids_by_message
-        .into_iter()
-        .map(|(message_id, unit_ids)| {
-            (message_id, unit_ids.into_iter().collect())
-        })
-        .collect())
+    Ok(units_by_message)
 }
 
 pub async fn load_messages_networks_by_ids(

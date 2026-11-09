@@ -298,7 +298,24 @@ function forwardRefElement(elementType: keyof HTMLElementTagNameMap) {
     HTMLElement,
     { children?: ReactNode; style?: React.CSSProperties } & Record<string, unknown>
   >(function VirtuosoElement({ style, children, ...props }, ref) {
-    return createElement(elementType, { ref, style, ...props }, children as ReactNode);
+    return createElement(
+      elementType,
+      {
+        ref,
+        style:
+          elementType === 'table'
+            ? {
+                ...(style as React.CSSProperties | undefined),
+                paddingTop: 'var(--attachment-preview-content-inset, 0px)',
+                paddingBottom: 'var(--attachment-preview-content-bottom-inset, 0px)',
+                borderCollapse:
+                  'var(--attachment-preview-table-border-collapse, collapse)' as React.CSSProperties['borderCollapse'],
+              }
+            : style,
+        ...props,
+      },
+      children as ReactNode,
+    );
   });
 }
 
@@ -307,6 +324,20 @@ function forwardRefSection(sectionType: 'thead' | 'tbody') {
     HTMLTableSectionElement,
     { children?: ReactNode; style?: React.CSSProperties } & Record<string, unknown>
   >(function VirtuosoSection({ style, children, ...props }, ref) {
-    return createElement(sectionType, { ref, style, ...props }, children as ReactNode);
+    return createElement(
+      sectionType,
+      {
+        ref,
+        style:
+          sectionType === 'thead'
+            ? {
+                ...(style as React.CSSProperties | undefined),
+                top: 'var(--attachment-preview-sticky-inset, 0px)',
+              }
+            : style,
+        ...props,
+      },
+      children as ReactNode,
+    );
   });
 }

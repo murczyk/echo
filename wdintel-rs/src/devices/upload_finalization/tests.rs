@@ -52,7 +52,7 @@ fn prepared_audio() -> PreparedAudio {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn archived_device_write_keeps_form_error_and_owned_snapshot_readable() {
+async fn archived_device_write_is_allowed_and_owned_snapshot_readable() {
     use crate::devices::tests::schema::device_active_model;
     use crate::entities::{login, system_settings};
     use crate::error::AppError;
@@ -116,13 +116,9 @@ async fn archived_device_write_keeps_form_error_and_owned_snapshot_readable() {
         FinalizationKind::FinalizationFileKind,
         FinalizationKind::FinalizationAudioKind,
     ] {
-        let error = super::authorize_write(&env, actor.id, device.id, kind)
+        super::authorize_write(&env, actor.id, device.id, kind)
             .await
-            .unwrap_err();
-        assert!(
-            matches!(&error, AppError::Form(fields) if fields.contains_key("device_id")),
-            "archived writes must retain their permanent validation error: {error:?}"
-        );
+            .unwrap();
     }
     assert_eq!(
         super::get_snapshot(&env, job.job_id, actor.id)

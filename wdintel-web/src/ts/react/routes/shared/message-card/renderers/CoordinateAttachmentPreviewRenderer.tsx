@@ -196,6 +196,7 @@ export function CoordinateAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
+      mobileChrome="toggle"
       stage={
         <CoordinateMapPreview
           points={points}
@@ -502,7 +503,7 @@ function CoordinateMapPreview({
         sx={{
           position: 'absolute',
           left: 16,
-          top: 16,
+          top: 'calc(16px + var(--attachment-preview-header-height, 0px))',
           zIndex: 1200,
           display: 'flex',
           flexDirection: 'column',
@@ -513,7 +514,7 @@ function CoordinateMapPreview({
         style={{
           position: 'absolute',
           left: '16px',
-          top: '16px',
+          top: 'calc(16px + var(--attachment-preview-header-height, 0px))',
           zIndex: 1200,
           display: 'flex',
           flexDirection: 'column',

@@ -42,6 +42,8 @@ pub struct SystemSettingsCurrentRsp {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: bool,
+    #[serde(default = "default_duty_selected_groups_enabled")]
+    pub duty_selected_groups_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
@@ -101,6 +103,8 @@ pub struct SystemSettingsItem {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: bool,
+    #[serde(default = "default_duty_selected_groups_enabled")]
+    pub duty_selected_groups_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
@@ -119,6 +123,10 @@ pub struct SystemSettingsItem {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+    #[serde(default)]
+    pub signoz_metrics_enabled: bool,
+    #[serde(default)]
+    pub signoz_metrics_endpoint: Option<String>,
 }
 
 #[derive(
@@ -194,6 +202,8 @@ pub struct CreateSystemSettingsReq {
     #[serde(default)]
     pub ai_position_highlights_enabled: Option<bool>,
     #[serde(default)]
+    pub duty_selected_groups_enabled: Option<bool>,
+    #[serde(default)]
     pub important_notify_all_enabled: Option<bool>,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
@@ -211,6 +221,11 @@ pub struct CreateSystemSettingsReq {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+    /// Omitted by older clients; the saved value is then kept.
+    #[serde(default)]
+    pub signoz_metrics_enabled: Option<bool>,
+    #[serde(default)]
+    pub signoz_metrics_endpoint: Option<String>,
 }
 
 fn default_api_rate_limit_replenish_interval_ms() -> i64 {
@@ -223,6 +238,10 @@ fn default_api_rate_limit_burst_size() -> i64 {
 
 fn default_analysis_aor_filter_enabled() -> bool {
     crate::config::ANALYSIS_AOR_FILTER_ENABLED_DEFAULT
+}
+
+fn default_duty_selected_groups_enabled() -> bool {
+    crate::config::DUTY_SELECTED_GROUPS_ENABLED_DEFAULT
 }
 
 fn default_important_notify_all_enabled() -> bool {

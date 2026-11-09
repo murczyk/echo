@@ -55,6 +55,7 @@ export type FeedColumnHandle = {
 
 const DEFAULT_GROUP_NAVIGATION: NonNullable<FeedColumnModel['groupNavigation']> = {
   scope: { kind: 'all' },
+  showSelectedGroups: true,
   groupName: 'Всі групи',
   onSelect: () => {},
   onError: () => {},
@@ -377,18 +378,20 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNotificationStorageErrorChange={setNotificationStorageError}
         onNotificationStatusChanged={refreshNotificationStatus}
       />
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 40,
-          left: '50%',
-          zIndex: 1,
-          maxWidth: 'calc(100% - 24px)',
-          transform: 'translateX(-50%)',
-        }}
-      >
-        <GroupIsland group={islandGroup} />
-      </Box>
+      {groupNavigation.showSelectedGroups ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 40,
+            left: '50%',
+            zIndex: 1,
+            maxWidth: 'calc(100% - 24px)',
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <GroupIsland group={islandGroup} />
+        </Box>
+      ) : null}
       <Box
         data-duty-feed-body
         className="flex flex-col flex-1 min-h-0"

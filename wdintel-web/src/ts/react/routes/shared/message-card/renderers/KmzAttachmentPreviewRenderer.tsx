@@ -348,6 +348,7 @@ export function KmzAttachmentPreviewRenderer({
     );
   return (
     <MessageCardAttachmentPreviewLayout
+      mobileChrome="toggle"
       navigation={navigation}
       swipeEnabled={false}
       header={

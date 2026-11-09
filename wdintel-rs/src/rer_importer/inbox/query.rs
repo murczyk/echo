@@ -1165,8 +1165,7 @@ pub(crate) async fn build_inbox_unit_stats_query_with_created_at_bounds(
         created_at_upper_bound,
     )
     .select_only()
-    .column(signal_message::Column::Id)
-    .distinct();
+    .column(signal_message::Column::Id);
     Ok(Some(render_inbox_unit_stats_query(
         query,
         unit_scope,
@@ -1179,58 +1178,113 @@ fn render_inbox_unit_stats_query(
     scope: Option<AnalyticsMessageIdScope>,
     bounded_unit_lookup: bool,
 ) -> String {
-    let query = render_inbox_digest_query(query);
-    let unit_links = sigint_inbox_item_unit::Entity::find()
-        .select_only()
-        .column(sigint_inbox_item_unit::Column::ItemId)
-        .column_as(
-            Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
-            "unit_id",
+    let mut linked = inbox_linked_unit_counts_query(&query, scope);
+    let undefined =
+        inbox_undefined_unit_counts_query(query, scope, bounded_unit_lookup);
+    linked.union(sea_query::UnionType::All, undefined);
+    linked.to_string(PostgresQueryBuilder)
+}
+
+fn inbox_linked_unit_counts_query(
+    messages: &Select<signal_message::Entity>,
+    scope: Option<AnalyticsMessageIdScope>,
+) -> SelectStatement {
+    let links = Alias::new("counted_unit_link");
+    let units = Alias::new("counted_unit");
+    let mut query = Query::select();
+    query
+        .from_as(sigint_inbox_item_unit::Entity, links.clone())
+        .expr_as(
+            Expr::col((links.clone(), sigint_inbox_item_unit::Column::UnitId)),
+            Alias::new("unit_id"),
         )
-        .column_as(
-            Expr::col((sigint_unit::Entity, sigint_unit::Column::Name)),
-            "name",
+        .expr_as(
+            Expr::col((units.clone(), sigint_unit::Column::Name)),
+            Alias::new("name"),
         )
-        .join(
+        .expr_as(
+            Expr::cust(r#"COUNT(DISTINCT "counted_unit_link"."item_id")"#),
+            Alias::new("count"),
+        )
+        .join_as(
             JoinType::InnerJoin,
-            sigint_inbox_item_unit::Relation::SigintUnit.def(),
+            sigint_unit::Entity,
+            units.clone(),
+            Expr::col((units.clone(), sigint_unit::Column::Id))
+                .equals((links.clone(), sigint_inbox_item_unit::Column::UnitId))
+                .and(
+                    Expr::col((units.clone(), sigint_unit::Column::Deleted))
+                        .eq(false),
+                ),
         )
-        .filter(sigint_unit::Column::Deleted.eq(false));
-    let (unit_links, join_kind, join_condition) = if let Some(scope) = scope {
-        (
-            unit_links.filter(scope.condition((
-                sigint_inbox_item_unit::Entity,
-                sigint_inbox_item_unit::Column::ItemId,
-            ))),
-            "LEFT JOIN",
-            "unit_links.item_id = messages.id",
+        .and_where(
+            Expr::col((links.clone(), sigint_inbox_item_unit::Column::ItemId))
+                .in_subquery(messages.clone().into_query()),
         )
-    } else if bounded_unit_lookup {
-        (
-            unit_links
-                .filter(
-                    Expr::col((
-                        sigint_inbox_item_unit::Entity,
-                        sigint_inbox_item_unit::Column::ItemId,
-                    ))
-                    .equals((Alias::new("messages"), Alias::new("id"))),
-                )
-                .offset(0),
-            "LEFT JOIN LATERAL",
-            "TRUE",
+        .group_by_col((links.clone(), sigint_inbox_item_unit::Column::UnitId))
+        .group_by_col((units, sigint_unit::Column::Name));
+    if let Some(scope) = scope {
+        query.and_where(
+            scope.condition((links, sigint_inbox_item_unit::Column::ItemId)),
+        );
+    }
+    query
+}
+
+fn inbox_undefined_unit_counts_query(
+    messages: Select<signal_message::Entity>,
+    scope: Option<AnalyticsMessageIdScope>,
+    bounded_unit_lookup: bool,
+) -> SelectStatement {
+    let links = Alias::new("counted_unit_link");
+    let units = Alias::new("counted_unit");
+    let mut active_links = Query::select();
+    active_links
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_unit::Entity, links.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            units.clone(),
+            Expr::col((units.clone(), sigint_unit::Column::Id))
+                .equals((links.clone(), sigint_inbox_item_unit::Column::UnitId))
+                .and(
+                    Expr::col((units, sigint_unit::Column::Deleted)).eq(false),
+                ),
         )
-    } else {
-        (unit_links, "LEFT JOIN", "unit_links.item_id = messages.id")
-    };
-    let unit_links = unit_links.into_query().to_string(PostgresQueryBuilder);
-    format!(
-        r#"SELECT COALESCE(unit_links.unit_id, {ANALYSIS_STATS_UNDEFINED_UNIT_ID}) AS unit_id,
-                  COALESCE(unit_links.name, '{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}') AS name,
-                  COUNT(DISTINCT messages.id) AS count
-           FROM ({query}) AS messages
-           {join_kind} ({unit_links}) AS unit_links ON {join_condition}
-           GROUP BY unit_links.unit_id, unit_links.name"#
-    )
+        .and_where(
+            Expr::col((links.clone(), sigint_inbox_item_unit::Column::ItemId))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+        );
+    if let Some(scope) = scope {
+        active_links.and_where(
+            scope.condition((links, sigint_inbox_item_unit::Column::ItemId)),
+        );
+    }
+    if bounded_unit_lookup {
+        active_links.offset(0);
+    }
+    let mut query = messages.into_query();
+    // Match the linked arm's bigint/text types; an implicit coercion makes
+    // PostgreSQL wrap this arm, and the gateway then runs both arms serially.
+    query
+        .clear_selects()
+        .expr_as(
+            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_ID)
+                .cast_as(Alias::new("bigint")),
+            Alias::new("unit_id"),
+        )
+        .expr_as(
+            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_NAME)
+                .cast_as(Alias::new("text")),
+            Alias::new("name"),
+        )
+        .expr_as(
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+            Alias::new("count"),
+        )
+        .and_where(Expr::exists(active_links).not());
+    query
 }
 
 pub(crate) async fn build_inbox_digest_query(
@@ -3926,5 +3980,27 @@ mod tests {
         assert!(descending
             .contains("ORDER BY \"signal_message\".\"created_at\" DESC"));
         assert!(!query.contains("WHERE \"created_at\""), "{query}");
+    }
+
+    #[test]
+    fn undefined_unit_arm_matches_linked_arm_types_3527() {
+        let messages = signal_message::Entity::find()
+            .select_only()
+            .column(signal_message::Column::Id);
+        let query = render_inbox_unit_stats_query(messages, None, false);
+        let (_, undefined) = query.split_once(" UNION ALL ").unwrap();
+
+        assert!(
+            undefined.contains(&format!(
+                r#"CAST({ANALYSIS_STATS_UNDEFINED_UNIT_ID} AS bigint) AS "unit_id""#
+            )),
+            "{query}"
+        );
+        assert!(
+            undefined.contains(&format!(
+                r#"CAST('{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}' AS text) AS "name""#
+            )),
+            "{query}"
+        );
     }
 }

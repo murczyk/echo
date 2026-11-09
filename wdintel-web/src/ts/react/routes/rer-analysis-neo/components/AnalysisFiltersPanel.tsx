@@ -125,19 +125,21 @@ export function AnalysisFiltersPanel({
     });
     return [...optionsByValue.values()];
   }, [derived.unitsOptions, queryState.unitHierarchy, queryState.unitsSelected]);
-  const unitParents = useUnitParentOptions(true, unitOptions, queryState.unitHierarchy);
-  const derivedWithParents = { ...derived, unitsOptions: unitParents.options };
+  const localParents = useUnitParentOptions(
+    options.unitParentCount === undefined && unitOptions.length > 0,
+    unitOptions,
+    queryState.unitHierarchy,
+  );
+  const derivedWithParents = { ...derived, unitsOptions: localParents.options };
   const countsWithParents = useMemo(() => {
     if (counts?.unitsCount == null) return counts;
-    const unitValues = new Set(derived.unitsOptions.map((option) => option.value));
-    return {
-      ...counts,
-      unitsCount:
-        counts.unitsCount +
-        unitParents.options.filter((option) => option.count > 0 && !unitValues.has(option.value))
-          .length,
-    };
-  }, [counts, derived.unitsOptions, unitParents.options]);
+    const leafValues = new Set(derived.unitsOptions.map((option) => option.value));
+    const parentCount =
+      options.unitParentCount ??
+      localParents.options.filter((option) => option.count > 0 && !leafValues.has(option.value))
+        .length;
+    return { ...counts, unitsCount: counts.unitsCount + parentCount };
+  }, [counts, derived.unitsOptions, options.unitParentCount, localParents.options]);
 
   const toggleSection = (section: FilterSectionId) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));

@@ -57,6 +57,7 @@ pub mod search;
 pub mod signals;
 pub mod types;
 pub mod unit;
+pub(crate) mod unit_stats;
 pub mod zp_digital_post_alt_format;
 pub mod zp_peleng_extended_format;
 pub mod zp_peleng_vorony_odina_format;

@@ -165,7 +165,7 @@ export function resolveEtalonBindingDisplayValue(
     };
   }
 
-  const unit = options.featureStrictNetworks ? '' : normalizeLabel(msg.unit);
+  const unit = options.featureStrictNetworks ? '' : normalizeLabel(msg.unitDisplay ?? msg.unit);
   if (unit !== '') {
     return {
       displayValue: unit,
@@ -389,7 +389,7 @@ export function resolveMessageCardEtalonDisplayModel(
   const renderedNetworks = resolveMessageCardRenderedNetworks(msg.networkIds, options);
   const locationDisplayValue = normalizeLocationDisplayValue(msg.location);
   const etalonBindingValue = resolveEtalonBindingDisplayValue(msg, options);
-  const headerUnit = normalizeLabel(msg.unit) || null;
+  const headerUnit = normalizeLabel(msg.unitDisplay ?? msg.unit) || null;
 
   if (renderedNetworks.length > 0) {
     const displayValue = renderedNetworks.map((network) => network.label).join('\n');

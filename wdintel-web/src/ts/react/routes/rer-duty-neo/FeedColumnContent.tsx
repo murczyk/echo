@@ -119,6 +119,12 @@ type FeedColumnContentProps = {
   column: FeedColumnModel;
 };
 
+/** View of a message for the «Важливі лише мого підрозділу» setting; feed state keeps both facts. */
+function withImportanceOfMyOrganism(msg: InboxMessage): InboxMessage {
+  if (msg.important === msg.importantByMyOrganism && !msg.aiImportant) return msg;
+  return { ...msg, important: msg.importantByMyOrganism, aiImportant: false };
+}
+
 type DutyMessageCardItemProps = {
   id: number;
   msg: InboxMessage;
@@ -130,6 +136,7 @@ type DutyMessageCardItemProps = {
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  importantOnlyMyOrganism: boolean;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -149,7 +156,11 @@ type DutyMessageCardItemProps = {
   tagsOrder?: number[];
   filterState: RerDutyFeedFilterState;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+  onMessageImportant: (
+    msgId: number,
+    currentlyImportant: boolean,
+    keepAiImportance: boolean,
+  ) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
   onMessageCreateReport: (
     msgId: number,
@@ -177,6 +188,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   collapseMediaPreviews = false,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
+  importantOnlyMyOrganism,
   botTagAction,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -220,10 +232,15 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
     [msg.messageComments, authUserName],
   );
 
+  const cardMsg = useMemo(
+    () => (importantOnlyMyOrganism ? withImportanceOfMyOrganism(msg) : msg),
+    [msg, importantOnlyMyOrganism],
+  );
+
   return (
     <DutyMessageCard
       id={id}
-      msg={msg}
+      msg={cardMsg}
       analysisDestination="neo"
       tagsLayout={tagsLayout}
       hideBotTags={hideBotTags}
@@ -253,7 +270,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       tagsMap={tagsMap}
       tagsOrder={tagsOrder}
       onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
-      onImportant={() => onMessageImportant(id, msg.important)}
+      onImportant={() => onMessageImportant(id, cardMsg.important, importantOnlyMyOrganism)}
       onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
       onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
       onCopyMessageLink={() =>
@@ -319,6 +336,7 @@ type DutyMessageListProps = {
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  importantOnlyMyOrganism: boolean;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
@@ -338,7 +356,11 @@ type DutyMessageListProps = {
   tagsOrder?: number[];
   filterState: RerDutyFeedFilterState;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+  onMessageImportant: (
+    msgId: number,
+    currentlyImportant: boolean,
+    keepAiImportance: boolean,
+  ) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
   onMessageCreateReport: (
     msgId: number,
@@ -370,6 +392,7 @@ const DutyMessageList = memo(
     collapseMediaPreviews = false,
     mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
     messageTextPreviewLines,
+    importantOnlyMyOrganism,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
@@ -423,6 +446,7 @@ const DutyMessageList = memo(
                   collapseMediaPreviews={collapseMediaPreviews}
                   mediaSummaryEnabled={mediaSummaryEnabled}
                   messageTextPreviewLines={messageTextPreviewLines}
+                  importantOnlyMyOrganism={importantOnlyMyOrganism}
                   botTagAction={botTagAction}
                   onCancelBotTagAction={onCancelBotTagAction}
                   onMarkBotTagWrong={onMarkBotTagWrong}
@@ -476,6 +500,7 @@ const DutyMessageList = memo(
     prev.hideNetworks === next.hideNetworks &&
     prev.collapseMediaPreviews === next.collapseMediaPreviews &&
     prev.messageTextPreviewLines === next.messageTextPreviewLines &&
+    prev.importantOnlyMyOrganism === next.importantOnlyMyOrganism &&
     prev.botTagAction === next.botTagAction &&
     prev.onCancelBotTagAction === next.onCancelBotTagAction &&
     prev.onMarkBotTagWrong === next.onMarkBotTagWrong &&
@@ -642,6 +667,7 @@ export const FeedColumnContent = memo(
       collapseMediaPreviews = false,
       mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
       messageTextPreviewLines,
+      importantOnlyMyOrganism,
       tagsMap,
       tagsOrder,
       botTagAction,
@@ -778,6 +804,7 @@ export const FeedColumnContent = memo(
           collapseMediaPreviews={collapseMediaPreviews}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
+          importantOnlyMyOrganism={importantOnlyMyOrganism}
           botTagAction={botTagAction}
           onCancelBotTagAction={stableOnCancelBotTagAction}
           onMarkBotTagWrong={stableOnMarkBotTagWrong}
@@ -940,6 +967,7 @@ export const FeedColumnContent = memo(
       prevCard.hideNetworks !== nextCard.hideNetworks ||
       prevCard.collapseMediaPreviews !== nextCard.collapseMediaPreviews ||
       prevCard.messageTextPreviewLines !== nextCard.messageTextPreviewLines ||
+      prevCard.importantOnlyMyOrganism !== nextCard.importantOnlyMyOrganism ||
       prevCard.tagsMap !== nextCard.tagsMap ||
       prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction ||

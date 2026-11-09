@@ -2470,6 +2470,7 @@ describe('ManageMessageDrawer edit mode', () => {
     const existing = buildMessage({
       text: 'Existing report',
       unit: 'Original unit',
+      unitDisplay: 'Renamed catalog unit, Inferred network unit',
       networkIds: [7],
       networkName: 'Original network',
       date: '2026-10-20',
@@ -6911,6 +6912,350 @@ describe('ManageMessageDrawer edit mode', () => {
       expect(container.textContent).toContain('Координати ще не додані');
 
       root.unmount();
+    });
+  });
+
+  describe('minimal report window', () => {
+    const minimalPayload = {
+      full_body: 'original copied body',
+      text: 'original copied body',
+      to: [],
+      retained_media_ids: ['media-1'],
+      parent_signal_message_ids: [42],
+    };
+    const minimalHosts: HTMLElement[] = [];
+
+    function setUpMinimalReport(payload: Record<string, unknown> = minimalPayload) {
+      aiIntelReportMocks.quickIntelReportSuggestion.mockClear();
+      directSubmitMocks.submitDirect.mockClear();
+      directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 91 });
+      directSubmitMocks.copyDirectSubmit.mockResolvedValue({ payloads: [payload] });
+      const container = document.createElement('div');
+      const host = document.createElement('div');
+      document.body.append(container, host);
+      minimalHosts.push(container, host);
+      const onExpand = vi.fn();
+      return { container, host, onExpand, root: createRoot(container) };
+    }
+
+    function reportDrawer(
+      minimalReport: { host: HTMLElement; onExpand: () => void } | null,
+      extraProps: Partial<ComponentProps<typeof ManageMessageDrawer>> = {},
+    ) {
+      return (
+        <ManageMessageDrawer
+          open
+          presentation="embedded"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{
+            id: 42,
+            message: buildMessage({
+              text: 'original card body',
+              media: [
+                {
+                  id: 'media-1',
+                  contentType: 'image/jpeg',
+                  fileName: 'photo.jpg',
+                  sizeBytes: 10,
+                  href: '/media/photo.jpg',
+                  transcription: null,
+                } as InboxMessage['media'][number],
+              ],
+            }),
+          }}
+          minimalReport={minimalReport}
+          {...extraProps}
+        />
+      );
+    }
+
+    async function typeReport(value: string) {
+      await act(async () => {
+        textFieldPropsByLabel.get('Текст розвіддонесення')?.onChange?.({ target: { value } });
+        await Promise.resolve();
+      });
+    }
+
+    async function submitMinimalReport(host: HTMLElement) {
+      await act(async () => {
+        host
+          .querySelector('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    afterEach(() => {
+      minimalHosts.splice(0).forEach((element) => element.remove());
+    });
+
+    it('shows only the original and report text inside the feed host', async () => {
+      const { container, host, onExpand, root } = setUpMinimalReport();
+      await act(async () => root.render(reportDrawer({ host, onExpand })));
+
+      const panel = host.querySelector('[data-manage-message-presentation="minimal"]');
+      expect(panel).not.toBeNull();
+      expect(container.querySelector('[data-manage-message-presentation]')).toBeNull();
+      expect(panel?.textContent).toContain('Створити розвіддонесення');
+      expect(panel?.textContent).toContain('original copied body');
+      expect(panel?.textContent).toContain('Без надсилання в групу.');
+      expect(textFieldPropsByLabel.has('Текст розвіддонесення')).toBe(true);
+      expect(textFieldPropsByLabel.has('Текст оригінального повідомлення')).toBe(false);
+      expect(textFieldPropsByLabel.has('Відправити в групу')).toBe(false);
+      expect(aiIntelReportMocks.quickIntelReportSuggestion).not.toHaveBeenCalled();
+      await act(async () => {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      });
+      expect(document.activeElement).toBe(
+        host.querySelector('textarea[aria-label="Текст розвіддонесення"]'),
+      );
+
+      await act(async () => {
+        (host.querySelector('button[aria-label^="Розгорнути"]') as HTMLButtonElement).click();
+      });
+      expect(onExpand).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+    });
+
+    it('never sends a text-only report to a group and keeps source attachments', async () => {
+      referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+      referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+        { masterKey: 'g-1', name: 'Group 1' },
+      ]);
+      const { host, onExpand, root } = setUpMinimalReport();
+      await act(async () => root.render(reportDrawer({ host, onExpand })));
+
+      await typeReport('quick report');
+      await submitMinimalReport(host);
+
+      expect(onExpand).not.toHaveBeenCalled();
+      expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          full_body: 'quick report',
+          signal_group_master_key: null,
+          retained_media_ids: ['media-1'],
+          parent_signal_message_ids: [42],
+        }),
+      );
+      await act(async () => root.unmount());
+    });
+
+    it('keeps the draft on expand, still asks for a group and starts AI suggestions', async () => {
+      referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+      referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+        { masterKey: 'g-1', name: 'Group 1' },
+      ]);
+      const { container, host, onExpand, root } = setUpMinimalReport();
+      await act(async () => root.render(reportDrawer({ host, onExpand })));
+      await typeReport('draft that must survive');
+
+      await act(async () => root.render(reportDrawer(null)));
+
+      expect(host.querySelector('[data-manage-message-presentation]')).toBeNull();
+      expect(
+        container.querySelector('[data-manage-message-presentation="embedded"]'),
+      ).not.toBeNull();
+      expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe(
+        'draft that must survive',
+      );
+      expect(autocompleteValuesByLabel.get('Відправити в групу')).toBeNull();
+      expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledTimes(1);
+      expect(aiIntelReportMocks.quickIntelReportSuggestion).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+    });
+
+    it('expands instead of hiding a pasted attachment', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      await act(async () => root.render(reportDrawer({ host, onExpand })));
+      const paste = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [
+            {
+              kind: 'file',
+              getAsFile: () => new File(['image'], 'pasted.png', { type: 'image/png' }),
+            },
+          ],
+        },
+      });
+
+      await act(async () => {
+        host.querySelector('textarea')?.dispatchEvent(paste);
+        await Promise.resolve();
+      });
+
+      expect(paste.defaultPrevented).toBe(true);
+      expect(onExpand).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+    });
+
+    const fullReportSource = {
+      id: 42,
+      message: buildMessage({
+        media: Array.from({ length: 20 }, (_, index) => ({
+          id: `media-${index}`,
+          contentType: 'image/jpeg',
+          fileName: `photo-${index}.jpg`,
+          sizeBytes: 10,
+          href: `/media/${index}.jpg`,
+          transcription: null,
+        })) as InboxMessage['media'],
+      }),
+    };
+
+    async function pasteRejectedFile(host: HTMLElement) {
+      const paste = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [
+            {
+              kind: 'file',
+              getAsFile: () => new File(['image'], 'over-limit.png', { type: 'image/png' }),
+            },
+          ],
+        },
+      });
+      await act(async () => {
+        host.querySelector('textarea')?.dispatchEvent(paste);
+        await Promise.resolve();
+      });
+      return paste;
+    }
+
+    it('expands to show a rejected pasted attachment', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      await act(async () =>
+        root.render(reportDrawer({ host, onExpand }, { reportSource: fullReportSource })),
+      );
+
+      const paste = await pasteRejectedFile(host);
+
+      expect(paste.defaultPrevented).toBe(true);
+      expect(onExpand).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+    });
+
+    it('does not carry a rejected attachment into the next report after closing', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      const ref = createRef<ManageMessageEditorHandle>();
+      const nextReport = { id: 43, message: buildMessage({ text: 'next source' }) };
+      await act(async () =>
+        root.render(reportDrawer({ host, onExpand }, { ref, reportSource: fullReportSource })),
+      );
+      await pasteRejectedFile(host);
+      expect(onExpand).toHaveBeenCalledTimes(1);
+
+      await act(async () => ref.current?.closeWithoutConfirmation());
+      await act(async () =>
+        root.render(reportDrawer(null, { ref, open: false, reportSource: null })),
+      );
+      // The Duty page builds a new expand callback for every intent.
+      const expandNext = vi.fn();
+      await act(async () =>
+        root.render(
+          reportDrawer(
+            { host, onExpand: expandNext },
+            { ref, reportSource: nextReport, intentKey: 'create-report:43' },
+          ),
+        ),
+      );
+
+      expect(expandNext).not.toHaveBeenCalled();
+      await act(async () => root.unmount());
+    });
+
+    it('does not carry a rejected attachment into a replacing report', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      const ref = createRef<ManageMessageEditorHandle>();
+      const nextReport = { id: 43, message: buildMessage({ text: 'next source' }) };
+      const firstIntent = { ref, reportSource: fullReportSource, intentKey: 'create-report:42' };
+      await act(async () => root.render(reportDrawer({ host, onExpand }, firstIntent)));
+      await pasteRejectedFile(host);
+      const expandNext = vi.fn();
+
+      await act(async () => {
+        ref.current?.requestIntentChange({
+          key: 'create-report:43',
+          commit: () =>
+            root.render(
+              reportDrawer(
+                { host, onExpand: expandNext },
+                { ref, reportSource: nextReport, intentKey: 'create-report:43' },
+              ),
+            ),
+        });
+      });
+
+      expect(expandNext).not.toHaveBeenCalled();
+      await act(async () => root.unmount());
+    });
+
+    it('expands when a field hidden by the panel fails validation', async () => {
+      const { host, onExpand, root } = setUpMinimalReport({
+        ...minimalPayload,
+        freq: 'not-a-freq',
+      });
+      await act(async () => root.render(reportDrawer({ host, onExpand })));
+
+      await typeReport('quick report');
+      await submitMinimalReport(host);
+
+      expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+      expect(onExpand).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+    });
+
+    it('explains why an unresolved unit blocks the panel', async () => {
+      const { host, onExpand, root } = setUpMinimalReport({
+        ...minimalPayload,
+        unit: 'Невизначений підрозділ',
+        unit_id: 0,
+      });
+      await act(async () => root.render(reportDrawer({ host, onExpand })));
+
+      await typeReport('quick report');
+
+      expect(host.textContent).toContain('Потрібні додаткові поля: розгорніть панель.');
+      expect((host.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      await act(async () => root.unmount());
+    });
+
+    it('edits a report in place without changing its group', async () => {
+      directSubmitMocks.editDirectSubmit.mockClear();
+      directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 7 });
+      const { host, onExpand, root } = setUpMinimalReport();
+      await act(async () =>
+        root.render(
+          reportDrawer(
+            { host, onExpand },
+            {
+              reportSource: null,
+              editAsReport: true,
+              editTarget: {
+                id: 7,
+                message: buildMessage({ text: 'old report', groupMasterKey: 'g-1' }),
+              },
+            },
+          ),
+        ),
+      );
+
+      expect(host.textContent).toContain('Редагувати розвіддонесення');
+      expect(host.textContent).toContain('Зберегти');
+      expect(host.textContent).not.toContain('Без надсилання в групу.');
+      await typeReport('edited report');
+      await submitMinimalReport(host);
+
+      expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ full_body: 'edited report', signal_group_master_key: 'g-1' }),
+      );
+      await act(async () => root.unmount());
     });
   });
 });
