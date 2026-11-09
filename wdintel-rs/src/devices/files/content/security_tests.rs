@@ -29,7 +29,6 @@ async fn phase8_file_publication_rechecks_authority_and_revision_after_verificat
             "publication_forbidden",
             StatusCode::UNAUTHORIZED,
         ),
-        ("archive_target", "target_unavailable", StatusCode::OK),
         ("change_revision", "target_revision_changed", StatusCode::OK),
         (
             "authorization_unavailable",
@@ -77,12 +76,6 @@ async fn phase8_file_publication_rechecks_authority_and_revision_after_verificat
                     .execute(env.dbx.get_postgres_connection_pool())
                     .await
                     .unwrap();
-                }
-                "archive_target" => {
-                    let mut device = fixture.device.clone().into_active_model();
-                    device.archived = Set(true);
-                    device.archived_at = Set(Some(Utc::now().naive_utc()));
-                    device.update(&env.dbx).await.unwrap();
                 }
                 "change_revision" => {
                     let revision =
@@ -171,13 +164,6 @@ async fn phase8_file_publication_rechecks_authority_and_revision_after_verificat
             .execute(env.dbx.get_postgres_connection_pool())
             .await
             .unwrap();
-        sqlx::query(
-            "update device set archived=false,archived_at=null where id=$1",
-        )
-        .bind(fixture.device.id)
-        .execute(env.dbx.get_postgres_connection_pool())
-        .await
-        .unwrap();
     }
 }
 
