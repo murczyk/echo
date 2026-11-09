@@ -316,7 +316,7 @@ fn media_path(path: &str) -> Result<PathBuf> {
         .unwrap_or_default()
         .to_ascii_lowercase();
     if !allowed_root
-        || path.contains(['\\', '\0', '%'])
+        || path.contains(['\\', '\0'])
         || path
             .split('/')
             .any(|part| part.is_empty() || part == "." || part == "..")

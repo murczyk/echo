@@ -16,6 +16,63 @@ fn fixture(local: &Path, remote: &Path) -> DocMedia {
 }
 
 #[actix_web::test]
+async fn issue_3938_percent_filenames_remain_servable() {
+    let paths = [
+        ("docs/static/100%.png", "/doc-media/docs/static/100%25.png"),
+        (
+            "docs/releases/2026-10-29/media/%2e%2e.png",
+            "/doc-media/docs/releases/2026-10-29/media/%252e%252e.png",
+        ),
+    ];
+    for b2_only in [false, true] {
+        let local = tempfile::tempdir().unwrap();
+        let remote = tempfile::tempdir().unwrap();
+        let runtime = fixture(local.path(), remote.path());
+        for (path, _) in paths {
+            runtime
+                .storage()
+                .unwrap()
+                .write(&format!("doc-media/{path}"), b"image".as_slice())
+                .await
+                .unwrap();
+        }
+        let app = test::init_service(
+            App::new().app_data(web::Data::new(runtime)).route(
+                "/doc-media/{storage_key:.*}",
+                web::to(
+                    move |runtime: web::Data<DocMedia>,
+                          request: HttpRequest,
+                          path: web::Path<String>| async move {
+                        runtime
+                            .serve(&request, path.as_str(), b2_only)
+                            .await
+                            .map_err(AppError::from)
+                    },
+                ),
+            ),
+        )
+        .await;
+        for (_, uri) in paths {
+            let response = test::call_service(
+                &app,
+                test::TestRequest::get().uri(uri).to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(test::read_body(response).await, b"image".as_slice());
+        }
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/doc-media/docs/static/%2e%2e/100%25.png")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+}
+
+#[actix_web::test]
 async fn issue_3938_cached_media_and_b2_only_ranges_use_separate_sources() {
     let local = tempfile::tempdir().unwrap();
     let remote = tempfile::tempdir().unwrap();
