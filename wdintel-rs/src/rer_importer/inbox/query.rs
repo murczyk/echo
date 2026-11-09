@@ -1265,18 +1265,17 @@ fn inbox_undefined_unit_counts_query(
         active_links.offset(0);
     }
     let mut query = messages.into_query();
-    // Match the linked arm's bigint/text types; an implicit coercion makes
-    // PostgreSQL wrap this arm, and the gateway then runs both arms serially.
+    // Keep these constants untyped: PostgreSQL then plans this arm as its own
+    // gateway query. One combined UNION query exceeds ClickHouse's per-query
+    // memory limit for broad scopes (docs/performance/3527-unit-stats.md).
     query
         .clear_selects()
         .expr_as(
-            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_ID)
-                .cast_as(Alias::new("bigint")),
+            Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_ID),
             Alias::new("unit_id"),
         )
         .expr_as(
-            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_NAME)
-                .cast_as(Alias::new("text")),
+            Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_NAME),
             Alias::new("name"),
         )
         .expr_as(
@@ -3983,22 +3982,18 @@ mod tests {
     }
 
     #[test]
-    fn undefined_unit_arm_matches_linked_arm_types_3527() {
+    fn undefined_unit_arm_stays_a_separate_gateway_query_3527() {
         let messages = signal_message::Entity::find()
             .select_only()
             .column(signal_message::Column::Id);
         let query = render_inbox_unit_stats_query(messages, None, false);
         let (_, undefined) = query.split_once(" UNION ALL ").unwrap();
 
+        // Typed constants let the gateway push the whole UNION into one
+        // ClickHouse query, which exceeded the per-query memory limit on Skhid.
         assert!(
             undefined.contains(&format!(
-                r#"CAST({ANALYSIS_STATS_UNDEFINED_UNIT_ID} AS bigint) AS "unit_id""#
-            )),
-            "{query}"
-        );
-        assert!(
-            undefined.contains(&format!(
-                r#"CAST('{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}' AS text) AS "name""#
+                r#"SELECT {ANALYSIS_STATS_UNDEFINED_UNIT_ID} AS "unit_id", '{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}' AS "name""#
             )),
             "{query}"
         );
