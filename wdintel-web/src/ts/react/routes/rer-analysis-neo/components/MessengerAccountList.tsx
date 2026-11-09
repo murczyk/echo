@@ -84,7 +84,7 @@ export function MessengerAccountList({
 
   return (
     <>
-      <nav className="group-navigation-list" aria-label="Телеграм акаунти">
+      <nav className="group-navigation-list slim-scrollbar" aria-label="Телеграм акаунти">
         <ul>
           {visibleAccounts.map((account) => {
             const selected = account.id === selectedId;
