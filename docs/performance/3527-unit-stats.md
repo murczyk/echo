@@ -75,6 +75,17 @@ the membership query is necessary as well as aggregate pushdown. This is one
 measurement under incident load, not a latency guarantee. Keep representative
 gateway plan checks alongside source checks when changing this query.
 
+The undefined arm must emit `bigint` and `text` constants to match the linked
+arm. An untyped `0` or string literal makes PostgreSQL wrap that arm in a
+coercing Subquery Scan, which pg_clickhouse cannot push down: the gateway then
+plans an Append of two Foreign Scans and runs the arms one after the other. On
+Pivnich in November 2026 the sequential arms took 8 to 18 seconds each and
+reached the gateway's 25-second statement timeout under load (`pg_clickhouse:
+query was canceled`). With typed constants the same broad query ran as one
+Foreign Scan in 15.2 seconds, peaking at 2.01 GiB, 91.5% of the per-query
+memory limit. Larger scopes may reach that limit; such failures fall back to
+PostgreSQL quickly instead of waiting for the timeout.
+
 The rewritten recent-tail query was also checked locally with 1,000,000
 messages, 2,000,000 unit links and 1,000 units. A creation-time index scan
 selected 1,001 candidates; the linked aggregate sought the unit-link primary
