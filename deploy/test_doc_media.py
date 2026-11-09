@@ -123,6 +123,19 @@ else:
         self.assertIn("unresolved Git LFS pointer", result.stderr)
         self.assertFalse((self.root / "uploads").exists())
 
+    def test_backslashes_in_media_paths_fail_before_any_upload(self):
+        for relative in (r"invalid\name.mp4", r"invalid\directory/clip.mp4"):
+            source = self.source / relative
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_bytes(b"media")
+            for arguments in ((), ("--force",)):
+                with self.subTest(relative=relative, arguments=arguments):
+                    result = self.publish(*arguments)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("backslashes", result.stderr)
+                    self.assertFalse((self.root / "uploads").exists())
+            source.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,8 +29,8 @@ def media_files(repository, only, extensions):
             if path.is_symlink() or not path.resolve().is_relative_to(root):
                 raise ValueError("media symlinks are not supported")
             relative = path.relative_to(repository).as_posix()
-            if any(character in relative for character in "\n\r\0*?["):
-                raise ValueError("media paths must not contain control characters or glob patterns")
+            if any(character in relative for character in "\n\r\0\\*?["):
+                raise ValueError("media paths must not contain control characters, backslashes or glob patterns")
             with path.open("rb") as source:
                 if source.read(128).startswith(b"version https://git-lfs.github.com/spec/v1"):
                     raise ValueError(f"unresolved Git LFS pointer: {relative}")
