@@ -1,19 +1,27 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Collapse, Tooltip } from '@mui/material';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Collapse } from '@mui/material';
+import { useEffect, useState } from 'react';
 
-import { copyTextToClipboard } from '../../../../copy-to-clipboard';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { formatDate } from '../../../utils/misc';
-import { parseMessengerChatQueryFromWindow, replaceMessengerChatQueryInUrl } from '../helpers';
+import {
+  parseMessengerChatQueryFromWindow,
+  parseMessengerViewFromWindow,
+  clearTableQueryInUrl,
+  replaceMessengerChatQueryInUrl,
+  replaceMessengerViewInUrl,
+  type MessengerView,
+} from '../helpers';
 import {
   chatSectionOf,
   type MessengerChat,
   useMessengerChats,
   type MessengerChatSection,
 } from '../use-messenger-chats';
+import { CopyValue } from './CopyValue';
 import { MessengerAccountAvatar, type MessengerAccountItem } from './MessengerAccountList';
 import { MessengerChatView } from './MessengerChatView';
+import { MessengerContactsView } from './MessengerContactsView';
 import { MessengerInfoCard } from './MessengerInfoCard';
 import { MessengerNoteCard } from './MessengerNoteCard';
 import { MessengerSearchField } from './MessengerSearchField';
@@ -31,8 +39,8 @@ type Props = {
 // A generic cap until the backend defines its own limit.
 const INTERNAL_NOTES_MAX_LENGTH = 512;
 
-// shortcut: the analysis messenger navigation and the main area stay static until messages and contacts are wired.
-const NAV_ITEMS = ['Галерея', 'Контакти'] as const;
+// shortcut: the gallery is not wired yet, its item does nothing.
+const GALLERY_NAV_ITEM = 'Галерея';
 const CHAT_SECTIONS: ReadonlyArray<{ key: MessengerChatSection; title: string }> = [
   { key: 'private', title: 'Приватні' },
   { key: 'group', title: 'Групи' },
@@ -45,30 +53,6 @@ const formatChatDate = (ms: number) =>
   formatDate(ms, { day: '2-digit', month: '2-digit', year: '2-digit' });
 
 const chatLabel = (chat: MessengerChat) => chat.title || chat.username || chat.externalId;
-
-function CopyValue({
-  text,
-  className,
-  children,
-}: {
-  text: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip title="копіювати">
-      <button
-        type="button"
-        className={`cursor-pointer text-start ${className ?? ''}`}
-        onClick={() => {
-          void copyTextToClipboard(text);
-        }}
-      >
-        {children}
-      </button>
-    </Tooltip>
-  );
-}
 
 function ChatSection({
   title,
@@ -137,12 +121,16 @@ function MessengerSidebar({
   account,
   chatsState: { chats, loading, error, retry },
   selectedChatId,
+  contactsOpen,
   onSelectChat,
+  onOpenContacts,
 }: {
   account: MessengerAccountItem;
   chatsState: ReturnType<typeof useMessengerChats>;
   selectedChatId: string | null;
+  contactsOpen: boolean;
   onSelectChat: (chatId: string) => void;
+  onOpenContacts: () => void;
 }) {
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
@@ -193,11 +181,19 @@ function MessengerSidebar({
         </span>
       </div>
       <nav className="flex flex-col">
-        {NAV_ITEMS.map((item) => (
-          <button key={item} type="button" className="px-3 py-2 text-start text-sm">
-            {item}
-          </button>
-        ))}
+        <button type="button" className="px-3 py-2 text-start text-sm">
+          {GALLERY_NAV_ITEM}
+        </button>
+        <button
+          type="button"
+          className="px-3 py-2 text-start text-sm data-[selected=true]:font-medium"
+          data-messenger-nav="contacts"
+          data-selected={contactsOpen ? 'true' : 'false'}
+          aria-current={contactsOpen ? 'true' : undefined}
+          onClick={onOpenContacts}
+        >
+          Контакти
+        </button>
       </nav>
       <div className="px-3">
         <MessengerSearchField value={query} onChange={setQuery} ariaLabel="Пошук чату" />
@@ -280,7 +276,8 @@ function MessengerAccountWorkspace({
 }) {
   const chatsState = useMessengerChats(account.id, refreshToken);
   const [chatBusy, setChatBusy] = useState(false);
-  const busy = chatsState.fetching || chatBusy;
+  const [viewBusy, setViewBusy] = useState(false);
+  const busy = chatsState.fetching || chatBusy || viewBusy;
   useEffect(() => {
     onBusyChange?.(busy);
     return () => onBusyChange?.(false);
@@ -292,9 +289,26 @@ function MessengerAccountWorkspace({
   const chatMissing =
     selected.chatId != null && !chatsState.loading && chatsState.error == null && chat == null;
 
+  // A view of the account (the contacts) instead of the account cards; a chat takes its place and the other way round.
+  const [view, setView] = useState<MessengerView | null>(() =>
+    parseMessengerViewFromWindow(account.id),
+  );
   const selectChat = (chatId: string | null) => {
     setSelected({ chatId, anchorMessageId: null });
-    if (chatId == null) replaceMessengerChatQueryInUrl({ chatId: null, anchorMessageId: null });
+    if (chatId == null) {
+      replaceMessengerChatQueryInUrl({ chatId: null, anchorMessageId: null });
+    } else {
+      setView(null);
+      replaceMessengerViewInUrl(null);
+      clearTableQueryInUrl();
+    }
+  };
+  const openView = (next: MessengerView | null) => {
+    setSelected({ chatId: null, anchorMessageId: null });
+    setView(next);
+    replaceMessengerViewInUrl(next);
+    // The table of a view starts clean, whatever another table left in the URL, and leaves nothing behind.
+    clearTableQueryInUrl();
   };
 
   // A shared analysis messenger link to a chat that is gone, or that this login cannot see, opens the account instead.
@@ -308,7 +322,9 @@ function MessengerAccountWorkspace({
         account={account}
         chatsState={chatsState}
         selectedChatId={selected.chatId}
+        contactsOpen={view === 'contacts' && chat == null}
         onSelectChat={selectChat}
+        onOpenContacts={() => openView('contacts')}
       />
       {chat != null ? (
         <MessengerChatView
@@ -325,6 +341,13 @@ function MessengerAccountWorkspace({
         <p className="p-4 opacity-60" role="status">
           Завантажуємо чат…
         </p>
+      ) : view === 'contacts' ? (
+        <MessengerContactsView
+          account={account}
+          refreshToken={refreshToken}
+          onBusyChange={setViewBusy}
+          onBack={() => openView(null)}
+        />
       ) : (
         <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
           <MessengerNoteCard
