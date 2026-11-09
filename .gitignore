@@ -66,6 +66,7 @@ echo-iggy/test-cli/.env
 !/.agents/skills/echo-designer
 !/.agents/skills/echo-dev
 !/.agents/skills/echo-qa
+!/.agents/skills/echo-spec
 !/.agents/skills/playwright-best-practices
 !/.agents/skills/make-interfaces-feel-better
 !/.agents/skills/impeccable/
@@ -80,5 +81,6 @@ echo-iggy/test-cli/.env
 !/.codex/agents/designer.toml
 !/.codex/agents/dev.toml
 !/.codex/agents/qa.toml
+!/.codex/agents/spec.toml
+# Generated task specifications are local artifacts, not shared configuration.
 specs
-!/docs/superpowers/specs/

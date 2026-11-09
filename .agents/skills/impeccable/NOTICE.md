@@ -10,6 +10,8 @@ The adaptation preserves useful UX checks and removes runtime/engine commands,
 automatic delegation, live overlays, persistence helpers and setup instructions.
 Other references, executable/runtime files and upstream child agents are omitted.
 These are adapted files, not pristine upstream copies.
+The `shape` reference follows Echo's split ownership: approved specifications are
+inputs; the designer returns UX decisions, acceptance mappings and visual artifacts.
 
 Original source files at the pinned version:
 

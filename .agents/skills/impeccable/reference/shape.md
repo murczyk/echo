@@ -1,12 +1,13 @@
 # Shape
 
 Echo adaptation of Impeccable's `shape` reference; see [source notice](../NOTICE.md).
-Clarify what should be made and how it should work, then return a specification
-and simple wireframe. Do not implement the interface.
+Shape UX flows and layout from approved requirements, then return design notes
+and the assigned wireframe/design. Specification ownership stays with `echo-spec`
+or the manual specification owner. Do not implement the interface.
 
 ## Discovery
 
-Read the task, existing source and settled decisions before asking questions.
+Read the approved specification, existing source and settled decisions before asking questions.
 Ask a small group of related questions whose answers change the result. Continue
 only independent analysis while material decisions remain unanswered; label
 hypotheses instead of inventing answers. Do not repeat confirmed facts or ask
@@ -20,7 +21,7 @@ Resolve the concrete user/task, rather than relying on a broad persona:
 - Which permissions and existing workflows constrain the proposed behavior?
 - What do we know from code, what did a person observe, and what needs validation?
 
-Then resolve the uncertain behavior and boundaries:
+Map the specified behavior and boundaries to the design:
 
 - Entry points, navigation, selection and ownership of state; Back, reload and
   returning from another view without losing context.
@@ -37,23 +38,24 @@ open, compare a few concrete arrangements against the same task and constraints.
 Explain the consequence for scanning, actions, context retention and recovery;
 recommend one direction and record the owner's decision.
 
-Draw monochrome SVG blocks with short labels for spatial layout, or a compact
-Mermaid flow for navigation. Keep behavior and explanatory prose in the spec.
+Use the assigned format and shared Echo output presets for the wireframe/flow.
+Keep UX decisions and acceptance-ID mappings in design notes.
 Show the drawing when rendering is available; mark unrendered output. Do not
 introduce a new visual system or HTML prototype without explicit scope.
 
-## Write the specification
+## Record design decisions
 
-Include enough detail that implementation does not invent product decisions:
+Describe how the design realizes the approved requirements:
 
-1. User, situation, task, desired outcome and sources of evidence.
-2. Scope, non-goals, selected structure and reasons for the choice.
-3. Stable scenario/acceptance IDs with preconditions, actions and expected results.
-4. Business rules, permissions, states, transitions, validation and recovery.
+1. Input specification revision/approval, user/task and sources of evidence.
+2. Selected UX structure and reasons within the approved scope/non-goals.
+3. Existing scenario/acceptance IDs mapped to flows, frames and states.
+4. How specified permissions, transitions, validation and recovery appear in UX.
 5. Wireframe, relevant variants, reused components and applicable UI constraints.
 6. Preserved behavior, affected consumers, existing coverage and meaningful gaps.
-7. Owner decisions, unresolved questions and a verification plan with evidence limits.
+7. Owner UX decisions, requirement gaps returned through main, observations and evidence limits.
 
-Keep small tasks compact while preserving material decisions. For the managed
-designer, follow the workflow's artifact and handoff contract. Present the spec
-for approval and stop; spec readiness does not authorize implementation.
+Keep small tasks compact. Missing or conflicting requirements return to their
+owner through main; pause dependent design instead of rewriting the specification.
+For the managed designer, follow the workflow's artifact/handoff contract.
+Return the design for approval and stop; do not write implementation plans.

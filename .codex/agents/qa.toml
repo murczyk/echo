@@ -151,6 +151,7 @@ config = [
   { name = "echo-designer", enabled = false },
   { name = "echo-dev", enabled = false },
   { name = "echo-qa", enabled = false },
+  { name = "echo-spec", enabled = false },
   { name = "engineering-suite-ponytail:code-simplification", enabled = false },
   { name = "engineering-suite-ponytail:entry-ponytail", enabled = false },
   { name = "engineering-suite-ponytail:ponytail", enabled = false },

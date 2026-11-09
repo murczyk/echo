@@ -3,7 +3,13 @@
 The main Echo UI uses root [PRODUCT.md](../../PRODUCT.md), [DESIGN.md](../../DESIGN.md)
 and repository-owned skill instructions. [Context use](design-workflow.md)
 describes the small brief/review loop; [explicit Echo workflows](echo-workflows.md)
-provides optional managed designer/dev/QA roles. Personal plugins are optional.
+provides optional managed spec/designer/dev/QA roles. Personal plugins are optional.
+
+For explicitly requested editable wireframes/designs, the designer can use the
+official Figma MCP with Echo context, tokens and component sources; see the
+[Figma guide](figma-design.md). Start without a library by creating only the
+foundations/components needed for the task. Account/file access is checked per
+developer; repository configuration does not install or connect Figma.
 
 ## Team access and prerequisites
 
@@ -30,17 +36,25 @@ skill folders ([official documentation](https://learn.chatgpt.com/docs/build-ski
 Reload/start a session after checkout or updates; a running session may retain
 an older catalog, including aliases removed from the checkout.
 
-Three relative links expose `echo-designer`, `echo-dev` and `echo-qa`. Two more
+Four relative links expose `echo-spec`, `echo-designer`, `echo-dev` and `echo-qa`. Two more
 expose `playwright-best-practices` and `make-interfaces-feel-better`; Impeccable
-lives directly in `.agents/skills/impeccable`. All six have
+lives directly in `.agents/skills/impeccable`. All seven have
 `policy.allow_implicit_invocation: false`. Helper guidance does not launch stages.
 
-Explicitly invoke `$echo-designer`, `$echo-dev` or `$echo-qa`, including the target
+Explicitly invoke `$echo-spec`, `$echo-designer`, `$echo-dev` or `$echo-qa`, including the target
 task, plan or criteria, or ask to apply the named skill. Ordinary requests and
 skill-maintenance requests do not activate these workflows. Entrypoints dispatch
 the native roles in `.codex/agents`; role instructions and filters restrict their
 guidance. See the [invocation contract](echo-workflows.md#invocation-and-chaining)
 and [runtime limits](echo-workflows.md#availability-and-validation).
+
+`echo-spec` prepares requirements and acceptance criteria for approval;
+`echo-designer` consumes an approved specification (including a compact manual
+brief) for UX flows, wireframes and design. One stage never implicitly starts
+the other. Missing requirements return to their owner; designer does not rewrite
+them. A designer-only request returns the requested design artifacts and notes
+without companion repository PNGs or an implementation plan. Main handles technical planning
+only for separately requested planning/dev work.
 
 The five existing frontend/Power skills remain at their original `.github/skills`
 paths, listed in the [dev contract](echo-workflows.md#dev). Dev reads the applicable

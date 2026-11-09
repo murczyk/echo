@@ -20,7 +20,8 @@ instructions from the Git root. Preserve the assigned task, evidence and scope.
 
 Read only the relevant reference. Use source files and an already available,
 authorized synthetic preview; report unavailable rendered checks explicitly.
-Use simple SVG blocks or Mermaid for an assigned wireframe. A diagram, source
+Use the assigned format and shared Echo presets for a wireframe; SVG/Mermaid
+are static options. A diagram, source
 review or screenshot alone does not prove interactions or human usability.
 
 This skill creates design documents or review findings, not product code or

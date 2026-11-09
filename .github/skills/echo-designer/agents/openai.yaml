@@ -1,6 +1,6 @@
 interface:
   display_name: "Echo Designer"
-  short_description: "Dispatch the managed Echo designer role"
-  default_prompt: "Use $echo-designer to prepare this task's specification, scenarios and wireframe with the managed designer role."
+  short_description: "Design Echo UX flows and Figma wireframes"
+  default_prompt: "Use $echo-designer wireframe to create UX flows and editable Figma wireframes from this approved specification."
 policy:
   allow_implicit_invocation: false

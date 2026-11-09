@@ -1,6 +1,6 @@
 # Using shared design context
 
-This page covers the small context-use loop included with the shared design tools. For an optional task workflow, explicitly invoke [Echo Designer, Dev or QA](echo-workflows.md); those stages run only when requested, individually or in a named sequence.
+This page covers the small context-use loop included with the shared design tools. For an optional task workflow, explicitly invoke [Echo Spec, Designer, Dev or QA](echo-workflows.md); those stages run only when requested, individually or in a named sequence. Spec owns requirements and acceptance criteria; designer uses an approved specification for UX flows, wireframes and design. A compact approved manual brief is sufficient for a small task.
 
 ## Start from the same sources
 

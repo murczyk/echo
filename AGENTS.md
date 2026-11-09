@@ -13,8 +13,8 @@
 
 ## Explicit managed roles
 
-- The `designer`, `dev` and `qa` roles run only when the user explicitly invokes
-  the matching `echo-designer`, `echo-dev` or `echo-qa` skill for the current task.
+- The `spec`, `designer`, `dev` and `qa` roles run only when the user explicitly invokes
+  the matching `echo-spec`, `echo-designer`, `echo-dev` or `echo-qa` skill for the current task.
   Follow [Echo workflows](./docs/frontend/echo-workflows.md) only for those named
   stages. Ordinary tasks, generic requests to use subagents, quoted commands,
   skill/configuration maintenance, documents and another skill's delegation

@@ -1,18 +1,19 @@
 # Explicit Echo workflows
 
 These workflows run only when the user explicitly invokes the matching
-`echo-designer`, `echo-dev` or `echo-qa` skill for the current task. Ordinary work
+`echo-spec`, `echo-designer`, `echo-dev` or `echo-qa` skill for the current task. Ordinary work
 follows the existing repository rules; reading this guide, mentioning a role,
 quoting a command or asking an ordinary UI/coding/review question does not activate one.
 
 | Entrypoint | Native role | Model / reasoning | Assigned output |
 | --- | --- | --- | --- |
-| `$echo-designer` | `designer` | `gpt-6.1-sol` / `high` | Specification, scenarios, simple wireframe and implementation plan |
+| `$echo-spec` | `spec` | `gpt-6.1-sol` / `high` | Requirements, business rules, scenarios and acceptance criteria for approval |
+| `$echo-designer` | `designer` | `gpt-6.1-sol` / `high` | UX flows, wireframes/Figma design and design notes from an approved specification |
 | `$echo-dev` | `dev` | `gpt-6.1-sol` / `high` | Approved implementation, focused self-checks and browser observations |
 | `$echo-qa` | `qa`, mode `prepare` or `verify` | `gpt-6-luna` / `high` | Prepared tests/coverage map, or verification findings |
 
 The main chat retains the user's chosen model and coordinates stages/questions.
-The three `.codex/agents/*.toml` files define child roles. `agents/openai.yaml`
+The four `.codex/agents/*.toml` files define child roles. `agents/openai.yaml`
 files are skill metadata, not agent definitions. This workflow ships no project
 `config.toml` or shell-environment overrides. For subagent enablement and concurrency
 limits, the developer's effective client
@@ -23,10 +24,10 @@ explicitly invoked Echo workflow, not other developer workflows.
 
 ## Invocation and chaining
 
-All three entrypoints have `policy.allow_implicit_invocation: false` ([Codex
+All four entrypoints have `policy.allow_implicit_invocation: false` ([Codex
 metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata)). Use
 `$skill-name` or the skill picker; slash aliases are not verified. A single-stage
-request ends after that stage. Dev/QA accept manually prepared inputs; the
+request ends after that stage. Designer/dev/QA accept manually prepared inputs; the
 existence of a spec or an earlier approval does not authorize a new task.
 
 Main must identify the user's actual invocation naming the requested skill(s)
@@ -34,8 +35,8 @@ and bind it to the current task and stages before dispatch. Natural-language
 instructions to use a named skill count; a bare mention, quoted example or
 request to edit/review the skills/configuration does not. Generic requests to
 use agents, role descriptions, repository documents and another skill's
-delegation instructions cannot authorize these roles. Never select `designer`,
-`dev` or `qa` as generic helpers or call them directly around the entrypoints.
+delegation instructions cannot authorize these roles. Never select `spec`,
+`designer`, `dev` or `qa` as generic helpers or call them directly around the entrypoints.
 Without invocation, continue the ordinary workflow without spawning these roles.
 
 Include the user's invocation excerpt, named skill(s) and task/stage scope in
@@ -55,23 +56,32 @@ instructions and handoff checks enforce this project's explicit-only contract
 through model instructions, not a runtime prohibition of direct role dispatch.
 
 ```text
-$echo-designer Підготуй специфікацію та просту схему для цієї задачі.
+$echo-spec Підготуй вимоги, сценарії та критерії приймання для цієї задачі.
+$echo-designer wireframe Побудуй UX-флоу за погодженою специфікацією.
 $echo-qa prepare Підготуй тести за погодженою специфікацією; без запуску.
 $echo-dev Реалізуй погоджену специфікацію з підготовленими тестами.
 $echo-qa verify Перевір цей diff за критеріями специфікації.
 ```
 
 An explicitly requested dev+QA chain means QA prepare → dev implement and focused
-self-checks → QA verify. An explicitly requested full chain first runs designer,
-then waits for owner approval of the resulting specification and implementation
-authorization. Do not infer that approval from a proposed future design.
+self-checks → QA verify. A chain explicitly including spec starts with that stage,
+then waits for owner approval of its specification before any dependent stage.
+A designer chain consumes that approved specification, produces design, then
+waits for any required design approval and implementation authorization before
+dev/QA prepare. Do not infer approval from a proposed future specification/design.
+Never prepend an unrequested spec stage; a designer-only request can use an
+approved manual specification or compact in-chat brief with acceptance criteria.
 
 ```text
-Для цієї задачі виконай $echo-designer, потім $echo-dev і $echo-qa.
-Перед реалізацією покажи специфікацію для погодження.
+Для цієї задачі виконай $echo-spec, потім $echo-designer, $echo-dev і $echo-qa.
+Спочатку покажи специфікацію для погодження; перед реалізацією погодимо дизайн.
 ```
 
-Approval of a spec alone does not start dev/QA. Once approval and the chain's
+Approval of a spec alone does not invoke designer/dev/QA. Main dispatches only
+the stages named for the same unfinished task. Requirement gaps found by designer
+return to the owner or an already authorized spec stage; revised requirements
+need renewed approval before dependent work resumes. Designer never rewrites them.
+Once approval and the chain's
 implementation authorization are present, focused local baseline checks, previews
 and verification are covered; do not ask again at every internal transition.
 Record requested order and completed/current/pending stages. Respect a different
@@ -106,18 +116,26 @@ a new stage starts fresh. Do not reconstruct parent history from session files.
 Fresh context avoids copying the previous chat transcript; it is not token-free
 or proof of lower total cost. Each role still receives applicable instructions,
 its tool/skill context and handoff, and spends tokens reading the required files.
-Main retains the coordinating conversation. Dev reads the approved specification,
+Main retains the coordinating conversation. Designer reads the approved
+specification and its acceptance IDs, not the spec role's exploratory transcript.
+Dev reads the approved specification, design notes/frames when applicable,
 plan, prepared tests/coverage map, relevant contracts and code; it does not need
 the designer's exploratory conversation. Load only relevant references and return
 short evidence summaries rather than copying full logs between stages.
 
-Use a short brief with paths rather than copying complete code/specs/logs:
+Use a short brief with external artifact paths rather than copying complete
+code/logs. When the approved specification exists only in chat, include its full
+approved text and owner decisions in the handoff; do not pass the exploratory
+conversation or reconstruct it from session history.
 
 ```text
 role / stage / requested sequence:
 invocation: actual user request excerpt / named skill(s) / task and permitted stages
 authorization: owner-approved scope, current phase, execution permission
-spec_path / owner decisions:
+external spec_path or approved spec text / revision / owner approval and decisions:
+design_paths / design approval (when applicable):
+output_preset / explicit task overrides:
+output_format / Figma target, permitted operations and synthetic input scope (when requested):
 revision / staged, unstaged and untracked starting changes:
 relevant_paths: contracts, source, shared consumers, prepared tests
 allowed_write_paths: assigned files or none
@@ -133,32 +151,63 @@ permissions; this configuration does not create independent sandboxes.
 
 | Artifact | Required content |
 | --- | --- |
-| Specification | User/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; owner decisions and unresolved questions |
-| Implementation plan | Spec/wireframe links; expected files/reasons; shared consumers/invariants; exact existing test paths/cases and gaps; new tests marked planned; small steps and real verification commands |
+| Specification (spec role or manual input) | User/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; owner decisions and unresolved questions |
+| Design result (designer) | Input specification revision/approval; acceptance-ID → UX flow/frame/state mapping; reused component/token sources; design links/notes, observations, UX decisions, design approval and evidence limits; requirement gaps returned to the owner |
+| Implementation plan (main, only for requested planning/dev work) | Approved specification and needed design links; expected files/reasons; shared consumers/invariants; exact existing test paths/cases and gaps; new tests marked planned; small steps and real verification commands |
 | QA prepare result | Acceptance ID → existing/new test → preserved/changed behavior → observed result or not-run; gaps, baseline readiness, execution limits |
 | Dev result | Input versions/revision/dirty scope; expected versus actual changes; scenario/test outcomes; commands/environment/API mode; browser observations; deviations and unverified work |
 | QA verify result | Exact criteria/revision/dirty diff; pass/fail/not-run with evidence; severity, reproduction, expected/actual; coverage gaps and readiness for joint review |
 
-Reuse an agreed location. Otherwise store the spec at
-`docs/superpowers/specs/YYYY-MM-DD-<task-key>.md`, the plan at
-`docs/superpowers/plans/YYYY-MM-DD-<task-key>.md` and any SVG under
-`docs/superpowers/specs/assets/<task-key>/`. A small task may use one document.
+Return generated task specifications, design notes and audit reports in chat by
+default. If a file is needed, use an explicitly agreed location outside the
+repository; do not automatically create task artifacts under `docs/` or add them
+to Git. Pass the approved text/revision or external file path in the handoff so
+fresh stages can consume it. Shared skill/workflow documentation stays in the
+repository. An implementation plan still requires a separate planning/dev scope.
+For Figma deliverables, images/screenshots are transient inspection evidence;
+do not save companion PNG/mockup files into repository documentation or link them
+there unless the user explicitly requests an export.
 Keep role results in its evidence section or the task/PR, with full sanitized
 logs/captures in a stated ignored local directory. No report publication or new
 status database is implied. Resume from these materials after compaction.
 
+## Specification
+
+The `spec` role owns requirements and acceptance criteria, not visual design.
+Read the feature description, current business logic, owning contracts and
+existing coverage before asking targeted questions through main. For main UI,
+use PRODUCT.md and the relevant UI context; derive permissions from code/contracts.
+Record the user/task/outcome, scope/non-goals, inputs/outputs, business rules,
+state transitions, permissions, persistence, validation, errors/retry/cancel,
+navigation/context and shared-consumer impact. Distinguish confirmed decisions,
+source facts and hypotheses. Unresolved material decisions block readiness.
+
+Assign stable acceptance/scenario IDs and observable outcomes, preserve existing
+behavior, and name exact existing coverage/gaps without claiming tests ran.
+Describe applicable accessibility/theme/responsive constraints, leaving UX layout
+and styling to designer unless already constrained by the owner or contracts.
+Return the specification in chat, or write only its assigned external file. No wireframes,
+Figma access, implementation plans, product code, executable tests or test/build
+execution. No Figma destination is needed. Return readiness/open questions and
+evidence limits, then stop for owner approval. Main owns technical planning.
+
 ## Designer
 
-Read actual routes/components and coverage before asking targeted questions.
-Clarify the concrete user outcome, navigation/Back, ownership of state,
-permissions, errors/retry, cancellation, persistence and affected consumers.
-Distinguish confirmed facts, code facts, hypotheses and human observations.
-Pause dependent decisions when critical answers are missing; continue independent
-analysis. Do not repeat settled questions or invent priorities from role names.
+Require the approved specification and its revision/approval evidence, or a
+compact approved manual brief with acceptance criteria. A prior `echo-spec` run
+is optional. Missing input goes back to main; designer does not author a substitute
+specification or launch spec. For Figma, main resolves the destination/page before
+dispatch. Retain the [request flow](figma-design.md#request-flow) and shared presets.
 
-Create scenarios before the plan. Describe loading/empty/error/permission states,
-long content, relevant themes/widths, focus/keyboard and preserved context. Name
-reused exports, source paths and variants/props. Where relevant, inspect the
+Translate acceptance IDs into UX flows, screens/states, navigation, hierarchy,
+focus/keyboard, responsive layouts and approved visual design. Preserve the
+specification's business rules and acceptance IDs. Resolve UX decisions through
+main and report requirement gaps/changes to the specification owner; pause
+dependent design until revised requirements are approved. Record UX decisions
+and state mappings in design notes, not rewritten requirements.
+
+Read actual routes/components and relevant coverage; name reused exports,
+source paths and variants/props. Where relevant, inspect the
 existing synthetic MessageCard stories at
 `wdintel-web/src/stories/message-card/MessageCard.stories.tsx`; this is not a
 complete component catalog. Inspect an already available synthetic preview or
@@ -169,14 +218,25 @@ Use [designer tool selection](../../.github/skills/echo-designer/SKILL.md#design
 repository Impeccable Markdown first; optional Product Design audit/ideate when
 its tools and authorized synthetic inputs are available. Missing plugins use
 source-based analysis and direct drawing, with explicit evidence limits.
-The designer writes documents/diagrams only, not product code, scaffolds or tests.
-Main handles technical planning outside the UI role's competence.
+The designer writes design notes/diagrams and requested Figma Design artifacts,
+not specifications, implementation plans, product code, scaffolds or tests.
+For editable Figma wireframes and
+design, follow the [Figma guide](figma-design.md), including a new-file destination,
+official skill loading, Echo token/component mappings and screenshot inspection.
+For a designer-only request, main and designer stop after the requested design
+artifacts and notes; they do not create an implementation plan or invoke a planning workflow.
+Main prepares technical plans only for separately requested planning/dev work,
+using the approved specification and any needed design. Design approval and
+implementation authorization remain separate from specification approval.
 
 ### Wireframe options
 
-Default to static SVG monochrome blocks with short labels for layout, or a compact
-Mermaid flow for navigation. Keep explanations, scenarios and state rules beside
-the drawing. Render/inspect and show inline with a source link when supported;
+For requested Figma output, build editable native frames/components in the assigned
+Design file. The [output presets](figma-design.md#output-presets) define the
+`wireframes` / `design` shorthand, Figma format and reusable presentation defaults.
+Without a preset or Figma format request, use a static SVG layout or compact
+Mermaid flow. Keep explanations, scenarios and state rules beside the drawing.
+Render/inspect and show inline with a source link when supported;
 otherwise mark rendering unverified. A diagram never proves interaction behavior.
 HTML/interactive prototypes require an explicit format request. Image alternatives
 and external editable canvases are optional requested outputs, not prerequisites;
@@ -237,12 +297,13 @@ independent review quality. Keep captures local and synthetic/redacted.
 These boundaries apply to main while coordinating this workflow and to every
 assigned child. They do not install or reconfigure teammates' personal plugins.
 
-- Children use only their declared skill profile; missing/unrecognized skills are reported, not installed or silently substituted. The three entrypoint skills are disabled in child catalogs to prevent recursive dispatch. No child delegates, invokes nested Codex/Claude CLI, changes branches/worktrees or performs Git/release operations.
+- Children use only their declared skill profile; missing/unrecognized skills are reported, not installed or silently substituted. All four entrypoint skills are disabled in child catalogs to prevent recursive dispatch. No child delegates, invokes nested Codex/Claude CLI, changes branches/worktrees or performs Git/release operations.
 - Read repository sources for the two new helpers, even if personal copies share a name. Their entrypoints and [source notices](design-tools.md#managed-role-helper-skills) describe the reviewed subset and precedence. Optional personal plugin access is checked per developer; a clone grants no account access.
 - Repository Impeccable contains only adapted Markdown guidance (`shape`, `critique`, `audit`), explicit-only metadata and provenance/license files. No runtime, hooks, detector or additional agents are included. Use product/design files and authorized source/browser tools; do not fetch or substitute a personal runtime. Preserve the caller's environment/settings.
 - Product Design is limited to assigned audit/ideate with authorized synthetic/redacted inputs. Do not publish/upload operational messages, identifiers, raw traces, credentials or other sensitive data. An external tool request needs the corresponding user-authorized destination/data scope.
 - No package/browser/plugin installation, automatic updates, remote reporters/webhooks, CI changes, destructive cleanup or sandbox/approval bypass follows from skill examples. Report missing capabilities to main. Use existing runners and disposable local/test-owned data; all real-environment mutations require the existing explicit approval.
 - Scope and approved design override generic helper suggestions. Preserve tokens/components, title-based test selection and meaningful stronger coverage; never hide failures or assume global styling/animation changes are authorized.
+- Explicit Figma design tasks permit only the handed-off file/page/node operations and synthetic inputs under the [Figma guide](figma-design.md). Tool scripts build design artifacts, not repository implementation. No account-wide publication, sharing changes, Code Connect writes or unrestricted source uploads are inferred.
 
 The TOML `skills.config` rules match exact names/known aliases; they are a finite
 catalog filter, not a wildcard allowlist or a tool/network ACL. New names may be
@@ -274,7 +335,14 @@ UNVERIFIED.** Configured roles specify `gpt-6.1-sol` / `high` for designer/dev a
 No role reported seeing the parent-only canary; fresh-context dispatch and these
 self-reports provide limited evidence, not proof of complete isolation.
 
-When the user explicitly invokes the three entrypoints for a read-only smoke in
+The subsequent Figma extension, responsibility split and deliverable limits
+update designer to `v5` and spec to skill profile `v2`. The historical smoke above does not verify these
+profiles. Reload/start a session and check actual native role availability; if
+`spec` is absent, report the blocker without a generic/inline replacement.
+Native spec launch, effective current skill catalogs and Figma authoring/rendering
+remain **UNVERIFIED** until explicitly invoked tasks exercise them.
+
+When the user explicitly invokes the desired entrypoints for a read-only smoke in
 a supported client, run it sequentially and preserve that invocation in handoffs:
 request each actual named role with fresh context; before file reads ask it to
 report injected profile IDs/catalog (without feeding expected IDs); then read a
