@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import {
   buildMessageCardMediaPreviewInboxResponse,
   buildValidWavAudioFixture,
@@ -40,9 +41,24 @@ async function openAttachment(
   }));
   await page.route('**/test-assets/mobile-document.*', async (route) => {
     const extension = new URL(route.request().url()).pathname.split('.').pop()!;
-    const body = await readFile(
-      new URL(`fixtures/device-file-preview/document.${extension}`, import.meta.url),
+    let body = await readFile(
+      new URL(
+        `fixtures/device-file-preview/${longText && extension === 'pdf' ? 'document-multipage.pdf' : `document.${extension}`}`,
+        import.meta.url,
+      ),
     );
+    if (longText && extension === 'docx') {
+      const files = unzipSync(body);
+      const xml = strFromU8(files['word/document.xml']);
+      files['word/document.xml'] = strToU8(
+        xml.replace(
+          '<w:body>',
+          '<w:body>' +
+            '<w:p><w:r><w:t>Довгий документ для перевірки прокрутки.</w:t></w:r></w:p>'.repeat(100),
+        ),
+      );
+      body = Buffer.from(zipSync(files));
+    }
     await route.fulfill({
       body: route.request().method() === 'HEAD' ? '' : body,
       contentType: extra.find((item) => item.id === `mobile-${extension}`)!.contentType,
@@ -51,7 +67,17 @@ async function openAttachment(
   });
   await openMessageCardPreviewHost(page, host, {
     ...options,
-    messageOverrides: { media: [...media, ...extra] },
+    enableAudioTranscription: fileName === '@audio' && longText,
+    messageOverrides: {
+      media: [
+        ...media.map((item) =>
+          fileName === '@audio' && longText && item.id === 'e2e-audio'
+            ? { ...item, transcription: 'Довга розшифровка аудіо.\n'.repeat(200) }
+            : item,
+        ),
+        ...extra,
+      ],
+    },
   });
   if (longText)
     await page.route('**/e2e-preview.txt', (route) =>
@@ -157,6 +183,8 @@ for (const fileName of [
   test(`@regression #3340 ${fileName}: mobile content and actions remain usable with floating navigation`, async ({
     page,
   }, testInfo) => {
+    const session = fileName.endsWith('.zip') ? await page.context().newCDPSession(page) : null;
+    await session?.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 44, bottom: 34 } });
     const { dialog } = await openAttachment(page, 'duty', fileName);
     const heading = dialog.getByRole('heading', { name: fileName, exact: true });
     const island = dialog.locator('[data-attachment-preview-carousel-island]');
@@ -164,8 +192,13 @@ for (const fileName of [
     if (fileName.endsWith('.pdf'))
       await expect(dialog.locator('.react-pdf__Page__canvas').first()).toBeVisible();
     if (fileName.endsWith('.doc')) await expect(dialog.getByRole('article')).toBeVisible();
-    if (fileName.endsWith('.zip'))
+    if (fileName.endsWith('.zip')) {
       await expect(dialog.getByText('nested/member.txt')).toBeVisible();
+      const summary = dialog.getByText(/^Файлів: /);
+      const summaryBounds = (await summary.boundingBox())!;
+      const headerBounds = (await heading.locator('xpath=../..').boundingBox())!;
+      expect(summaryBounds.y).toBeGreaterThanOrEqual(headerBounds.y + headerBounds.height + 12);
+    }
     const surface = dialog.getByRole('region', { name: 'Область перегляду вкладення' });
     await surface.focus();
     await surface.press('Enter');
@@ -188,6 +221,7 @@ for (const fileName of [
       await expect(heading).toBeVisible();
     }
     await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
+    await session?.detach();
   });
 }
 
@@ -247,6 +281,102 @@ test('@regression #3340 mobile scrolling and text selection do not toggle chrome
   await session.detach();
 });
 
+for (const host of ['analysis', 'duty'] as const) {
+  for (const fileName of ['e2e-preview.txt', 'mobile-document.pdf', 'mobile-document.docx']) {
+    for (const direction of ['down', 'up'] as const) {
+      test(`@regression #3340 ${host} ${fileName}: outward swipe ${direction} dismisses only from the document boundary`, async ({
+        page,
+      }) => {
+        const { dialog } = await openAttachment(page, host, fileName, true);
+        await page.setViewportSize({ width: 375, height: 480 });
+        if (fileName.endsWith('.pdf'))
+          await expect(dialog.locator('.react-pdf__Page__canvas').first()).toBeVisible();
+        const scroll = fileName.endsWith('.docx')
+          ? dialog.frameLocator('iframe').locator('html')
+          : dialog.locator('[data-document-preview-content] > div').first();
+        await expect
+          .poll(() => scroll.evaluate((element) => element.scrollHeight - element.clientHeight))
+          .toBeGreaterThan(80);
+        const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+        await scroll.evaluate((element) => {
+          element.scrollTop = (element.scrollHeight - element.clientHeight) / 2;
+        });
+        const middle = await scroll.evaluate((element) => element.scrollTop);
+        await swipe(page, { x: 180, y: 300 }, { x: 180, y: 180 });
+        await expect(dialog).toBeVisible();
+        await expect
+          .poll(() => scroll.evaluate((element) => element.scrollTop))
+          .toBeGreaterThan(middle);
+        await page.touchscreen.tap(180, 250);
+        if (fileName.endsWith('.txt') && direction === 'up') {
+          await scroll.evaluate((element) => {
+            element.scrollTop = element.scrollHeight - element.clientHeight - 24;
+          });
+          await swipe(page, { x: 180, y: 300 }, { x: 180, y: 180 });
+          await expect(dialog).toBeVisible();
+          await expect
+            .poll(() =>
+              scroll.evaluate(
+                (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+              ),
+            )
+            .toBeLessThanOrEqual(1);
+          await page.touchscreen.tap(180, 250);
+        }
+        await expect
+          .poll(async () => {
+            await scroll.evaluate((element, edge) => {
+              element.scrollTop = edge === 'down' ? 0 : element.scrollHeight;
+            }, direction);
+            await page.evaluate(
+              () =>
+                new Promise<void>((resolve) =>
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+                ),
+            );
+            return scroll.evaluate(
+              (element, edge) =>
+                edge === 'down'
+                  ? element.scrollTop
+                  : element.scrollHeight - element.clientHeight - element.scrollTop,
+              direction,
+            );
+          })
+          .toBeLessThanOrEqual(1);
+        await swipe(page, { x: 180, y: 250 }, { x: 180, y: direction === 'down' ? 290 : 210 });
+        await expect(dialog).toBeVisible();
+        await swipe(page, { x: 180, y: 250 }, { x: 180, y: direction === 'down' ? 390 : 110 });
+        await expect(dialog).toHaveCount(0);
+        expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
+      });
+    }
+  }
+}
+
+for (const fileName of [
+  'e2e-preview.md',
+  'e2e-preview.doc',
+  'e2e-preview.xls',
+  'mobile-document.xlsx',
+  'mobile-document.csv',
+  'e2e-preview.zip',
+]) {
+  test(`@regression #3340 ${fileName}: top boundary swipe dismisses without horizontal navigation`, async ({
+    page,
+  }) => {
+    const { dialog } = await openAttachment(page, 'duty', fileName);
+    await expect(dialog.getByRole('heading', { name: fileName, exact: true })).toBeVisible();
+    if (fileName.endsWith('.zip'))
+      await expect(dialog.getByText('nested/member.txt')).toBeVisible();
+    else if (/\.(xls|xlsx|csv)$/.test(fileName))
+      await expect(dialog.locator('td').first()).toBeVisible();
+    else if (fileName.endsWith('.doc')) await expect(dialog.getByRole('article')).toBeVisible();
+    else await expect(dialog.locator('[data-document-preview-content]')).not.toBeEmpty();
+    await swipe(page, { x: 180, y: 250 }, { x: 180, y: 400 });
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
 test('@regression #3340 mobile audio playback stays independent of chrome taps', async ({
   page,
 }, testInfo) => {
@@ -254,7 +384,16 @@ test('@regression #3340 mobile audio playback stays independent of chrome taps',
   const heading = dialog.getByRole('heading', { name: 'e2e-audio.wav', exact: true });
   const player = dialog.locator('custom-audio-player');
   await expect(player.locator('#playPauseBtn')).toBeVisible();
-  const initialBounds = await player.boundingBox();
+  const initialBounds = (await player.boundingBox())!;
+  await swipe(
+    page,
+    { x: initialBounds.x + 50, y: initialBounds.y + 20 },
+    { x: initialBounds.x + 50, y: initialBounds.y + 140 },
+  );
+  await expect(dialog).toBeVisible();
+  await expect
+    .poll(() => player.evaluate((element: { audio: HTMLAudioElement }) => element.audio.readyState))
+    .toBeGreaterThanOrEqual(3);
   await player.locator('#playPauseBtn').click();
   await expect
     .poll(() => player.evaluate((element: { isPlaying: boolean }) => element.isPlaying))
@@ -272,6 +411,62 @@ test('@regression #3340 mobile audio playback stays independent of chrome taps',
     path: testInfo.outputPath('audio-mobile.png'),
     animations: 'disabled',
   });
+});
+
+async function swipe(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+  const session = await page.context().newCDPSession(page);
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] });
+  for (let step = 1; step <= 5; step++) {
+    await session.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: from.x + ((to.x - from.x) * step) / 5, y: from.y + ((to.y - from.y) * step) / 5 },
+      ],
+    });
+  }
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await session.detach();
+}
+
+for (const host of ['analysis', 'duty'] as const) {
+  for (const direction of ['up', 'down'] as const) {
+    test(`@regression #3340 ${host}: audio swipe ${direction} dismisses and stops playback`, async ({
+      page,
+    }) => {
+      const { dialog } = await openAttachment(page, host, '@audio');
+      const player = dialog.locator('custom-audio-player');
+      await expect
+        .poll(() =>
+          player.evaluate((element: { audio: HTMLAudioElement }) => element.audio.readyState),
+        )
+        .toBeGreaterThanOrEqual(3);
+      await player.locator('#playPauseBtn').click();
+      await expect
+        .poll(() => player.evaluate((element: { isPlaying: boolean }) => element.isPlaying))
+        .toBe(true);
+      const element = (await player.elementHandle())!;
+      await swipe(page, { x: 180, y: 250 }, { x: 180, y: direction === 'up' ? 110 : 390 });
+      await expect(dialog).toHaveCount(0);
+      expect(await element.evaluate((audio: { isPlaying: boolean }) => audio.isPlaying)).toBe(
+        false,
+      );
+    });
+  }
+}
+
+test('@regression #3340 scrollable audio keeps vertical scrolling without dismissing the viewer', async ({
+  page,
+}) => {
+  const { dialog } = await openAttachment(page, 'duty', '@audio', true);
+  const scroll = dialog.locator('[data-audio-preview-content]').locator('..');
+  await expect
+    .poll(() => scroll.evaluate((element) => element.scrollHeight - element.clientHeight))
+    .toBeGreaterThan(0);
+  await swipe(page, { x: 5, y: 400 }, { x: 5, y: 600 });
+  await expect(dialog).toBeVisible();
+  await swipe(page, { x: 5, y: 600 }, { x: 5, y: 400 });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 });
 
 test('@regression #3340 coordinate markers keep their own actions in the mobile viewer', async ({
@@ -378,6 +573,8 @@ test('@regression #3340 DOCX taps toggle chrome without resizing content or enab
   });
   await body.dispatchEvent('click');
   await expect(heading).toBeVisible();
+  await swipe(page, { x: 180, y: 180 }, { x: 180, y: 340 });
+  await expect(dialog).toBeVisible();
   await body.evaluate((element) => element.ownerDocument.getSelection()?.removeAllRanges());
   await body.dispatchEvent('pointerdown', {
     isPrimary: true,
@@ -488,6 +685,14 @@ test('@regression #3340 mobile PDF pinch keeps panels stable and uses the full-h
   expect(stage.y).toBe(0);
   expect(stage.height).toBe(812);
   await expect(dialog.getByText(/^[1-4]\d\d%$/)).toBeVisible();
+  await dialog
+    .locator('[data-document-preview-content] > div')
+    .first()
+    .evaluate((element) => {
+      element.scrollTop = 0;
+    });
+  await swipe(page, { x: 180, y: 300 }, { x: 180, y: 460 });
+  await expect(dialog).toBeVisible();
   await session.detach();
 });
 

@@ -1,5 +1,6 @@
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
-import { Typography } from '@mui/material';
+import { Typography, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 
 import { useAudioTranscriptionPreferences } from '../MessageCardAudioTranscription';
@@ -46,6 +47,8 @@ export function AudioAttachmentPreviewRenderer({
     dismissChildOverlay?: number;
   }) {
   const [infoAnchor, setInfoAnchor] = useState<HTMLButtonElement | null>(null);
+  const narrowViewport = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
   const { enabled: transcriptionEnabled } = useAudioTranscriptionPreferences();
   const transcription = transcriptionEnabled ? (audio.transcription?.trim() ?? '') : '';
   const downloadKey = messageCardMediaDownloadKey(audio.mediaId || audio.id);
@@ -114,6 +117,7 @@ export function AudioAttachmentPreviewRenderer({
   return (
     <MessageCardAttachmentPreviewLayout
       mobileChrome="toggle"
+      onSwipeDismiss={narrowViewport || touchLandscape ? onClose : undefined}
       headerInFlow={reportDraft != null && reportVisible}
       navigation={navigation}
       header={

@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import { Box, CircularProgress, Typography, useTheme } from '@mui/material';
 
 import { AttachmentPreviewMobileSurfaceContext } from '../attachment-preview/use-attachment-preview-mobile-chrome';
+import { AttachmentPreviewSwipeFrameContext } from '../attachment-preview/useAttachmentPreviewSwipe';
 import { buildDocxHtmlDocument } from '../docx/build-docx-html-document';
 import type { DocxPageSize, DocxPreviewResult } from '../docx/docx-preview.types';
 import { sanitizeDocxHtml } from '../docx/sanitize-docx-html';
@@ -20,11 +21,19 @@ export function formatDocxPreviewErrorMessage(error: string | null): string {
 
 function useDocxMobileChrome() {
   const surface = useContext(AttachmentPreviewMobileSurfaceContext);
+  const registerSwipeFrame = useContext(AttachmentPreviewSwipeFrameContext);
   const [frame, setFrame] = useState<HTMLIFrameElement | null>(null);
   const [frameDocument, setFrameDocument] = useState<Document | null>(null);
 
   useEffect(() => {
+    registerSwipeFrame?.(frameDocument);
+    return () => registerSwipeFrame?.(null);
+  }, [registerSwipeFrame, frameDocument]);
+
+  useEffect(() => {
     if (!surface || !frame || !frameDocument || frame.contentDocument !== frameDocument) return;
+    frameDocument.documentElement.style.overscrollBehaviorY = 'none';
+    frameDocument.body.style.overscrollBehaviorY = 'none';
     const updateInsets = () => {
       const style = getComputedStyle(frame);
       frameDocument.body.style.paddingTop =

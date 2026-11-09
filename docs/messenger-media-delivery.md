@@ -266,13 +266,29 @@ has no island. Map controls and spreadsheet sheet buttons keep their own actions
 with the island above them. Leaflet bottom controls are offset above the gesture
 safe area. Desktop layouts retain their existing behavior.
 
+ZIP statistics and file listings start below the measured mobile header with a
+small gap and retain trailing clearance above the navigation island.
+
 Single surface taps or Enter/Space on the focused preview region toggle the
 header and island without resizing the content. Buttons, links, spreadsheet
 selection, text selection, scrolling, map markers, map gestures and audio playback
-retain their own actions. New attachments start with panels visible. Scrollable
-content has initial header clearance and enough trailing space to reach its last
-lines above the island and system gesture area. OCR, summary and report panes keep
-the header in the layout so their actions remain reachable.
+retain their own actions. New attachments start with panels visible. Audio previews
+without vertical overflow dismiss on vertical surface swipes and stop playback,
+matching images and videos. Scrollable audio, player controls, transcription
+selection and report panes retain their own gestures. Scrollable content has
+initial header clearance and enough trailing space to reach its last lines above
+the island and system gesture area. OCR, summary and report panes keep the header
+in the layout so their actions remain reachable.
+
+At the initial document zoom, a new downward swipe starting at the top or an upward
+swipe starting at the bottom dismisses the mobile viewer. The scroll positions of
+all containers under the initial touch must allow that direction; a gesture that
+merely reaches an edge continues scrolling. Short drags settle back. Text selection,
+interactive controls, zoomed documents and open OCR/summary/report panes retain
+their gestures. This applies to PDF, DOCX, text, office documents, spreadsheets and
+ZIP listings. Mobile previews block scroll chaining to browser page refresh; DOCX
+registers the same touch handlers inside its existing sandboxed iframe and contains
+overscroll on the iframe document's root and body. Desktop behavior is unchanged.
 
 DOCX enables `allow-same-origin` on mobile so the parent can observe iframe taps
 and preserve selection and scrolling. Scripts remain blocked by both the sandbox

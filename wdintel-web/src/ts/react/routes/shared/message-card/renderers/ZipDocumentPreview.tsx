@@ -331,10 +331,10 @@ export function ZipFilePreview({
   const loading = !listing && !error;
   const stage = (
     <div
-      className={`min-h-0 flex-1 overflow-auto p-3 ${loading ? 'grid place-items-center' : ''}`}
+      className={`min-h-0 flex-1 overflow-auto px-3 ${loading ? 'grid place-items-center' : ''}`}
       style={{
-        paddingTop: 'var(--attachment-preview-content-inset, 12px)',
-        paddingBottom: 'var(--attachment-preview-content-bottom-inset, 12px)',
+        paddingTop: 'calc(var(--attachment-preview-content-inset, 0px) + 1rem)',
+        paddingBottom: 'max(1rem, var(--attachment-preview-content-bottom-inset, 0px))',
       }}
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -398,6 +398,7 @@ export function ZipDocumentPreview({
       mobileChrome="toggle"
       navigation={navigation}
       swipeEnabled={false}
+      onScrollBoundaryDismiss={onClose}
       header={
         <MessageCardAttachmentPreviewHeader
           fileName={fileName}

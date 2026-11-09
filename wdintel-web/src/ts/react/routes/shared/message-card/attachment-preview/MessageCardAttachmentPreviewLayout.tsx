@@ -8,7 +8,10 @@ import {
   AttachmentPreviewMobileCarouselIsland,
   AttachmentPreviewMobileCarouselNav,
 } from './MessageCardAttachmentPreviewControls';
-import { useAttachmentPreviewSwipe } from './useAttachmentPreviewSwipe';
+import {
+  AttachmentPreviewSwipeFrameContext,
+  useAttachmentPreviewSwipe,
+} from './useAttachmentPreviewSwipe';
 import {
   AttachmentPreviewMobileSurfaceContext,
   useAttachmentPreviewMobileChrome,
@@ -20,6 +23,7 @@ import {
 } from './message-card-preview-config';
 
 const MOBILE_PREVIEW_SX = {
+  overscrollBehaviorY: 'none',
   '& [data-attachment-preview-header-navigation]': { display: 'none' },
   '& [data-attachment-preview-carousel-island]': { display: 'flex' },
   '--attachment-preview-table-border-collapse': 'separate',
@@ -57,6 +61,7 @@ export function MessageCardAttachmentPreviewLayout({
   navigation,
   swipeEnabled = true,
   onSwipeDismiss,
+  onScrollBoundaryDismiss,
   immersive = false,
   safeArea = false,
   headerVisible = true,
@@ -72,6 +77,7 @@ export function MessageCardAttachmentPreviewLayout({
   navigation?: MessageCardPreviewNavigation;
   swipeEnabled?: boolean;
   onSwipeDismiss?: () => void;
+  onScrollBoundaryDismiss?: () => void;
   immersive?: boolean;
   safeArea?: boolean;
   headerVisible?: boolean;
@@ -82,9 +88,11 @@ export function MessageCardAttachmentPreviewLayout({
 }) {
   const [stageContainerEl, setStageContainerEl] = useState<HTMLDivElement | null>(null);
   const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null);
+  const [frameDocument, setFrameDocument] = useState<Document | null>(null);
   const narrowViewport = useMediaQuery(useTheme().breakpoints.down('sm'));
   const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
   const mobileChromeEnabled = mobileChrome != null && (narrowViewport || touchLandscape);
+  const boundaryDismiss = mobileChromeEnabled ? onScrollBoundaryDismiss : undefined;
   const toggleMobileChrome = mobileChromeEnabled && mobileChrome === 'toggle';
   const chrome = useAttachmentPreviewMobileChrome(toggleMobileChrome, navigation?.index);
   const resolvedHeaderVisible = headerVisible && (!toggleMobileChrome || chrome.visible);
@@ -114,9 +122,11 @@ export function MessageCardAttachmentPreviewLayout({
 
   const swipeMotion = useAttachmentPreviewSwipe({
     stageEl: stageContainerEl,
-    navigation,
-    enabled: swipeEnabled,
-    onDismiss: onSwipeDismiss,
+    navigation: swipeEnabled ? navigation : undefined,
+    enabled: swipeEnabled || boundaryDismiss != null,
+    onDismiss: onSwipeDismiss ?? boundaryDismiss,
+    dismissFromScrollEdges: boundaryDismiss != null,
+    frameDocument,
   });
 
   return (
@@ -204,7 +214,11 @@ export function MessageCardAttachmentPreviewLayout({
             <AttachmentPreviewMobileSurfaceContext.Provider
               value={toggleMobileChrome ? chrome.surfaceProps : null}
             >
-              {stage}
+              <AttachmentPreviewSwipeFrameContext.Provider
+                value={boundaryDismiss ? setFrameDocument : null}
+              >
+                {stage}
+              </AttachmentPreviewSwipeFrameContext.Provider>
             </AttachmentPreviewMobileSurfaceContext.Provider>
           </Box>
           {/* Controls Overlay (part of content stage area, above the divider) */}

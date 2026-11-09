@@ -134,7 +134,10 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage.tsx', () => 
   ),
 }));
 
-vi.mock('../../attachment-preview/useAttachmentPreviewSwipe.ts', () => ({
+vi.mock('../../attachment-preview/useAttachmentPreviewSwipe.ts', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../attachment-preview/useAttachmentPreviewSwipe.ts')
+  >()),
   useAttachmentPreviewSwipe: ({ enabled }: { enabled: boolean }) => {
     latestSwipeEnabled = enabled;
     return { transform: 'translate3d(0px, 0px, 0)', opacity: 1, transition: 'none' };

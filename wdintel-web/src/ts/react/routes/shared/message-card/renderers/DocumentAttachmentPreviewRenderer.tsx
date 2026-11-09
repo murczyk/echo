@@ -393,6 +393,14 @@ function NonZipDocumentAttachmentPreviewRenderer({
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={canSwipeCarousel && dialogZoom <= 100}
+      onScrollBoundaryDismiss={
+        dialogZoom <= 100 &&
+        !ocrVisible &&
+        !summaryVisible &&
+        !(reportDraft != null && reportVisible)
+          ? closeDialog
+          : undefined
+      }
     />
   );
 }
