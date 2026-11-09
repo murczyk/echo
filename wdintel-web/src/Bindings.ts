@@ -943,6 +943,12 @@ export type GroupCreationInfo = {
   createdBy: string | null;
 };
 
+export type GroupSendingSettings = {
+  canSendMessages: boolean;
+  sendMessages: boolean;
+  senderOrganismIds: Array<number>;
+};
+
 export type OrphanSignalGroupEntry = {
   masterKey: string;
   name: string;
@@ -3752,6 +3758,8 @@ export type ZoneDatasourceGroupUpdateReq = {
   fetchNewMessages: boolean | null;
   isSigintUnitMandatory: boolean | null;
   isDeviceMandatory: boolean | null;
+  sendMessages: boolean | null;
+  senderOrganismIds: Array<number> | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -8082,6 +8090,8 @@ export type GroupUpdateReq = {
   fetchNewMessages: boolean | null;
   isSigintUnitMandatory: boolean | null;
   isDeviceMandatory: boolean | null;
+  sendMessages: boolean | null;
+  senderOrganismIds: Array<number> | null;
 };
 
 export type NativeGroupSettings = {

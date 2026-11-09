@@ -1295,6 +1295,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::group::handlers::signal_group_archive)
             .service(crate::messenger::group::native::create)
             .service(crate::messenger::group::creation::get)
+            .service(crate::messenger::group::sending::get)
             .service(crate::messenger::group::native::get)
             .service(crate::messenger::group::native::update)
             .service(crate::messenger::group::handlers::signal_group_unarchive)

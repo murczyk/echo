@@ -1,4 +1,4 @@
-import { Checkbox, FormControlLabel } from '@mui/material';
+import { FormControlLabel, Switch } from '@mui/material';
 import type { SignalGroupEntry } from '../../../../../Bindings';
 
 type Requirements = Pick<SignalGroupEntry, 'isSigintUnitMandatory' | 'isDeviceMandatory'>;
@@ -14,7 +14,7 @@ export function GroupMessageRequirements({
       <FormControlLabel
         label="Обов’язковий підрозділ"
         control={
-          <Checkbox
+          <Switch
             checked={isSigintUnitMandatory}
             disabled={disabled}
             onChange={(_, checked) =>
@@ -26,7 +26,7 @@ export function GroupMessageRequirements({
       <FormControlLabel
         label="Обов’язкова назва пристрою"
         control={
-          <Checkbox
+          <Switch
             checked={isDeviceMandatory}
             disabled={disabled}
             onChange={(_, checked) =>

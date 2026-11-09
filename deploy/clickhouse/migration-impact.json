@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261109_141057_group_message_sending": {
+      "changes": [
+        { "table": "public.signal_group", "strategy": "cdc_additive" },
+        { "table": "public.sigint_group_sender_organism", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261108_090102_signoz_metrics_settings": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }

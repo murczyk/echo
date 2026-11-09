@@ -1705,6 +1705,17 @@ async fn finish_direct_submit(
         .await
         .c(h!())?;
 
+        if is_new_message {
+            crate::messenger::group::sending::enqueue(
+                env,
+                &txn,
+                login,
+                signal_message_id,
+            )
+            .await
+            .c(h!())?;
+        }
+
         txn.commit().await.c(h!())?;
         Ok((
             media_to_delete_after_commit,
