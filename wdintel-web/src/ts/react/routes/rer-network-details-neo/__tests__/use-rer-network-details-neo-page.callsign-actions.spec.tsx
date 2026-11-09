@@ -235,7 +235,7 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
   it.each([
     ['create', createNetworkCallsign],
     ['edit', updateNetworkCallsign],
-  ] as const)('blurs focus after a successful %s save', async (mode, apiCall) => {
+  ] as const)('#4108 saves the submitted %s draft and blurs focus', async (mode, apiCall) => {
     vi.mocked(apiCall).mockResolvedValue({} as never);
     const form: NetworkCallsignDrawerForm = {
       ...createDefaultNetworkCallsignDrawerForm(17, 101),
@@ -252,9 +252,12 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
     });
 
     await act(async () => {
-      await latestActions?.saveCallsignDrawer();
+      await latestActions?.saveCallsignDrawer({ ...form, callsign: 'БАРС', position: 'Командир' });
     });
 
+    expect(apiCall).toHaveBeenCalledWith(
+      expect.objectContaining({ callsign: 'БАРС', position: 'Командир' }),
+    );
     expect(blurActiveElement).toHaveBeenCalledOnce();
     expect(latestState?.callsignDrawerOpen).toBe(false);
   });
@@ -267,7 +270,7 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
     });
 
     await act(async () => {
-      await latestActions?.saveCallsignDrawer();
+      await latestActions?.saveCallsignDrawer(latestState!.callsignDrawerForm!);
     });
 
     expect(blurActiveElement).not.toHaveBeenCalled();

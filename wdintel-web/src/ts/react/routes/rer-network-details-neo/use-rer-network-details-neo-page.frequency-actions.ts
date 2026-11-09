@@ -451,9 +451,9 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
     [setState],
   );
 
-  const saveFreqCreateWizard = useCallback(async () => {
+  const saveFreqCreateWizard = useCallback(async (formArg?: NetworkFreqCreateWizardForm) => {
     const network = state.network;
-    const form = state.freqCreateWizardForm;
+    const form = formArg ?? state.freqCreateWizardForm;
 
     if (!network || state.freqCreateWizardSaving) return;
     const generation = reloadGeneration.current;

@@ -13,7 +13,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 
 import type { Network, NetworkDescrType } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
@@ -31,8 +31,7 @@ type Props = {
   error: string | null;
   networkFreqs: Network['freqs'];
   onClose: () => void;
-  onChange: (next: NetworkDescriptionForm) => void;
-  onSave: () => void;
+  onSave: (form: NetworkDescriptionForm) => void;
 };
 
 function getDrawerTitle(mode: Props['mode'], descrType: NetworkDescrType): string {
@@ -65,14 +64,17 @@ function NetworkDescriptionDrawerComponent({
   open,
   mode,
   descrType,
-  form,
+  form: initialForm,
   saving,
   error,
   networkFreqs,
   onClose,
-  onChange,
   onSave,
 }: Props) {
+  const [form, onChange] = useState(initialForm);
+  useEffect(() => {
+    if (open) onChange(initialForm);
+  }, [open, initialForm]);
   const titleId = 'network-description-drawer-title';
   const formBlocked = saving;
   const saveDisabled = saving || form.description.trim() === '';
@@ -185,7 +187,7 @@ function NetworkDescriptionDrawerComponent({
         <Button onClick={onClose} disabled={saving}>
           Скасувати
         </Button>
-        <Button onClick={onSave} variant="contained" disabled={saveDisabled}>
+        <Button onClick={() => onSave(form)} variant="contained" disabled={saveDisabled}>
           {saving ? (
             <CircularProgress size={16} color="inherit" />
           ) : mode === 'create' ? (

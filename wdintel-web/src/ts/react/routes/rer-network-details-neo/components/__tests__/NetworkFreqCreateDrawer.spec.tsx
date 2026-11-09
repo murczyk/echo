@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, useState, type ReactNode } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -194,7 +194,7 @@ function renderDrawer(form: NetworkFreqCreateWizardForm): Rendered {
   const root = createRoot(container);
 
   function Harness() {
-    const [currentForm, setCurrentForm] = useState(form);
+    const currentForm = form;
     return (
       <NetworkFreqCreateDrawer
         open
@@ -205,7 +205,6 @@ function renderDrawer(form: NetworkFreqCreateWizardForm): Rendered {
         canManageKeys={false}
         encryptions={[{ id: 11, name: 'DMR' }]}
         onClose={() => {}}
-        onChange={setCurrentForm}
         onSave={() => {}}
       />
     );
@@ -227,7 +226,7 @@ function renderDrawerWithEncryptions(
   const root = createRoot(container);
 
   function Harness() {
-    const [currentForm, setCurrentForm] = useState(form);
+    const currentForm = form;
     return (
       <NetworkFreqCreateDrawer
         open
@@ -238,7 +237,6 @@ function renderDrawerWithEncryptions(
         canManageKeys={false}
         encryptions={encryptions}
         onClose={() => {}}
-        onChange={setCurrentForm}
         onSave={() => {}}
       />
     );
@@ -258,7 +256,7 @@ function renderManagedDrawer(form: NetworkFreqCreateWizardForm): Rendered {
   const root = createRoot(container);
 
   function Harness() {
-    const [currentForm, setCurrentForm] = useState(form);
+    const currentForm = form;
     return (
       <NetworkFreqCreateDrawer
         open
@@ -269,7 +267,6 @@ function renderManagedDrawer(form: NetworkFreqCreateWizardForm): Rendered {
         canManageKeys
         encryptions={[{ id: 11, name: 'DMR' }]}
         onClose={() => {}}
-        onChange={setCurrentForm}
         onSave={() => {}}
       />
     );

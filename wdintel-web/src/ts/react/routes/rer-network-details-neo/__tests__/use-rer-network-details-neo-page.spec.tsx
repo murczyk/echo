@@ -173,7 +173,6 @@ vi.mock('../use-rer-network-details-neo-page.actions', () => ({
       openCallsignDrawerForCreate: vi.fn(),
       openCallsignDrawerForEdit: vi.fn(),
       closeCallsignDrawer: vi.fn(),
-      setCallsignDrawerForm: vi.fn(),
       saveCallsignDrawer: vi.fn(),
       openCallsignDeleteDialog: vi.fn(),
       closeCallsignDeleteDialog: vi.fn(),

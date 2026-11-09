@@ -110,7 +110,6 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         error={page.descriptionDrawerError}
         networkFreqs={page.network?.freqs ?? []}
         onClose={page.closeDescriptionDrawer}
-        onChange={page.setDescriptionDrawerForm}
         onSave={page.saveDescription}
       />
 
@@ -126,7 +125,6 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         postOptions={page.postOptions}
         encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeEditDrawer}
-        onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
         unitMaskVisible={page.supportNonRerInterceptions}
         {...MRT_ROW_ACTION_MODAL_PROPS}
@@ -141,7 +139,6 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         saving={page.callsignDrawerSaving}
         error={page.callsignDrawerError}
         onClose={page.closeCallsignDrawer}
-        onChange={page.setCallsignDrawerForm}
         onSave={page.saveCallsignDrawer}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
@@ -155,7 +152,6 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         canManageKeys={page.canEdit}
         encryptions={page.encryptions}
         onClose={page.closeFreqCreateWizard}
-        onChange={page.setFreqCreateWizardForm}
         onSave={page.saveFreqCreateWizard}
       />
 

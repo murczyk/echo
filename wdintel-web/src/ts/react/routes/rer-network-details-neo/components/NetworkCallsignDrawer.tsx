@@ -46,8 +46,7 @@ type Props = {
   saving: boolean;
   error: string | null;
   onClose: () => void;
-  onChange: (next: NetworkCallsignDrawerForm | null) => void;
-  onSave: () => void;
+  onSave: (form: NetworkCallsignDrawerForm) => void;
   disableRestoreFocus?: boolean;
 };
 
@@ -282,17 +281,17 @@ function CallsignStatusControl({
 export function NetworkCallsignDrawer({
   open,
   mode,
-  form,
+  form: initialForm,
   sources,
   units,
   saving,
   error,
   onClose,
-  onChange,
   onSave,
   disableRestoreFocus = false,
 }: Props) {
   const radioFeaturesAllowed = useRadioFeatures();
+  const [form, setForm] = useState(initialForm);
   const titleId = 'network-callsign-drawer-title';
   const sourceId = form?.sourceId ?? null;
   const isRoSource = radioFeaturesAllowed && sourceId === NetworkCallsignSourceId.RO;
@@ -325,10 +324,11 @@ export function NetworkCallsignDrawer({
 
   useEffect(() => {
     if (!open) return;
+    setForm(initialForm);
     setRadioFreqTouched(false);
     setSourceTouched(false);
     setUnitTouched(false);
-  }, [open]);
+  }, [open, initialForm]);
 
   return (
     <Drawer
@@ -369,7 +369,7 @@ export function NetworkCallsignDrawer({
                 label="Позивний *"
                 value={form.callsign}
                 onChange={(event) =>
-                  onChange({ ...form, callsign: normalizeCallsignDisplay(event.target.value) })
+                  setForm({ ...form, callsign: normalizeCallsignDisplay(event.target.value) })
                 }
                 disabled={saving}
                 fullWidth
@@ -385,7 +385,7 @@ export function NetworkCallsignDrawer({
                   disabled={saving}
                   markerMode={getNetworkCallsignMarkerMode(form)}
                   onChange={(markerMode) =>
-                    updateForm(form, getNetworkCallsignMarkerState(markerMode), onChange)
+                    updateForm(form, getNetworkCallsignMarkerState(markerMode), setForm)
                   }
                 />
               </Stack>
@@ -403,7 +403,7 @@ export function NetworkCallsignDrawer({
                       {
                         developing: nextDeveloping,
                       },
-                      onChange,
+                      setForm,
                     )
                   }
                 />
@@ -425,7 +425,7 @@ export function NetworkCallsignDrawer({
                         updateForm(
                           form,
                           { sourceId: sourceId === source.id ? null : source.id },
-                          onChange,
+                          setForm,
                         );
                       }}
                     />
@@ -454,7 +454,7 @@ export function NetworkCallsignDrawer({
                   valueId={selectedUnitId}
                   onValueIdChange={(unitId) => {
                     setUnitTouched(true);
-                    updateForm(form, { unitId: unitId === 0 ? null : unitId }, onChange);
+                    updateForm(form, { unitId: unitId === 0 ? null : unitId }, setForm);
                   }}
                   getOptionLabel={(unit) => unit.label}
                   disabled={saving}
@@ -479,7 +479,7 @@ export function NetworkCallsignDrawer({
                   <Checkbox
                     checked={form.unitDeveloping}
                     onChange={(event) =>
-                      updateForm(form, { unitDeveloping: event.target.checked }, onChange)
+                      updateForm(form, { unitDeveloping: event.target.checked }, setForm)
                     }
                     disabled={saving}
                   />
@@ -490,7 +490,7 @@ export function NetworkCallsignDrawer({
               <TextField
                 label="Посада"
                 value={form.position}
-                onChange={(event) => updateForm(form, { position: event.target.value }, onChange)}
+                onChange={(event) => updateForm(form, { position: event.target.value }, setForm)}
                 disabled={saving}
                 fullWidth
                 size="small"
@@ -500,7 +500,7 @@ export function NetworkCallsignDrawer({
               <TextField
                 label="ПІП"
                 value={form.fullName}
-                onChange={(event) => updateForm(form, { fullName: event.target.value }, onChange)}
+                onChange={(event) => updateForm(form, { fullName: event.target.value }, setForm)}
                 disabled={saving}
                 fullWidth
                 size="small"
@@ -510,7 +510,7 @@ export function NetworkCallsignDrawer({
               <TextField
                 label="Коментар"
                 value={form.comment}
-                onChange={(event) => updateForm(form, { comment: event.target.value }, onChange)}
+                onChange={(event) => updateForm(form, { comment: event.target.value }, setForm)}
                 disabled={saving}
                 fullWidth
                 multiline
@@ -525,7 +525,7 @@ export function NetworkCallsignDrawer({
                     label="Частота *"
                     value={form.radioFreq}
                     onChange={(event) =>
-                      updateForm(form, { radioFreq: event.target.value }, onChange)
+                      updateForm(form, { radioFreq: event.target.value }, setForm)
                     }
                     onBlur={() => setRadioFreqTouched(true)}
                     disabled={saving}
@@ -558,7 +558,11 @@ export function NetworkCallsignDrawer({
         <Button onClick={onClose} disabled={saving}>
           Скасувати
         </Button>
-        <Button variant="contained" onClick={onSave} disabled={saving || !canSave}>
+        <Button
+          variant="contained"
+          onClick={() => form && onSave(form)}
+          disabled={saving || !canSave}
+        >
           {saving ? `Збереження${ELLIPSIS}` : 'Зберегти'}
         </Button>
       </Box>
