@@ -38,6 +38,15 @@ verify their original destination and supply the matching `--agent-host`
 explicitly for recovery. Recovery retains the existing namespace and identity
 checks. See the [rollout and recovery procedure](../../echo-ai-agent/CONTROL_PANEL.md#upgrade-and-recovery).
 
+Host actions that take their locks before changing anything (inventory, job,
+container, replace, finish, cleanup) retry with backoff for about 40 seconds
+when an agent VM lock is busy. The dispatcher holds the shared lock while it
+serves other servers' agents, so a single busy lock no longer stops a rollout.
+If recovery has to restore a harness the running Echo build doesn't support, AI
+stays disabled and the local journal records `pending_enable`. The next upgrade
+of that server switches AI back on even though the server now reports it off.
+A successful upgrade clears the flag.
+
 Before each authenticated connection test during rollout, Echo refreshes the
 existing agent's scope and direct private-group memberships from its linked
 human. It preserves agent and container identities and rejects revoked human

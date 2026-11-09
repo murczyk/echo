@@ -20,6 +20,9 @@ const rootEntry: DeviceFileRoot = {
   parentEntryId: null,
   kind: 'directory',
   name: 'C:\\',
+  fileMetadataCreatedAt: null,
+  fileMetadataModifiedAt: null,
+  contentUploadedAt: null,
   createdAt: NOW,
   updatedAt: NOW,
   tags: [],
@@ -91,7 +94,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('DeviceFileTree counters', () => {
+describe('DeviceFileTree', () => {
   it('#3778 remounts archive revision A to B to A and keeps a same-name physical file separate', async () => {
     const calls: number[] = [];
     vi.stubGlobal(
@@ -162,6 +165,7 @@ describe('DeviceFileTree counters', () => {
       sourceFileState: null,
       createdAt: NOW,
       updatedAt: NOW,
+      contentUploadedAt: null,
       fileMetadataCreatedAt: null,
       fileMetadataModifiedAt: null,
       tags: [],
@@ -219,8 +223,8 @@ describe('DeviceFileTree counters', () => {
     expect(container?.querySelector('[aria-label="Синхронізовані файлові корені"]')).not.toBeNull();
     expect(container?.querySelector('[aria-label="Завантаження кількості файлів"]')).toBeNull();
     expect(
-      container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),
-    ).toContain('Вибрати каталог C:\\ як область пошуку');
+      container?.querySelector('[aria-label^="Відкрити папку"]')?.getAttribute('aria-label'),
+    ).toContain('Відкрити папку C:\\');
 
     act(() => {
       root?.render(
@@ -233,10 +237,10 @@ describe('DeviceFileTree counters', () => {
       );
     });
 
-    expect(container?.textContent?.replace(/\s/g, '')).toContain('12345');
+    expect(container?.textContent?.replace(/\s/g, '')).not.toContain('12345');
     expect(container?.textContent).not.toContain('Каунтери недоступні');
     expect(
-      container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),
-    ).toContain('Вибрати каталог C:\\ як область пошуку');
+      container?.querySelector('[aria-label^="Відкрити папку"]')?.getAttribute('aria-label'),
+    ).toContain('Відкрити папку C:\\');
   });
 });

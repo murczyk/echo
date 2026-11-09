@@ -5,7 +5,7 @@ import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
 for (const analysis of [false, true]) {
-  test(`@regression #3527 ${analysis ? 'Analysis' : 'Duty'} aggregates parents locally and requests their children`, async ({
+  test(`@regression #3527 ${analysis ? 'Analysis' : 'Duty'} uses backend parent counts and requests their children`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1500, height: 1000 });
@@ -27,7 +27,8 @@ for (const analysis of [false, true]) {
       releaseCatalog = resolve;
     });
     let catalogRequests = 0;
-    let catalogReleased = false;
+    let catalogRecovered = false;
+    let catalogRevision = '3527';
     await page.route('**/api/sigint/units', async (route) => {
       await route.fulfill({
         json: transformCamelToSnake({
@@ -41,20 +42,19 @@ for (const analysis of [false, true]) {
     const armyPath = 'group:0:Регіон|1:Округ|2:6 А';
     const brigadePath = `${armyPath}|3:__EMPTY__|4:__EMPTY__|5:27 омсбр`;
     await page.route('**/api/sigint/units/hierarchy', async (route) => {
-      const initialRequest = !catalogReleased;
       catalogRequests += 1;
       await catalogGate;
-      if (initialRequest) {
+      if (!catalogRecovered) {
         await route.fulfill({ status: 503, body: 'Temporary catalog failure #3527' });
         return;
       }
-      if (route.request().postDataJSON().known_revision === '3527') {
+      if (route.request().postDataJSON().known_revision === catalogRevision) {
         await route.fulfill({ json: null });
         return;
       }
       await route.fulfill({
         json: transformCamelToSnake({
-          revision: '3527',
+          revision: catalogRevision,
           groups: [
             { id: 'group:0:Регіон', label: 'Регіон', level: 0, parentIndex: null },
             { id: 'group:0:Регіон|1:Округ', label: 'Округ', level: 1, parentIndex: 0 },
@@ -95,6 +95,21 @@ for (const analysis of [false, true]) {
             name: unit.name,
             count: index + (filtered ? 2 : 5) + countOffset,
           })),
+          options: [
+            ...units.map((unit, index) => ({
+              value: `unit-id:${unit.id}`,
+              label: unit.name,
+              count: index + (filtered ? 2 : 5) + countOffset,
+            })),
+            ...[
+              [armyPath, '6 А'],
+              [brigadePath, '27 омсбр'],
+            ].map(([path, label]) => ({
+              value: `unit-parent:${path}`,
+              label,
+              count: (filtered ? 5 : 11) + countOffset * 2,
+            })),
+          ],
         },
       });
     });
@@ -118,10 +133,10 @@ for (const analysis of [false, true]) {
     await expect.poll(() => catalogRequests).toBeGreaterThan(0);
     if (!analysis) await expect.poll(() => countRequests).toBeGreaterThan(0);
     const initialCatalogRequests = catalogRequests;
-    catalogReleased = true;
     releaseCatalog();
     await expect(page.getByText(/Не вдалося завантажити ієрархію підрозділів/)).toBeVisible();
     await expect.poll(() => catalogRequests).toBeGreaterThan(initialCatalogRequests);
+    catalogRecovered = true;
     const catalogBeforeFocus = catalogRequests;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect.poll(() => catalogRequests).toBe(catalogBeforeFocus + 1);
@@ -197,6 +212,17 @@ for (const analysis of [false, true]) {
       await expect(page.getByRole('button', { name: '27 омсбр (7)', exact: true })).toBeVisible({
         timeout: 10000,
       });
+    }
+    const countBeforeReconciliation = countRequests;
+    catalogRevision = '3527-reconciled';
+    countOffset = 2;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect.poll(() => countRequests).toBeGreaterThan(countBeforeReconciliation);
+    if (analysis) {
+      await combo.click();
+      await expect(page.getByRole('option', { name: /^27 омсбр/ })).toContainText('9');
+    } else {
+      await expect(page.getByRole('button', { name: '27 омсбр (9)', exact: true })).toBeVisible();
     }
   });
 }

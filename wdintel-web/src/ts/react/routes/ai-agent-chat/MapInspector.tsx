@@ -203,14 +203,19 @@ function RecordList({
   );
 }
 
+export function recordPosition(record: AiAgentMapRecord): string {
+  const position = `${record.originalX} ${record.originalY}`.trim();
+  if (record.coordinateSystem === 'wgs84') return `WGS-84: ${position}`;
+  if (record.coordinateSystem === 'mgrs') return `MGRS: ${position}`;
+  return `${record.coordinateSystem}: X=${record.originalX}, Y=${record.originalY}`;
+}
+
 function RecordDetails({ record }: { record: AiAgentMapRecord }) {
   return (
     <div className="ai-map-record-details" data-testid="ai-map-record-details">
       <h3>{record.name}</h3>
       <p>{record.observationDatetime?.replace('T', ' ') || 'Дата не вказана'}</p>
-      <p>
-        {record.coordinateSystem}: X={record.originalX}, Y={record.originalY}
-      </p>
+      <p>{recordPosition(record)}</p>
       {record.warnings.map((warning) => (
         <p key={warning} className="text-echo-warning">
           {warning}

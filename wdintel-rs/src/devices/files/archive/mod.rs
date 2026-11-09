@@ -31,6 +31,7 @@ mod manifest_fixtures;
 mod manifest_tests;
 pub(super) mod query;
 mod routes;
+pub(super) mod search;
 #[cfg(test)]
 mod storage_tests;
 pub(super) mod tree;

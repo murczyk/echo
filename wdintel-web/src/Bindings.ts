@@ -497,6 +497,7 @@ export type InboxMessage = {
   checked: boolean;
   important: boolean;
   aiImportant: boolean;
+  importantByMyOrganism: boolean;
   bookmarked: boolean;
   timestamp: number | null;
   createdAt: number | null;
@@ -511,6 +512,7 @@ export type InboxMessage = {
   post: string | null;
   postId: number | null;
   unit: string | null;
+  unitDisplay: string | null;
   unitIds: Array<number>;
   callsignTokens: Array<CnCallsign> | null;
   signalTokens: Array<CnSignal> | null;
@@ -1889,10 +1891,12 @@ export type ImportantAddReq = {
 
 export type ImportantRmReq = {
   messageId: number;
+  keepAiImportance: boolean;
 };
 
 export type ImportantMutationRsp = {
   important: boolean;
+  importantByMyOrganism: boolean;
 };
 
 export type ImportantListReq = {
@@ -2468,22 +2472,31 @@ export type RemoveDeviceAudioForwardingReq = {
 };
 
 export type DeviceFileRoot = {
+  isFavorite: boolean;
   entryId: string;
   deviceId: string;
   parentEntryId: string | null;
   kind: FileEntryKind;
   name: string;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  contentUploadedAt: string | null;
   createdAt: string;
   updatedAt: string;
   tags: Array<AnalyticsTag>;
 };
 
 export type FileBreadcrumb = {
+  archiveRevision: number | null;
   entryId: string;
   name: string;
 };
 
 export type DeviceFileTreeEntry = {
+  isFavorite: boolean;
+  isViewed: boolean;
+  sizeBytes: number | null;
+  contentUploadedAt: string | null;
   archive: DeviceArchiveSummary | null;
   isArchive: boolean;
   archiveOrigin: DeviceArchiveOrigin | null;
@@ -2547,6 +2560,7 @@ export type LocateDeviceFileRsp = {
 };
 
 export type ListDeviceFileRootsReq = {
+  filters: DeviceFileFilters | null;
   syncId: string | null;
   deviceId: string;
 };
@@ -2609,7 +2623,77 @@ export type RebuildDeviceStatsRsp = {
   batchCount: number;
 };
 
+export type SetDeviceFileFavoriteReq = {
+  deviceId: string;
+  entryId: string;
+  favorite: boolean;
+};
+
+export type MarkDeviceFileViewedReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+};
+
+export type DeviceFileMarkers = {
+  isFavorite: boolean;
+  isViewed: boolean;
+};
+
+export type DeviceFileSortBy =
+  | 'name'
+  | 'size'
+  | 'uploaded_at'
+  | 'created_at'
+  | 'modified_at'
+;
+
+export type DeviceFileSortDirection =
+  | 'ascending'
+  | 'descending'
+;
+
+export type DeviceFileFilters = {
+  fileTypes: Array<DeviceFileType>;
+  extensions: Array<string>;
+  modifiedFrom: string | null;
+  modifiedTo: string | null;
+  hasContent: boolean | null;
+  favoritesOnly: boolean;
+  unviewedOnly: boolean;
+  archiveFailed: boolean;
+  archiveEncrypted: boolean;
+  tagIds: Array<string>;
+  tagMatch: TagMatch | null;
+  untagged: boolean;
+};
+
+export type DeviceFileType =
+  | 'folder'
+  | 'archive'
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'document'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'map'
+  | 'code'
+  | 'other'
+;
+
+export type DeviceFileFilterOptions = {
+  extensions: Array<string>;
+};
+
 export type BrowseDeviceFilesReq = {
+  filters: DeviceFileFilters | null;
+  sortBy: DeviceFileSortBy | null;
+  sortDirection: DeviceFileSortDirection | null;
+  favoritesOnly: boolean | null;
+  unviewedOnly: boolean | null;
+  archiveFailed: boolean | null;
+  archiveEncrypted: boolean | null;
   archiveRevision: number | null;
   syncId: string | null;
   deviceId: string;
@@ -2624,12 +2708,24 @@ export type BrowseDeviceFilesReq = {
 };
 
 export type BrowseDeviceFilesRsp = {
+  archiveSource: DeviceFileContentRef | null;
   breadcrumbs: Array<FileBreadcrumb>;
   entries: Array<DeviceFileTreeEntry>;
   nextCursor: string | null;
 };
 
 export type SearchDeviceFilesReq = {
+  archiveRevision: number | null;
+  globalSearch: boolean | null;
+  rankByRelevance: boolean | null;
+  filters: DeviceFileFilters | null;
+  sortBy: DeviceFileSortBy | null;
+  sortDirection: DeviceFileSortDirection | null;
+  hasContent: boolean | null;
+  favoritesOnly: boolean | null;
+  unviewedOnly: boolean | null;
+  archiveFailed: boolean | null;
+  archiveEncrypted: boolean | null;
   syncId: string | null;
   deviceId: string;
   scopeEntryId: string;
@@ -4669,6 +4765,7 @@ export type ListNetworkCallsignsReq = {
   networkId: number;
   sortBy: Array<ListNetworkCallsignsSortBy> | null;
   period: NetworkFreqCallsignsPeriod | null;
+  includeActivityInfo: boolean | null;
 };
 
 export type ListNetworkCallsignsRes = {
@@ -5712,6 +5809,13 @@ export type TagStatsRsp = {
 
 export type UnitStatsRsp = {
   units: Array<AnalysisStatsUnit>;
+  options: Array<UnitStatsOption>;
+};
+
+export type UnitStatsOption = {
+  value: string;
+  label: string;
+  count: number;
 };
 
 export type LocationStatsRsp = {
@@ -5786,6 +5890,7 @@ export type SystemSettingsCurrentRsp = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5835,6 +5940,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5844,6 +5950,8 @@ export type SystemSettingsItem = {
   messengerMediaCacheRetentionHours: number;
   messengerMediaCacheMaxSizeGib: number;
   messengerMediaCacheMinFreeGib: number;
+  signozMetricsEnabled: boolean;
+  signozMetricsEndpoint: string | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -5887,6 +5995,7 @@ export type CreateSystemSettingsReq = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
+  dutySelectedGroupsEnabled: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number | null;
@@ -5896,6 +6005,8 @@ export type CreateSystemSettingsReq = {
   messengerMediaCacheRetentionHours: number;
   messengerMediaCacheMaxSizeGib: number;
   messengerMediaCacheMinFreeGib: number;
+  signozMetricsEnabled: boolean | null;
+  signozMetricsEndpoint: string | null;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -8146,4 +8257,6 @@ export type UserDutySettingsDto = {
   messageSortBy: MessageTimeBasis;
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  minimalReportWindowEnabled: boolean;
+  importantOnlyMyOrganism: boolean;
 };

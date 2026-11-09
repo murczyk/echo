@@ -5,16 +5,8 @@ import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from '../document-preview.types';
 import { getDocumentPreviewCapabilities } from '../document-preview-capabilities';
-import {
-  clamp,
-  DOCUMENT_PREVIEW_ZOOM_MAX,
-  DOCUMENT_PREVIEW_ZOOM_MARKS,
-  DOCUMENT_PREVIEW_ZOOM_MIN,
-  DOCUMENT_PREVIEW_ZOOM_STEP,
-} from '../document-preview-utils';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from '../message-card-document-utils';
 import { formatSizeBytes } from '../message-card-image-utils';
-import { getNextWheelZoom, isInteractivePreviewTarget } from '../message-card-image-preview-utils';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import {
   getOcrDownloadItems,
@@ -24,8 +16,6 @@ import {
   OcrSplitPreview,
 } from '../attachment-preview/OcrPreview';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
-import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
-import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
@@ -37,8 +27,9 @@ import {
   type AttachmentPreviewReportDraft,
   type AttachmentPreviewReportVisibility,
 } from '../attachment-preview/ReportTextPreview';
-import { DocumentFilePreview } from './DocumentFilePreview';
+import { DocumentFilePreviewStage } from './DocumentFilePreviewStage';
 import { ZipDocumentPreview } from './ZipDocumentPreview';
+import { MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_CONTROLS_BOTTOM_PX } from '../attachment-preview/message-card-preview-config';
 
 function NonZipDocumentAttachmentPreviewRenderer({
   document,
@@ -68,8 +59,11 @@ function NonZipDocumentAttachmentPreviewRenderer({
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
+  const mobileViewport = isMobile || touchLandscape;
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
+  const carouselAboveControls = currentDocumentKind === 'xls' || currentDocumentKind === 'xlsx';
   const currentDocumentCapabilities = getDocumentPreviewCapabilities(currentDocument.kind);
   const canZoom = currentDocumentCapabilities?.zoomable === true;
   const canSwipeCarousel = currentDocumentCapabilities?.carouselSwipeable === true;
@@ -114,19 +108,8 @@ function NonZipDocumentAttachmentPreviewRenderer({
     }
   }, [canZoom, zoom]);
 
-  const setPreviewZoom = (nextZoom: number) => {
-    setZoom(clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX));
-  };
-
-  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
-
   const handleInfoClick = (event: MouseEvent<HTMLButtonElement>) => {
     setInfoAnchorEl(event.currentTarget);
-  };
-
-  const handleStageDoubleClick = () => {
-    if (!canZoom) return;
-    setZoom((currentZoom) => (currentZoom > 100 ? 100 : 150));
   };
 
   const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardDocument['ocr']>) => {
@@ -137,132 +120,28 @@ function NonZipDocumentAttachmentPreviewRenderer({
     setSummaryVisible(false);
   }, []);
 
-  useEffect(() => {
-    if (stageEl === null || !canZoom) return;
-
-    let touchStartDist = 0;
-    let touchStartZoom = 100;
-
-    const handleStageWheelNative = (event: WheelEvent) => {
-      if (isInteractivePreviewTarget(event.target)) return;
-
-      // Ctrl / Cmd + scroll OR trackpad pinch (ctrlKey) -> Zoom in/out content area
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        setZoom((currentZoom) =>
-          getNextWheelZoom(currentZoom, event.deltaY, event.deltaMode, stageEl.clientHeight),
-        );
-      }
-      // Regular scroll -> Just scroll content naturally
-    };
-
-    const handleTouchStart = (event: TouchEvent) => {
-      if (event.touches.length === 2) {
-        const t1 = event.touches[0];
-        const t2 = event.touches[1];
-        if (!t1 || !t2) return;
-        touchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        setZoom((currentZoom) => {
-          touchStartZoom = currentZoom;
-          return currentZoom;
-        });
-      }
-    };
-
-    const handleTouchMove = (event: TouchEvent) => {
-      if (event.touches.length === 2 && touchStartDist > 0) {
-        event.preventDefault();
-        const t1 = event.touches[0];
-        const t2 = event.touches[1];
-        if (!t1 || !t2) return;
-        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        const scale = dist / touchStartDist;
-        const nextZoom = clamp(
-          touchStartZoom * scale,
-          DOCUMENT_PREVIEW_ZOOM_MIN,
-          DOCUMENT_PREVIEW_ZOOM_MAX,
-        );
-        setZoom(nextZoom);
-      }
-    };
-
-    const handleTouchEnd = () => {
-      touchStartDist = 0;
-    };
-
-    let gestureStartZoom = 100;
-
-    const handleGestureStart = (event: Event) => {
-      event.preventDefault();
-      setZoom((currentZoom) => {
-        gestureStartZoom = currentZoom;
-        return currentZoom;
-      });
-    };
-
-    const handleGestureChange = (event: Event) => {
-      event.preventDefault();
-      const gestureEvent = event as unknown as { scale: number };
-      if (typeof gestureEvent.scale === 'number') {
-        const nextZoom = clamp(
-          gestureStartZoom * gestureEvent.scale,
-          DOCUMENT_PREVIEW_ZOOM_MIN,
-          DOCUMENT_PREVIEW_ZOOM_MAX,
-        );
-        setZoom(nextZoom);
-      }
-    };
-
-    const handleGestureEnd = (event: Event) => {
-      event.preventDefault();
-    };
-
-    stageEl.addEventListener('wheel', handleStageWheelNative, { passive: false });
-    stageEl.addEventListener('gesturestart', handleGestureStart, { passive: false });
-    stageEl.addEventListener('gesturechange', handleGestureChange, { passive: false });
-    stageEl.addEventListener('gestureend', handleGestureEnd, { passive: false });
-    stageEl.addEventListener('touchstart', handleTouchStart, { passive: true });
-    stageEl.addEventListener('touchmove', handleTouchMove, { passive: false });
-    stageEl.addEventListener('touchend', handleTouchEnd, { passive: true });
-    stageEl.addEventListener('touchcancel', handleTouchEnd, { passive: true });
-
-    return () => {
-      stageEl.removeEventListener('wheel', handleStageWheelNative);
-      stageEl.removeEventListener('gesturestart', handleGestureStart);
-      stageEl.removeEventListener('gesturechange', handleGestureChange);
-      stageEl.removeEventListener('gestureend', handleGestureEnd);
-      stageEl.removeEventListener('touchstart', handleTouchStart);
-      stageEl.removeEventListener('touchmove', handleTouchMove);
-      stageEl.removeEventListener('touchend', handleTouchEnd);
-      stageEl.removeEventListener('touchcancel', handleTouchEnd);
-    };
-  }, [canZoom, stageEl]);
-
   const sourceStage = (
-    <MessageCardAttachmentPreviewStage
-      ref={setStageEl}
-      kind="document"
-      onDoubleClick={handleStageDoubleClick}
-      onPrimaryClick={(_, region) => {
-        if (region === 'background') onClose();
+    <DocumentFilePreviewStage
+      source={{
+        key: `${currentDocument.kind}:${currentDocument.href}`,
+        fileName: currentDocument.fileName ?? '',
+        extension: '',
+        contentType: currentDocument.contentType ?? '',
+        sizeBytes: currentDocument.sizeBytes ?? null,
+        originalHref: currentDocument.href,
       }}
-    >
-      <DocumentFilePreview
-        source={{
-          key: `${currentDocument.kind}:${currentDocument.href}`,
-          fileName: currentDocument.fileName ?? '',
-          extension: '',
-          contentType: currentDocument.contentType ?? '',
-          sizeBytes: currentDocument.sizeBytes ?? null,
-          originalHref: currentDocument.href,
-        }}
-        kind={currentDocument.kind}
-        zoom={dialogZoom}
-      />
-      {canZoom ? (
-        <AttachmentPreviewZoomBadge zoom={dialogZoom} onResetZoom={() => setZoom(100)} />
-      ) : null}
-    </MessageCardAttachmentPreviewStage>
+      kind={currentDocument.kind}
+      zoom={dialogZoom}
+      onZoomChange={setZoom}
+      onBackgroundClick={onClose}
+      zoomBadgePosition={{
+        alignWithCarousel: mobileViewport,
+        bottom:
+          mobileViewport && carouselAboveControls
+            ? `calc(${MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_CONTROLS_BOTTOM_PX}px + env(safe-area-inset-bottom, 0px))`
+            : undefined,
+      }}
+    />
   );
   const stage = (
     <OcrSplitPreview
@@ -372,11 +251,22 @@ function NonZipDocumentAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
+      mobileChrome={ocrVisible && ocrFullPane && !isMobile ? 'fixed' : 'toggle'}
+      carouselAboveControls={carouselAboveControls}
+      headerInFlow={ocrVisible || summaryVisible || (reportDraft != null && reportVisible)}
       stage={stage}
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={canSwipeCarousel && dialogZoom <= 100}
+      onScrollBoundaryDismiss={
+        dialogZoom <= 100 &&
+        !ocrVisible &&
+        !summaryVisible &&
+        !(reportDraft != null && reportVisible)
+          ? closeDialog
+          : undefined
+      }
     />
   );
 }

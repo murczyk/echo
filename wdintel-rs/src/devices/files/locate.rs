@@ -46,7 +46,19 @@ pub(crate) async fn locate(
     req: Json<LocateDeviceFileReq>,
 ) -> Result<Json<LocateDeviceFileRsp>, AppError> {
     authorize(&env, &user, &req.device_id).await.c(h!())?;
-    Ok(Json(load(&env, &req).await.c(h!())?))
+    let mut response = load(&env, &req).await.c(h!())?;
+    let login = crate::users::login_id_from_identity(&user).c(h!())?;
+    super::markers::hydrate(
+        &env,
+        login,
+        std::slice::from_mut(&mut response.file),
+    )
+    .await
+    .c(h!())?;
+    super::markers::hydrate(&env, login, &mut response.ancestors)
+        .await
+        .c(h!())?;
+    Ok(Json(response))
 }
 
 pub(in crate::devices) async fn load(

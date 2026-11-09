@@ -3,12 +3,15 @@ mod bl;
 pub(crate) mod content;
 mod cursor;
 mod error;
+pub mod listing_filters;
 mod ltree;
+pub(crate) mod markers;
 mod metadata;
 mod path;
 pub(crate) mod preview;
 pub(in crate::devices) mod query;
 pub(crate) mod sessions;
+mod sorting;
 pub(crate) mod stats;
 pub(crate) mod sync;
 #[cfg(test)]
@@ -70,27 +73,93 @@ pub(crate) async fn roots(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
-    if body.sync_id.is_some() {
-        return Ok(Json(
-            sessions::read::roots(
+    let listing_filters = body.filters.clone();
+    let device_id = parse_uuid(&body.device_id);
+    let sync_id = body.sync_id.as_deref().map(parse_uuid);
+    let mut response = if body.sync_id.is_some() {
+        sessions::read::roots(
+            &env.dbx,
+            env.file_registry_db().c(h!())?,
+            &login,
+            body,
+        )
+        .await
+        .c(h!())?
+    } else {
+        map_roots(
+            bl::list_roots(
                 &env.dbx,
                 env.file_registry_db().c(h!())?,
                 &login,
-                body,
+                parse_uuid(&body.device_id),
             )
             .await
             .c(h!())?,
-        ));
+        )
+    };
+    markers::hydrate_roots(&env, &mut response.roots)
+        .await
+        .c(h!())?;
+    if let Some(filters) = &listing_filters {
+        let ids = response
+            .roots
+            .iter()
+            .map(|root| parse_uuid(&root.entry_id))
+            .collect();
+        let matched = listing_filters::matching_ids(
+            &env,
+            login.id,
+            listing_filters::ListingFilterScope {
+                device: device_id,
+                sync: sync_id,
+                archive: None,
+            },
+            ids,
+            filters,
+            true,
+        )
+        .await
+        .c(h!())?;
+        response
+            .roots
+            .retain(|root| matched.contains(&root.entry_id));
     }
-    let roots = bl::list_roots(
+    Ok(Json(response))
+}
+
+#[post("/api/device/files/filter-options")]
+pub(crate) async fn filter_options(
+    env: Data<Env>,
+    user: Identity,
+    Json(body): Json<ListDeviceFileRootsReq>,
+) -> Result<Json<listing_filters::DeviceFileFilterOptions>, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    let device = parse_uuid(&body.device_id);
+    authorize_file_registry_access(
         &env.dbx,
-        env.file_registry_db()?,
         &login,
-        parse_uuid(&body.device_id),
+        device,
+        FileRegistryDeviceAccess::Read,
     )
     .await
     .c(h!())?;
-    Ok(Json(map_roots(roots)))
+    let sync = body.sync_id.as_deref().map(parse_uuid);
+    if let Some(sync) = sync {
+        sessions::authorize(
+            &env.dbx,
+            env.file_registry_db().c(h!())?,
+            &login,
+            device,
+            sync,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(Json(
+        listing_filters::options(&env, device, sync).await.c(h!())?,
+    ))
 }
 #[post("/api/device/files/subtree-counts")]
 pub(crate) async fn subtree_counts(
@@ -172,22 +241,101 @@ pub(crate) async fn browse(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    Ok(Json(browse_marked(&env, &login, body).await.c(h!())?))
+}
+
+async fn browse_marked(
+    env: &Env,
+    login: &crate::entities::login::Model,
+    mut body: BrowseDeviceFilesReq,
+) -> Result<BrowseDeviceFilesRsp, AppError> {
+    let filters = markers::Filters {
+        has_content: if body.filters.is_none() {
+            body.has_content
+        } else {
+            None
+        },
+        favorites_only: body.filters.is_none()
+            && body.favorites_only.unwrap_or(false),
+        unviewed_only: body.filters.is_none()
+            && body.unviewed_only.unwrap_or(false),
+        archive_failed: body.filters.is_none()
+            && body.archive_failed.unwrap_or(false),
+        archive_encrypted: body.filters.is_none()
+            && body.archive_encrypted.unwrap_or(false),
+    };
+    let limit = body
+        .limit
+        .unwrap_or(crate::devices::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
+    let mut response = browse_page(env, login, body.clone()).await.c(h!())?;
+    markers::filter_entries(
+        env,
+        login.id,
+        &mut response.entries,
+        filters,
+        true,
+    )
+    .await
+    .c(h!())?;
+    filter_browse_listing(env, login.id, &body, &mut response)
+        .await
+        .c(h!())?;
+    let mut pages = 1;
+    while (filters.active() || body.filters.is_some())
+        && pages < crate::devices::config::DEVICE_FILE_MARKER_SCAN_MAX_PAGES
+        && response.entries.len() < limit as usize
+        && response.next_cursor.is_some()
+    {
+        pages += 1;
+        body.cursor = response.next_cursor.take();
+        body.limit = Some(limit - response.entries.len() as u64);
+        let mut page = browse_page(env, login, body.clone()).await.c(h!())?;
+        markers::filter_entries(
+            env,
+            login.id,
+            &mut page.entries,
+            filters,
+            true,
+        )
+        .await
+        .c(h!())?;
+        filter_browse_listing(env, login.id, &body, &mut page)
+            .await
+            .c(h!())?;
+        response.entries.extend(page.entries);
+        response.next_cursor = page.next_cursor;
+    }
+    Ok(response)
+}
+
+async fn browse_page(
+    env: &Env,
+    login: &crate::entities::login::Model,
+    mut body: BrowseDeviceFilesReq,
+) -> Result<BrowseDeviceFilesRsp, AppError> {
+    if body.filters.is_some() {
+        body.has_content = None;
+        body.tag_ids = None;
+        body.tag_match = None;
+        body.untagged = None;
+    }
     let device_id = parse_uuid(&body.device_id);
     if let Some(response) = archive::tree::browse(
         &env.dbx,
         env.file_registry_db().c(h!())?,
-        &login,
+        login,
         &body,
     )
-    .await?
+    .await
+    .c(h!())?
     {
-        return Ok(Json(response));
+        return Ok(response);
     }
     if body.sync_id.is_some() {
         let mut response = sessions::read::browse(
             &env.dbx,
             env.file_registry_db().c(h!())?,
-            &login,
+            login,
             body,
         )
         .await
@@ -199,27 +347,36 @@ pub(crate) async fn browse(
         )
         .await
         .c(h!())?;
-        return Ok(Json(response));
+        return Ok(response);
     }
-    let result = bl::browse(
-        &env.dbx,
-        env.file_registry_db()?,
-        &login,
-        BrowseFilesCommand {
-            device_id: parse_uuid(&body.device_id),
-            parent_entry_id: parse_uuid(&body.parent_entry_id),
-            include_breadcrumbs: body.include_breadcrumbs.unwrap_or(true),
-            limit: body.limit,
-            cursor: body.cursor,
-            tag_ids: body.tag_ids.unwrap_or_default(),
-            tag_match: body.tag_match,
-            untagged: body.untagged.unwrap_or(false),
-            has_content: body.has_content,
-        },
-    )
-    .await
+    let sort = sorting::FileListingSort::new(body.sort_by, body.sort_direction);
+    let cursor_scope =
+        sessions::read::browse_scope_key("sorted-browse", &body).c(h!())?;
+    let cursor = sort
+        .decode_cursor(body.cursor.clone(), &cursor_scope)
+        .c(h!())?;
+    let command = BrowseFilesCommand {
+        device_id: parse_uuid(&body.device_id),
+        parent_entry_id: parse_uuid(&body.parent_entry_id),
+        include_breadcrumbs: body.include_breadcrumbs.unwrap_or(true),
+        limit: body.limit,
+        cursor,
+        tag_ids: body.tag_ids.unwrap_or_default(),
+        tag_match: body.tag_match,
+        untagged: body.untagged.unwrap_or(false),
+        has_content: body.has_content,
+    };
+    let files = env.file_registry_db().c(h!())?;
+    let result = if sort == Default::default() {
+        bl::browse(&env.dbx, files, login, command).await
+    } else {
+        bl::browse_sorted(&env.dbx, files, login, command, sort).await
+    }
     .c(h!())?;
+
     let mut response = map_browse(result).c(h!())?;
+    sort.encode_cursor(&mut response.next_cursor, &cursor_scope)
+        .c(h!())?;
     archive::hydrate::tree(
         env.file_registry_db().c(h!())?.connection(),
         device_id,
@@ -227,7 +384,7 @@ pub(crate) async fn browse(
     )
     .await
     .c(h!())?;
-    Ok(Json(response))
+    Ok(response)
 }
 
 #[post("/api/device/files/search")]
@@ -239,12 +396,130 @@ pub(crate) async fn search(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    Ok(Json(search_marked(&env, &login, body).await.c(h!())?))
+}
+
+pub(super) async fn search_marked(
+    env: &Env,
+    login: &crate::entities::login::Model,
+    mut body: SearchDeviceFilesReq,
+) -> Result<SearchDeviceFilesRsp, AppError> {
+    if body.filters.is_some() {
+        body.tag_ids = None;
+        body.tag_match = None;
+        body.untagged = None;
+    }
+    let snapshot = archive::tree::search_snapshot(
+        &env.dbx,
+        env.file_registry_db().c(h!())?,
+        login,
+        &body,
+    )
+    .await
+    .c(h!())?;
+    let archive_source = snapshot.as_ref().map(|snapshot| {
+        archive::types::DeviceFileContentRef {
+            device_id: snapshot.device,
+            file_id: snapshot.job.source_file_id,
+            revision: snapshot.job.source_revision,
+        }
+    });
+    let filters = markers::Filters {
+        has_content: if body.filters.is_none() {
+            body.has_content
+        } else {
+            None
+        },
+        favorites_only: body.filters.is_none()
+            && body.favorites_only.unwrap_or(false),
+        unviewed_only: body.filters.is_none()
+            && body.unviewed_only.unwrap_or(false),
+        archive_failed: body.filters.is_none()
+            && body.archive_failed.unwrap_or(false),
+        archive_encrypted: body.filters.is_none()
+            && body.archive_encrypted.unwrap_or(false),
+    };
+    let limit = body
+        .limit
+        .unwrap_or(crate::devices::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
+    let mut response = search_page(env, login, body.clone(), snapshot.as_ref())
+        .await
+        .c(h!())?;
+    markers::filter_entries(
+        env,
+        login.id,
+        &mut response.entries,
+        filters,
+        false,
+    )
+    .await
+    .c(h!())?;
+    filter_search_listing(
+        env,
+        login.id,
+        &body,
+        archive_source.as_ref(),
+        &mut response.entries,
+    )
+    .await
+    .c(h!())?;
+    let mut pages = 1;
+    while (filters.active() || body.filters.is_some())
+        && pages < crate::devices::config::DEVICE_FILE_MARKER_SCAN_MAX_PAGES
+        && response.entries.len() < limit as usize
+        && response.next_cursor.is_some()
+    {
+        pages += 1;
+        body.cursor = response.next_cursor.take();
+        body.limit = Some(limit - response.entries.len() as u64);
+        let mut page = search_page(env, login, body.clone(), snapshot.as_ref())
+            .await
+            .c(h!())?;
+        markers::filter_entries(
+            env,
+            login.id,
+            &mut page.entries,
+            filters,
+            false,
+        )
+        .await
+        .c(h!())?;
+        filter_search_listing(
+            env,
+            login.id,
+            &body,
+            archive_source.as_ref(),
+            &mut page.entries,
+        )
+        .await
+        .c(h!())?;
+        response.entries.extend(page.entries);
+        response.next_cursor = page.next_cursor;
+    }
+    Ok(response)
+}
+
+async fn search_page(
+    env: &Env,
+    login: &crate::entities::login::Model,
+    body: SearchDeviceFilesReq,
+    snapshot: Option<&archive::tree::Snapshot>,
+) -> Result<SearchDeviceFilesRsp, AppError> {
+    if let Some(snapshot) = snapshot {
+        return Ok(archive::search::search(
+            env.file_registry_db().c(h!())?,
+            snapshot,
+            body,
+        )
+        .await
+        .c(h!())?);
+    }
     let device_id = parse_uuid(&body.device_id);
     if body.sync_id.is_some() {
         let mut response = sessions::read::search(
             &env.dbx,
             env.file_registry_db().c(h!())?,
-            &login,
+            login,
             body,
         )
         .await
@@ -256,44 +531,86 @@ pub(crate) async fn search(
         )
         .await
         .c(h!())?;
-        return Ok(Json(response));
+        return Ok(response);
     }
-    let result = bl::search(
-        &env.dbx,
-        env.file_registry_db()?,
-        &login,
-        SearchFilesCommand {
-            device_id: parse_uuid(&body.device_id),
-            scope_entry_id: parse_uuid(&body.scope_entry_id),
-            filters: RawFileSearchFilters {
-                kinds: body
-                    .kinds
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(map_entry_kind)
-                    .collect(),
-                name_query: body.name_query,
-                mime_types: body.mime_types.unwrap_or_default(),
-                extensions: body.extensions.unwrap_or_default(),
-                file_metadata_modified_from: body
-                    .file_metadata_modified_from
-                    .as_deref()
-                    .map(parse_datetime),
-                file_metadata_modified_to: body
-                    .file_metadata_modified_to
-                    .as_deref()
-                    .map(parse_datetime),
-            },
-            limit: body.limit,
-            cursor: body.cursor,
-            tag_ids: body.tag_ids.unwrap_or_default(),
-            tag_match: body.tag_match,
-            untagged: body.untagged.unwrap_or(false),
+    let sort = sorting::FileListingSort::new(body.sort_by, body.sort_direction);
+    let cursor_scope =
+        sessions::read::scope_key("sorted-search", &body).c(h!())?;
+    let search_mode = body.global_search.unwrap_or(false)
+        || body.rank_by_relevance.unwrap_or(false);
+    let cursor = if search_mode {
+        body.cursor
+            .as_deref()
+            .map(|value| {
+                sessions::cursor::decode(value, &cursor_scope)
+                    .map(cursor::encode)
+            })
+            .transpose()
+            .c(h!())?
+    } else {
+        sort.decode_cursor(body.cursor.clone(), &cursor_scope)
+            .c(h!())?
+    };
+    let command = SearchFilesCommand {
+        device_id: parse_uuid(&body.device_id),
+        scope_entry_id: parse_uuid(&body.scope_entry_id),
+        filters: RawFileSearchFilters {
+            kinds: body
+                .kinds
+                .unwrap_or_default()
+                .into_iter()
+                .map(map_entry_kind)
+                .collect(),
+            name_query: body.name_query,
+            mime_types: body.mime_types.unwrap_or_default(),
+            extensions: body.extensions.unwrap_or_default(),
+            file_metadata_modified_from: body
+                .file_metadata_modified_from
+                .as_deref()
+                .map(parse_datetime),
+            file_metadata_modified_to: body
+                .file_metadata_modified_to
+                .as_deref()
+                .map(parse_datetime),
         },
-    )
-    .await
+        limit: body.limit,
+        cursor,
+        tag_ids: body.tag_ids.unwrap_or_default(),
+        tag_match: body.tag_match,
+        untagged: body.untagged.unwrap_or(false),
+    };
+    let files = env.file_registry_db().c(h!())?;
+    let result = if search_mode {
+        bl::search_with_options(
+            &env.dbx,
+            files,
+            login,
+            command,
+            sort,
+            body.global_search.unwrap_or(false),
+            body.rank_by_relevance.unwrap_or(false),
+        )
+        .await
+    } else if sort == Default::default() {
+        bl::search(&env.dbx, files, login, command).await
+    } else {
+        bl::search_sorted(&env.dbx, files, login, command, sort).await
+    }
     .c(h!())?;
+
     let mut response = map_search(result);
+    if search_mode {
+        if let Some(value) = response.next_cursor.take() {
+            let boundary =
+                cursor::decode(&value).map_err(bl::map_read_error).c(h!())?;
+            response.next_cursor = Some(
+                sessions::cursor::encode(&cursor_scope, boundary).c(h!())?,
+            );
+        }
+    } else {
+        sort.encode_cursor(&mut response.next_cursor, &cursor_scope)
+            .c(h!())?;
+    }
     archive::hydrate::tree(
         env.file_registry_db().c(h!())?.connection(),
         device_id,
@@ -301,7 +618,7 @@ pub(crate) async fn search(
     )
     .await
     .c(h!())?;
-    Ok(Json(response))
+    Ok(response)
 }
 
 #[post("/api/device/files/journal")]
@@ -543,4 +860,68 @@ fn map_entry_kind(kind: ApiFileEntryKind) -> DomainFileEntryKind {
         ApiFileEntryKind::Directory => DomainFileEntryKind::Directory,
         ApiFileEntryKind::File => DomainFileEntryKind::File,
     }
+}
+
+async fn filter_browse_listing(
+    env: &Env,
+    login: uuid::Uuid,
+    body: &BrowseDeviceFilesReq,
+    response: &mut BrowseDeviceFilesRsp,
+) -> anyhow::Result<()> {
+    let scope = listing_filters::ListingFilterScope {
+        device: parse_uuid(&body.device_id),
+        sync: body.sync_id.as_deref().map(parse_uuid),
+        archive: response.archive_source.as_ref(),
+    };
+    filter_listing(
+        env,
+        login,
+        scope,
+        &mut response.entries,
+        body.filters.as_ref(),
+        true,
+    )
+    .await
+    .c(h!())
+}
+
+async fn filter_search_listing(
+    env: &Env,
+    login: uuid::Uuid,
+    body: &SearchDeviceFilesReq,
+    archive: Option<&archive::types::DeviceFileContentRef>,
+    entries: &mut Vec<types::DeviceFileTreeEntry>,
+) -> anyhow::Result<()> {
+    let scope = listing_filters::ListingFilterScope {
+        device: parse_uuid(&body.device_id),
+        sync: body.sync_id.as_deref().map(parse_uuid),
+        archive,
+    };
+    filter_listing(env, login, scope, entries, body.filters.as_ref(), true)
+        .await
+        .c(h!())
+}
+
+async fn filter_listing(
+    env: &Env,
+    login: uuid::Uuid,
+    scope: listing_filters::ListingFilterScope<'_>,
+    entries: &mut Vec<types::DeviceFileTreeEntry>,
+    filters: Option<&listing_filters::DeviceFileFilters>,
+    ancestors: bool,
+) -> anyhow::Result<()> {
+    let Some(filters) = filters else {
+        return Ok(());
+    };
+    let ids = entries
+        .iter()
+        .map(|entry| parse_uuid(&entry.entry_id))
+        .collect();
+    let matched = listing_filters::matching_ids(
+        env, login, scope, ids, filters, ancestors,
+    )
+    .await
+    .c(h!())?;
+    entries.retain(|entry| matched.contains(&entry.entry_id));
+    Ok(())
 }

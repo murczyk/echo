@@ -10,6 +10,7 @@ pub(crate) mod recover;
 pub(in crate::devices) mod repository;
 mod reuse;
 mod spool;
+mod thumbnail;
 pub(crate) mod worker;
 
 #[cfg(test)]
@@ -218,6 +219,7 @@ pub(crate) fn routes() -> impl HttpServiceFactory {
     (
         read::download_content,
         preview::media_content,
+        thumbnail::content,
         reuse::routes(),
         web::resource(COMPLETE_PATH)
             .wrap(actix_web::middleware::from_fn(

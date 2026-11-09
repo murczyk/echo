@@ -1,4 +1,5 @@
-import { Dialog } from '@mui/material';
+import { Dialog, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 
 import { shouldIgnoreArrowNavigation } from '../document-preview-utils';
@@ -30,6 +31,7 @@ import {
   type AttachmentPreviewStageNavigationSide,
 } from './AttachmentPreviewStageCarouselNav';
 import { useBrowserBackOverlay } from '../../../../hooks/use-browser-back-overlay';
+import { useAttachmentPreviewEdgeToEdge } from './use-attachment-preview-edge-to-edge';
 
 const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
 const MESSAGE_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.message-visible';
@@ -78,6 +80,8 @@ function getPreviewDialogLabel(item: MessageCardPreviewItem, previewKind: string
   if (previewKind === 'kmz-map' && item.type === 'kmz') {
     if (item.value.nativeFormat === 'kml') return 'Попередній перегляд KML';
     if (item.value.nativeFormat === 'kmz') return 'Попередній перегляд KMZ';
+    if (item.value.nativeFormat === 'gpx') return 'Попередній перегляд GPX';
+    if (item.value.nativeFormat === 'geojson') return 'Попередній перегляд GeoJSON';
     return 'Попередній перегляд конвертованого KMZ';
   }
   return 'Перегляд документа';
@@ -105,6 +109,11 @@ export function MessageCardAttachmentPreviewDialog({
   const reportTextPreviewEnabled = reportDraft != null;
   const textPreviewKind = reportDraft?.kind ?? 'report';
   const [isEditing, setIsEditing] = useState(false);
+  const narrowViewport = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
+  const mobileViewport = narrowViewport || touchLandscape;
+  const isImageOrVideo = item.type === 'image' || item.type === 'video';
+  useAttachmentPreviewEdgeToEdge(mobileViewport && !isEditing);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const childOverlayOpenRef = useRef(false);
@@ -116,6 +125,10 @@ export function MessageCardAttachmentPreviewDialog({
   const [hoveredStageNavigationSide, setHoveredStageNavigationSide] =
     useState<AttachmentPreviewStageNavigationSide>(null);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
+  const fullscreenExitRef = useRef<(() => void) | null>(null);
+  const registerFullscreenExit = useCallback((exit: (() => void) | null) => {
+    fullscreenExitRef.current = exit;
+  }, []);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
   const registerEditorEscapeHandler = useCallback<RegisterImageEditorEscapeHandler>((handler) => {
@@ -156,6 +169,10 @@ export function MessageCardAttachmentPreviewDialog({
       setDismissChildOverlay((value) => value + 1);
       return false;
     }
+    if (fullscreenExitRef.current) {
+      fullscreenExitRef.current();
+      return false;
+    }
     if (isEditing) {
       editorEscapeHandlerRef.current?.(
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
@@ -181,6 +198,12 @@ export function MessageCardAttachmentPreviewDialog({
           setDismissChildOverlay((value) => value + 1);
           return;
         }
+        if (fullscreenExitRef.current) {
+          consumeEvent(event);
+          fullscreenExitRef.current();
+          return;
+        }
+        if (document.fullscreenElement) return;
         const editorEscapeHandler = editorEscapeHandlerRef.current;
         if (editorEscapeHandler) {
           if (editorEscapeHandler(event)) consumeEvent(event);
@@ -194,7 +217,12 @@ export function MessageCardAttachmentPreviewDialog({
         closeDialog();
         return;
       }
-      if (childOverlayOpen || navigation.count <= 1 || shouldIgnoreArrowNavigation(event.target))
+      if (
+        fullscreenExitRef.current ||
+        childOverlayOpen ||
+        navigation.count <= 1 ||
+        shouldIgnoreArrowNavigation(event.target)
+      )
         return;
 
       if (isEditing && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
@@ -250,6 +278,9 @@ export function MessageCardAttachmentPreviewDialog({
           ...getAttachmentPreviewDialogPaperSx(),
           backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
           ...paperSx,
+          ...(isImageOrVideo || mobileViewport
+            ? { '@supports (height: 100dvh)': { height: '100dvh', maxHeight: '100dvh' } }
+            : {}),
         },
       }}
       BackdropProps={{
@@ -280,6 +311,7 @@ export function MessageCardAttachmentPreviewDialog({
           />
         ) : item.type === 'video' ? (
           <VideoAttachmentPreviewRenderer
+            registerFullscreenExit={registerFullscreenExit}
             video={item.value}
             onChildOverlayChange={onChildOverlayChange}
             dismissChildOverlay={dismissChildOverlay}

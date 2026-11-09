@@ -33,9 +33,11 @@ an ancestor. Inactive units remain eligible; deleted units do not. Units with
 no hierarchy match themselves only. Identical, case-sensitive report names
 combine into one section, unioning locations from contributing rows. Names
 shared across contradictory known reporting-parent contexts are rejected in the editor
-and backend; the existing parent headings remain in the DOCX. Missing hierarchy
-is allowed: units sharing a name use its known parent, or the report name when
-all of them lack hierarchy.
+and backend. DOCX group headings use the configured unit's division, falling
+back to its brigade only when division is absent. No other hierarchy levels
+are used for grouping. Units with neither division nor brigade retain their
+messages and unit sections without a group heading, including when another
+configured unit shares their report name.
 
 Reports and the Analysis checkbox match catalog unit associations (`Parsed`
 and existing `Network` links), regardless of group kind. RER generation retains

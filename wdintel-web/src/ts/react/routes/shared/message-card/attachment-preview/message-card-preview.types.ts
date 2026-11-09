@@ -1,3 +1,4 @@
+import type { NativeMapFormat } from '../kmz/kmz-preview-utils';
 import type { MessageCardDocument } from '../document-preview.types';
 import type { MessageCardImage } from '../message-card-image-utils';
 import type { VideoPreviewSource } from '../message-card-video-utils';
@@ -21,13 +22,15 @@ export type KmzAttachmentPreviewSource = {
   sizeBytes?: number | null;
   contentType?: string | null;
   initialStatus: string;
-  nativeFormat?: 'kml' | 'kmz' | null;
+  nativeFormat?: NativeMapFormat | null;
 };
 
 export type MessageCardPreviewNavigation = {
   index: number;
   count: number;
   disabled?: boolean;
+  previousDisabled?: boolean;
+  nextDisabled?: boolean;
   onPrevious: () => void;
   onNext: () => void;
 };

@@ -258,14 +258,18 @@ where
 {
     let allowed: HashSet<&String> =
         allowed_groups.iter().collect::<HashSet<_>>();
-    let selected_groups = selected_groups.as_ref().map(|groups| {
-        groups
-            .iter()
-            .filter(|key| allowed.contains(key))
-            .cloned()
-            .collect::<Vec<_>>()
-    });
-    let selected_groups = selected_groups.filter(|groups| !groups.is_empty());
+    // An empty selection means "no filter". A selection that matches no
+    // accessible group stays Some(vec![]) and must return nothing, not widen.
+    let selected_groups = selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .map(|groups| {
+            groups
+                .iter()
+                .filter(|key| allowed.contains(key))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
     let selected_senders = selected_senders
         .as_ref()
         .filter(|senders| !senders.is_empty())
@@ -1098,13 +1102,14 @@ fn linked_unit_ids_condition(
             ))
             .eq(message_id),
         )
-        .and_where(
+        .and_where(unit_ids_condition(
             Expr::col((
                 link_alias.clone(),
                 sigint_inbox_item_unit::Column::UnitId,
             ))
-            .is_in(unit_ids.to_vec()),
-        )
+            .into_simple_expr(),
+            unit_ids,
+        ))
         .and_where(
             Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
         );
@@ -1120,6 +1125,22 @@ fn linked_unit_ids_condition(
         query.offset(0);
     }
     Expr::exists(query.to_owned())
+}
+
+fn unit_ids_condition(column: SimpleExpr, unit_ids: &[i64]) -> SimpleExpr {
+    if unit_ids.is_empty() {
+        return Expr::cust("FALSE");
+    }
+    unit_ids
+        .chunks(crate::config::ANALYTICS_UNIT_FILTER_IDS_CHUNK_SIZE)
+        .fold(Condition::any(), |condition, ids| {
+            condition.add(
+                column
+                    .clone()
+                    .is_in(ids.iter().map(|id| Expr::cust(id.to_string()))),
+            )
+        })
+        .into()
 }
 
 pub(crate) fn filter_denied_units_correlated<Q>(
@@ -4010,11 +4031,111 @@ pub async fn summary_table_freq(
     Ok(Json(summary_table_freq_1(&user, &env, &req).await.c(h!())?))
 }
 
-pub async fn summary_table_freq_1(
+/// Frequency activity for the AI agent: the most active rows, bounded and
+/// without the coordinates it never reads.
+#[post("/api/rer/analysis/ai/frequency-summary")]
+pub async fn ai_frequency_summary(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<AiFrequencySummary>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let (login, master_keys) =
+        summary_table_freq_access(&user, &env, &req).await.c(h!())?;
+    let summary = summary_table_freq_without_coordinates_by_login(
+        &login,
+        &env,
+        &req,
+        &master_keys,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(rank_ai_frequency_summary(summary).c(h!())?))
+}
+
+fn rank_ai_frequency_summary(
+    summary: SummaryTableFreq,
+) -> anyhow::Result<AiFrequencySummary> {
+    let mut rows = summary.rows;
+    let total_rows = rows.len();
+    rows.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.freq.cmp(&right.freq))
+    });
+    rows.truncate(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    let row_values_truncated = rows.iter().any(ai_frequency_row_exceeds_limits);
+    let rows = rows.into_iter().map(ai_frequency_summary_row);
+    Ok(AiFrequencySummary {
+        rows: ai_frequency_rows_within_budget(rows).c(h!())?,
+        total_rows,
+        row_values_truncated,
+    })
+}
+
+fn ai_frequency_rows_within_budget(
+    rows: impl Iterator<Item = AiFrequencySummaryRow>,
+) -> anyhow::Result<Vec<AiFrequencySummaryRow>> {
+    let mut remaining = AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES;
+    let mut kept = Vec::new();
+    for row in rows {
+        let bytes = serde_json::to_vec(&row).c(h!())?.len();
+        if bytes > remaining {
+            break;
+        }
+        remaining -= bytes;
+        kept.push(row);
+    }
+    Ok(kept)
+}
+
+fn ai_frequency_value_exceeds_limit(value: &str) -> bool {
+    value.chars().count() > AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
+}
+
+fn ai_frequency_row_exceeds_limits(row: &SummaryTableFreqRow) -> bool {
+    ai_frequency_value_exceeds_limit(&row.freq)
+        || [&row.callsigns, &row.units, &row.locations]
+            .iter()
+            .any(|values| {
+                values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
+                    || values
+                        .iter()
+                        .any(|value| ai_frequency_value_exceeds_limit(value))
+            })
+}
+
+fn ai_frequency_bounded_value(value: String) -> String {
+    value
+        .chars()
+        .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS)
+        .collect()
+}
+
+/// Every string is capped, so no single row can fill the byte budget.
+fn ai_frequency_summary_row(row: SummaryTableFreqRow) -> AiFrequencySummaryRow {
+    let bounded = |values: Vec<String>| {
+        values
+            .into_iter()
+            .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES)
+            .map(ai_frequency_bounded_value)
+            .collect()
+    };
+    AiFrequencySummaryRow {
+        freq: ai_frequency_bounded_value(row.freq),
+        count: row.count,
+        callsigns: bounded(row.callsigns),
+        units: bounded(row.units),
+        locations: bounded(row.locations),
+    }
+}
+
+async fn summary_table_freq_access(
     user: &Identity,
     env: &Env,
     req: &AnalysisStatsReq,
-) -> Result<SummaryTableFreq, AppError> {
+) -> Result<(uuid::Uuid, Vec<String>), AppError> {
     let master_keys =
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
@@ -4023,6 +4144,16 @@ pub async fn summary_table_freq_1(
     require_analysis_device_filter_access(&env.dbx, &login, req)
         .await
         .c(h!())?;
+    Ok((login, master_keys))
+}
+
+pub async fn summary_table_freq_1(
+    user: &Identity,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<SummaryTableFreq, AppError> {
+    let (login, master_keys) =
+        summary_table_freq_access(user, env, req).await.c(h!())?;
     summary_table_freq_by_login(&login, env, req, &master_keys).await
 }
 
@@ -8831,7 +8962,11 @@ async fn unit_stats(
     )
     .await
     .context(h!())?;
-    Ok(Json(UnitStatsRsp { units }))
+    Ok(Json(
+        crate::rer_importer::unit_stats::enrich(&env, units)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/rer/analysis/stats/locations")]
@@ -9459,11 +9594,19 @@ where
                     return Err(err);
                 }
                 let open_circuit = reason == "analytics_error";
-                warn!(
-                    "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
-                    started.elapsed(),
-                    err
-                );
+                if is_expected_analytics_fallback(reason) {
+                    log_expected_analytics_fallback(
+                        "analysis stats count",
+                        reason,
+                        started.elapsed(),
+                    );
+                } else {
+                    warn!(
+                        "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+                        started.elapsed(),
+                        err
+                    );
+                }
                 open_circuit
             }
             Err(_) => {
@@ -9679,9 +9822,17 @@ where
                     return Err(err);
                 }
                 let open_circuit = reason == "analytics_error";
-                warn!(
-                    "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
-                );
+                if is_expected_analytics_fallback(reason) {
+                    log_expected_analytics_fallback(
+                        operation,
+                        reason,
+                        started.elapsed(),
+                    );
+                } else {
+                    warn!(
+                        "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
+                    );
+                }
                 open_circuit
             }
             None => {
@@ -9920,6 +10071,20 @@ fn analytics_failure_reason(
     } else {
         "analytics_error"
     }
+}
+
+/// A coverage miss is a routing decision rather than a failed query: the
+/// attachment search guard has logged why, and PostgreSQL serves the request.
+fn is_expected_analytics_fallback(reason: &str) -> bool {
+    reason == "attachment_history_incomplete"
+}
+
+fn log_expected_analytics_fallback(
+    operation: &str,
+    reason: &str,
+    elapsed: core::time::Duration,
+) {
+    info!(target: "analytics_route", "request_id={} operation={operation:?} route=analytics outcome=fallback reason={reason} elapsed_ms={}", crate::read_query::request_id(), elapsed.as_millis());
 }
 
 fn analytics_pool_is_at_capacity(analytics_conn: &DatabaseConnection) -> bool {

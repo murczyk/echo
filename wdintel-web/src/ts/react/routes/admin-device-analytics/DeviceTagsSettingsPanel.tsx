@@ -212,7 +212,7 @@ export function DeviceTagsSettingsPanel() {
           justifyContent="space-between"
         >
           <Box>
-            <Typography variant="h5" component="h2">
+            <Typography variant="h6" component="h2">
               Теги пристроїв
             </Typography>
             <Typography color="text.secondary">

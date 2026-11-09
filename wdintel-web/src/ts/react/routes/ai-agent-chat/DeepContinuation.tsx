@@ -6,10 +6,11 @@ import { PowerButton } from '../../components/PowerButton';
 import type { AiAgentMessage } from '../../services/api/ai-agent';
 import type { LiveRequest } from './index';
 
-// Follow-ups may legitimately reuse the previous answer without retrieval, and
-// the saved gaps are private, so the prompt has to ask for new searches itself.
+// Follow-ups may legitimately reuse the previous answer without using tools, so the
+// prompt has to ask for the work itself. It stays task-neutral: the unfinished request
+// may be a search, a map or a document.
 export const DEEP_CONTINUATION_PROMPT =
-  'Продовж роботу над попереднім запитом. Порівняй його з попередньою відповіддю, визнач, що не охоплено, і знайди це в джерелах новим пошуком; не обмежуйся переформулюванням попередньої відповіді. Дай повну оновлену відповідь: збережи підтверджені факти з їхніми посиланнями, додай нові та вкажи, що лишилося неповним.';
+  'Продовж попереднє завдання й доведи його до кінця: виконай усе, що лишилося незробленим, і скористайся потрібними інструментами, а не лише попередньою відповіддю. Дай повний оновлений результат, зберігши вже зроблене разом із посиланнями, мапами й документами.';
 
 /**
  * The newest request, when it finished below Deep with incomplete coverage.
@@ -58,7 +59,7 @@ export function DeepContinuationButton({
         disabled={disabled}
         onClick={onClick}
       >
-        Продовжити глибоким аналізом
+        Продовжити в глибокому режимі
       </PowerButton>
       <Typography id={hintId} variant="caption" color="text.secondary">
         {hint}

@@ -38,7 +38,16 @@ export function deviceSectionHref(
 ): string {
   const query = new URLSearchParams(search);
   if (section !== DeviceDetailsSection.Files) {
-    for (const key of ['sync_id', 'file', 'revision', 'extraction', 'section']) query.delete(key);
+    for (const key of [
+      'sync_id',
+      'file',
+      'revision',
+      'extraction',
+      'section',
+      'directory',
+      'directory_revision',
+    ])
+      query.delete(key);
   }
   if (filter) {
     for (const key of ['tag_ids', 'tag_match', 'untagged']) query.delete(key);

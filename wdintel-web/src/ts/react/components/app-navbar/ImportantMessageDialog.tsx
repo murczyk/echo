@@ -10,6 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useOptionalPowerSnackbar } from '../PowerSnackbar';
+import type { ImportantMutationRsp } from '../../../../Bindings';
 import { importantAdd } from '../../services/api/inbox-message-actions';
 import { currentSystemSettings } from '../../services/api/system-settings';
 
@@ -18,26 +19,28 @@ export const IMPORTANT_MESSAGE_UPDATED_EVENT = 'echo-important-message-updated';
 
 type ImportantMessageRequest = { messageId: number; groupMasterKey?: string | null };
 
+export type ImportantMessageUpdate = ImportantMutationRsp & { messageId: number };
+
 export function requestImportantMessage(request: ImportantMessageRequest) {
   window.dispatchEvent(
     new CustomEvent<ImportantMessageRequest>(IMPORTANT_MESSAGE_REQUEST_EVENT, { detail: request }),
   );
 }
 
-function dispatchImportantUpdated(messageId: number, important: boolean) {
+function dispatchImportantUpdated(messageId: number, response: ImportantMutationRsp) {
   window.dispatchEvent(
-    new CustomEvent(IMPORTANT_MESSAGE_UPDATED_EVENT, { detail: { messageId, important } }),
+    new CustomEvent(IMPORTANT_MESSAGE_UPDATED_EVENT, { detail: { messageId, ...response } }),
   );
 }
 
 async function markImportantWithoutNotification(messageId: number) {
-  const important = await importantAdd({
+  const response = await importantAdd({
     messageId,
     groupMasterKey: null,
     notifyGroup: false,
     operationId: crypto.randomUUID(),
   });
-  dispatchImportantUpdated(messageId, important);
+  dispatchImportantUpdated(messageId, response);
 }
 
 function errorMessage(error: unknown): string {
@@ -101,13 +104,13 @@ export function ImportantMessageDialog() {
     setPending(true);
     setError(null);
     try {
-      const important = await importantAdd({
+      const response = await importantAdd({
         messageId: request.messageId,
         groupMasterKey: notifyGroup ? (request.groupMasterKey ?? null) : null,
         notifyGroup,
         operationId,
       });
-      dispatchImportantUpdated(request.messageId, important);
+      dispatchImportantUpdated(request.messageId, response);
       close(true);
     } catch (submitError) {
       const message = errorMessage(submitError);

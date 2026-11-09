@@ -11,6 +11,7 @@ import {
   createDefaultFileSearchDraft,
   toDeviceFileLoadError,
   validateFileSearchDraft,
+  type DeviceFileSearchFilters,
 } from './helpers';
 import type {
   DeviceAnalyticsTagFilter,
@@ -27,12 +28,20 @@ export function useDeviceFilesLoad({
   syncId = null,
   enabled,
   tagFilter,
+  hasContent = null,
+  listingFilters = null,
+  favoritesOnly = false,
+  unviewedOnly = false,
+  archiveFailed = false,
+  archiveEncrypted = false,
+  sortBy = null,
+  sortDirection = null,
 }: {
   deviceId: string;
   syncId?: string | null;
   enabled: boolean;
   tagFilter: DeviceAnalyticsTagFilter;
-}) {
+} & DeviceFileSearchFilters) {
   const [roots, setRoots] = useState<DeviceFileRoot[]>([]);
   const [rootsLoading, setRootsLoading] = useState(enabled);
   const [rootsRefreshing, setRootsRefreshing] = useState(false);
@@ -61,7 +70,22 @@ export function useDeviceFilesLoad({
   const searchNextCursorRef = useRef<string | null>(null);
   const searchFingerprintRef = useRef<string | null>(null);
   const appliedSearchDraftRef = useRef<DeviceFileSearchDraft | null>(null);
-  const tagFilterKey = JSON.stringify(tagFilter);
+  const filters = {
+    hasContent,
+    listingFilters,
+    favoritesOnly,
+    unviewedOnly,
+    archiveFailed,
+    archiveEncrypted,
+    sortBy,
+    sortDirection,
+  };
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+  const tagFilterKey = JSON.stringify([tagFilter, filters]);
+  const [rootsFilterKey, setRootsFilterKey] = useState('');
+  const rootsFilterKeyRef = useRef(tagFilterKey);
+  rootsFilterKeyRef.current = tagFilterKey;
   const tagFilterRef = useRef(tagFilter);
   const tagFilterKeyRef = useRef(tagFilterKey);
   const rootsSeqRef = useRef(0);
@@ -99,16 +123,22 @@ export function useDeviceFilesLoad({
       rootsAbortRef.current?.abort();
       const controller = new AbortController();
       rootsAbortRef.current = controller;
+      const filterKey = rootsFilterKeyRef.current;
       if (preserve) setRootsRefreshing(true);
       else setRootsLoading(true);
       setRootsError(null);
 
       try {
-        const rsp = await listDeviceFileRoots({ deviceId, syncId }, { signal: controller.signal });
+        const rsp = await listDeviceFileRoots(
+          { deviceId, syncId, filters: filtersRef.current.listingFilters },
+          { signal: controller.signal },
+        );
         if (rootsSeqRef.current !== seq || controller.signal.aborted) return;
 
         setRoots(rsp.roots);
+        setRootsFilterKey(filterKey);
         rootsRef.current = rsp.roots;
+        if (appliedSearchDraftRef.current !== null && searchScopeRef.current !== null) return;
         const currentScope = searchScopeRef.current;
         const currentRoot = currentScope
           ? (rsp.roots.find((root) => root.entryId === currentScope.rootEntryId) ?? null)
@@ -118,7 +148,11 @@ export function useDeviceFilesLoad({
           if (currentScope !== null) {
             replaceSearchScope(null);
             resetSearchResults();
-            setScopeNotice('Файлові корені більше не існують.');
+            setScopeNotice(
+              filtersRef.current.listingFilters
+                ? 'За заданими фільтрами нічого не знайдено.'
+                : 'Файлові корені більше не існують.',
+            );
           }
         } else if (currentScope === null || currentRoot === null) {
           const firstRoot = rsp.roots[0];
@@ -180,8 +214,11 @@ export function useDeviceFilesLoad({
         draft,
         currentTagFilter,
         syncId,
+        filtersRef.current,
+        scope.archiveRevision ?? null,
       );
       if (append && searchFingerprintRef.current !== fingerprint) return;
+      if (append && searchAbortRef.current) return;
 
       const cursor = append ? searchNextCursorRef.current : null;
       if (append && cursor === null) return;
@@ -207,9 +244,11 @@ export function useDeviceFilesLoad({
             deviceId,
             syncId,
             scopeEntryId: scope.entryId,
+            archiveRevision: scope.archiveRevision ?? null,
             draft,
             cursor,
             tagFilter: currentTagFilter,
+            filters: filtersRef.current,
           }),
           { signal: controller.signal },
         );
@@ -259,7 +298,8 @@ export function useDeviceFilesLoad({
       setScopeNotice(null);
       if (
         currentScope?.entryId === scope.entryId &&
-        currentScope.rootEntryId === scope.rootEntryId
+        currentScope.rootEntryId === scope.rootEntryId &&
+        currentScope.archiveRevision === scope.archiveRevision
       ) {
         replaceSearchScope(scope);
         return;
@@ -287,16 +327,19 @@ export function useDeviceFilesLoad({
     setSearchValidationErrors({});
   }, []);
 
-  const submitSearch = useCallback(() => {
-    const validationErrors = validateFileSearchDraft(searchDraft);
-    setSearchValidationErrors(validationErrors);
-    if (Object.keys(validationErrors).length > 0 || searchScopeRef.current === null) return;
+  const submitSearch = useCallback(
+    (draft = searchDraft) => {
+      const validationErrors = validateFileSearchDraft(draft);
+      setSearchValidationErrors(validationErrors);
+      if (Object.keys(validationErrors).length > 0 || searchScopeRef.current === null) return;
 
-    const appliedDraft = { ...searchDraft, kinds: [...searchDraft.kinds] };
-    appliedSearchDraftRef.current = appliedDraft;
-    setAppliedSearchDraft(appliedDraft);
-    void loadSearch(appliedDraft);
-  }, [loadSearch, searchDraft]);
+      const appliedDraft = { ...draft, kinds: [...draft.kinds] };
+      appliedSearchDraftRef.current = appliedDraft;
+      setAppliedSearchDraft(appliedDraft);
+      void loadSearch(appliedDraft);
+    },
+    [loadSearch, searchDraft],
+  );
 
   const refreshVisible = useCallback(async () => {
     await loadRoots(true);
@@ -308,11 +351,12 @@ export function useDeviceFilesLoad({
   useEffect(() => {
     if (tagFilterKeyRef.current === tagFilterKey) return;
     tagFilterKeyRef.current = tagFilterKey;
+    void loadRoots(true);
     const appliedDraft = appliedSearchDraftRef.current;
     if (enabled && appliedDraft !== null && searchScopeRef.current !== null) {
       void loadSearch(appliedDraft);
     }
-  }, [enabled, loadSearch, tagFilterKey]);
+  }, [enabled, loadSearch, loadRoots, tagFilterKey]);
 
   const loadSearchRef = useRef(loadSearch);
   loadSearchRef.current = loadSearch;
@@ -369,6 +413,7 @@ export function useDeviceFilesLoad({
   }, [dataScope, deviceId, syncId, enabled, loadRoots]);
 
   return {
+    rootsReady: resultScope === dataScope && rootsFilterKey === tagFilterKey,
     roots: resultScope === dataScope ? roots : [],
     rootsLoading: resultScope !== dataScope || rootsLoading,
     rootsRefreshing,

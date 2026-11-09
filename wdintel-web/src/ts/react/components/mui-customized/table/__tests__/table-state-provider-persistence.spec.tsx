@@ -4,7 +4,7 @@
 import type { MRT_SortingState } from 'material-react-table';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TableStateProvider, useTableStateContext } from '../table-state-provider.tsx';
 
@@ -24,9 +24,11 @@ function Probe() {
 function render({
   sanitizeSorting,
   isDynamicColumnId,
+  defaultSorting = DEFAULT_SORTING,
 }: {
   sanitizeSorting?: (value: MRT_SortingState) => MRT_SortingState;
   isDynamicColumnId?: (columnId: string) => boolean;
+  defaultSorting?: MRT_SortingState;
 } = {}) {
   root?.unmount();
   root = createRoot(container);
@@ -37,7 +39,7 @@ function render({
         defaultColumnVisibility={{}}
         defaultColumnOrder={DEFAULT_COLUMN_ORDER}
         isDynamicColumnId={isDynamicColumnId}
-        defaultSorting={DEFAULT_SORTING}
+        defaultSorting={defaultSorting}
         persistSorting
         sanitizeSorting={sanitizeSorting}
       >
@@ -69,6 +71,7 @@ describe('TableStateProvider persisted state', () => {
     root = null;
     latest = null;
     container.remove();
+    vi.restoreAllMocks();
   });
 
   it('restores the last chosen sorting when the URL has none', () => {
@@ -110,6 +113,79 @@ describe('TableStateProvider persisted state', () => {
 
     expect(window.localStorage.getItem(`sorting-${TABLE_ID}`)).toBeNull();
   });
+
+  it('#3610 keeps sorting cleared when storage removal fails during reconciliation', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render({ defaultSorting: [] });
+    act(() => latest?.onSortingChange([{ id: 'name', desc: false }]));
+    const removal = vi.spyOn(window.localStorage, 'removeItem').mockImplementation(() => {
+      throw new DOMException('Storage denied', 'SecurityError');
+    });
+
+    act(() => latest?.onSortingChange([]));
+
+    expect(latest?.sorting).toEqual([]);
+    expect(new URLSearchParams(window.location.search).has('sorting')).toBe(false);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(latest?.sorting).toEqual([]);
+
+    removal.mockRestore();
+    act(() => latest?.onSortingChange([{ id: 'rating', desc: true }]));
+    window.history.replaceState({}, '', '/devices');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(latest?.sorting).toEqual([{ id: 'rating', desc: true }]);
+  });
+
+  it('#3610 retains unsaved visibility when column defaults are reconciled', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    window.localStorage.setItem(`visibleColumns-${TABLE_ID}`, JSON.stringify(['name']));
+    render();
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage full', 'QuotaExceededError');
+    });
+
+    act(() => latest?.onChangeColumnsVisibility({ name: true, rating: true }));
+    act(() => latest?.updateColumnVisibility({ name: false, rating: false, tags: true }));
+
+    expect(latest?.columnVisibility).toEqual({ name: true, rating: true, tags: true });
+
+    render();
+    expect(latest?.columnVisibility).toEqual({ name: true });
+  });
+
+  it.each(['getter', 'methods'])(
+    '#3610 keeps table state usable with denied storage %s',
+    (access) => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const deny = () => {
+        throw new DOMException('Storage denied', 'SecurityError');
+      };
+      if (access === 'getter') {
+        Object.defineProperty(window, 'localStorage', { configurable: true, get: deny });
+      } else {
+        vi.spyOn(window.localStorage, 'getItem').mockImplementation(deny);
+        vi.spyOn(window.localStorage, 'setItem').mockImplementation(deny);
+        vi.spyOn(window.localStorage, 'removeItem').mockImplementation(deny);
+      }
+
+      render();
+      expect(latest?.columnOrder).toEqual(DEFAULT_COLUMN_ORDER);
+      expect(latest?.columnVisibility).toEqual({});
+      expect(latest?.sorting).toEqual(DEFAULT_SORTING);
+      act(() => latest?.onChangeColumnVisibility('name', true));
+      act(() => latest?.updateColumnVisibility());
+      expect(latest?.columnVisibility).toEqual({ name: true });
+      act(() => latest?.onResetColumnsVisibility());
+      act(() => latest?.updateColumnVisibility());
+      expect(latest?.columnVisibility).toEqual({});
+
+      act(() => latest?.onSortingChange([{ id: 'name', desc: false }]));
+      window.history.replaceState({}, '', '/devices?tab=details');
+      act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+      expect(latest?.sorting).toEqual([{ id: 'name', desc: false }]);
+      expect(new URLSearchParams(window.location.search).get('tab')).toBe('details');
+    },
+  );
 
   it('sanitizes a stale stored sorting', () => {
     window.localStorage.setItem(

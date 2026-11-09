@@ -17,6 +17,6 @@ export function reportParentContext(unit: Partial<Unit> & { id: number }): strin
     unit.teamOrCrew,
     unit.other,
   ].map((value) => value?.trim() ?? '');
-  const level = [2, 4, 6, 7, 8].find((index) => path[index]) ?? path.findIndex(Boolean);
-  return JSON.stringify(level < 0 ? [] : path.slice(0, level + 1));
+  const level = [4, 5].find((index) => path[index]);
+  return JSON.stringify(level === undefined ? [] : path.slice(0, level + 1));
 }

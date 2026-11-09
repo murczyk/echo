@@ -50,6 +50,7 @@ export function FileCitationChip({ source }: { source: AiAgentFileCitation }) {
             file={result.file}
             revisionPinned
             citation={source}
+            showDocumentDetails
           />
         ) : error ? (
           <PowerAlert

@@ -79,6 +79,10 @@ function handlePopState(event: PopStateEvent) {
 }
 
 function handleTouchStart(event: TouchEvent) {
+  if (event.target instanceof Element && event.target.closest('[data-mobile-video-timeline]')) {
+    edgeGesture = null;
+    return;
+  }
   if (event.touches.length !== 1) {
     edgeGesture = null;
     return;

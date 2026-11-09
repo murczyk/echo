@@ -30,6 +30,7 @@ const file: DeviceFileTreeEntry = {
   hasContent: true,
   mimeType: 'application/zip',
   extension: 'zip',
+  contentUploadedAt: null,
   fileMetadataCreatedAt: null,
   fileMetadataModifiedAt: null,
   createdAt: '2026-10-14T00:00:00Z',
@@ -71,7 +72,7 @@ const select = vi.fn();
 const denied = vi.fn();
 
 beforeEach(() => {
-  pages = [{ entries: [], breadcrumbs: [], nextCursor: null }];
+  pages = [{ entries: [], archiveSource: null, breadcrumbs: [], nextCursor: null }];
   states = [];
   requests = [];
   vi.stubGlobal(
@@ -134,10 +135,43 @@ async function expand() {
   );
 }
 
+it('#3930 shows a lock when preparation discovers a password and keeps it after collapse', async () => {
+  states = [
+    {
+      ...status,
+      archive: {
+        ...status.archive,
+        state: 'failed',
+        reason: 'password_protected',
+        message: 'Архів захищений паролем',
+      },
+    },
+  ];
+  await act(async () =>
+    root.render(
+      <DeviceArchiveTree deviceId={deviceId} file={file} depth={0} onSelectFile={select} />,
+    ),
+  );
+  expect(container.querySelector('svg title')).toBeNull();
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Розгорнути каталог bundle.zip"]')!
+      .click(),
+  );
+  await vi.waitFor(() =>
+    expect(container.querySelector('svg title')?.textContent).toBe('Архів захищений паролем'),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Згорнути файл bundle.zip"]')!.click(),
+  );
+  expect(container.querySelector('svg title')?.textContent).toBe('Архів захищений паролем');
+  expect(requests.every((request) => !request.url.endsWith('/content'))).toBe(true);
+});
+
 it('#3778 renders one empty archive folder without reading ZIP bytes', async () => {
   await expand();
   await vi.waitFor(() => expect(container.textContent).toContain('Каталог порожній'));
-  expect(container.querySelectorAll(`[data-testid="device-file-${fileId}"]`)).toHaveLength(1);
+  expect(container.querySelectorAll('[aria-label="Згорнути каталог bundle.zip"]')).toHaveLength(1);
   expect(requests.some((request) => request.url.endsWith('/content'))).toBe(false);
   expect(requests.find((request) => request.url.endsWith('/browse'))?.body).toMatchObject({
     tag_ids: null,
@@ -147,7 +181,7 @@ it('#3778 renders one empty archive folder without reading ZIP bytes', async () 
 
 it('#3778 selects the persisted member revision and preserves case-distinct names across pages', async () => {
   pages = [
-    { entries: [member], breadcrumbs: [], nextCursor: 'next-page' },
+    { entries: [member], archiveSource: null, breadcrumbs: [], nextCursor: 'next-page' },
     {
       entries: [
         {
@@ -157,6 +191,7 @@ it('#3778 selects the persisted member revision and preserves case-distinct name
           fileId: '00000000-0000-4000-8000-000000000006',
         },
       ],
+      archiveSource: null,
       breadcrumbs: [],
       nextCursor: null,
     },
@@ -206,6 +241,7 @@ it('#3778 browses persisted directory IDs instead of downloading the parent arch
           hasContent: false,
         },
       ],
+      archiveSource: null,
       breadcrumbs: [],
       nextCursor: null,
     },
@@ -213,6 +249,7 @@ it('#3778 browses persisted directory IDs instead of downloading the parent arch
       entries: [
         { ...member, parentEntryId: directoryId, virtualPath: 'C:\\bundle.zip/docs/Report.txt' },
       ],
+      archiveSource: null,
       breadcrumbs: [],
       nextCursor: null,
     },
@@ -308,6 +345,7 @@ it('#3778 keeps nested archives collapsed when the content pane opens the parent
           archive: status.archive,
         },
       ],
+      archiveSource: null,
       breadcrumbs: [],
       nextCursor: null,
     },
@@ -380,7 +418,7 @@ it('#3778 reveals located nested ancestors and off-page members at their histori
           source: { ...status.source, fileId: url === base ? fileId : memberId },
           archive: { ...status.archive, archiveId: url === base ? archiveId : nestedArchiveId },
         }
-      : { entries: [], breadcrumbs: [], nextCursor: 'later-page' };
+      : { entries: [], archiveSource: null, breadcrumbs: [], nextCursor: 'later-page' };
     return new Response(JSON.stringify(transformCamelToSnake(response)), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -500,7 +538,7 @@ it('#3778 preserves Retry-After when a hidden tab becomes visible', async () => 
 });
 
 it('#3778 restarts at the first page after access to a later page was denied', async () => {
-  pages = [{ entries: [member], breadcrumbs: [], nextCursor: 'next-page' }];
+  pages = [{ entries: [member], archiveSource: null, breadcrumbs: [], nextCursor: 'next-page' }];
   await expand();
   vi.mocked(fetch).mockImplementationOnce(
     async () =>
@@ -513,7 +551,7 @@ it('#3778 restarts at the first page after access to a later page was denied', a
   );
   expect(container.querySelector('[aria-label="Report.txt"]')).toBeNull();
   expect(denied).toHaveBeenCalledTimes(1);
-  pages = [{ entries: [member], breadcrumbs: [], nextCursor: null }];
+  pages = [{ entries: [member], archiveSource: null, breadcrumbs: [], nextCursor: null }];
   await act(async () =>
     [...container.querySelectorAll('button')]
       .find((button) => button.textContent?.includes('Повторити читання'))!
@@ -539,6 +577,7 @@ it('#3778 clears the entire archive when a nested directory denies access', asyn
           hasContent: false,
         },
       ],
+      archiveSource: null,
       breadcrumbs: [],
       nextCursor: null,
     },
@@ -567,7 +606,7 @@ it('#3778 observes content published for the open metadata-only revision without
     { ...status, archive: { ...status.archive, state: 'queued' } },
     status,
   ];
-  pages = [{ entries: [member], breadcrumbs: [], nextCursor: null }];
+  pages = [{ entries: [member], archiveSource: null, breadcrumbs: [], nextCursor: null }];
   await act(async () =>
     root.render(
       <DeviceArchiveTree
@@ -592,4 +631,36 @@ it('#3778 observes content published for the open metadata-only revision without
     ['GET', base],
     ['POST', '/api/device/files/browse'],
   ]);
+});
+
+it('#3930 opens an archive directory with its revision while its chevron only expands', async () => {
+  const directory = { ...member, kind: 'directory' as const, name: 'documents', fileId: null };
+  const openDirectory = vi.fn();
+  pages = [
+    { entries: [directory], archiveSource: null, breadcrumbs: [], nextCursor: null },
+    { entries: [], archiveSource: null, breadcrumbs: [], nextCursor: null },
+  ];
+  await act(async () =>
+    root.render(
+      <DeviceArchiveTree
+        deviceId={deviceId}
+        file={file}
+        depth={0}
+        initialExpanded
+        onSelectFile={select}
+        onOpenDirectory={openDirectory}
+      />,
+    ),
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Розгорнути каталог documents"]')!
+      .click(),
+  );
+  expect(openDirectory).not.toHaveBeenCalled();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="documents"]')!.click(),
+  );
+  expect(openDirectory).toHaveBeenCalledWith(directory.entryId, 7);
+  expect(select).not.toHaveBeenCalled();
 });

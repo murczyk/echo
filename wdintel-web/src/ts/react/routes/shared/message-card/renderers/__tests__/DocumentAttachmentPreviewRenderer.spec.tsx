@@ -134,7 +134,10 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage.tsx', () => 
   ),
 }));
 
-vi.mock('../../attachment-preview/useAttachmentPreviewSwipe.ts', () => ({
+vi.mock('../../attachment-preview/useAttachmentPreviewSwipe.ts', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../attachment-preview/useAttachmentPreviewSwipe.ts')
+  >()),
   useAttachmentPreviewSwipe: ({ enabled }: { enabled: boolean }) => {
     latestSwipeEnabled = enabled;
     return { transform: 'translate3d(0px, 0px, 0)', opacity: 1, transition: 'none' };
@@ -516,6 +519,67 @@ describe('DocumentAttachmentPreviewRenderer', () => {
 
     expect(document.body.textContent).toContain('100%');
     expect(document.body.textContent).not.toContain('150%');
+    root.unmount();
+  });
+
+  it('provides bounded DOCX zoom controls outside the sandboxed preview', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onClose = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TestDocumentPreviewDialog
+          documents={[
+            {
+              href: 'https://example.test/files/report.docx',
+              fileName: 'report.docx',
+              kind: 'docx',
+            },
+          ]}
+          open
+          onClose={onClose}
+          onIndexChange={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
+        />,
+      );
+    });
+
+    const controls = container.querySelector('[data-document-preview-zoom-controls]');
+    const zoomIn = controls?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Збільшити масштаб"]',
+    );
+    const zoomOut = controls?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Зменшити масштаб"]',
+    );
+    const reset = controls?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Скинути масштаб (100%)"]',
+    );
+    expect(controls?.textContent).toContain('100%');
+
+    await act(async () => zoomIn?.click());
+    expect(controls?.textContent).toContain('125%');
+    await act(async () => {
+      zoomIn?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+    expect(controls?.textContent).toContain('125%');
+
+    await act(async () => {
+      for (let step = 0; step < 20; step += 1) zoomIn?.click();
+    });
+    expect(controls?.textContent).toContain('300%');
+    expect(zoomIn?.disabled).toBe(true);
+
+    await act(async () => {
+      for (let step = 0; step < 20; step += 1) zoomOut?.click();
+    });
+    expect(controls?.textContent).toContain('50%');
+    expect(zoomOut?.disabled).toBe(true);
+    await act(async () => reset?.click());
+    expect(controls?.textContent).toContain('100%');
+    expect(onClose).not.toHaveBeenCalled();
     root.unmount();
   });
 

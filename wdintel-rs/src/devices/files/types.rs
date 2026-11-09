@@ -21,6 +21,8 @@ pub(in crate::devices) struct RootEntry {
     pub(in crate::devices) device_id: Uuid,
     pub(in crate::devices) name: String,
     pub(in crate::devices) hierarchy_path: String,
+    pub(in crate::devices) file_metadata_created_at: Option<NaiveDateTime>,
+    pub(in crate::devices) file_metadata_modified_at: Option<NaiveDateTime>,
     pub(in crate::devices) created_at: NaiveDateTime,
     pub(in crate::devices) updated_at: NaiveDateTime,
 }
@@ -46,12 +48,19 @@ pub(in crate::devices) struct DirectoryEntry {
     pub(in crate::devices) parent_entry_id: Uuid,
     pub(in crate::devices) name: String,
     pub(in crate::devices) hierarchy_path: String,
+    pub(in crate::devices) file_metadata_created_at: Option<NaiveDateTime>,
+    pub(in crate::devices) file_metadata_modified_at: Option<NaiveDateTime>,
     pub(in crate::devices) created_at: NaiveDateTime,
     pub(in crate::devices) updated_at: NaiveDateTime,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum DirectoryScope {
+    Archive {
+        device_id: Uuid,
+        entry_id: Uuid,
+        hierarchy_path: String,
+    },
     Root(RootEntry),
     Directory {
         entry: DirectoryEntry,
@@ -62,6 +71,7 @@ pub(in crate::devices) enum DirectoryScope {
 impl DirectoryScope {
     pub(in crate::devices) fn device_id(&self) -> Uuid {
         match self {
+            Self::Archive { device_id, .. } => *device_id,
             Self::Root(root) => root.device_id,
             Self::Directory { entry, .. } => entry.device_id,
         }
@@ -69,6 +79,7 @@ impl DirectoryScope {
 
     pub(in crate::devices) fn entry_id(&self) -> Uuid {
         match self {
+            Self::Archive { entry_id, .. } => *entry_id,
             Self::Root(root) => root.entry_id,
             Self::Directory { entry, .. } => entry.entry_id,
         }
@@ -76,6 +87,7 @@ impl DirectoryScope {
 
     pub(super) fn hierarchy_path(&self) -> &str {
         match self {
+            Self::Archive { hierarchy_path, .. } => hierarchy_path,
             Self::Root(root) => &root.hierarchy_path,
             Self::Directory { entry, .. } => &entry.hierarchy_path,
         }
@@ -128,32 +140,20 @@ pub(in crate::devices) struct SearchEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct Breadcrumb {
+    pub(in crate::devices) archive_revision: Option<i64>,
     pub(in crate::devices) entry_id: Uuid,
     pub(in crate::devices) name: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct EntrySortKey {
-    kind: DomainFileEntryKind,
     name: String,
     entry_id: Uuid,
 }
 
 impl EntrySortKey {
-    pub(super) fn new(
-        kind: DomainFileEntryKind,
-        name: String,
-        entry_id: Uuid,
-    ) -> Self {
-        Self {
-            kind,
-            name,
-            entry_id,
-        }
-    }
-
-    pub(super) fn kind(&self) -> DomainFileEntryKind {
-        self.kind.clone()
+    pub(super) fn new(name: String, entry_id: Uuid) -> Self {
+        Self { name, entry_id }
     }
 
     pub(super) fn name(&self) -> &str {
@@ -303,6 +303,8 @@ pub(in crate::devices) struct JournalFilesResult {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct FileSearchFilters {
+    pub(super) global_search: bool,
+    pub(super) rank_by_relevance: bool,
     kinds: Vec<DomainFileEntryKind>,
     name_query: Option<String>,
     mime_types: Vec<String>,
@@ -321,6 +323,8 @@ impl FileSearchFilters {
         file_metadata_modified_to: Option<NaiveDateTime>,
     ) -> Self {
         Self {
+            global_search: false,
+            rank_by_relevance: false,
             kinds,
             name_query,
             mime_types,
@@ -505,6 +509,60 @@ pub enum FileEntryKind {
     Directory,
     File,
 }
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Default,
+)]
+#[serde(rename_all = "snake_case")]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "Generated Elm constructors share a module namespace"
+)]
+pub enum DeviceFileSortBy {
+    #[default]
+    #[serde(rename = "name")]
+    FileSortName,
+    #[serde(rename = "size")]
+    FileSortSize,
+    #[serde(rename = "uploaded_at")]
+    FileSortUploadedAt,
+    #[serde(rename = "created_at")]
+    FileSortCreatedAt,
+    #[serde(rename = "modified_at")]
+    FileSortModifiedAt,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceFileSortDirection {
+    #[default]
+    #[serde(rename = "ascending")]
+    FileSortAscending,
+    #[serde(rename = "descending")]
+    FileSortDescending,
+}
 #[derive(
     Elm,
     ElmEncode,
@@ -555,11 +613,19 @@ pub struct SourceFileState {
 )]
 #[serde(deny_unknown_fields)]
 pub struct DeviceFileRoot {
+    #[serde(default)]
+    pub is_favorite: bool,
     pub entry_id: String,
     pub device_id: String,
     pub parent_entry_id: Option<String>,
     pub kind: FileEntryKind,
     pub name: String,
+    #[serde(default)]
+    pub file_metadata_created_at: Option<String>,
+    #[serde(default)]
+    pub file_metadata_modified_at: Option<String>,
+    #[serde(default)]
+    pub content_uploaded_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub tags: Vec<AnalyticsTag>,
@@ -578,6 +644,8 @@ pub struct DeviceFileRoot {
 )]
 #[serde(deny_unknown_fields)]
 pub struct FileBreadcrumb {
+    #[serde(default)]
+    pub archive_revision: Option<i64>,
     pub entry_id: String,
     pub name: String,
 }
@@ -595,6 +663,14 @@ pub struct FileBreadcrumb {
 )]
 #[serde(deny_unknown_fields)]
 pub struct DeviceFileTreeEntry {
+    #[serde(default)]
+    pub is_favorite: bool,
+    #[serde(default)]
+    pub is_viewed: bool,
+    #[serde(default)]
+    pub size_bytes: Option<i64>,
+    #[serde(default)]
+    pub content_uploaded_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive: Option<super::archive::types::DeviceArchiveSummary>,
     #[serde(default)]
@@ -679,6 +755,8 @@ pub struct DeviceFile {
 )]
 #[serde(deny_unknown_fields)]
 pub struct ListDeviceFileRootsReq {
+    #[serde(default)]
+    pub filters: Option<super::listing_filters::DeviceFileFilters>,
     #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
     pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
@@ -770,6 +848,16 @@ pub struct CountDeviceFileSubtreesRsp {
 #[serde(deny_unknown_fields)]
 pub struct BrowseDeviceFilesReq {
     #[serde(default)]
+    pub filters: Option<super::listing_filters::DeviceFileFilters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_by: Option<DeviceFileSortBy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_direction: Option<DeviceFileSortDirection>,
+    pub favorites_only: Option<bool>,
+    pub unviewed_only: Option<bool>,
+    pub archive_failed: Option<bool>,
+    pub archive_encrypted: Option<bool>,
+    #[serde(default)]
     pub archive_revision: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
     pub sync_id: Option<String>,
@@ -799,6 +887,8 @@ pub struct BrowseDeviceFilesReq {
 )]
 #[serde(deny_unknown_fields)]
 pub struct BrowseDeviceFilesRsp {
+    #[serde(default)]
+    pub archive_source: Option<super::archive::types::DeviceFileContentRef>,
     pub breadcrumbs: Vec<FileBreadcrumb>,
     pub entries: Vec<DeviceFileTreeEntry>,
     pub next_cursor: Option<String>,
@@ -817,6 +907,23 @@ pub struct BrowseDeviceFilesRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct SearchDeviceFilesReq {
+    #[serde(default)]
+    pub archive_revision: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global_search: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank_by_relevance: Option<bool>,
+    #[serde(default)]
+    pub filters: Option<super::listing_filters::DeviceFileFilters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_by: Option<DeviceFileSortBy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_direction: Option<DeviceFileSortDirection>,
+    pub has_content: Option<bool>,
+    pub favorites_only: Option<bool>,
+    pub unviewed_only: Option<bool>,
+    pub archive_failed: Option<bool>,
+    pub archive_encrypted: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
     pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]

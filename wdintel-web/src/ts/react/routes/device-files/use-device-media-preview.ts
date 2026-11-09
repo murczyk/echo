@@ -4,10 +4,15 @@ import type { AudioPlayerElement } from '../../components/audio-player/AudioPlay
 import { HttpRequestError, isAbortError } from '../../services/api/client';
 import {
   DEVICE_MEDIA_PREVIEW_TIMEOUT_MS,
+  getDeviceFileMediaAudioPrefix,
   preflightDeviceFileMedia,
 } from '../../services/api/device-file-preview';
 import type { FilePreviewLifecycleProps } from '../shared/message-card/attachment-preview/file-preview-source';
 import { releaseNativeMedia } from '../shared/message-card/attachment-preview/native-media-lifecycle';
+import {
+  hasMpegAudioSignature,
+  isAmbiguousAudioOnlyMedia,
+} from '../shared/message-card/audio-only-media';
 import type { DeviceFilePreviewSource } from './use-device-file-preview';
 
 type Snapshot = {
@@ -24,19 +29,47 @@ type MediaSession = {
   current: () => boolean;
   native: HTMLMediaElement | null;
   stopPlayer?: () => void;
+  stopDuration?: () => void;
   watchdog?: ReturnType<typeof setTimeout>;
 };
 
 function stopNative(session: MediaSession) {
   clearTimeout(session.watchdog);
+  session.stopDuration?.();
   session.stopPlayer?.();
   if (session.native) releaseNativeMedia(session.native);
+}
+
+function observeNativeDuration(
+  session: MediaSession,
+  element: HTMLMediaElement,
+  onDurationChange: (seconds: number) => void,
+) {
+  session.stopDuration?.();
+  session.native = element;
+  const update = () => {
+    if (
+      session.current() &&
+      session.native === element &&
+      Number.isFinite(element.duration) &&
+      element.duration >= 0
+    )
+      onDurationChange(element.duration);
+  };
+  element.addEventListener('loadedmetadata', update);
+  element.addEventListener('durationchange', update);
+  session.stopDuration = () => {
+    element.removeEventListener('loadedmetadata', update);
+    element.removeEventListener('durationchange', update);
+  };
+  update();
 }
 
 function guardAudioPlayer(
   player: CustomAudioPlayer,
   session: MediaSession,
   fail: (code?: number, timeout?: boolean) => void,
+  onDurationChange: (seconds: number) => void,
 ) {
   let active = true;
   const originalBinding = player.bindAudioEvents.bind(player);
@@ -51,12 +84,13 @@ function guardAudioPlayer(
     player.setSrc = () => {};
     player.setSrcImmediate = () => {};
     player.bindAudioEvents = () => {};
+    if (session.native === player.audio) session.stopDuration?.();
     if (player.audio) releaseNativeMedia(player.audio);
   };
   player.bindAudioEvents = () => {
     if (!active || !session.current()) return;
     const audio = player.audio;
-    session.native = audio;
+    observeNativeDuration(session, audio, onDurationChange);
     const current = () => active && session.current() && player.audio === audio;
     const waiting = () => {
       if (!current()) return;
@@ -119,15 +153,17 @@ export function useDeviceMediaPreview({
   source,
   lifecycle,
   checkAccess,
+  onDurationChange,
 }: {
   source: DeviceFilePreviewSource;
   lifecycle: FilePreviewLifecycleProps;
   checkAccess: () => Promise<boolean>;
+  onDurationChange?: (seconds: number) => void;
 }) {
   const selected = useRef(source.key);
   selected.current = source.key;
-  const latest = useRef({ lifecycle, checkAccess });
-  latest.current = { lifecycle, checkAccess };
+  const latest = useRef({ lifecycle, checkAccess, onDurationChange });
+  latest.current = { lifecycle, checkAccess, onDurationChange };
   const current = useRef<MediaSession | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   useEffect(() => {
@@ -212,22 +248,63 @@ export function useDeviceMediaPreview({
   );
   const attachNative = useCallback(
     (element: HTMLMediaElement | null) => {
-      if (renderingSession?.current() && element) renderingSession.native = element;
+      if (renderingSession?.current() && element)
+        observeNativeDuration(renderingSession, element, (seconds) =>
+          latest.current.onDurationChange?.(seconds),
+        );
     },
     [renderingSession],
+  );
+  const detectAudioOnly = useCallback(
+    async (element: HTMLVideoElement) => {
+      const session = renderingSession;
+      if (!session?.current() || session.native !== element) return false;
+      if (isAmbiguousAudioOnlyMedia(source.fileName, source.contentType, element)) return true;
+      if (
+        source.contentType !== 'video/mpeg' ||
+        !/\.(mpeg|mpg)$/i.test(source.fileName) ||
+        !isAmbiguousAudioOnlyMedia(source.fileName, '', element)
+      )
+        return false;
+      try {
+        const prefix = await getDeviceFileMediaAudioPrefix(source, session.controller.signal);
+        return (
+          session.current() &&
+          session.native === element &&
+          prefix !== null &&
+          isAmbiguousAudioOnlyMedia(source.fileName, '', element) &&
+          hasMpegAudioSignature(prefix)
+        );
+      } catch (error) {
+        if (session.current() && !isAbortError(error)) latest.current.lifecycle.onError(error);
+        return false;
+      }
+    },
+    [renderingSession, source],
   );
   const prepareAudio = useCallback(
     (element: AudioPlayerElement) => {
       const session = current.current;
       if (!session?.current()) return;
-      const stop = guardAudioPlayer(element as CustomAudioPlayer, session, (code, timeout) => {
-        void reportNativeFailure(code, timeout);
-      });
+      const stop = guardAudioPlayer(
+        element as CustomAudioPlayer,
+        session,
+        (code, timeout) => {
+          void reportNativeFailure(code, timeout);
+        },
+        (seconds) => latest.current.onDurationChange?.(seconds),
+      );
       session.stopPlayer = stop;
       return stop;
     },
     [reportNativeFailure],
   );
   const matches = snapshot?.key === source.key && snapshot.signal === lifecycle.signal;
-  return { snapshot: matches ? snapshot : null, reportNativeFailure, attachNative, prepareAudio };
+  return {
+    snapshot: matches ? snapshot : null,
+    reportNativeFailure,
+    attachNative,
+    prepareAudio,
+    detectAudioOnly,
+  };
 }

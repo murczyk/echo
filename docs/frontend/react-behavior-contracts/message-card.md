@@ -86,8 +86,8 @@
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** thumbnail retrieval uses the messenger media thumbnail route with same-origin credentials and server retry semantics.
 - **Responsive and keyboard requirements:** none at the loading boundary.
-- **Known race/idempotency constraints:** leaving the viewport cancels future polling until re-entry; terminal and unauthorized responses cannot schedule another retry.
-- **Source implementation:** `MessageCardVideoThumb.tsx`
+- **Known race/idempotency constraints:** leaving the viewport cancels future polling until re-entry; terminal and unauthorized responses cannot schedule another retry. The shared loader keys image state and callbacks by source; replacing an attachment cannot display a late thumbnail from the previous source. Forced navigation or unauthorized events cancel requests and revoke loaded Blob URLs.
+- **Source implementation:** `MessageCardVideoThumb.tsx`, shared `use-media-thumbnail.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
@@ -105,7 +105,7 @@
 - **API endpoint and compatibility requirements:** uses `/api/messenger/media/{id}/thumbnail`; images without a messenger media ID keep their original-image behavior.
 - **Responsive and keyboard requirements:** existing card controls remain unchanged.
 - **Known race/idempotency constraints:** offscreen cards do not request thumbnail bytes; returning to view can retry pending thumbnails.
-- **Source implementation:** `MessageCardImageThumb.tsx`, `MessageCardVideoThumb.tsx`
+- **Source implementation:** `MessageCardImageThumb.tsx`, shared `use-media-thumbnail.ts`. Device tiles reuse the loader with their own revision URL, request limit and icon fallback; the message image fallback policy remains unchanged.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 
 ## OCR and media-summary response safety

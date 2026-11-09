@@ -18,10 +18,16 @@ export type DeviceAnalyticsTagsState = {
 export function useDeviceAnalyticsTags({
   deviceId,
   enabled,
+  active = true,
 }: {
   deviceId: string;
   enabled: boolean;
+  active?: boolean;
 }): DeviceAnalyticsTagsState {
+  const requested = useRef({ deviceId, active });
+  if (requested.current.deviceId !== deviceId) requested.current = { deviceId, active };
+  if (active) requested.current.active = true;
+  const loadEnabled = enabled && requested.current.active;
   const [tags, setTags] = useState<AnalyticsTag[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [loaded, setLoaded] = useState(false);
@@ -30,7 +36,7 @@ export function useDeviceAnalyticsTags({
   const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
-    if (!enabled) return;
+    if (!loadEnabled) return;
     const seq = ++requestSeqRef.current;
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -56,7 +62,7 @@ export function useDeviceAnalyticsTags({
       if (requestSeqRef.current === seq) setLoading(false);
       if (abortRef.current === controller) abortRef.current = null;
     }
-  }, [deviceId, enabled]);
+  }, [deviceId, loadEnabled]);
 
   useEffect(() => {
     requestSeqRef.current += 1;
@@ -64,10 +70,10 @@ export function useDeviceAnalyticsTags({
     setTags([]);
     setLoaded(false);
     setError(null);
-    setLoading(enabled);
-    if (enabled) void load();
+    setLoading(loadEnabled);
+    if (loadEnabled) void load();
     return () => abortRef.current?.abort();
-  }, [deviceId, enabled, load]);
+  }, [deviceId, loadEnabled, load]);
 
   return { tags, loading, loaded, error, reload: load };
 }

@@ -1,3 +1,4 @@
+import type { DeviceFilesState } from '../../device-files/use-device-files';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Box, Tooltip } from '@mui/material';
 
@@ -14,6 +15,7 @@ export function DeviceHeaderTitle({
   deviceName,
   archived,
   section,
+  files,
 }: {
   backHref?: string;
   backLabel?: string;
@@ -21,6 +23,7 @@ export function DeviceHeaderTitle({
   deviceName: string | null;
   archived: boolean;
   section: DeviceDetailsSection;
+  files?: DeviceFilesState;
 }) {
   const lifecycleLabel = formatDeviceLifecycleLabel(archived);
 
@@ -52,7 +55,12 @@ export function DeviceHeaderTitle({
           />
         </Tooltip>
       ) : null}
-      <DeviceBreadcrumbs deviceId={deviceId} deviceName={deviceName} section={section} />
+      <DeviceBreadcrumbs
+        deviceId={deviceId}
+        deviceName={deviceName}
+        section={section}
+        files={files}
+      />
     </div>
   );
 }

@@ -977,11 +977,15 @@ describe('AnalysisFiltersPanel', () => {
           counts: { unitsCount: 4 },
           options: {
             ...buildOptions(),
-            units: units.map((unit) => ({
-              value: `unit-id:${unit.id}`,
-              label: unit.name,
-              count: 1,
-            })),
+            units: [
+              ...units.map((unit) => ({
+                value: `unit-id:${unit.id}`,
+                label: unit.name,
+                count: 1,
+              })),
+              ...unitHierarchy.parents.map(({ value, label }) => ({ value, label, count: 4 })),
+            ],
+            unitParentCount: 3,
           },
           queryState: {
             ...emptyQueryState(),

@@ -113,6 +113,7 @@ class ResizeObserverMock {
 }
 
 vi.mock('@mui/material', () => ({
+  useMediaQuery: () => false,
   Box: forwardRef<HTMLDivElement, { children?: ReactNode } & Record<string, unknown>>(function Box(
     { children, sx, style, ...props },
     ref,
@@ -336,6 +337,7 @@ vi.mock('@mui/material', () => ({
     );
   },
   useTheme: () => ({
+    breakpoints: { down: () => '@media (max-width:599.95px)' },
     palette: { divider: '#000', text: { secondary: '#666' }, background: { paper: '#fff' } },
   }),
 }));
@@ -1295,7 +1297,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       'MGRS недоступні',
     );
     expect(panel?.getAttribute('style')).toContain('left: 16px');
-    expect(panel?.getAttribute('style')).toContain('top: 16px');
     expect(panel?.getAttribute('style')).toContain('z-index: 1200');
   });
 

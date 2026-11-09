@@ -35,6 +35,8 @@ async fn archive_common_browse_and_member_content_recheck_current_access() {
         .await
         .unwrap();
     Arc::get_mut(&mut env).unwrap().s3 = Some(fixture.runtime.storage.clone());
+    Arc::get_mut(&mut env).unwrap().s3_config =
+        Some(fixture.runtime.storage_config.clone());
     let session =
         RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
             .await
@@ -67,8 +69,15 @@ async fn archive_common_browse_and_member_content_recheck_current_access() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: Value = test::read_body_json(response).await;
+    assert_eq!(
+        body["archive_source"],
+        json!({"device_id":fixture.device.id,"file_id":source.id,"revision":1})
+    );
     assert_eq!(body["entries"].as_array().unwrap().len(), 2);
     assert_eq!(body["entries"][0]["revision"], 1);
+    let breadcrumbs = body["breadcrumbs"].as_array().unwrap();
+    assert!(breadcrumbs.first().unwrap()["archive_revision"].is_null());
+    assert_eq!(breadcrumbs.last().unwrap()["archive_revision"], 1);
     let response = test::call_service(
         &app,
         test::TestRequest::get()
@@ -79,6 +88,16 @@ async fn archive_common_browse_and_member_content_recheck_current_access() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(test::read_body(response).await.as_ref(), &[1]);
+    let thumbnail = content.replace("/content", "/thumbnail");
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&thumbnail)
+            .cookie(owner.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
     env.dbx
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
@@ -104,6 +123,18 @@ async fn archive_common_browse_and_member_content_recheck_current_access() {
         &app,
         test::TestRequest::get()
             .uri(&content)
+            .cookie(owner.clone())
+            .to_request(),
+    )
+    .await;
+    assert!(matches!(
+        response.status(),
+        StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+    ));
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&thumbnail)
             .cookie(owner)
             .to_request(),
     )
@@ -112,4 +143,8 @@ async fn archive_common_browse_and_member_content_recheck_current_access() {
         response.status(),
         StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
     ));
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
 }

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { ButtonBase, Skeleton, Typography } from '@mui/material';
 
@@ -12,154 +11,7 @@ import {
   resolveMediaAttachmentId,
   type MessageCardDownloadGuardProps,
 } from './MessageCardMedia';
-import { handleUnauthorizedMediaResponse } from './message-card-media-fetch';
-
-const VIDEO_THUMBNAIL_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
-const VIDEO_THUMBNAIL_MAX_TRANSIENT_FAILURES = 4;
-const VIDEO_THUMBNAIL_PENDING_STATUS = 202;
-const VIDEO_THUMBNAIL_TERMINAL_STATUS = 422;
-
-type VideoThumbnailState = 'loading' | 'loaded' | 'failed';
-
-function thumbnailRequestUrl(thumbnailSrc: string, attempt: number): string {
-  if (attempt === 0) return thumbnailSrc;
-  const separator = thumbnailSrc.includes('?') ? '&' : '?';
-  return `${thumbnailSrc}${separator}retry=${attempt}`;
-}
-
-function thumbnailRetryDelay(response: Response | null, attempt: number): number {
-  const fallback =
-    VIDEO_THUMBNAIL_RETRY_DELAYS_MS[Math.min(attempt, VIDEO_THUMBNAIL_RETRY_DELAYS_MS.length - 1)];
-  const retryAfterSeconds = Number(response?.headers.get('Retry-After') ?? Number.NaN);
-  if (!Number.isFinite(retryAfterSeconds) || retryAfterSeconds <= 0) return fallback;
-  return Math.max(fallback, retryAfterSeconds * 1_000);
-}
-
-function responseCanBeRetried(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
-}
-
-function requestWasAborted(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
-
-export function useThumbnailRequestActivation() {
-  const targetRef = useRef<HTMLButtonElement | null>(null);
-  const [isActive, setIsActive] = useState(false);
-
-  useEffect(() => {
-    const target = targetRef.current;
-    if (target === null || typeof IntersectionObserver === 'undefined') {
-      setIsActive(true);
-      return undefined;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        setIsActive(entries.some((entry) => entry.isIntersecting));
-      },
-      { rootMargin: '400px 0px' },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, []);
-
-  return { targetRef, isActive };
-}
-
-export function useMediaThumbnail(thumbnailSrc: string, isActive: boolean) {
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [state, setState] = useState<VideoThumbnailState>(
-    thumbnailSrc === '' ? 'failed' : 'loading',
-  );
-
-  useEffect(() => {
-    let stopped = false;
-    let retryTimer: number | null = null;
-    let requestController: AbortController | null = null;
-    let objectUrl: string | null = null;
-    let requestAttempt = 0;
-    let transientFailures = 0;
-
-    setImageSrc(null);
-    setState(thumbnailSrc === '' ? 'failed' : 'loading');
-    if (thumbnailSrc === '' || !isActive) return undefined;
-
-    const fail = () => {
-      if (!stopped) setState('failed');
-    };
-    const scheduleRetry = (response: Response | null) => {
-      const delay = thumbnailRetryDelay(response, requestAttempt);
-      requestAttempt += 1;
-      retryTimer = window.setTimeout(() => {
-        retryTimer = null;
-        void requestThumbnail();
-      }, delay);
-    };
-    const handleTransientFailure = (response: Response | null) => {
-      transientFailures += 1;
-      if (transientFailures > VIDEO_THUMBNAIL_MAX_TRANSIENT_FAILURES) {
-        fail();
-        return;
-      }
-      scheduleRetry(response);
-    };
-    const requestThumbnail = async () => {
-      requestController = new AbortController();
-      let response: Response;
-      try {
-        response = await fetch(thumbnailRequestUrl(thumbnailSrc, requestAttempt), {
-          cache: 'no-store',
-          credentials: 'same-origin',
-          headers: { Accept: 'image/jpeg' },
-          signal: requestController.signal,
-        });
-      } catch (error) {
-        if (!stopped && !requestWasAborted(error)) handleTransientFailure(null);
-        return;
-      }
-      handleUnauthorizedMediaResponse(response, thumbnailSrc);
-      if (stopped) return;
-      if (response.status === VIDEO_THUMBNAIL_PENDING_STATUS) {
-        transientFailures = 0;
-        scheduleRetry(response);
-        return;
-      }
-      if (response.status === VIDEO_THUMBNAIL_TERMINAL_STATUS) {
-        fail();
-        return;
-      }
-      if (!response.ok) {
-        if (responseCanBeRetried(response.status)) handleTransientFailure(response);
-        else fail();
-        return;
-      }
-
-      try {
-        const thumbnail = await response.blob();
-        if (stopped) return;
-        objectUrl = URL.createObjectURL(thumbnail);
-        setImageSrc(objectUrl);
-      } catch {
-        if (!stopped) handleTransientFailure(response);
-      }
-    };
-
-    void requestThumbnail();
-    return () => {
-      stopped = true;
-      requestController?.abort();
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-      if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
-    };
-  }, [isActive, thumbnailSrc]);
-
-  return {
-    imageSrc,
-    state,
-    markLoaded: () => setState('loaded'),
-    markFailed: () => setState('failed'),
-  };
-}
+import { useMediaThumbnail, useThumbnailRequestActivation } from '../use-media-thumbnail';
 
 export function MessageCardVideoThumb({
   attachment,
@@ -214,6 +66,7 @@ export function MessageCardVideoThumb({
           ) : null}
           {thumbnail.imageSrc !== null ? (
             <img
+              key={thumbnail.imageSrc}
               src={thumbnail.imageSrc}
               alt=""
               loading="lazy"

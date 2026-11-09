@@ -11,10 +11,7 @@ use opentelemetry_sdk::metrics::{
 };
 use opentelemetry_sdk::Resource;
 
-use crate::config::{
-    Config, SIGNOZ_METRICS_EXPORT_INTERVAL_SECS, SIGNOZ_METRICS_SERVICE_NAME,
-    SIGNOZ_METRICS_SERVICE_NAMESPACE,
-};
+use crate::config::*;
 
 const DEVICE_FILES_SYNCHRONIZED_COUNT: &str =
     "echo.device_files.synchronized.count";
@@ -123,9 +120,6 @@ pub(crate) const UPLOAD_FINALIZATION_EXPORTER: &str =
 const MESSENGER_INGESTED_COUNT: &str = "echo.messenger.ingested.count";
 const MESSENGER_PROCESSING_COUNT: &str = "echo.messenger.processing.count";
 const MESSENGER_PROCESSING_LATENCY: &str = "echo.messenger.processing.latency";
-const MESSENGER_QUEUE_ITEMS: &str = "echo.messenger.queue.items";
-const MESSENGER_QUEUE_OLDEST_AGE: &str = "echo.messenger.queue.oldest.age";
-const MESSENGER_NLP_READY: &str = "echo.messenger.nlp.ready";
 const MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS: &[f64] = &[
     0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 900.0, 1_800.0,
 ];
@@ -165,6 +159,7 @@ pub(crate) struct AiProviderLabels {
 pub struct Metrics {
     provider: SdkMeterProvider,
     pub(crate) kpi: crate::kpi::metrics::Exporter,
+    pub(crate) operational: super::operational::Exporter,
     upload_finalization_jobs: Gauge<u64>,
     upload_finalization_oldest_age: Gauge<f64>,
     upload_finalization_retained_bytes: Gauge<u64>,
@@ -181,6 +176,7 @@ pub struct Metrics {
     device_file_content_failures: Counter<u64>,
     device_file_preview_events: Counter<u64>,
     device_file_preview_queue_age: Gauge<f64>,
+    device_file_thumbnail_duration: Histogram<f64>,
     device_audio_cleanup: Counter<u64>,
     device_audio_preparation: Counter<u64>,
     device_audio_preparation_duration: Histogram<f64>,
@@ -197,9 +193,6 @@ pub struct Metrics {
     messenger_ingested: Counter<u64>,
     messenger_processing: Counter<u64>,
     messenger_processing_latency: Histogram<f64>,
-    messenger_queue_items: Gauge<u64>,
-    messenger_queue_oldest_age: Gauge<f64>,
-    messenger_nlp_ready: Gauge<u64>,
     ai_intel_report_suggestions: Counter<u64>,
     ai_intel_report_duration: Histogram<f64>,
     ai_provider_requests: Counter<u64>,
@@ -211,23 +204,48 @@ pub struct Metrics {
     ocr_storage_deferrals: Counter<u64>,
 }
 
+/// Whether and where to export metrics; kept in the admin system settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignozMetricsSettings {
+    pub enabled: bool,
+    pub endpoint: Option<String>,
+}
+
+pub fn is_valid_signoz_metrics_endpoint(endpoint: &str) -> bool {
+    matches!(
+        reqwest::Url::parse(endpoint),
+        Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
+    )
+}
+
 impl Metrics {
-    pub fn from_config(config: &Config) -> Option<Self> {
-        if !config.signoz_metrics_enabled.unwrap_or(false) {
+    /// Builds the exporter. `config` only supplies the resource identity.
+    pub fn from_settings(
+        config: &Config,
+        settings: &SignozMetricsSettings,
+    ) -> Option<Self> {
+        if !settings.enabled {
             return None;
         }
 
-        let Some(endpoint) = config
-            .signoz_metrics_endpoint
+        let Some(endpoint) = settings
+            .endpoint
             .as_deref()
             .map(str::trim)
             .filter(|endpoint| !endpoint.is_empty())
         else {
             warn!(
-                "Signoz metrics are enabled, but signoz_metrics_endpoint is missing"
+                "Signoz metrics are enabled, but the Signoz metrics endpoint is missing"
             );
             return None;
         };
+
+        if !is_valid_signoz_metrics_endpoint(endpoint) {
+            warn!(
+                "Signoz metrics are enabled, but the Signoz metrics endpoint is invalid"
+            );
+            return None;
+        }
 
         let exporter = match opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
@@ -268,6 +286,7 @@ impl Metrics {
             .build();
         let meter = provider.meter(SIGNOZ_METRICS_SERVICE_NAME);
         let kpi = crate::kpi::metrics::Exporter::new(&meter);
+        let operational = super::operational::Exporter::new(&meter);
         let synchronized_files = meter
             .u64_counter(DEVICE_FILES_SYNCHRONIZED_COUNT)
             .with_description(DEVICE_FILES_SYNCHRONIZED_DESCRIPTION)
@@ -308,6 +327,11 @@ impl Metrics {
         let device_file_preview_queue_age = meter
             .f64_gauge(DEVICE_FILE_PREVIEW_QUEUE_AGE)
             .with_description("Age of the oldest pending device file preview")
+            .with_unit("s")
+            .build();
+        let device_file_thumbnail_duration = meter
+            .f64_histogram(crate::devices::config::DEVICE_FILE_THUMBNAIL_DURATION_METRIC)
+            .with_description("Device file thumbnail source preparation and generation duration")
             .with_unit("s")
             .build();
         let device_audio_cleanup = meter
@@ -399,21 +423,6 @@ impl Metrics {
             )
             .with_unit("s")
             .build();
-        let messenger_queue_items = meter
-            .u64_gauge(MESSENGER_QUEUE_ITEMS)
-            .with_description("Number of messenger queue items")
-            .with_unit("1")
-            .build();
-        let messenger_queue_oldest_age = meter
-            .f64_gauge(MESSENGER_QUEUE_OLDEST_AGE)
-            .with_description("Age of the oldest messenger queue item")
-            .with_unit("s")
-            .build();
-        let messenger_nlp_ready = meter
-            .u64_gauge(MESSENGER_NLP_READY)
-            .with_description("Whether the local NLP dependency is ready")
-            .with_unit("1")
-            .build();
         let ai_intel_report_suggestions = meter
             .u64_counter(AI_INTEL_REPORT_SUGGESTIONS_COUNT)
             .with_description(AI_INTEL_REPORT_SUGGESTIONS_DESCRIPTION)
@@ -497,6 +506,7 @@ impl Metrics {
         Self {
             provider,
             kpi,
+            operational,
             upload_finalization_jobs,
             upload_finalization_oldest_age,
             upload_finalization_retained_bytes,
@@ -513,6 +523,7 @@ impl Metrics {
             device_file_content_failures,
             device_file_preview_events,
             device_file_preview_queue_age,
+            device_file_thumbnail_duration,
             device_audio_cleanup,
             device_audio_preparation,
             device_audio_preparation_duration,
@@ -529,9 +540,6 @@ impl Metrics {
             messenger_ingested,
             messenger_processing,
             messenger_processing_latency,
-            messenger_queue_items,
-            messenger_queue_oldest_age,
-            messenger_nlp_ready,
             ai_intel_report_suggestions,
             ai_intel_report_duration,
             ai_provider_requests,
@@ -700,16 +708,33 @@ impl Metrics {
         due_depth: u64,
         oldest_age_seconds: f64,
     ) {
-        self.messenger_queue_items
-            .record(depth, &[KeyValue::new("state", "total")]);
-        self.messenger_queue_items
-            .record(due_depth, &[KeyValue::new("state", "due")]);
-        self.messenger_queue_oldest_age
-            .record(oldest_age_seconds, &[]);
+        let mut snapshot = super::operational::Snapshot::default();
+        snapshot.integer(
+            OPERATIONAL_METRICS_QUEUE_ITEMS,
+            depth,
+            &[KeyValue::new("state", "total")],
+        );
+        snapshot.integer(
+            OPERATIONAL_METRICS_QUEUE_ITEMS,
+            due_depth,
+            &[KeyValue::new("state", "due")],
+        );
+        snapshot.float(OPERATIONAL_METRICS_QUEUE_AGE, oldest_age_seconds, &[]);
+        self.operational.publish(
+            "queue",
+            chrono::Utc::now().timestamp_millis(),
+            Ok(snapshot),
+        );
     }
 
     pub(crate) fn record_messenger_nlp_ready(&self, ready: bool) {
-        self.messenger_nlp_ready.record(u64::from(ready), &[]);
+        let mut snapshot = super::operational::Snapshot::default();
+        snapshot.integer(OPERATIONAL_METRICS_NLP_READY, u64::from(ready), &[]);
+        self.operational.publish(
+            "nlp",
+            chrono::Utc::now().timestamp_millis(),
+            Ok(snapshot),
+        );
     }
 
     pub(crate) fn record_device_files_sync(
@@ -768,6 +793,13 @@ impl Metrics {
                 | "publish_cas_lost"
                 | "cleanup_success"
                 | "cleanup_failure"
+                | "thumbnail_hit"
+                | "thumbnail_miss"
+                | "thumbnail_queued"
+                | "thumbnail_capacity"
+                | "thumbnail_generated"
+                | "thumbnail_failed"
+                | "thumbnail_retry"
         ) {
             self.device_file_preview_events
                 .add(1, &[KeyValue::new("event", event)]);
@@ -778,6 +810,14 @@ impl Metrics {
         if seconds.is_finite() && seconds >= 0.0 {
             self.device_file_preview_queue_age.record(seconds, &[]);
         }
+    }
+
+    pub(crate) fn record_device_file_thumbnail_duration(
+        &self,
+        duration: Duration,
+    ) {
+        self.device_file_thumbnail_duration
+            .record(duration.as_secs_f64(), &[]);
     }
 
     pub(crate) fn record_device_audio_cleanup(&self, outcome: &'static str) {
@@ -1009,6 +1049,9 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             DEVICE_FILE_CONTENT_FAILURES_COUNT => (&["stage"], None),
             DEVICE_FILE_PREVIEW_EVENTS_COUNT => (&["event"], None),
             DEVICE_FILE_PREVIEW_QUEUE_AGE => (&[], None),
+            crate::devices::config::DEVICE_FILE_THUMBNAIL_DURATION_METRIC => {
+                (&[], Some(DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS))
+            }
             crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC => {
                 (&["outcome"], None)
             }
@@ -1032,8 +1075,41 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
                 &["messenger", "outcome"],
                 Some(MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS),
             ),
-            MESSENGER_QUEUE_ITEMS => (&["state"], None),
-            MESSENGER_QUEUE_OLDEST_AGE | MESSENGER_NLP_READY => (&[], None),
+            OPERATIONAL_METRICS_QUEUE_ITEMS => (&["state", "source"], None),
+            OPERATIONAL_METRICS_QUEUE_AGE
+            | OPERATIONAL_METRICS_NLP_READY
+            | OPERATIONAL_METRICS_AVAILABLE
+            | OPERATIONAL_METRICS_UPDATED_AT => (&["source"], None),
+            OPERATIONAL_METRICS_ROOT_BYTES => (&["source", "mountpoint"], None),
+            OPERATIONAL_METRICS_ACTIVITY_AGE
+            | OPERATIONAL_METRICS_DATASOURCE_ACTIVE
+            | OPERATIONAL_METRICS_ACCOUNT_LINKED
+            | OPERATIONAL_METRICS_ACCOUNT_ACTIVE => (
+                &[
+                    "source",
+                    "datasource_id",
+                    "account_id",
+                    "client_id",
+                    "messenger",
+                ],
+                None,
+            ),
+            OPERATIONAL_METRICS_ERRORS => (
+                &[
+                    "datasource_id",
+                    "account_id",
+                    "client_id",
+                    "messenger",
+                    "path",
+                    "process",
+                    "operation",
+                    "error_kind",
+                ],
+                None,
+            ),
+            OPERATIONAL_METRICS_REPORT_TIMEOUTS => {
+                (&["report_kind", "process"], None)
+            }
             AI_INTEL_REPORT_SUGGESTIONS_COUNT => (&["outcome"], None),
             AI_INTEL_REPORT_DURATION => {
                 (&["outcome"], Some(AI_INTEL_REPORT_DURATION_BUCKETS_SECS))
@@ -1369,15 +1445,16 @@ mod tests {
     use crate::types::Mode;
 
     #[test]
-    fn metrics_are_disabled_when_config_is_absent() {
-        let mut config = crate::config::read_config(Mode::Test).unwrap();
-        config.signoz_metrics_enabled = None;
-        config.signoz_metrics_endpoint = None;
+    fn metrics_are_disabled_without_a_usable_endpoint() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let mut settings = SignozMetricsSettings::default();
+        assert!(Metrics::from_settings(&config, &settings).is_none());
 
-        assert!(Metrics::from_config(&config).is_none());
+        settings.enabled = true;
+        assert!(Metrics::from_settings(&config, &settings).is_none());
 
-        config.signoz_metrics_enabled = Some(true);
-        assert!(Metrics::from_config(&config).is_none());
+        settings.endpoint = Some("signoz:4317".to_string());
+        assert!(Metrics::from_settings(&config, &settings).is_none());
     }
 
     #[test]
@@ -1572,18 +1649,27 @@ mod tests {
             Some(1),
         );
         assert_eq!(
-            recorder.gauge_value(MESSENGER_QUEUE_ITEMS, &[("state", "total")],),
+            recorder.gauge_value(
+                OPERATIONAL_METRICS_QUEUE_ITEMS,
+                &[("state", "total")],
+            ),
             Some(9),
         );
         assert_eq!(
-            recorder.gauge_value(MESSENGER_QUEUE_ITEMS, &[("state", "due")],),
+            recorder.gauge_value(
+                OPERATIONAL_METRICS_QUEUE_ITEMS,
+                &[("state", "due")],
+            ),
             Some(3),
         );
         assert_eq!(
-            recorder.gauge_f64_value(MESSENGER_QUEUE_OLDEST_AGE, &[]),
+            recorder.gauge_f64_value(OPERATIONAL_METRICS_QUEUE_AGE, &[]),
             Some(42.0),
         );
-        assert_eq!(recorder.gauge_value(MESSENGER_NLP_READY, &[]), Some(1),);
+        assert_eq!(
+            recorder.gauge_value(OPERATIONAL_METRICS_NLP_READY, &[]),
+            Some(1),
+        );
         let latency = recorder
             .find_with_attributes(
                 MESSENGER_PROCESSING_LATENCY,

@@ -5,9 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  frequencySummaryRequestBody,
   mapOutcomeNotices,
   mapOutcomeRepairPrompt,
   observeMapOutcome,
+  scriptFailure,
+  toolErrorReason,
   toolErrorSummary,
   analysisPeriodRequestBody,
   callsignFrequencyMatchesRequestBody,
@@ -37,8 +40,10 @@ import {
   formatEchoHttpError,
   validatePayload,
   validateSkill,
+  validationFields,
   writeModelsFile,
 } from "./runner.ts";
+import { createGroupScope, resolveGroups } from "./group-scope.ts";
 import { EDIT_GUIDANCE, MAP_GUIDANCE, MapRegistry } from "./maps.ts";
 
 test("accepts a non-empty final assistant response", () => {
@@ -620,6 +625,61 @@ test("passes an inherited callsign through applicable analysis tools", () => {
   });
 });
 
+test("#4070 frequency summary accepts the filters its route supports", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 31 },
+    selectedFrequencies: ["163,935", "3330"],
+    selectedUnitIds: [7, 7],
+    selectedUnits: ["8 дшр"],
+  };
+  assert.deepEqual(frequencySummaryRequestBody(params, context), {
+    since_date_inclusive_ms: Date.parse("2026-07-04T21:00:00Z"),
+    till_date_noninclusive_ms: Date.parse("2026-08-04T21:00:00Z"),
+    selected_freqs: ["163.9350", "3330"],
+    selected_unit_ids: [7],
+    selected_units: ["8 дшр"],
+  });
+  assert.throws(
+    () => frequencySummaryRequestBody({ ...params, search: "x" }, context),
+    /unsupported field/,
+  );
+  assert.throws(
+    () => analysisPeriodRequestBody(params, context),
+    /unsupported field/,
+  );
+});
+
+test("#4070 frequency summary compaction keeps ranked rows and shows they are partial", () => {
+  const route = { skill: "frequency_summary", requestKind: "analysisPeriod" as const };
+  const value = {
+    rows: Array.from({ length: 128 }, (_, index) => ({
+      freq: `${index}`,
+      count: 1000 - index,
+      callsigns: Array.from({ length: 32 }, (_, item) => `позивний ${item}`),
+      units: ["підрозділ"],
+      locations: [],
+    })),
+    total_rows: 11636,
+    row_values_truncated: false,
+  };
+
+  const tiny = JSON.parse(compactToolResponse(route, value, 1));
+  assert.equal(tiny.rows.length, 1);
+  assert.equal(tiny.rows[0].count, 1000);
+  assert.equal(tiny.total_rows, 11636);
+  assert.equal(tiny.row_values_truncated, false);
+
+  const bounded = JSON.parse(compactToolResponse(route, value, 128, 3000));
+  assert.ok(bounded.rows.length >= 1 && bounded.rows.length < 128);
+  assert.deepEqual(bounded.rows[0].units, ["підрозділ"]);
+  assert.equal(bounded.rows[0].callsigns.length, 4);
+  assert.equal(bounded.rows[0].count, 1000);
+  assert.equal(bounded.total_rows, 11636);
+  assert.equal(bounded.row_values_truncated, true);
+  assert.ok(JSON.stringify(bounded).length <= 3000);
+});
+
 test("passes unit filters to inbox requests and validates them", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   const params = {
@@ -873,6 +933,64 @@ test("builds bounded paginated inbox requests with an inclusive upper boundary",
   );
 });
 
+test("#4083 a blank inbox search means no text filter", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const period = { kind: "relative_days", days: 3 };
+  const unfiltered = inboxMessagesRequestBody({ period }, context);
+  assert.equal("search" in unfiltered, false);
+  for (const search of ["", "   "])
+    assert.deepEqual(inboxMessagesRequestBody({ period, search }, context), unfiltered);
+  assert.equal(inboxMessagesRequestBody({ period, search: "  удар  " }, context).search, "удар");
+  assert.throws(() => inboxMessagesRequestBody({ period, search: "x".repeat(2001) }, context), /at most 2000/);
+});
+
+test("#4083 Echo's own argument checks name the parameter and never the values", async () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const parameterNames = new Map([
+    ["echo_inbox_messages", new Set(["period", "search", "selectedGroups", "selectedCallsigns", "selectedFrequencies", "selectedUnitIds", "selectedUnits", "cursor", "maxItems"])],
+  ]);
+  const fieldsOf = (message: string) =>
+    validationFields(
+      { content: [{ type: "text", text: message.startsWith("Invalid Echo tool arguments: ") ? message : `Invalid Echo tool arguments: ${message}` }] },
+      "echo_inbox_messages",
+      parameterNames,
+    );
+  const rejection = (params: Record<string, unknown>) => {
+    try {
+      inboxMessagesRequestBody({ period: { kind: "relative_days", days: 3 }, ...params }, context);
+    } catch (error) {
+      return fieldsOf((error as Error).message);
+    }
+    assert.fail(`accepted ${JSON.stringify(params)}`);
+  };
+  assert.equal(rejection({ period: { kind: "relative_days", days: 32 } }), "period:size");
+  assert.equal(rejection({ period: { kind: "relative_hours", hours: 0 } }), "period:size");
+  assert.equal(rejection({ period: { kind: "relative_days", days: 3, extra: 1 } }), "period:additional");
+  assert.equal(rejection({ period: { kind: "date_range", sinceDate: "2026-08-04", tillDateInclusive: "2026-08-01" } }), "period:order");
+  assert.equal(rejection({ period: { kind: "date_range", sinceDate: "SENSITIVE", tillDateInclusive: "2026-08-01" } }), "period.sinceDate:invalid");
+  assert.equal(rejection({ period: { kind: "weeks" } }), "period:invalid");
+  assert.equal(rejection({ cursor: 0 }), "cursor:invalid");
+  assert.equal(rejection({ maxItems: 500 }), "maxItems:size");
+  assert.equal(rejection({ search: 7 }), "search:size");
+  assert.equal(rejection({ selectedCallsigns: ["  "] }), "selectedCallsigns:blank");
+  assert.equal(rejection({ selectedFrequencies: ["SENSITIVE"] }), "selectedFrequencies:invalid");
+  assert.equal(rejection({ selectedUnitIds: [] }), "selectedUnitIds:size");
+  assert.equal(rejection({ SENSITIVE: 1 }), "root:additional");
+
+  const groups = [{ master_key: "group.devops", name: "DEVOPS" }];
+  assert.throws(() => resolveGroups(["SENSITIVE"], groups), (error: Error) => {
+    assert.equal(fieldsOf(error.message), "selectedGroups:unknown");
+    return true;
+  });
+  const scope = createGroupScope(async () => groups, () => {});
+  await scope.resolve({ selectedGroups: ["DEVOPS"] }, true);
+  await assert.rejects(scope.resolve({}, true), (error: Error) => {
+    assert.equal(fieldsOf(error.message), "selectedGroups:required");
+    return true;
+  });
+  assert.equal(fieldsOf("SENSITIVE text from an unknown check"), undefined);
+});
+
 test("normalizes safe period forms emitted by the configured model", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   const expected = {
@@ -1099,7 +1217,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.05.1",
+    harnessRelease: "2026.11.08.1",
   });
 });
 
@@ -1380,14 +1498,17 @@ test("reports validated query scope and actual delivered message counts", () => 
     label: "Перевіряю доступні джерела",
     requestKind: "json",
   });
-  const groupResponse = [{ name: "Радіомережа А" }, { name: "Радіомережа Б" }];
+  const groupResponse = [
+    { master_key: "group.a", name: "Радіомережа А" },
+    { master_key: "group.b", name: "Радіомережа Б" },
+  ];
   const groupResult = tracker.finish(
     groupRoute,
     tracker.start(groupRoute, undefined),
     groupResponse,
     compactToolResponse(groupRoute, groupResponse, 1),
   );
-  assert.equal(groupResult, "Отримано груп джерел для перегляду: 1");
+  assert.equal(groupResult, "Отримано груп джерел для перегляду: 2");
 });
 
 // Regression: https://github.com/echoua/echo/issues/3064
@@ -1715,12 +1836,39 @@ test("discards a truncated or empty citation repair", () => {
 
 test("#3064 map tool errors get specific labels while route errors stay generic", () => {
   const result = (text: string) => ({ content: [{ type: "text", text }] });
+  assert.equal(toolErrorReason(result("Echo response is too large")), "response_too_large");
+  assert.equal(toolErrorReason(result("The operation was aborted due to timeout")), "timeout");
+  assert.equal(toolErrorReason(result("Echo redirects are not allowed")), "echo_redirect");
+  assert.equal(toolErrorReason(result("Unexpected end of JSON input")), "invalid_response");
+  assert.equal(toolErrorReason(result("terminated")), "network_error");
+  assert.equal(toolErrorReason(result("anything")), "tool_error");
   assert.equal(toolErrorSummary("echo_inbox_messages", result("anything")), "Не вдалося завантажити дані за вказаними параметрами.");
   assert.equal(toolErrorSummary("echo_map_edit", result('Невідома операція «retype». Допустимі op: add, setSidc. Приклад: {"sidc":"10031000001211000000"}')), "Некоректні параметри зміни мапи");
   assert.equal(toolErrorSummary("echo_map_edit", result("Echo returned HTTP 409: Мапа змінилася.")), "Мапа змінилася; потрібно перечитати її");
   assert.equal(toolErrorSummary("echo_map_script", result("Script failed (exit 1). Traceback ...")), "Скрипт обробки завершився помилкою");
   assert.equal(toolErrorSummary("echo_map_set_symbol", result("SIDC має містити рівно 20 цифр")), "Некоректна позначка");
   assert.equal(toolErrorSummary("echo_map_edit", result("secret payload")), "Не вдалося змінити мапу");
+});
+
+test("#4038 script failures report their exception and only script tools report text", () => {
+  const result = (text: string) => ({ content: [{ type: "text", text }] });
+  const traceback = "Script failed (exit 1). Fix it and retry.\nTraceback (most recent call last):\n  File \"script.py\", line 14, in <module>\nKeyError: 'latitude'\n";
+  assert.deepEqual(scriptFailure("echo_map_script", result(traceback)), { detail: "KeyError: 'latitude'", exception: "KeyError" });
+  assert.deepEqual(scriptFailure("echo_document_script", result(traceback)), { detail: "KeyError: 'latitude'", exception: "KeyError" });
+  assert.deepEqual(scriptFailure("echo_map_from_reports", result("Не вдалося застосувати рецепт. ValueError: bad")), { detail: "Не вдалося застосувати рецепт. ValueError: bad", exception: "ValueError" });
+  assert.deepEqual(scriptFailure("echo_map_script", result("Script failed (exit null). Fix it and retry.\n")), { detail: "Script failed (exit null). Fix it and retry." });
+  assert.equal((scriptFailure("echo_map_script", result(`ValueError: ${"x".repeat(2_000)}`)).detail as string).length, 1_000);
+  assert.deepEqual(scriptFailure("echo_map_append", result("ValueError: secret payload")), {});
+  assert.deepEqual(scriptFailure("echo_inbox_messages", result("secret")), {});
+  assert.deepEqual(scriptFailure("echo_map_script", result("")), {});
+});
+
+test("#4038 an undelivered map adds one notice", () => {
+  const registry = new MapRegistry();
+  assert.deepEqual(mapOutcomeNotices(registry, false).notices, []);
+  const { notices } = mapOutcomeNotices(registry, false, true);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /Мапу не створено/);
 });
 
 test("#3064 failed map edits and count mismatches are stated in the answer", () => {

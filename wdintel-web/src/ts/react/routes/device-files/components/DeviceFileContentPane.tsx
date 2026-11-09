@@ -1,27 +1,39 @@
-import type { AiAgentFileCitation } from '../../../../../Bindings';
+import type { AiAgentFileCitation, FileBreadcrumb } from '../../../../../Bindings';
 import { DeviceDocumentDetails } from './DeviceDocumentPreview';
-import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
+import type { DeviceFileVideoPlayback } from '../types';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlined';
-import { CircularProgress } from '@mui/material';
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { Box, CircularProgress, Typography } from '@mui/material';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 
 import { isDeviceArchive, type DeviceFileSelection } from '../device-file-archive';
-import { DeviceArchiveTree } from './DeviceArchiveTree';
+import { DeviceArchiveExplorer, type DeviceArchiveExplorerOptions } from './DeviceArchiveExplorer';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerSnackbarProvider } from '../../../components/PowerSnackbar';
 import { useDeviceFilePreview } from '../use-device-file-preview';
-import { DeviceFileContentActions, DeviceFileContentHeader } from './DeviceFileContentHeader';
+import { useDeviceFileKeyboardNavigation } from '../use-device-file-keyboard-navigation';
+import { DeviceFileContentHeader } from './DeviceFileContentHeader';
 
-import { getDocumentFileKind } from '../../shared/message-card/document-file-kind';
-import { getDocumentPreviewCapabilities } from '../../shared/message-card/document-preview-capabilities';
+import { getNativeMapFormat } from '../../shared/message-card/kmz/kmz-preview-utils';
 import { getFilePreviewKind } from '../../shared/message-card/file-preview-kind';
+import type { MessageCardPreviewNavigation } from '../../shared/message-card/attachment-preview/message-card-preview.types';
 import { FilePreviewDialog } from '../../shared/message-card/attachment-preview/FilePreviewDialog';
+import { getAttachmentPreviewStageBg } from '../../shared/message-card/attachment-preview/message-card-attachment-preview';
 
-const DocumentFilePreview = lazy(() =>
-  import('../../shared/message-card/renderers/DocumentFilePreview').then((module) => ({
-    default: module.DocumentFilePreview,
+const DocumentFilePreviewStage = lazy(() =>
+  import('../../shared/message-card/renderers/DocumentFilePreviewStage').then((module) => ({
+    default: module.DocumentFilePreviewStage,
   })),
 );
 const DeviceFileImagePreview = lazy(() =>
@@ -55,9 +67,13 @@ function ContentLoading() {
 function FilePreview({
   preview,
   zoom,
+  onZoomChange,
+  videoPlayback,
 }: {
   preview: ReturnType<typeof useDeviceFilePreview>;
   zoom: number;
+  onZoomChange: Dispatch<SetStateAction<number>>;
+  videoPlayback?: DeviceFileVideoPlayback | null;
 }) {
   if (!preview.source || !preview.signal) return null;
   const lifecycle = {
@@ -72,9 +88,11 @@ function FilePreview({
       <DeviceFileMediaPreview
         source={preview.source}
         kind={kind}
+        videoPlayback={videoPlayback}
         lifecycle={lifecycle}
         checkAccess={preview.checkAccess}
         onRetry={preview.retry}
+        onDurationChange={preview.onDurationChange}
       />
     );
   if (kind === 'converted-map')
@@ -84,16 +102,29 @@ function FilePreview({
       <MapFilePreview
         source={preview.source}
         format={
-          preview.source.extension === 'kml' || preview.source.contentType.includes('kml')
-            ? 'kml'
-            : 'kmz'
+          getNativeMapFormat(preview.source.fileName, preview.source.contentType) ??
+          getNativeMapFormat(`file.${preview.source.extension}`) ??
+          'kmz'
         }
         lifecycle={lifecycle}
       />
     );
   if (kind === 'image')
-    return <DeviceFileImagePreview source={preview.source} lifecycle={lifecycle} />;
-  return <DocumentFilePreview source={preview.source} lifecycle={lifecycle} zoom={zoom} />;
+    return (
+      <DeviceFileImagePreview
+        source={preview.source}
+        lifecycle={lifecycle}
+        onImageLoad={preview.onImageLoad}
+      />
+    );
+  return (
+    <DocumentFilePreviewStage
+      source={preview.source}
+      lifecycle={lifecycle}
+      zoom={zoom}
+      onZoomChange={onZoomChange}
+    />
+  );
 }
 
 function FilePreviewState({
@@ -110,8 +141,12 @@ function FilePreviewState({
       <div className="flex size-16 shrink-0 items-center justify-center rounded-echo-xl bg-echo-surface text-echo-text/60">
         {icon}
       </div>
-      <h3 className="m-0 text-[22px]! font-medium! text-echo-text">{title}</h3>
-      <p className="m-0 text-echo-base leading-relaxed text-echo-text/60">{children}</p>
+      <Typography component="h3" variant="subtitle1" className="m-0! font-semibold! text-echo-text">
+        {title}
+      </Typography>
+      <Typography component="p" variant="body2" className="m-0! text-echo-text/60">
+        {children}
+      </Typography>
     </div>
   );
 }
@@ -119,9 +154,13 @@ function FilePreviewState({
 function SelectedFileContent({
   preview,
   zoom,
+  onZoomChange,
+  videoPlayback,
 }: {
   preview: ReturnType<typeof useDeviceFilePreview>;
   zoom: number;
+  onZoomChange: Dispatch<SetStateAction<number>>;
+  videoPlayback?: DeviceFileVideoPlayback | null;
 }) {
   if (preview.state === 'idle') {
     return (
@@ -157,100 +196,138 @@ function SelectedFileContent({
       </FilePreviewState>
     );
   }
-  const extension = preview.source?.extension ?? '';
-  const kind = preview.source ? getFilePreviewKind(preview.source) : 'unsupported';
-  if (
-    kind === 'document' ||
-    kind === 'image' ||
-    kind === 'zip' ||
-    kind === 'map' ||
-    kind === 'converted-map' ||
-    kind === 'audio' ||
-    kind === 'video'
-  ) {
-    return (
-      <Suspense fallback={<ContentLoading />}>
-        <FilePreview key={preview.epoch} preview={preview} zoom={zoom} />
-      </Suspense>
-    );
-  }
   return (
-    <FilePreviewState
-      icon={extension === 'zip' ? <FolderZipOutlinedIcon /> : <InsertDriveFileOutlinedIcon />}
-      title={
-        extension
-          ? `Перегляд формату ${extension.toUpperCase()} не підтримується`
-          : 'Перегляд цього формату не підтримується'
-      }
-    >
-      Ви можете скачати файл і відкрити його
-      <br />
-      на комп’ютері у відповідній програмі.
-    </FilePreviewState>
+    <Suspense fallback={<ContentLoading />}>
+      <FilePreview
+        key={preview.epoch}
+        preview={preview}
+        zoom={zoom}
+        onZoomChange={onZoomChange}
+        videoPlayback={videoPlayback}
+      />
+    </Suspense>
   );
 }
 
 function SelectedFilePane({
+  paneRef,
   deviceId,
   file,
+  breadcrumbs,
   sessionScoped,
   revisionPinned = false,
   citation,
-  mobile,
+  showDocumentDetails,
   onSelectFile,
+  onOpenDirectory,
+  onArchiveReady,
+  archiveOptions,
+  navigation,
+  additionalActions,
+  onClose,
+  closeLabel = 'До папки',
 }: {
+  paneRef: RefObject<HTMLElement>;
   deviceId: string;
   file: DeviceFileSelection;
+  breadcrumbs?: FileBreadcrumb[];
   sessionScoped: boolean;
   revisionPinned?: boolean;
   citation?: AiAgentFileCitation;
-  mobile: boolean;
+  showDocumentDetails: boolean;
   onSelectFile: (file: DeviceFileSelection) => void;
+  onOpenDirectory?: (entryId: string, revision: number | null) => void;
+  archiveOptions?: DeviceArchiveExplorerOptions;
+  onArchiveReady?: (entryId: string, revision: number) => void;
+  navigation?: MessageCardPreviewNavigation;
+  additionalActions?: ReactNode;
+  onClose?: () => void;
+  closeLabel?: string;
 }) {
   const preview = useDeviceFilePreview({ deviceId, file });
   const [zoom, setZoom] = useState(100);
   const [fullscreen, setFullscreen] = useState(false);
+  const fullscreenContentRef = useRef<HTMLDivElement>(null);
+  const videoPlayback = useRef<{ epoch: number | null; state: DeviceFileVideoPlayback } | null>(
+    null,
+  );
+  const changeFullscreen = (next: boolean) => {
+    const container = fullscreen ? fullscreenContentRef.current : paneRef.current;
+    const video = container?.querySelector('video');
+    if (preview.source && video && video.readyState >= 1) {
+      videoPlayback.current = {
+        epoch: preview.epoch,
+        state: {
+          sourceKey: preview.source.key,
+          currentTime: video.currentTime,
+          paused: video.paused || video.ended,
+          volume: video.volume,
+          muted: video.muted,
+          playbackRate: video.playbackRate,
+        },
+      };
+    }
+    setFullscreen(next);
+  };
+  useDeviceFileKeyboardNavigation({
+    paneRef,
+    fullscreenContentRef,
+    fullscreen,
+    navigation,
+    enabled: preview.state !== 'denied',
+  });
   useEffect(() => {
     setZoom(100);
-    setFullscreen(false);
   }, [preview.epoch]);
   useEffect(() => {
-    if (preview.state !== 'ready') setFullscreen(false);
+    if (
+      preview.state === 'denied' ||
+      preview.state === 'transient-error' ||
+      preview.state === 'idle'
+    )
+      setFullscreen(false);
   }, [preview.state]);
-  const zoomable =
-    preview.source &&
-    getFilePreviewKind(preview.source) === 'document' &&
-    getDocumentPreviewCapabilities(getDocumentFileKind(preview.source)).zoomable;
   const archive = isDeviceArchive(file);
   const content = archive ? (
-    <ul className="m-0 list-none p-echo-sm">
-      <DeviceArchiveTree
-        key={`${deviceId}/${file.fileId}/${file.revision}`}
-        deviceId={deviceId}
-        file={file}
-        depth={0}
-        initialExpanded
-        showStatus
-        onSelectFile={onSelectFile}
-      />
-    </ul>
+    <DeviceArchiveExplorer
+      key={`${deviceId}/${file.fileId}/${file.revision}`}
+      deviceId={deviceId}
+      file={file}
+      options={archiveOptions}
+      onSelectFile={onSelectFile}
+      onOpenDirectory={onOpenDirectory}
+      onReady={onArchiveReady}
+    />
   ) : (
-    <SelectedFileContent preview={preview} zoom={zoom} />
+    <SelectedFileContent
+      preview={preview}
+      zoom={zoom}
+      onZoomChange={setZoom}
+      videoPlayback={
+        videoPlayback.current?.epoch === preview.epoch ? videoPlayback.current.state : null
+      }
+    />
   );
   return (
     <>
       <DeviceFileContentHeader
         file={file}
+        breadcrumbs={breadcrumbs}
         preview={preview}
         sessionScoped={sessionScoped}
         revisionPinned={revisionPinned}
-        mobile={mobile}
-        zoom={zoomable ? zoom : undefined}
-        onZoomChange={setZoom}
-        onFullscreen={() => setFullscreen(true)}
+        navigation={navigation}
+        additionalActions={additionalActions}
+        onClose={onClose}
+        closeLabel={closeLabel}
+        onFullscreen={() => changeFullscreen(true)}
       />
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-echo-background/50">
-        {(preview.state === 'ready' || preview.state === 'empty') &&
+      <Box
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto"
+        sx={{ backgroundColor: getAttachmentPreviewStageBg }}
+      >
+        {showDocumentDetails &&
+          (preview.state === 'ready' || preview.state === 'empty') &&
           !archive &&
           !file.archiveOrigin &&
           file.kind === 'file' &&
@@ -280,22 +357,34 @@ function SelectedFilePane({
             />
           )}
         {!fullscreen && content}
-      </div>
+      </Box>
       <FilePreviewDialog
         open={fullscreen}
         title={file.name}
-        onClose={() => setFullscreen(false)}
-        fullScreen={mobile}
-        actions={
-          <DeviceFileContentActions
+        onClose={() => changeFullscreen(false)}
+        fullScreen
+        header={
+          <DeviceFileContentHeader
+            file={file}
+            breadcrumbs={breadcrumbs}
             preview={preview}
-            mobile={mobile}
-            zoom={zoomable ? zoom : undefined}
-            onZoomChange={setZoom}
+            titleId="device-file-fullscreen-title"
+            sessionScoped={sessionScoped}
+            revisionPinned={revisionPinned}
+            navigation={navigation}
+            additionalActions={additionalActions}
+            onClose={() => changeFullscreen(false)}
+            closeLabel="Закрити перегляд"
           />
         }
       >
-        {content}
+        <Box
+          ref={fullscreenContentRef}
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto"
+          sx={{ backgroundColor: getAttachmentPreviewStageBg }}
+        >
+          {content}
+        </Box>
       </FilePreviewDialog>
     </>
   );
@@ -304,20 +393,38 @@ function SelectedFilePane({
 export function DeviceFileContentPane({
   deviceId,
   file,
+  breadcrumbs,
   onSelectFile,
+  onOpenDirectory,
+  onArchiveReady,
+  archiveOptions,
+  navigation,
+  additionalActions,
+  onClose,
+  closeLabel = 'До папки',
   sessionScoped = false,
   revisionPinned = false,
   citation,
-  mobile = false,
+  showDocumentDetails = false,
 }: {
   deviceId: string;
   file: DeviceFileSelection | null;
+  breadcrumbs?: FileBreadcrumb[];
   onSelectFile?: (file: DeviceFileSelection) => void;
+  onOpenDirectory?: (entryId: string, revision: number | null) => void;
+  archiveOptions?: DeviceArchiveExplorerOptions;
+  onArchiveReady?: (entryId: string, revision: number) => void;
+  navigation?: MessageCardPreviewNavigation;
+  additionalActions?: ReactNode;
+  onClose?: () => void;
+  closeLabel?: string;
   sessionScoped?: boolean;
   revisionPinned?: boolean;
   citation?: AiAgentFileCitation;
+  showDocumentDetails?: boolean;
   mobile?: boolean;
 }) {
+  const paneRef = useRef<HTMLElement>(null);
   const key = `${deviceId}/${file?.fileId}/${file?.revision}`;
   const [selection, setSelection] = useState<{ key: string; file: DeviceFileSelection } | null>(
     null,
@@ -326,6 +433,7 @@ export function DeviceFileContentPane({
   const selected = !onSelectFile && selection?.key === key ? selection.file : file;
   return (
     <section
+      ref={paneRef}
       aria-labelledby="device-file-content-title"
       data-testid="device-file-content-pane"
       className="flex h-full min-h-0 min-w-0 flex-col"
@@ -333,20 +441,29 @@ export function DeviceFileContentPane({
       {selected !== null ? (
         <PowerSnackbarProvider>
           <SelectedFilePane
+            paneRef={paneRef}
             deviceId={deviceId}
             file={selected}
+            breadcrumbs={breadcrumbs}
             onSelectFile={onSelectFile ?? ((file) => setSelection({ key, file }))}
+            onOpenDirectory={onOpenDirectory}
+            onArchiveReady={onArchiveReady}
+            archiveOptions={archiveOptions}
+            navigation={navigation}
+            additionalActions={additionalActions}
+            onClose={onClose}
+            closeLabel={closeLabel}
             sessionScoped={sessionScoped}
             revisionPinned={revisionPinned}
             citation={citation}
-            mobile={mobile}
+            showDocumentDetails={showDocumentDetails}
           />
         </PowerSnackbarProvider>
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-echo-sm p-echo-xl text-center">
           <h2
             id="device-file-content-title"
-            className="m-0 break-all text-echo-lg font-semibold text-echo-text"
+            className="m-0 break-all text-[length:var(--echo-typography-font-size-lg)]! font-semibold text-echo-text"
           >
             Вміст файлу
           </h2>

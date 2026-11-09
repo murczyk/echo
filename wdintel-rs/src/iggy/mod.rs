@@ -10,6 +10,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 use url::Url;
 
+pub(crate) mod group_refresh;
 pub(crate) mod settlement_events;
 pub(crate) mod unit_refresh;
 pub mod worker;

@@ -30,6 +30,14 @@ pub(in crate::devices::files) async fn load_path_components(
     db: &impl ConnectionTrait,
     entries: &[TreeEntry],
 ) -> Result<Vec<Vec<String>>, FilesystemError> {
+    load_path_components_with_root(db, entries, false).await
+}
+
+pub(in crate::devices::files) async fn load_path_components_with_root(
+    db: &impl ConnectionTrait,
+    entries: &[TreeEntry],
+    include_root: bool,
+) -> Result<Vec<Vec<String>>, FilesystemError> {
     let Some(first_entry) = entries.first() else {
         return Ok(Vec::new());
     };
@@ -51,7 +59,7 @@ pub(in crate::devices::files) async fn load_path_components(
             map_database_error(anyhow::Error::new(error).context(h!()))
         })?;
 
-    map_path_components(entries, rows)
+    map_path_components_with_root(entries, rows, include_root)
 }
 
 pub(super) fn path_context_query(
@@ -93,9 +101,18 @@ fn hierarchy_depth_expr() -> SimpleExpr {
         .into()
 }
 
+#[cfg(test)]
 pub(in crate::devices::files) fn map_path_components(
     entries: &[TreeEntry],
     rows: Vec<file_entry::Model>,
+) -> Result<Vec<Vec<String>>, FilesystemError> {
+    map_path_components_with_root(entries, rows, false)
+}
+
+fn map_path_components_with_root(
+    entries: &[TreeEntry],
+    rows: Vec<file_entry::Model>,
+    include_root: bool,
 ) -> Result<Vec<Vec<String>>, FilesystemError> {
     let Some(first_entry) = entries.first() else {
         return Ok(Vec::new());
@@ -121,7 +138,12 @@ pub(in crate::devices::files) fn map_path_components(
     entries
         .iter()
         .map(|entry| {
-            map_entry_path_components(entry, device_id, &context_by_id)
+            map_entry_path_components(
+                entry,
+                device_id,
+                &context_by_id,
+                include_root,
+            )
         })
         .collect()
 }
@@ -130,6 +152,7 @@ fn map_entry_path_components(
     entry: &TreeEntry,
     device_id: Uuid,
     context_by_id: &HashMap<Uuid, PathContextEntry>,
+    include_root: bool,
 ) -> Result<Vec<String>, FilesystemError> {
     let entry_ids =
         ltree::hierarchy_entry_ids(tree_entry_hierarchy_path(entry))?;
@@ -175,7 +198,7 @@ fn map_entry_path_components(
                 ));
             }
             path_components.push(tree_entry_name(entry).to_string());
-        } else if position != 0 {
+        } else if position != 0 || include_root {
             if context.kind() != DomainFileEntryKind::Directory
                 && !is_archive_context(context)
             {
@@ -306,6 +329,7 @@ pub(in crate::devices::files) fn map_breadcrumb_chain(
 
     let mut entry_ids = vec![root.entry_id];
     let mut breadcrumbs = vec![Breadcrumb {
+        archive_revision: None,
         entry_id: root.entry_id,
         name: root.name,
     }];
@@ -325,6 +349,7 @@ pub(in crate::devices::files) fn map_breadcrumb_chain(
         previous_entry_id = directory.entry_id;
         entry_ids.push(directory.entry_id);
         breadcrumbs.push(Breadcrumb {
+            archive_revision: None,
             entry_id: directory.entry_id,
             name: directory.name,
         });

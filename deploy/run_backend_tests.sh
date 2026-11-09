@@ -30,6 +30,7 @@ else
     bash deploy/clickhouse/tests/test-resnapshot-table.sh
     bash deploy/clickhouse/tests/test-resnapshot-batch.sh
     bash deploy/clickhouse/tests/test-analytics-health-probe-timeout.sh
+    bash deploy/clickhouse/tests/test-postgres-listen-addresses.sh
     bash deploy/clickhouse/tests/test-source-resnapshot-table.sh
     bash deploy/clickhouse/tests/test-manage-system-logs.sh
     bash deploy/clickhouse/tests/test-source-verify-deploy.sh

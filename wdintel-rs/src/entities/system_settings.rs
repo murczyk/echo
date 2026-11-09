@@ -67,6 +67,10 @@ pub struct Model {
     pub report_global_concurrency: Option<i32>,
     pub report_kind_concurrency: Option<i32>,
     pub report_etalonka_concurrency: Option<i32>,
+    pub duty_selected_groups_enabled: Option<bool>,
+    pub signoz_metrics_enabled: Option<bool>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub signoz_metrics_endpoint: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -600,6 +600,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                     checked: m.checked.unwrap_or(false),
                     important: false,
                     ai_important: false,
+                    important_by_my_organism: false,
                     bookmarked: false,
                     timestamp: m
                         .timestamp
@@ -621,6 +622,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                     text_marked: None,
                     post: None,
                     post_id: None,
+                    unit_display: None,
                     unit_ids: vec![],
                     no_headers_body: None,
                     datasource_id: None,

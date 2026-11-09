@@ -1,4 +1,5 @@
 use super::{ancestors, core, model};
+use crate::devices::files::sorting::FileListingSort;
 use crate::devices::files::{
     map_database_error, DirectoryScope, EntryQueryScope, EntrySortKey,
     FileSearchFilters, FilesystemError, KeysetPage, KeysetPageRequest,
@@ -20,19 +21,41 @@ pub(in crate::devices::files) async fn search_entries(
     filters: &FileSearchFilters,
     page: KeysetPageRequest<EntrySortKey>,
 ) -> Result<KeysetPage<SearchEntry, EntrySortKey>, FilesystemError> {
-    let entries = search_query(scope, filters, page.after())
-        .limit(page.limit() + 1)
-        .all(db)
-        .await
-        .map_err(|error| {
-            map_database_error(anyhow::Error::new(error).context(h!()))
-        })?
+    search_entries_sorted(db, scope, filters, page, Default::default()).await
+}
+
+pub(in crate::devices::files) async fn search_entries_sorted(
+    db: &impl ConnectionTrait,
+    scope: &DirectoryScope,
+    filters: &FileSearchFilters,
+    page: KeysetPageRequest<EntrySortKey>,
+    sort: FileListingSort,
+) -> Result<KeysetPage<SearchEntry, EntrySortKey>, FilesystemError> {
+    let query = if sort == Default::default() {
+        search_query(scope, filters, page.after())
+    } else {
+        search_query_sorted(scope, filters, page.after(), sort)
+    };
+    let mut entries =
+        query
+            .limit(page.limit() + 1)
+            .all(db)
+            .await
+            .map_err(|error| {
+                map_database_error(anyhow::Error::new(error).context(h!()))
+            })?;
+    super::dates::hydrate(db, &mut entries).await?;
+    let entries = entries
         .into_iter()
         .map(model::map_tree_model)
         .collect::<Result<Vec<_>, _>>()?;
     let page = core::finalize_page(entries, page.limit(), core::entry_sort_key);
-    let path_components =
-        ancestors::load_path_components(db, &page.entries).await?;
+    let path_components = ancestors::load_path_components_with_root(
+        db,
+        &page.entries,
+        filters.rank_by_relevance,
+    )
+    .await?;
 
     Ok(KeysetPage {
         entries: page
@@ -53,16 +76,37 @@ pub(super) fn search_query(
     filters: &FileSearchFilters,
     after: Option<&EntrySortKey>,
 ) -> Select<file_entry::Entity> {
+    search_query_sorted(directory, filters, after, Default::default())
+}
+
+fn search_query_sorted(
+    directory: &DirectoryScope,
+    filters: &FileSearchFilters,
+    after: Option<&EntrySortKey>,
+    sort: FileListingSort,
+) -> Select<file_entry::Entity> {
     let mut query = if filters.requires_file_metadata() {
         metadata_search_query(directory, filters)
     } else {
         match directory {
             DirectoryScope::Root(_) => base_search_query(directory, filters),
-            DirectoryScope::Directory { .. } => {
+            DirectoryScope::Directory { .. }
+            | DirectoryScope::Archive { .. } => {
                 scoped_search_query(directory, filters)
             }
         }
     };
+    if filters.rank_by_relevance {
+        return super::search_ranking::apply(
+            query,
+            directory,
+            filters.name_query().unwrap_or_default(),
+            after,
+        );
+    }
+    if sort != Default::default() {
+        return sort.apply(query, after);
+    }
     query = core::apply_entry_order(query);
     if let Some(after) = after {
         query = query.filter(core::entry_strict_after_condition(after));
@@ -101,6 +145,7 @@ fn metadata_search_query(
         file_entry::Entity::find()
             .filter(file_entry::Column::DeviceId.eq(directory.device_id())),
         directory,
+        filters.global_search,
     );
     materialized_candidate_query(candidates, query)
 }

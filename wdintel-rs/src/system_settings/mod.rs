@@ -1,10 +1,12 @@
 use crate::config::{
-    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT, IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
+    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT, DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
+    IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
     REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT,
 };
 use crate::users::{ensure_admin, login_id_from_identity};
+pub mod signoz_metrics;
 pub mod types;
 pub mod worker;
 
@@ -209,12 +211,19 @@ fn map_system_settings_item(
         ai_position_highlights_enabled: settings
             .ai_position_highlights_enabled
             .unwrap_or(false),
+        duty_selected_groups_enabled: settings
+            .duty_selected_groups_enabled
+            .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
         important_notify_all_enabled: settings
             .important_notify_all_enabled
             .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
         analysis_aor_filter_enabled: settings
             .analysis_aor_filter_enabled
             .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
+        signoz_metrics_enabled: settings
+            .signoz_metrics_enabled
+            .unwrap_or(false),
+        signoz_metrics_endpoint: settings.signoz_metrics_endpoint,
     })
 }
 
@@ -820,6 +829,7 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
+        duty_selected_groups_enabled: Set(req.duty_selected_groups_enabled),
         important_notify_all_enabled: Set(req.important_notify_all_enabled),
         api_rate_limit_replenish_interval_ms: Set(Some(
             req.api_rate_limit_replenish_interval_ms
@@ -849,6 +859,8 @@ fn system_settings_active_model(
         messenger_media_cache_min_free_gib: Set(Some(
             req.messenger_media_cache_min_free_gib,
         )),
+        signoz_metrics_enabled: Set(req.signoz_metrics_enabled),
+        signoz_metrics_endpoint: Set(req.signoz_metrics_endpoint.clone()),
     })
 }
 
@@ -914,6 +926,7 @@ async fn create_system_settings_for_login(
     reconcile_api_rate_limit_settings(&mut req, settings.as_ref());
     reconcile_report_concurrency_settings(&mut req, settings.as_ref())
         .context(h!())?;
+    signoz_metrics::reconcile(&mut req, settings.as_ref()).context(h!())?;
     validate_api_rate_limit_settings(&req).context(h!())?;
     req.ai_position_highlights_enabled = Some(
         req.ai_position_highlights_enabled
@@ -923,6 +936,15 @@ async fn create_system_settings_for_login(
                 })
             })
             .unwrap_or(false),
+    );
+    req.duty_selected_groups_enabled = Some(
+        req.duty_selected_groups_enabled
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .and_then(|settings| settings.duty_selected_groups_enabled)
+            })
+            .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
     );
     req.important_notify_all_enabled = Some(
         req.important_notify_all_enabled
@@ -961,20 +983,25 @@ async fn activate_system_settings_for_login(
 ) -> Result<system_settings::Model, AppError> {
     let txn = begin_system_settings_update(dbx).await.context(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
-    let hide_orbit_data = get_active_system_settings(&txn)
-        .await
-        .c(h!())?
+    let active = get_active_system_settings(&txn).await.c(h!())?;
+    let hide_orbit_data = active
+        .as_ref()
         .map(|settings| settings.hide_orbit_data)
         .unwrap_or(false);
     deactivate_active_settings(&txn, login).await.c(h!())?;
 
-    let settings = system_settings::Entity::find_by_id(id)
+    let target = system_settings::Entity::find_by_id(id)
         .one(&txn)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
 
-    let mut settings: system_settings::ActiveModel = settings.into();
+    let mut settings: system_settings::ActiveModel = target.clone().into();
+    signoz_metrics::carry_over_on_activation(
+        &target,
+        &mut settings,
+        active.as_ref(),
+    );
     settings.deleted = Set(false);
     settings.updated_by_login_id = Set(Some(*login));
     settings.updated_at = Set(now_utc());
@@ -1096,6 +1123,9 @@ pub async fn current_system_settings(
             ai_position_highlights_enabled: settings
                 .ai_position_highlights_enabled
                 .unwrap_or(false),
+            duty_selected_groups_enabled: settings
+                .duty_selected_groups_enabled
+                .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
             important_notify_all_enabled: settings
                 .important_notify_all_enabled
                 .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
@@ -1140,6 +1170,7 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
+            duty_selected_groups_enabled: DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
             important_notify_all_enabled: IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
             api_rate_limit_replenish_interval_ms:
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -1661,6 +1692,52 @@ mod tests {
         }
     }
 
+    // Regression: legacy admin clients omit the field, so saving from one must
+    // not re-enable the indicator on a server where it was turned off.
+    #[tokio::test]
+    #[serial]
+    async fn duty_selected_groups_defaults_on_and_survives_legacy_saves() {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let legacy_settings = insert_settings(&env.dbx, old_ts(), false).await;
+        assert!(
+            map_system_settings_item(legacy_settings)
+                .unwrap()
+                .duty_selected_groups_enabled
+        );
+
+        let mut legacy_body =
+            serde_json::to_value(settings_req(false)).unwrap();
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("duty_selected_groups_enabled");
+        let legacy_req: CreateSystemSettingsReq =
+            serde_json::from_value(legacy_body).unwrap();
+        assert_eq!(legacy_req.duty_selected_groups_enabled, None);
+
+        let mut req = settings_req(false);
+        for (incoming, expected) in [
+            (Some(false), false),
+            (None, false),
+            (Some(true), true),
+            (None, true),
+        ] {
+            req.duty_selected_groups_enabled = incoming;
+            let req = if incoming.is_none() {
+                &legacy_req
+            } else {
+                &req
+            };
+            let saved = create_system_settings_for_login(&env.dbx, &login, req)
+                .await
+                .unwrap();
+            assert_eq!(saved.duty_selected_groups_enabled, Some(expected));
+        }
+    }
+
     #[tokio::test]
     #[serial]
     async fn issue_3660_media_cache_settings_apply_live_and_restore_from_history(
@@ -1741,6 +1818,110 @@ mod tests {
                 .unwrap()
                 .messenger_media_cache_retention_hours,
             48
+        );
+    }
+
+    fn signoz_settings(
+        enabled: bool,
+        endpoint: Option<&str>,
+    ) -> crate::telemetry::SignozMetricsSettings {
+        crate::telemetry::SignozMetricsSettings {
+            enabled,
+            endpoint: endpoint.map(ToOwned::to_owned),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4034_signoz_metrics_import_from_config_once_and_survive_saves(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let before_feature = insert_settings(&env.dbx, old_ts(), true).await;
+        insert_settings(&env.dbx, old_ts(), false).await;
+        let mut config = env.config.clone();
+        config.signoz_metrics_enabled = Some(true);
+        config.signoz_metrics_endpoint =
+            Some(" http://signoz.example:4317 ".to_string());
+        let imported =
+            signoz_settings(true, Some("http://signoz.example:4317"));
+        assert_eq!(
+            signoz_metrics::effective(&env.dbx, &config).await,
+            imported
+        );
+
+        signoz_metrics::import_legacy_config(&env.dbx, &config)
+            .await
+            .unwrap();
+        let active =
+            get_active_system_settings(&env.dbx).await.unwrap().unwrap();
+        assert_eq!(active.signoz_metrics_enabled, Some(true));
+        config.signoz_metrics_enabled = Some(false);
+        signoz_metrics::import_legacy_config(&env.dbx, &config)
+            .await
+            .unwrap();
+        assert_eq!(
+            signoz_metrics::effective(&env.dbx, &config).await,
+            imported
+        );
+
+        let saved = create_system_settings_for_login(
+            &env.dbx,
+            &login,
+            &settings_req(false),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            (
+                saved.signoz_metrics_enabled,
+                saved.signoz_metrics_endpoint.as_deref()
+            ),
+            (Some(true), Some("http://signoz.example:4317"))
+        );
+        activate_system_settings_for_login(&env.dbx, &login, before_feature.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            signoz_metrics::effective(&env.dbx, &config).await,
+            imported
+        );
+
+        let mut req = settings_req(false);
+        req.signoz_metrics_enabled = Some(false);
+        req.signoz_metrics_endpoint = Some("  ".to_string());
+        let disabled = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert_eq!(
+            (
+                disabled.signoz_metrics_enabled,
+                disabled.signoz_metrics_endpoint
+            ),
+            (Some(false), None)
+        );
+        config.signoz_metrics_enabled = Some(true);
+        assert_eq!(
+            signoz_metrics::effective(&env.dbx, &config).await,
+            signoz_settings(false, None)
+        );
+    }
+
+    #[test]
+    fn issue_4034_enabling_signoz_metrics_requires_a_valid_endpoint() {
+        let mut req = settings_req(false);
+        req.signoz_metrics_enabled = Some(true);
+        assert!(signoz_metrics::reconcile(&mut req, None).is_err());
+        req.signoz_metrics_endpoint = Some("signoz-echo:4317".to_string());
+        assert!(signoz_metrics::reconcile(&mut req, None).is_err());
+        req.signoz_metrics_endpoint =
+            Some(" http://signoz-echo.eagle-atria.ts.net:4317 ".to_string());
+        signoz_metrics::reconcile(&mut req, None).unwrap();
+        assert_eq!(
+            req.signoz_metrics_endpoint.as_deref(),
+            Some("http://signoz-echo.eagle-atria.ts.net:4317")
         );
     }
 
@@ -2225,6 +2406,7 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
+            duty_selected_groups_enabled: Some(true),
             important_notify_all_enabled: Some(true),
             api_rate_limit_replenish_interval_ms: Some(
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -2241,6 +2423,8 @@ mod tests {
                 crate::config::MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT,
             messenger_media_cache_min_free_gib:
                 crate::config::MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT,
+            signoz_metrics_enabled: None,
+            signoz_metrics_endpoint: None,
         }
     }
 
@@ -2314,6 +2498,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            duty_selected_groups_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             api_rate_limit_replenish_interval_ms: Set(None),
             api_rate_limit_burst_size: Set(None),
@@ -2323,6 +2508,8 @@ mod tests {
             messenger_media_cache_retention_hours: Set(None),
             messenger_media_cache_max_size_gib: Set(None),
             messenger_media_cache_min_free_gib: Set(None),
+            signoz_metrics_enabled: Set(None),
+            signoz_metrics_endpoint: Set(None),
         }
         .insert(dbx)
         .await

@@ -29,9 +29,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+const userSettingsMock = vi.hoisted(() => ({
+  fetchUserSettings: vi.fn(),
+}));
+
 vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
-  fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact' }),
+  fetchUserSettings: userSettingsMock.fetchUserSettings,
 }));
 vi.mock('../../../services/api/user', () => ({
   fetchCurrentUser: vi.fn().mockResolvedValue({ roles: ['Rer'], organismId: null }),
@@ -56,15 +60,21 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
     openCreateMessageComposer,
     buildFeedColumnModel,
     messageFeeds,
+    editorEmbeddedOpen,
   }: {
     activeFeedId: string | null;
     createMessageFeed: () => void;
     openCreateMessageComposer: (feedId: string) => void;
     buildFeedColumnModel: (feed: any) => any;
     messageFeeds: any[];
+    editorEmbeddedOpen?: boolean;
   }) => (
     <div>
       <div data-testid="active-feed">{activeFeedId}</div>
+      <output data-testid="editor-embedded-open">{String(editorEmbeddedOpen)}</output>
+      {messageFeeds.map((feed) => (
+        <div key={feed.id} data-duty-feed-column data-duty-feed-id={feed.id} />
+      ))}
       <output data-testid="card-network-visibility">
         {String(buildFeedColumnModel(messageFeeds[0]).messageCard.hideNetworks)}
       </output>
@@ -193,6 +203,7 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
       onDeleteSuccess,
       intentKey,
       presentation,
+      minimalReport,
     }: {
       open: boolean;
       onClose: () => void;
@@ -206,6 +217,7 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
       onDeleteSuccess?: (messageId: number) => Promise<void> | void;
       intentKey?: string;
       presentation?: 'modal' | 'embedded';
+      minimalReport?: { host: HTMLElement | null; onExpand: () => void } | null;
     },
     ref,
   ) {
@@ -230,7 +242,11 @@ vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
         data-edit-target-load-status={editTargetLoadState?.status ?? ''}
         data-edit-target-id={editTarget?.id ?? ''}
         data-report-source-id={reportSource?.id ?? ''}
+        data-minimal-host-feed={minimalReport?.host?.dataset.dutyFeedId ?? ''}
       >
+        {minimalReport ? (
+          <button type="button" aria-label="Розгорнути звіт" onClick={minimalReport.onExpand} />
+        ) : null}
         <button type="button" aria-label="Закрити повідомлення" onClick={onClose}>
           Закрити
         </button>
@@ -526,6 +542,8 @@ describe('RerDutyNeoPage creation workflow', () => {
     useRerDutyFeedsMock.mockReset();
     useMediaQueryMock.mockReset();
     useMediaQueryMock.mockReturnValue(false);
+    userSettingsMock.fetchUserSettings.mockReset();
+    userSettingsMock.fetchUserSettings.mockResolvedValue({ tagsLayout: 'compact' });
     notifyMock.mockReset();
     fetchInboxItemContextMock.mockReset();
     fetchMessagesByIdsMock.mockReset();
@@ -771,6 +789,55 @@ describe('RerDutyNeoPage creation workflow', () => {
       message: 'Розвіддонесення успішно створено.',
       severity: 'success',
     });
+
+    await act(async () => root.unmount());
+  });
+
+  it('floats a report over its source column without reflowing the feeds', async () => {
+    useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
+    userSettingsMock.fetchUserSettings.mockResolvedValue({
+      tagsLayout: 'compact',
+      minimalReportWindowEnabled: true,
+    });
+    const { container, root } = await renderPage();
+    const composer = () => container.querySelector('[data-testid="composer"]');
+    const embeddedOpen = () =>
+      container.querySelector('[data-testid="editor-embedded-open"]')?.textContent;
+
+    await click(container.querySelector('button[aria-label="Створити розвіддонесення"]'));
+
+    expect(composer()?.getAttribute('data-minimal-host-feed')).toBe('feed-1');
+    expect(embeddedOpen()).toBe('false');
+
+    await click(container.querySelector('button[aria-label="Розгорнути звіт"]'));
+
+    expect(composer()?.getAttribute('data-report-source-id')).toBe('42');
+    expect(composer()?.getAttribute('data-minimal-host-feed')).toBe('');
+    expect(embeddedOpen()).toBe('true');
+
+    await click(container.querySelector('button[aria-label="Закрити повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Створити розвіддонесення"]'));
+
+    expect(composer()?.getAttribute('data-minimal-host-feed')).toBe('feed-1');
+    expect(embeddedOpen()).toBe('false');
+
+    await act(async () => root.unmount());
+  });
+
+  it.each([
+    ['the setting is off', { tagsLayout: 'compact' }, '(min-width:1024px)'],
+    ['the viewport is narrow', { tagsLayout: 'compact', minimalReportWindowEnabled: true }, ''],
+  ])('keeps the regular report editor when %s', async (_, settings, matchingQuery) => {
+    useMediaQueryMock.mockImplementation((query) => query === matchingQuery);
+    userSettingsMock.fetchUserSettings.mockResolvedValue(settings);
+    const { container, root } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Створити розвіддонесення"]'));
+
+    expect(
+      container.querySelector('[data-testid="composer"]')?.getAttribute('data-minimal-host-feed'),
+    ).toBe('');
+    expect(container.querySelector('button[aria-label="Розгорнути звіт"]')).toBeNull();
 
     await act(async () => root.unmount());
   });

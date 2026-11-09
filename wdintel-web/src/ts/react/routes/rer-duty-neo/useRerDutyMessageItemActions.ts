@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   IMPORTANT_MESSAGE_UPDATED_EVENT,
+  type ImportantMessageUpdate,
   requestImportantMessage,
 } from '../../components/app-navbar/ImportantMessageDialog';
 import type { Dispatch, SetStateAction } from 'react';
@@ -115,7 +116,7 @@ export function useRerDutyMessageItemActions(params: Params) {
   );
 
   const handleMessageImportant = useCallback(
-    async (feedId: string, id: number, currentlyImportant: boolean) => {
+    async (feedId: string, id: number, currentlyImportant: boolean, keepAiImportance = false) => {
       if (!currentlyImportant) {
         requestImportantMessage({
           messageId: id,
@@ -124,7 +125,10 @@ export function useRerDutyMessageItemActions(params: Params) {
         return;
       }
       try {
-        const important = await importantRemove({ messageId: id });
+        const { important, importantByMyOrganism } = await importantRemove({
+          messageId: id,
+          keepAiImportance,
+        });
         setMessageFeeds((prev) =>
           prev.map((w) =>
             w.id === feedId
@@ -132,7 +136,15 @@ export function useRerDutyMessageItemActions(params: Params) {
                   ...w,
                   items: w.items.map(([msgId, msg]) =>
                     msgId === id
-                      ? [msgId, { ...msg, important, aiImportant: false }]
+                      ? [
+                          msgId,
+                          {
+                            ...msg,
+                            important,
+                            importantByMyOrganism,
+                            aiImportant: keepAiImportance && msg.aiImportant,
+                          },
+                        ]
                       : [msgId, msg],
                   ),
                 }
@@ -148,19 +160,24 @@ export function useRerDutyMessageItemActions(params: Params) {
 
   useEffect(() => {
     const update = (event: Event) => {
-      const detail = (event as CustomEvent<{ messageId: number; important: boolean }>).detail;
+      const detail = (event as CustomEvent<ImportantMessageUpdate>).detail;
       setMessageFeeds((feeds) => {
         let changed = false;
         const updatedFeeds = feeds.map((feed) => {
           let feedChanged = false;
           const items = feed.items.map((item) => {
             const [id, message] = item;
-            if (id !== detail.messageId || message.important === detail.important) {
+            if (
+              id !== detail.messageId ||
+              (message.important === detail.important &&
+                message.importantByMyOrganism === detail.importantByMyOrganism)
+            ) {
               return item;
             }
             changed = true;
             feedChanged = true;
-            return [id, { ...message, important: detail.important }] as [number, InboxMessage];
+            const { important, importantByMyOrganism } = detail;
+            return [id, { ...message, important, importantByMyOrganism }] as [number, InboxMessage];
           });
           return feedChanged ? { ...feed, items } : feed;
         });

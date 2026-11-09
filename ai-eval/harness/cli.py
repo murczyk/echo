@@ -67,6 +67,8 @@ def load_suite(suite_id, development_only=False):
             raise ValueError('Duplicate message ID in fixture')
         if not set(case['expect'].get('evidenceIds', [])).issubset(identifiers):
             raise ValueError('Expected evidence is missing from fixture')
+        if not set(case['expect'].get('groupScope', {}).get('keys', [])).issubset(case['groups']):
+            raise ValueError('Expected group scope is not an accessible fixture group')
     return directory, manifest, cases
 
 
@@ -89,6 +91,7 @@ def runner_fingerprint(ref):
 
 
 def make_payload(case, engine, skills):
+    policy = {'executionPolicy': engine['executionPolicy']} if engine.get('executionPolicy') else {}
     return dict(prompt=case['turns'][0], modelName=engine['model_name'], providerTransport='echo_gateway',
                 providerApiKey='evaluation-scoped-placeholder', history=[], skills=skills, echoPublicHost='echo-eval.invalid', bootstrapToken='A' * 43,
                 correlationId='019fc7f7-9770-7f83-9c1a-211af29b02e6',
@@ -96,7 +99,7 @@ def make_payload(case, engine, skills):
                 contextWindow=engine.get('contextWindow', 1_050_000),
                 maxTokens=engine.get('maxTokens', 8192),
                 compactionReserveTokens=engine.get('compactionReserveTokens', 131_072),
-                compactionKeepRecentTokens=engine.get('compactionKeepRecentTokens', 32_768))
+                compactionKeepRecentTokens=engine.get('compactionKeepRecentTokens', 32_768), **policy)
 
 
 JUDGE_RUBRIC = (
@@ -163,7 +166,8 @@ def judge_result(case, result, engine):
 
 def fixture_run(case, repeat, args, engine, skills, run_dir):
     identifier = f"{case['id']}-{repeat}"
-    settings = {'binary': str(args.binary), 'psql': engine.get('fixturePsql', ['psql', '-d', 'postgres'])}
+    settings = {'binary': str(args.binary), 'psql': engine.get('fixturePsql', ['psql', '-d', 'postgres']),
+                'legacyGroupFallback': args.legacy_group_fallback}
     worker_input = dict(root=str(ROOT), case=case, engine=engine, settings=settings,
                         payload=make_payload(case, engine, skills), runnerRef=args.runner_ref)
     if not args.runner_ref:
@@ -239,6 +243,7 @@ def run(args):
     metadata = {'schemaVersion': 1, 'suite': manifest['id'], 'datasetRevision': manifest['revision'],
                 'datasetSha256': digest(directory / 'dataset.json'), 'runnerFingerprint': runner_fingerprint(args.runner_ref),
                 'engine': engine['model_name'], 'mode': args.mode, 'repeat': args.repeat,
+                'executionPolicy': engine.get('executionPolicy'), 'legacyGroupFallback': args.legacy_group_fallback,
                 'cases': [case['id'] for case in cases], 'createdAt': datetime.now(timezone.utc).isoformat()}
     skills = [skill for skill in query_plan(str(args.binary), {})['skills'] if skill['skill'] in manifest['skills'] and skill['skill'] not in args.exclude_skill]
     profile = make_payload(cases[0], engine, skills)
@@ -275,9 +280,9 @@ def compare(args):
     for field in ('datasetSha256', 'mode', 'cases', 'repeat'):
         if reports[0]['manifest'][field] != reports[1]['manifest'][field]:
             raise ValueError(f'Incomparable runs: {field} differs')
-    for field in ('engine', 'runtimeProfile'):
-        if reports[0]['manifest'][field] != reports[1]['manifest'][field]:
-            print(f"Changed {field}: {reports[0]['manifest'][field]} -> {reports[1]['manifest'][field]}")
+    for field in ('engine', 'runtimeProfile', 'executionPolicy', 'legacyGroupFallback'):
+        if reports[0]['manifest'].get(field) != reports[1]['manifest'].get(field):
+            print(f"Changed {field}: {reports[0]['manifest'].get(field)} -> {reports[1]['manifest'].get(field)}")
     print('| Category | Baseline passes | Candidate passes |')
     print('|---|---:|---:|')
     for category in reports[0]['categories']:
@@ -311,6 +316,8 @@ def main():
     execute.add_argument('--runner-ref')
     execute.add_argument('--exclude-skill', action='append', default=[],
                          help='omit a suite skill, e.g. unit_lookup for a baseline runner that predates it')
+    execute.add_argument('--legacy-group-fallback', action='store_true',
+                         help='reproduce the widening of unmatched group keys that production had before #4053')
     execute.add_argument('--mode', choices=['fixture', 'local'], default='fixture')
     execute.add_argument('--binary', type=Path, default=ROOT / 'target/debug/wdintel-rs')
     comparison = commands.add_parser('compare')

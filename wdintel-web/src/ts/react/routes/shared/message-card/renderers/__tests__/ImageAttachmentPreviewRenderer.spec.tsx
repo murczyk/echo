@@ -148,7 +148,10 @@ vi.mock('@mui/material', () => ({
   }),
 }));
 
-vi.mock('../../attachment-preview/message-card-preview-config.ts', () => ({
+vi.mock('../../attachment-preview/message-card-preview-config.ts', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../attachment-preview/message-card-preview-config.ts')
+  >()),
   getMessageCardAttachmentPreviewConfig: () => ({ disableRestoreFocus: true }),
 }));
 

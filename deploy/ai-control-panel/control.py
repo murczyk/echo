@@ -24,6 +24,11 @@ AGENT_CONNECTIONS = {hostname: 'echo@' + hostname for hostname in (
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=yes']
 HOST_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,252}$')
 SCAN_TIMEOUT = 35
+# Host actions that take their locks before changing anything, so a busy lock
+# leaves nothing to undo. The dispatcher holds the shared lock while it serves
+# other servers' agents, usually for a few seconds.
+LOCK_RETRY_ACTIONS = {'inventory', 'job', 'container', 'replace', 'finish', 'cleanup'}
+LOCK_RETRY_DELAYS = (2, 5, 10, 20)
 
 
 def emit(value):
@@ -43,6 +48,24 @@ def safe_error(error, limit=1500):
     return text[-limit:] if limit else text
 
 
+class CommandError(RuntimeError):
+    def __init__(self, text, stdout=''):
+        super().__init__(text)
+        self.stdout = stdout
+
+
+LOCK_BUSY_ERROR = '[Errno 11] Resource temporarily unavailable'
+
+
+def lock_busy(error):
+    """True only for the host script's own report of a busy flock."""
+    try:
+        result = json.loads(getattr(error, 'stdout', '') or '{}')
+    except ValueError:
+        return False
+    return isinstance(result, dict) and result.get('error') == LOCK_BUSY_ERROR
+
+
 def command(args, input_text=None, timeout=SCAN_TIMEOUT):
     label = safe_error(shlex.join(args), limit=None)
     started = time.monotonic()
@@ -58,7 +81,7 @@ def command(args, input_text=None, timeout=SCAN_TIMEOUT):
     if result.returncode:
         if result.stdout:
             emit({'diagnostic': safe_error(result.stdout, limit=None)})
-        raise RuntimeError(safe_error(result.stderr or result.stdout or f'Exit {result.returncode}'))
+        raise CommandError(safe_error(result.stderr or result.stdout or f'Exit {result.returncode}'), result.stdout or '')
     return result.stdout
 
 
@@ -113,7 +136,20 @@ class Control:
         if agent_host not in AGENT_CONNECTIONS.values():
             raise RuntimeError('No verified agent management connection')
         args = ['sudo', '-n', 'python3', '-', action, json.dumps(request or {})]
-        output = command(ssh(agent_host, args), self.host_script, timeout)
+        delays = list(LOCK_RETRY_DELAYS) if action in LOCK_RETRY_ACTIONS else []
+        while True:
+            try:
+                output = command(ssh(agent_host, args), self.host_script, timeout)
+            except RuntimeError as error:
+                # The host script prints {"error": ...} and exits 1. A busy lock is
+                # reported before any change, so these actions are safe to repeat.
+                if not delays or not lock_busy(error):
+                    raise
+                delay = delays.pop(0)
+                message(f'Agent host lock is busy during {action}; retrying in {delay}s')
+                time.sleep(delay)
+                continue
+            break
         result = json.loads(output)
         if result.get('diagnostic'):
             emit({'diagnostic': safe_error(result['diagnostic'], limit=None)})
@@ -315,9 +351,14 @@ class Control:
         host = row['host']
         self.agent_host = resolve_agent_host(row, self.agent_override)
         path = self.journal_path(host)
-        if path.exists() and json.loads(path.read_text()).get('phase') != 'complete':
+        previous = json.loads(path.read_text()) if path.exists() else {}
+        if previous and previous.get('phase') != 'complete':
             raise RuntimeError(f'{host}: recover the previous rollout first')
-        journal = {'host': host, 'agent_host': self.agent_host, 'namespace': row['namespace'], 'enabled': row['enabled'], 'phase': 'starting'}
+        # Only a failed rollout of this same namespace and agent VM can ask to re-enable AI.
+        same_destination = (previous.get('namespace'), previous.get('agent_host')) == (row['namespace'], self.agent_host)
+        journal = {'host': host, 'agent_host': self.agent_host, 'namespace': row['namespace'], 'enabled': row['enabled'],
+                   'observed_enabled': row['enabled'], 'pending_enable': bool(same_destination and previous.get('pending_enable')),
+                   'phase': 'starting'}
         self.shared.write_json(path, journal)
         try:
             maintenance = Maintenance(self.probe_command(host, maintenance=True))
@@ -331,14 +372,19 @@ class Control:
                 raise RuntimeError('Host inventory changed since preview')
             if maintenance.ready['required_release'] != target['release']:
                 raise RuntimeError('Echo harness requirement changed since preview')
-            journal['enabled'] = current['enabled']
+            # A failed rollout that restored an incompatible harness had to leave
+            # AI disabled; the flag it saved is the state to restore now.
+            journal['observed_enabled'] = current['enabled']
+            journal['enabled'] = current['enabled'] or journal['pending_enable']
+            if journal['enabled'] and not current['enabled']:
+                message(f'{host}: AI was left disabled by the failed rollout; it will be re-enabled after the upgrade')
             self.shared.write_json(path, journal)
             maintenance.call({'action': 'begin'})
             journal['phase'] = 'disabled'
             self.shared.write_json(path, journal)
             message(f'{host}: replacing containers in {row["namespace"]}')
             job = self.host_action('replace', {'namespace': row['namespace'], 'release': target['release'],
-                                   'containers': current['containers'], 'enabled': current['enabled'], 'reconcile_orphans': reconcile_orphans}, timeout=600)
+                                   'containers': current['containers'], 'enabled': journal['enabled'], 'reconcile_orphans': reconcile_orphans}, timeout=600)
             journal['job'] = job['id']
             journal['phase'] = 'verifying'
             self.shared.write_json(path, journal)
@@ -359,11 +405,13 @@ class Control:
             journal['states'] = result['states']
             journal['phase'] = 'host_complete'
             self.shared.write_json(path, journal)
-            maintenance.call({'action':'finish','states':result['states']})
+            maintenance.call({'action':'finish','states':result['states'],'enabled':journal['enabled']})
+            journal['pending_enable'] = False
             journal['phase'] = 'complete'
             self.shared.write_json(path, journal)
             message(f'{host}: upgraded to {target["release"]}')
-        except Exception:
+        except Exception as error:
+            recovered = False
             try:
                 if journal['phase'] == 'starting':
                     maintenance.call({'action':'abort'})
@@ -373,8 +421,12 @@ class Control:
                     journal['phase'] = 'complete'
                 self.shared.write_json(path, journal)
                 message(f'{host}: previous state recovered; batch stopped')
+                recovered = True
             except Exception as recovery_error:
                 message(f'{host}: AI remains disabled; press x to recover. {safe_error(recovery_error)} Journal: {path}')
+            if recovered and journal['pending_enable']:
+                raise RuntimeError(f'{host}: upgrade failed: {safe_error(error)}. AI stays disabled until the harness matches '
+                                   'the running Echo build; rerun the upgrade to finish it and re-enable AI.') from error
             raise
         finally:
             maintenance.close()
@@ -413,6 +465,7 @@ class Control:
     def restore_namespace(self, journal, maintenance):
         states = journal.get('states', [])
         release = maintenance.ready['required_release']
+        replaced = bool(journal.get('job'))
         if journal.get('job'):
             saved = self.host_action('job', {'namespace':journal['namespace'],'job':journal['job']})
             if saved['phase'] == 'complete':
@@ -424,10 +477,21 @@ class Control:
             result = self.host_action('recover', {'namespace':journal['namespace']}, timeout=600)
             states = result['states']
             release = result['release']
+            replaced = True
+        if not replaced:
+            # Nothing was replaced, so the harness release is unknown here: put the
+            # flag back as this attempt found it and keep any saved intention.
+            enabled = journal.get('observed_enabled', journal['enabled'])
+            maintenance.call({'action':'finish','states':states,'enabled':enabled})
+            if journal.get('pending_enable'):
+                message('AI remains disabled until the harness upgrade completes.')
+            return
         compatible = release == maintenance.ready['required_release']
         maintenance.call({'action':'finish','states':states,'enabled':journal['enabled'] and compatible})
         if not compatible:
             message('Containers recovered, but AI remains disabled: recovered harness does not match the running Echo build.')
+        # Lets the next upgrade restore the flag instead of keeping AI disabled.
+        journal['pending_enable'] = bool(journal['enabled'] and not compatible)
 
 
 class Maintenance:

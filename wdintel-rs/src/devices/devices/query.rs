@@ -115,7 +115,7 @@ pub(in crate::devices) async fn lock_active_device_for_update(
         .c(h!())?)
 }
 
-async fn find_active_scoped_device<C>(
+async fn find_scoped_device<C>(
     dbx: &C,
     login: &login::Model,
     device_id: Uuid,
@@ -123,18 +123,13 @@ async fn find_active_scoped_device<C>(
 where
     C: ConnectionTrait,
 {
-    let device = scoped_devices_query(login, DeviceReadScope::IncludeArchived)
+    scoped_devices_query(login, DeviceReadScope::IncludeArchived)
         .c(h!())?
         .filter(device::Column::Id.eq(device_id))
         .one(dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
-        .c(h!())?;
-    if device.archived {
-        return Err(archived_device_error());
-    }
-    Ok(device)
 }
 
 async fn lock_active_scoped_device(
@@ -178,10 +173,9 @@ where
             .c(h!())?;
         }
         FileRegistryDeviceAccess::FileSync => {
+            // Archived devices still accept file uploads and sync.
             access::require_file_sync(&login.roles).c(h!())?;
-            find_active_scoped_device(dbx, login, device_id)
-                .await
-                .c(h!())?;
+            find_scoped_device(dbx, login, device_id).await.c(h!())?;
         }
     }
 

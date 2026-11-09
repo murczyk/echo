@@ -66,6 +66,11 @@ vi.mock('../../device-files', () => ({
   ),
 }));
 
+vi.mock('../../device-files/components/DeviceFileExplorer', () => ({
+  DeviceFileExplorer: () => <section data-testid="device-file-content-pane">Вміст файлу</section>,
+  DeviceFileExplorerToolbar: () => null,
+}));
+
 vi.mock('../../device-files/components/DeviceFileJournal', () => ({
   DeviceFileJournal: () => <div data-testid="device-file-journal">Журнал синхронізації</div>,
 }));
@@ -138,7 +143,11 @@ beforeEach(() => {
     refresh: vi.fn(),
   });
   pageMock.useDeviceDetailsPage.mockReturnValue(buildPage());
-  pageMock.useDeviceFiles.mockReturnValue({ counts: { error: null }, tree: { branches: {} } });
+  pageMock.useDeviceFiles.mockReturnValue({
+    counts: { error: null },
+    tree: { branches: {} },
+    directory: { error: null },
+  });
   pageMock.useDeviceFileJournal.mockReturnValue({
     entries: [],
     totalCount: null,
@@ -230,6 +239,7 @@ describe('DeviceDetailsPage layout', () => {
     expect(pageMock.useDeviceAnalyticsTags).toHaveBeenLastCalledWith({
       deviceId: DEVICE_ID,
       enabled: true,
+      active: true,
     });
     expect(container?.querySelector('[data-testid="device-files-sidebar"]')).toBeNull();
     expect(container?.querySelector('[data-testid="device-file-content-pane"]')).toBeNull();
@@ -245,7 +255,6 @@ describe('DeviceDetailsPage layout', () => {
       deviceId: DEVICE_ID,
       syncId: null,
       enabled: true,
-      tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
     });
 
     renderPage(['Cyber'], DeviceDetailsSection.Files);

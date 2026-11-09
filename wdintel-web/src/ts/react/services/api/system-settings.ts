@@ -29,6 +29,7 @@ type SystemSettingsItemRaw = {
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
+  duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -55,6 +56,8 @@ type SystemSettingsItemRaw = {
   peleng_bounds_bottom_right_lat?: number | null;
   peleng_bounds_bottom_right_lng?: number | null;
   echo_restapi_error_discord_webhook_url?: string | null;
+  signoz_metrics_enabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signoz_metrics_endpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -79,6 +82,7 @@ type SystemSettingsCurrentRspRaw = {
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
+  duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -123,6 +127,7 @@ type CreateSystemSettingsReqRaw = {
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  duty_selected_groups_enabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
   important_notify_all_enabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -149,6 +154,8 @@ type CreateSystemSettingsReqRaw = {
   peleng_bounds_bottom_right_lat: number | null;
   peleng_bounds_bottom_right_lng: number | null;
   echo_restapi_error_discord_webhook_url: string | null;
+  signoz_metrics_enabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signoz_metrics_endpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -180,6 +187,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -206,6 +214,8 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  signozMetricsEnabled: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signozMetricsEndpoint: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 export type SystemSettingsCurrent = {
@@ -230,6 +240,7 @@ export type SystemSettingsCurrent = {
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -270,6 +281,7 @@ export type CreateSystemSettingsInput = {
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  dutySelectedGroupsEnabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
   importantNotifyAllEnabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -296,6 +308,8 @@ export type CreateSystemSettingsInput = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  signozMetricsEnabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signozMetricsEndpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -324,6 +338,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
+    dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -350,6 +365,8 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     pelengBoundsBottomRightLat: raw.peleng_bounds_bottom_right_lat ?? null,
     pelengBoundsBottomRightLng: raw.peleng_bounds_bottom_right_lng ?? null,
     echoRestapiErrorDiscordWebhookUrl: raw.echo_restapi_error_discord_webhook_url ?? null,
+    signozMetricsEnabled: raw.signoz_metrics_enabled ?? false,
+    signozMetricsEndpoint: raw.signoz_metrics_endpoint ?? null,
   };
 }
 
@@ -376,6 +393,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
+    dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -425,6 +443,7 @@ export async function createSystemSettings(
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
+    duty_selected_groups_enabled: input.dutySelectedGroupsEnabled ?? null,
     important_notify_all_enabled: input.importantNotifyAllEnabled ?? null,
     api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs,
     api_rate_limit_burst_size: input.apiRateLimitBurstSize,
@@ -451,6 +470,8 @@ export async function createSystemSettings(
     peleng_bounds_bottom_right_lat: input.pelengBoundsBottomRightLat,
     peleng_bounds_bottom_right_lng: input.pelengBoundsBottomRightLng,
     echo_restapi_error_discord_webhook_url: input.echoRestapiErrorDiscordWebhookUrl,
+    signoz_metrics_enabled: input.signozMetricsEnabled,
+    signoz_metrics_endpoint: input.signozMetricsEndpoint,
   };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/create', req);
   return normalizeItem(data);

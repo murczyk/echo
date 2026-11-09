@@ -1,5 +1,34 @@
 {
   "migrations": {
+    "echo:m20261108_090102_signoz_metrics_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261107_175132_important_only_my_organism": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261107_175019_duty_selected_groups_flag": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261104_064753_minimal_report_window": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261105_212108_iggy_group_refresh_queue": { "changes": [{ "table": "public.api_integration_iggy_group_refresh", "strategy": "excluded" }] },
     "echo:m20261104_165252_rer_report_unit_selection": { "changes": [{ "table": "public.sigint_unit_rer_report_metadata", "strategy": "excluded" }] },
     "echo:m20261104_083000_group_message_requirements": {
       "changes": [
@@ -1013,6 +1042,8 @@
     }
   },
   "dependencies": {
+    "echo-im:ce0222279ef36d09b3d24d35db16e6639908f58e": { "changes": [] },
+    "echo-im:b45d9d6a78a4f2de3e745897c30bfd7b4a3c7f88": { "changes": [] },
     "echo-im:06ac23803f4dbc7bc5e9db471609e89703870125": { "changes": [] },
     "echo-im:80589feab5a9afbe6e474f76b39cc563506c9262": { "changes": [] },
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {

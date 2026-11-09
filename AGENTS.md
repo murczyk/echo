@@ -59,11 +59,16 @@
   operation fails or partially completes, report its state and obtain approval
   for recovery actions outside the approved scope; do not expand the scope
   automatically.
+- To check a deployed change as a real user on staging, follow
+  [DEVELOPMENT.md](./DEVELOPMENT.md). Issuing a session is a mutation of that
+  environment and works on staging only.
 
 ## Releases
 
 - "Prepare release", "make release", and "prepare and make release" mean the
-  process in [RELEASE.md](./RELEASE.md). Follow it.
+  process in [RELEASE.md](./RELEASE.md). So do "prepare stable release", "make
+  stable release", and "prepare and make stable release", which release what is
+  on `stable` without merging `main`. Follow it.
 
 ## Documentation scope
 
@@ -135,6 +140,7 @@
 - Also suggest creating a new issue. If the user chooses this option, create the issue, add it to the project, and set its status to `In Progress`.
 - Whenever creating a new issue, self-assign it to the authenticated GitHub user (`gh issue create --assignee @me`).
 - Ensure the selected or newly created issue belongs to the project. Suggest labels (tags) based on similar recent issues in `Done`, `Testing`, and `Ready` from the current user and other users.
+- In PR descriptions, link issues with `Refs #123`. Do not use closing keywords such as `Closes`, `Fixes`, or `Resolves` unless explicitly asked: merging would close the issue, and an issue is done only when it is deployed and its manual steps are finished.
 
 ## Changelog
 

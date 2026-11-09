@@ -22,7 +22,7 @@ export function PlayPauseButton({
   onPlayPause: () => void;
 }) {
   return (
-    <Tooltip title={isPlaying ? 'Пауза' : 'Відтворення'} enterDelay={300}>
+    <Tooltip title={isPlaying ? 'Пауза' : 'Відтворення'} enterDelay={300} disableInteractive>
       <IconButton size="small" onClick={onPlayPause} sx={{ color: 'inherit' }}>
         {isPlaying ? <PauseIcon /> : <PlayArrowIcon />}
       </IconButton>

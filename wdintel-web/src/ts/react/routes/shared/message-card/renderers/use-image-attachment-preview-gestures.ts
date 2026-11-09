@@ -44,12 +44,14 @@ export function useImageAttachmentPreviewGestures({
   failedHref,
   interactionLocked,
   onBackgroundClick,
+  onSurfaceTap,
 }: {
   previewKey: string;
   href: string;
   failedHref: string | null;
   interactionLocked: boolean;
   onBackgroundClick: () => void;
+  onSurfaceTap?: () => void;
 }) {
   const [zoom, setZoom] = useState(ZOOM_MIN);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -61,6 +63,7 @@ export function useImageAttachmentPreviewGestures({
   const panRef = useRef(pan);
   const lockedRef = useRef(interactionLocked);
   const backgroundClickRef = useRef(onBackgroundClick);
+  const surfaceTapRef = useRef(onSurfaceTap);
   const dragRef = useRef<DragState | null>(null);
   const touchPointsRef = useRef(new Map<number, TouchPoint>());
   const touchGestureRef = useRef<TouchGesture>({ mode: 'idle' });
@@ -75,6 +78,7 @@ export function useImageAttachmentPreviewGestures({
   } | null>(null);
   lockedRef.current = interactionLocked;
   backgroundClickRef.current = onBackgroundClick;
+  surfaceTapRef.current = onSurfaceTap;
 
   const applyImageTransform = useCallback((nextZoom: number, nextPan: Point) => {
     const image = imageElementRef.current;
@@ -354,15 +358,18 @@ export function useImageAttachmentPreviewGestures({
 
   const handleTouchTap = (event: ReactPointerEvent<HTMLDivElement>) => {
     const image = imageElementRef.current;
-    if (image === null || failedHref === href) return;
+    if (image === null || failedHref === href) return surfaceTapRef.current?.();
     const imageRect = image.getBoundingClientRect();
     if (
       event.clientX < imageRect.left ||
       event.clientX > imageRect.right ||
       event.clientY < imageRect.top ||
       event.clientY > imageRect.bottom
-    )
+    ) {
+      lastTouchTapRef.current = null;
+      surfaceTapRef.current?.();
       return;
+    }
 
     const now = Date.now();
     const previous = lastTouchTapRef.current;
@@ -373,6 +380,7 @@ export function useImageAttachmentPreviewGestures({
         DOUBLE_TAP_MAX_DISTANCE_PX
     ) {
       lastTouchTapRef.current = { x: event.clientX, y: event.clientY, at: now };
+      surfaceTapRef.current?.();
       return;
     }
 
@@ -402,7 +410,7 @@ export function useImageAttachmentPreviewGestures({
           pointerId,
           start: point,
           origin: panRef.current,
-          moved: false,
+          moved: true,
         };
       } else if (remaining.length === 0) {
         touchGestureRef.current = { mode: 'idle' };
@@ -451,6 +459,7 @@ export function useImageAttachmentPreviewGestures({
   };
   const onPrimaryClick = (_event: MouseEvent, region: PreviewRegion) => {
     if (lockedRef.current || region === 'protected') return;
+    if (surfaceTapRef.current) return surfaceTapRef.current();
     if (region === 'background') return backgroundClickRef.current();
     if (zoomRef.current > ZOOM_MIN) setPreviewZoom(ZOOM_MIN);
     else setTransform(200, { x: 0, y: 0 });

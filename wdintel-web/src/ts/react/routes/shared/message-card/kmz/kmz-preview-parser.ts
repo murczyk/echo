@@ -11,8 +11,10 @@ import {
   MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES,
   MAX_KMZ_PREVIEW_SOURCE_BYTES,
   MIN_KMZ_PREVIEW_INFERRED_AREA_POINTS,
+  type NativeMapFormat,
 } from './kmz-preview-utils';
 import type { KmzPreview, KmzPreviewCoords } from './kmz-preview-types';
+import { nativeMapFeatures } from './native-map-features';
 
 const decoder = new TextDecoder();
 const KMZ_INPUT_CHUNK_BYTES = 1024;
@@ -288,13 +290,18 @@ function kmzKmlTexts(bytes: Uint8Array, maxExpandedBytes: number): string[] {
 
 export function parseKmzPreview(
   buffer: ArrayBuffer,
-  format: 'kml' | 'kmz',
+  format: NativeMapFormat,
   maxBytes = MAX_KMZ_PREVIEW_SOURCE_BYTES,
 ): KmzPreview {
   if (buffer.byteLength > maxBytes) fail('KMZ_SOURCE_TOO_LARGE');
   const preview: KmzPreview = { points: [], lineStrings: [], polygons: [] };
   const coordinates: KmzPreviewCoords[] = [];
   const pointGroups = new Map<string, PointGroup>();
+  if (format === 'gpx' || format === 'geojson') {
+    for (const feature of nativeMapFeatures(decoder.decode(buffer), format))
+      addFeature(preview, feature, coordinates, 'root', pointGroups);
+    return preview;
+  }
   const texts =
     format === 'kml'
       ? [decoder.decode(buffer)]

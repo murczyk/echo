@@ -284,12 +284,12 @@ describe('AppNavbar', () => {
   });
 
   it('hides globally disabled classic menus and applies the user override', async () => {
-    currentSettingsMock.mockResolvedValue({
+    const settings = {
       defaultNeoAnalysis: false,
       enableAudioTranscription: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
-    });
+    };
     fetchUserSettingsMock.mockResolvedValue({
       showClassicDuty: true,
       showClassicAnalysis: false,
@@ -298,6 +298,7 @@ describe('AppNavbar', () => {
     const { container } = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: ['Rer'] },
+      shared: { ...defaultProps.shared, systemSettings: settings },
     });
     await act(async () => {
       await Promise.resolve();
@@ -317,16 +318,17 @@ describe('AppNavbar', () => {
   });
 
   it('uses section names for the only visible operative and analysis versions', async () => {
-    currentSettingsMock.mockResolvedValue({
+    const settings = {
       defaultNeoAnalysis: true,
       enableAudioTranscription: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
-    });
+    };
 
     const { container } = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: ['Rer'] },
+      shared: { ...defaultProps.shared, systemSettings: settings },
     });
     await act(async () => {
       await Promise.resolve();
@@ -594,23 +596,14 @@ describe('AppNavbar', () => {
   });
 
   it('refreshes Devices visibility after system settings are saved', async () => {
-    currentSettingsMock
-      .mockResolvedValueOnce({
-        defaultNeoAnalysis: false,
-        enableAudioTranscription: false,
-        showClassicDuty: true,
-        showClassicAnalysis: true,
-        supportNonRerInterceptions: true,
-        devicesSectionEnabled: false,
-      })
-      .mockResolvedValueOnce({
-        defaultNeoAnalysis: false,
-        enableAudioTranscription: false,
-        showClassicDuty: true,
-        showClassicAnalysis: true,
-        supportNonRerInterceptions: false,
-        devicesSectionEnabled: true,
-      });
+    currentSettingsMock.mockResolvedValueOnce({
+      defaultNeoAnalysis: false,
+      enableAudioTranscription: false,
+      showClassicDuty: true,
+      showClassicAnalysis: true,
+      supportNonRerInterceptions: false,
+      devicesSectionEnabled: true,
+    });
 
     const { container } = renderComponent({
       ...defaultProps,
@@ -632,6 +625,7 @@ describe('AppNavbar', () => {
       await Promise.resolve();
     });
     expect(container.textContent).not.toContain('Пристрої');
+    expect(currentSettingsMock).not.toHaveBeenCalled();
 
     await act(async () => {
       window.dispatchEvent(new Event('system-settings-saved'));

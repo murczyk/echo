@@ -32,6 +32,9 @@ function buildRoot(entryId: string, name: string): DeviceFileRoot {
     parentEntryId: null,
     kind: 'directory',
     name,
+    fileMetadataCreatedAt: null,
+    fileMetadataModifiedAt: null,
+    contentUploadedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
     tags: [],
@@ -54,6 +57,7 @@ function buildEntry(
     hasContent: false,
     mimeType: kind === 'file' ? 'text/plain' : null,
     extension: kind === 'file' ? 'log' : null,
+    contentUploadedAt: null,
     fileMetadataCreatedAt: null,
     fileMetadataModifiedAt: null,
     createdAt: NOW,
@@ -72,6 +76,7 @@ function browseResponse(
   nextCursor: string | null = null,
 ): BrowseDeviceFilesRsp {
   return {
+    archiveSource: null,
     breadcrumbs: [{ entryId: parentEntryId, name: 'C:\\' }],
     entries,
     nextCursor,
@@ -89,14 +94,17 @@ let latest: ReturnType<typeof useDeviceFileTree> | null = null;
 function Harness({
   hasContent = null,
   syncId = null,
+  active = true,
 }: {
   hasContent?: boolean | null;
   syncId?: string | null;
+  active?: boolean;
 }) {
   latest = useDeviceFileTree({
     deviceId: DEVICE_ID,
     syncId,
     enabled: true,
+    active,
     hasContent,
     roots,
     tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
@@ -144,6 +152,82 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('useDeviceFileTree', () => {
+  for (const operation of ['first', 'append', 'refresh'] as const) {
+    for (const collapsed of [false, true]) {
+      it(`#3930 resumes interrupted nested ${operation}, collapsed=${collapsed}, without losing pages`, async () => {
+        let finishOld!: (response: BrowseDeviceFilesRsp) => void;
+        let oldSignal: AbortSignal | undefined;
+        let calls = 0;
+        const existing = buildEntry('existing', DIRECTORY_ID);
+        const resumed = buildEntry('resumed', DIRECTORY_ID);
+        apiMock.browseDeviceFiles.mockImplementation(({ parentEntryId }, options) => {
+          if (parentEntryId !== DIRECTORY_ID)
+            return Promise.resolve(
+              browseResponse(
+                parentEntryId,
+                parentEntryId === ROOT_ONE_ID
+                  ? [buildEntry(DIRECTORY_ID, ROOT_ONE_ID, 'directory')]
+                  : [],
+              ),
+            );
+          calls++;
+          if (calls === (operation === 'first' ? 1 : 2)) {
+            oldSignal = options?.signal;
+            return new Promise<BrowseDeviceFilesRsp>((resolve) => {
+              finishOld = resolve;
+            });
+          }
+          return Promise.resolve(
+            browseResponse(
+              parentEntryId,
+              calls === 1 ? [existing] : [resumed],
+              calls === 1 ? 'tail' : null,
+            ),
+          );
+        });
+        await mountHook();
+        act(() => latest!.toggleDirectory(DIRECTORY_ID));
+        await flush();
+        if (operation !== 'first') {
+          act(() => {
+            if (operation === 'append') void latest!.loadMoreBranch(DIRECTORY_ID);
+            else void latest!.retryBranch(DIRECTORY_ID);
+          });
+        }
+        await flush();
+        expect(latest!.refreshing).toBe(true);
+        await act(async () => root!.render(<Harness active={false} />));
+        expect(oldSignal?.aborted).toBe(true);
+        expect(latest!.branches[DIRECTORY_ID]).toMatchObject({
+          loading: false,
+          refreshing: false,
+          loadingMore: false,
+        });
+        if (operation !== 'first') {
+          expect(latest!.branches[DIRECTORY_ID].entries).toEqual([existing]);
+          expect(latest!.branches[DIRECTORY_ID].nextCursor).toBe('tail');
+        }
+        if (collapsed) act(() => latest!.toggleDirectory(DIRECTORY_ID));
+        await act(async () => root!.render(<Harness />));
+        if (collapsed) {
+          expect(calls).toBe(operation === 'first' ? 1 : 2);
+          act(() => latest!.toggleDirectory(DIRECTORY_ID));
+          await flush();
+        }
+        expect(latest!.branches[DIRECTORY_ID].entries).toEqual(
+          operation === 'append' ? [existing, resumed] : [resumed],
+        );
+        expect(latest!.refreshing).toBe(false);
+        expect(latest!.branches[DIRECTORY_ID].nextCursor).toBeNull();
+        await act(async () =>
+          finishOld(browseResponse(DIRECTORY_ID, [buildEntry('stale', DIRECTORY_ID)], 'stale')),
+        );
+        expect(latest!.branches[DIRECTORY_ID].entries).not.toContainEqual(
+          expect.objectContaining({ entryId: 'stale' }),
+        );
+      });
+    }
+  }
   it('#3778 preserves unrelated roots when a directory disappears', async () => {
     await mountHook();
     apiMock.browseDeviceFiles.mockRejectedValueOnce(new HttpRequestError(404, 'missing directory'));

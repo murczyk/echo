@@ -113,6 +113,7 @@ export function DeviceMobileList({
             <div className="flex min-w-0 items-center gap-echo-sm">
               <DeviceStatusIcon archived={row.archived} />
               <Link
+                variant="body2"
                 href={`/devices/${row.id}`}
                 onClick={(event) => handleNavigateWithinSpaClick(event, `/devices/${row.id}`)}
                 className="min-w-0 flex-1 py-echo-sm font-semibold [overflow-wrap:anywhere]"
@@ -130,7 +131,7 @@ export function DeviceMobileList({
             </div>
             <div className="flex flex-wrap items-center justify-between gap-echo-sm py-echo-sm">
               {visible('unit') ? (
-                <span className="min-w-0 text-[length:var(--echo-typography-font-size-sm)] [overflow-wrap:anywhere]">
+                <span className="min-w-0 text-[length:var(--echo-typography-font-size-base)] [overflow-wrap:anywhere]">
                   {row.unitLabel}
                 </span>
               ) : null}
@@ -157,7 +158,7 @@ export function DeviceMobileList({
                 />
               </div>
             ) : null}
-            <details className="mt-echo-sm text-[length:var(--echo-typography-font-size-sm)]">
+            <details className="mt-echo-sm text-[length:var(--echo-typography-font-size-base)]">
               <summary className="min-h-echo-control-lg cursor-pointer py-echo-md text-echo-primary">
                 Деталі
               </summary>

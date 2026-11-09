@@ -38,7 +38,17 @@ view : String -> String -> Auth.User -> Shared.Model -> Route { id : String } ->
 view section title user shared route =
     { title = title
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 py-4 w-full flex flex-col" ]
+        [ div
+            [ class
+                ("app-shell-fill-height box-border min-h-0 py-4 w-full flex flex-col "
+                    ++ (if section == "files" then
+                            "pl-6"
+
+                        else
+                            "px-6"
+                       )
+                )
+            ]
             [ case shared.systemSettings of
                 Nothing ->
                     div [ class "p-6 text-sm text-[var(--color-text-muted)]" ]

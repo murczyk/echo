@@ -145,7 +145,10 @@ vi.mock('@mui/icons-material/PlayArrow', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Pause', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Article', () => ({ default: () => <span /> }));
 
-vi.mock('../../attachment-preview/message-card-preview-config.ts', () => ({
+vi.mock('../../attachment-preview/message-card-preview-config.ts', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../attachment-preview/message-card-preview-config.ts')
+  >()),
   getMessageCardAttachmentPreviewConfig: () => ({ disableRestoreFocus: false }),
 }));
 
@@ -789,14 +792,6 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(latestControlsProps?.playerState.isPlaying).toBe(true);
     expect(latestControlsProps?.playerState.currentTime).toBe(37);
 
-    await act(async () => {
-      document.body
-        .querySelector('[data-video-stage]')
-        ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    });
-
-    expect(document.body.querySelector('[data-zoom-badge]')?.textContent).toBe('150%');
-
     const pauseCallsBeforeEquivalentRerender = pauseSpy.mock.calls.length;
     await act(async () => {
       root.render(
@@ -816,7 +811,6 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(pauseSpy).toHaveBeenCalledTimes(pauseCallsBeforeEquivalentRerender);
     expect(latestControlsProps?.playerState.isPlaying).toBe(true);
     expect(latestControlsProps?.playerState.currentTime).toBe(37);
-    expect(document.body.querySelector('[data-zoom-badge]')?.textContent).toBe('150%');
 
     await act(async () => {
       root.render(
@@ -836,7 +830,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(pauseSpy).toHaveBeenCalled();
     expect(latestControlsProps?.playerState.isPlaying).toBe(false);
     expect(latestControlsProps?.playerState.currentTime).toBe(0);
-    expect(document.body.querySelector('[data-zoom-badge]')?.textContent).toBe('100%');
+    expect(document.body.querySelector('[data-zoom-badge]')).toBeNull();
     root.unmount();
   });
 

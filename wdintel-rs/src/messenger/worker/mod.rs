@@ -392,6 +392,14 @@ async fn sync_client_once(
             cli.id, e
         );
     }
+    let error_observer = metrics.as_ref().map(|metrics| {
+        Arc::new(crate::telemetry::operational::SignalObserver {
+            metrics: metrics.clone(),
+            client_id: cli.client_id,
+            account_id: cli.echo_account_id.clone(),
+            datasource_id: cli.id,
+        }) as Arc<dyn echo_im::observation::SignalErrorObserver>
+    });
     let Some(client_name) = cli.system_service_name else {
         trace!("client name is missing, skipping: {:?}", cli);
         return SyncResult {
@@ -409,6 +417,7 @@ async fn sync_client_once(
         dbx,
         redis,
         metrics,
+        error_observer,
     )
     .await;
     let (num_synced_inbox_messages, maintenance_skipped) = match receive_result
@@ -646,6 +655,7 @@ async fn receive_thread(
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
     metrics: &Option<crate::telemetry::Metrics>,
+    error_observer: Option<Arc<dyn echo_im::observation::SignalErrorObserver>>,
 ) -> Result<ReceiveThreadResult, AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -662,15 +672,17 @@ async fn receive_thread(
         crate::system_settings::get_echo_restapi_error_discord_webhook_url(dbx)
             .await
             .c(h!())?;
+    let mut options = crate::messenger::signal_restart::signal_worker_options(
+        crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
+            redis.clone(),
+        ),
+        restapi_error_discord_webhook_url,
+    );
+    options.error_observer = error_observer;
     let tick_outcome = echo_im::worker::signal_worker_tick_once_with_options(
         client_name,
         dbx,
-        crate::messenger::signal_restart::signal_worker_options(
-            crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
-                redis.clone(),
-            ),
-            restapi_error_discord_webhook_url,
-        ),
+        options,
     )
     .await
     .c(h!())?;

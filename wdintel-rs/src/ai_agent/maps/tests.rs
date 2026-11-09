@@ -278,3 +278,222 @@ fn png_entry(
     file.read_to_end(&mut bytes).unwrap();
     bytes
 }
+
+const USER_POINTS: [(&str, &str); 15] = [
+    ("47.54821", "35.38674"),
+    ("47.52183", "35.41296"),
+    ("47.56347", "35.43812"),
+    ("47.53716", "35.46783"),
+    ("47.58092", "35.48961"),
+    ("47.55138", "35.51627"),
+    ("47.52674", "35.54893"),
+    ("47.57419", "35.57146"),
+    ("47.54382", "35.60318"),
+    ("47.59263", "35.62974"),
+    ("47.55947", "35.65281"),
+    ("47.53291", "35.68426"),
+    ("47.58236", "35.70953"),
+    ("47.55172", "35.73819"),
+    ("47.57384", "35.76642"),
+];
+
+fn labelled(system: &str, x: &str, y: &str) -> AiAgentMapRecord {
+    prepare::prepare_record(AiAgentMapRecordInput {
+        coordinate_system: system.to_string(),
+        ..input(x, y)
+    })
+    .unwrap()
+}
+
+fn assert_near(record: &AiAgentMapRecord, latitude: f64, longitude: f64) {
+    let (lat, lon) = (record.latitude.unwrap(), record.longitude.unwrap());
+    assert!(
+        (lat - latitude).abs() < 0.00002 && (lon - longitude).abs() < 0.00002,
+        "{lat}, {lon} is not near {latitude}, {longitude}"
+    );
+}
+
+#[test]
+fn issue_4038_lat_lon_is_recognized_from_the_values() {
+    for system in ["", "wgs84", "WGS-84", "sk42", "msk2000", "auto", "gps"] {
+        let record = labelled(system, "47.54821", "35.38674");
+        assert_eq!(record.coordinate_system, "wgs84", "{system}");
+        assert_eq!(
+            (record.latitude, record.longitude),
+            (Some(47.54821), Some(35.38674))
+        );
+        assert!(record.warnings.is_empty(), "{:?}", record.warnings);
+        assert_eq!(
+            (record.original_x.as_str(), record.original_y.as_str()),
+            ("47.54821", "35.38674")
+        );
+    }
+}
+
+#[test]
+fn issue_4038_lat_lon_accepts_comma_decimals_and_a_whole_pair_in_x() {
+    for (x, y) in [
+        ("47,54821", "35,38674"),
+        ("47.54821,", "35.38674;"),
+        ("47.54821, 35.38674", ""),
+        ("47.54821,35.38674", ""),
+        ("47,54821 35,38674", ""),
+    ] {
+        let record = labelled("", x, y);
+        assert_eq!(record.coordinate_system, "wgs84", "{x} {y}");
+        assert_eq!(
+            (record.latitude, record.longitude),
+            (Some(47.54821), Some(35.38674))
+        );
+    }
+}
+
+#[test]
+fn issue_4038_every_row_of_the_failed_request_lands_on_the_map() {
+    let records = USER_POINTS
+        .iter()
+        .map(|(x, y)| labelled("", x, y))
+        .collect::<Vec<_>>();
+    let document = document(records);
+    assert_eq!((document.valid_count, document.invalid_count), (15, 0));
+    assert!(document.warnings.is_empty(), "{:?}", document.warnings);
+    assert!(document.records.iter().all(|record| {
+        (47.5..47.6).contains(&record.latitude.unwrap())
+            && (35.3..35.8).contains(&record.longitude.unwrap())
+    }));
+}
+
+#[test]
+fn issue_4038_a_dotted_grid_pair_stays_a_grid_pair() {
+    let grid = labelled("msk2000", "5215227", "6548669");
+    let dotted = labelled("msk2000", "52.15227", "65.48669");
+    assert_eq!(dotted.coordinate_system, "msk2000");
+    assert_eq!(dotted.latitude, grid.latitude);
+    assert_eq!(dotted.longitude, grid.longitude);
+    assert_eq!(dotted.x, "5215227");
+    // Only an explicit label reads the same digits as degrees.
+    let degrees = labelled("wgs84", "52.15227", "65.48669");
+    assert_eq!(degrees.coordinate_system, "wgs84");
+    assert_eq!(degrees.latitude, Some(52.15227));
+}
+
+#[test]
+fn issue_4038_grid_pairs_keep_their_label_and_need_none() {
+    for (system, stored) in [
+        ("msk2000", "msk2000"),
+        ("sk42", "sk42"),
+        ("", "msk2000"),
+        ("usk2000", "msk2000"),
+    ] {
+        let record = labelled(system, "5215227", "6548669");
+        assert_eq!(record.coordinate_system, stored);
+        assert!(record.latitude.is_some());
+        assert_eq!(
+            (record.x.as_str(), record.y.as_str()),
+            ("5215227", "6548669")
+        );
+    }
+}
+
+#[test]
+fn issue_4038_lat_lon_outside_ukraine_stays_with_a_warning() {
+    let record = labelled("", "55.75123", "37.61712");
+    assert_eq!(record.coordinate_system, "wgs84");
+    assert_eq!(record.latitude, Some(55.75123));
+    assert!(record
+        .warnings
+        .iter()
+        .any(|warning| warning.starts_with("Координати поза очікуваною")));
+}
+
+#[test]
+fn issue_4038_mgrs_is_recognized_in_every_written_form() {
+    // Expected positions come from the npm `mgrs` library, not this code.
+    for (x, y) in [
+        ("36TXT7958468848", ""),
+        ("36T XT 79584 68848", ""),
+        ("36txt7958468848", ""),
+        ("36Т ХТ 79584 68848", ""),
+        ("36T XT", "79584 68848"),
+        ("36T XT 79584", "68848"),
+        ("36TXT79584", "68848"),
+        ("36T XT 7958468848", ""),
+    ] {
+        let record = labelled("", x, y);
+        assert_eq!(record.coordinate_system, "mgrs", "{x} {y}");
+        assert_near(&record, 47.54821, 35.38674);
+        assert!(record.warnings.is_empty(), "{:?}", record.warnings);
+        assert_eq!(record.original_x, x);
+    }
+    assert_near(&labelled("sk42", "36UUA2418291607", ""), 50.4501, 30.5234);
+}
+
+#[test]
+fn issue_4038_malformed_mgrs_keeps_the_row_without_geometry() {
+    for value in [
+        "36TXT",
+        "36TXT795",
+        "36TXT795846884812",
+        "36TXT79584688481234567890",
+        "36T XT 7958 6884 12",
+        "36T XT 79584 688",
+        "36T XT 795 84 68",
+        "36T XT 79584 68848 12345",
+        "99TXT7958468848",
+        "0TXT7958468848",
+    ] {
+        let record = labelled("", value, "");
+        assert_eq!(record.coordinate_system, "mgrs", "{value}");
+        assert_eq!(record.latitude, None, "{value}");
+        assert_eq!(record.x, "INVALID");
+        assert_eq!(record.original_x, value);
+        assert_eq!(
+            record.warnings[0].split(';').next(),
+            Some("Некоректна координата MGRS")
+        );
+    }
+}
+
+#[test]
+fn issue_4038_csv_keeps_grid_values_for_every_format() {
+    let wgs84 = labelled("", "47.54821", "35.38674");
+    let mgrs = labelled("", "36TXT7958468848", "");
+    for record in [&wgs84, &mgrs] {
+        assert_eq!(record.x.len(), 7, "{}", record.x);
+        assert!(record.x.chars().all(|ch| ch.is_ascii_digit()));
+        assert_eq!(record.y.len(), 7, "{}", record.y);
+        assert!(record.y.starts_with('6'), "{}", record.y);
+    }
+    // Expected grid values come from proj4 in Node, not this code.
+    assert_eq!((wgs84.x.as_str(), wgs84.y.as_str()), ("5271068", "6679775"));
+    let bytes = export::csv(&document(vec![wgs84.clone(), mgrs])).unwrap();
+    let mut reader = csv::Reader::from_reader(bytes.as_slice());
+    let rows = reader.records().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(&rows[0][4], wgs84.x);
+    assert_eq!(&rows[0][5], wgs84.y);
+}
+
+#[test]
+fn issue_4038_exported_grid_values_lead_back_to_the_same_point() {
+    for (x, y) in USER_POINTS {
+        let source = labelled("", x, y);
+        let grid = labelled("msk2000", &source.x, &source.y);
+        assert_near(&grid, source.latitude.unwrap(), source.longitude.unwrap());
+    }
+}
+
+#[test]
+fn issue_4038_canonicalizing_a_published_document_changes_nothing() {
+    let first = document(vec![
+        labelled("", "47.54821", "35.38674"),
+        labelled("", "36T XT 79584 68848", ""),
+        labelled("", "5215227", "6548669"),
+        labelled("", "36TXT795", ""),
+    ]);
+    let second = prepare::canonicalize(first.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&first).unwrap(),
+        serde_json::to_value(&second).unwrap()
+    );
+    assert_eq!((first.valid_count, first.invalid_count), (3, 1));
+}
