@@ -66,6 +66,7 @@ export function minimalInboxMessage(overrides: Partial<InboxMessage> = {}): Inbo
     post: null,
     postId: null,
     unit: null,
+    unitDisplay: null,
     callsignTokens: null,
     signalTokens: null,
     pointTokens: null,

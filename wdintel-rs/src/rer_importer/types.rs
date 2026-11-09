@@ -83,6 +83,8 @@ pub struct InboxMessage {
     pub post_id: Option<i64>,
     pub unit: Option<String>,
     #[serde(default)]
+    pub unit_display: Option<String>,
+    #[serde(default)]
     pub unit_ids: Vec<i64>,
     /// overwritten upon save (ignored upon submission)
     pub callsign_tokens:
@@ -220,6 +222,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             post: payload.post,
             post_id: payload.post_id,
             unit: payload.unit,
+            unit_display: None,
             unit_ids: vec![],
             callsign_tokens: None,
             signal_tokens: None,

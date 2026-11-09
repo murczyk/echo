@@ -2346,6 +2346,10 @@ fn patch_backward_compatible_decoders(
             r#"Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder)), Json.Decode.succeed Nothing ]"#,
         )
+        .replace(
+            r#"Json.Decode.field "unit_display" (Json.Decode.nullable (Json.Decode.string))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "unit_display" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]"#,
+        )
         .replacen(
             r#"Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]"#,

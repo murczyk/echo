@@ -2533,6 +2533,7 @@ fn generic_submit_item_to_inbox_message(
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),
+        unit_display: None,
         unit_ids: vec![],
         callsign_tokens: None,
         signal_tokens: None,
@@ -9667,6 +9668,24 @@ mod tests {
             .all(|entry| entry.model.is_none()));
     }
 
+    async fn unit_metadata_for_message(
+        env: &Env,
+        login: uuid::Uuid,
+        message_id: i64,
+    ) -> InboxMessage {
+        messages_by_id_bl(
+            &login,
+            &vec![login],
+            env,
+            &[message_id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap()
+        .remove(0)
+        .1
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_messages_by_id_includes_distinct_unit_ids() {
@@ -9744,23 +9763,32 @@ mod tests {
             .unwrap();
         }
 
-        let logins = vec![login.id];
-        let messages = messages_by_id_bl(
-            &login.id,
-            &logins,
-            &env,
-            &[message.id],
-            &messages_by_id_default_req(),
-        )
-        .await
-        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
         let mut expected_unit_ids = vec![first_unit.id, second_unit.id];
         expected_unit_ids.sort_unstable();
 
-        assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
+        assert_eq!(response.unit_ids, expected_unit_ids);
         assert_eq!(
-            messages[0].1.unit.as_deref(),
+            response.unit_display.as_deref(),
             Some("First current unit, Second current unit")
+        );
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_unit::ActiveModel {
+            id: Set(second_unit.id),
+            name: Set(first_unit.name.clone()),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert_eq!(response.unit_ids, expected_unit_ids);
+        assert_eq!(
+            response.unit_display.as_deref(),
+            Some("First current unit")
         );
 
         for (unit_id, deleted) in
@@ -9776,34 +9804,36 @@ mod tests {
             .await
             .unwrap();
         }
-        let messages = messages_by_id_bl(
-            &login.id,
-            &logins,
-            &env,
-            &[message.id],
-            &messages_by_id_default_req(),
-        )
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert_eq!(response.unit_ids, vec![first_unit.id]);
+        assert_eq!(response.unit_display.as_deref(), Some("Renamed unit"));
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_unit::ActiveModel {
+            id: Set(first_unit.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
         .await
         .unwrap();
-        assert_eq!(messages[0].1.unit_ids, vec![first_unit.id]);
-        assert_eq!(messages[0].1.unit.as_deref(), Some("Renamed unit"));
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert!(response.unit_ids.is_empty());
+        assert!(response.unit_display.is_none());
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
 
         sigint_inbox_item_unit::Entity::delete_many()
             .filter(sigint_inbox_item_unit::Column::ItemId.eq(message.id))
             .exec(&env.dbx)
             .await
             .unwrap();
-        let messages = messages_by_id_bl(
-            &login.id,
-            &logins,
-            &env,
-            &[message.id],
-            &messages_by_id_default_req(),
-        )
-        .await
-        .unwrap();
-        assert!(messages[0].1.unit_ids.is_empty());
-        assert_eq!(messages[0].1.unit.as_deref(), Some("Stored unit name"));
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert!(response.unit_ids.is_empty());
+        assert!(response.unit_display.is_none());
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
     }
 
     #[serial]

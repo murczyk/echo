@@ -648,7 +648,7 @@ export function etalonFallbackWhenNoNetworks(
   if (!hasFreq) return null;
   const strict = options?.featureStrictNetworks ?? false;
   if (strict) return 'Не встановлена';
-  const unit = msg.unit?.trim();
+  const unit = (msg.unitDisplay ?? msg.unit)?.trim();
   return isPresent(unit) && unit !== '' ? unit : 'Не встановлена';
 }
 

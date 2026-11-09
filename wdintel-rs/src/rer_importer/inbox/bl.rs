@@ -1233,11 +1233,9 @@ pub async fn aggregate_to_inbox_messages(
                     .get(&message.id)
                     .cloned()
                     .unwrap_or_default(),
-                unit: if units.is_empty() {
-                    message.unit_v2.clone()
-                } else {
-                    Some(units.values().unique().join(", "))
-                },
+                unit: message.unit_v2.clone(),
+                unit_display: (!units.is_empty())
+                    .then(|| units.values().unique().join(", ")),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
                 point_tokens: m_point_tokens,

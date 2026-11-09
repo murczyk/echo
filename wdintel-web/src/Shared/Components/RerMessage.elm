@@ -885,6 +885,7 @@ sanitizeMessageForSubmit message =
         | tags = Nothing
         , inboxTags = Nothing
         , extendedForm = Nothing
+        , unitDisplay = Nothing
     }
 
 
@@ -1461,7 +1462,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 networkBlock =
                     if vps.hideNetworks then
                         div [ class "font-medium" ]
-                            [ message.unit
+                            [ MaybeX.orElse message.unit message.unitDisplay
                                 |> Maybe.map trim
                                 |> Maybe.andThen
                                     (\unit ->
