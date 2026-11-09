@@ -167,4 +167,99 @@ describe('#3571 Duty search history', () => {
       expect.anything(),
     );
   });
+
+  it('allows retrying history after reconciliation removes the oldest result', async () => {
+    requests.fetchInboxMessages.mockResolvedValueOnce({
+      ...rangeRsp(21, 40),
+      historySinceMs: since,
+      historyPeriodMs: period,
+    });
+    await mount();
+    requests.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+      await settleReactCommits();
+    });
+    const pending = fixture.deferred<ReturnType<typeof inboxRsp>>('reconciled history');
+    requests.fetchInboxMessages.mockReturnValueOnce(pending.promise);
+    const loading = apiRef.current!.loadFeedOlderMessages('mf-0', true);
+    await act(async () => settleReactCommits());
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({ ...feed, items: feed.items.slice(1) })),
+      );
+    });
+    await act(async () => {
+      pending.resolve(rangeRsp(1, 20));
+      await loading;
+      await settleReactCommits();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual(
+      Array.from({ length: 19 }, (_, index) => index + 22),
+    );
+    expect(apiRef.current!.messageFeeds[0].loadingOlder).toBe(false);
+    expect(apiRef.current!.messageFeeds[0].historySinceMs).toBe(since);
+    requests.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0', true);
+      await settleReactCommits();
+    });
+    expect(apiRef.current!.messageFeeds[0].historySinceMs).toBe(since - period);
+  });
+
+  it('clears history loading when a live reload supersedes an empty-period search', async () => {
+    requests.fetchInboxMessages.mockResolvedValueOnce({
+      ...inboxRsp([]),
+      historySinceMs: since,
+      historyPeriodMs: period,
+    });
+    await mount();
+    const pending = fixture.deferred<ReturnType<typeof inboxRsp>>('superseded history');
+    requests.fetchInboxMessages.mockReturnValueOnce(pending.promise);
+    const loading = apiRef.current!.loadFeedOlderMessages('mf-0', true);
+    await act(async () => settleReactCommits());
+    requests.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 40));
+    await act(async () => {
+      apiRef.current!.reloadFeeds();
+      await settleReactCommits();
+    });
+    expect(apiRef.current!.messageFeeds[0].loadingOlder).toBe(false);
+    await act(async () => {
+      pending.resolve(rangeRsp(1, 20));
+      await loading;
+      await settleReactCommits();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 21),
+    );
+  });
+
+  it('discards a count from the previous history boundary', async () => {
+    requests.fetchInboxMessages.mockResolvedValueOnce({
+      ...rangeRsp(21, 40),
+      historySinceMs: since,
+      historyPeriodMs: period,
+    });
+    await mount();
+    requests.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+      await settleReactCommits();
+    });
+    const pending = fixture.deferred<{ quantity: number; firstElementTs: null }>('bounded count');
+    requests.fetchInboxCount.mockReturnValueOnce(pending.promise);
+    const count = apiRef.current!.requestValidatedInboxCount('mf-0');
+    requests.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0', true);
+      await settleReactCommits();
+    });
+    let result: unknown;
+    await act(async () => {
+      pending.resolve({ quantity: 99, firstElementTs: null });
+      result = await count;
+      await settleReactCommits();
+    });
+    expect(result).toBeNull();
+  });
 });

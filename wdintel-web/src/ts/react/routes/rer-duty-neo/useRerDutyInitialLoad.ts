@@ -205,7 +205,9 @@ export function useRerDutyInitialLoad(params: Params) {
         : feed;
       current.setMessageFeeds((previous) =>
         previous.map((candidate) =>
-          candidate.id === feedId ? { ...candidate, loading: true } : candidate,
+          candidate.id === feedId
+            ? { ...candidate, loading: true, loadingOlder: false }
+            : candidate,
         ),
       );
       current.setError(null);
@@ -242,6 +244,8 @@ export function useRerDutyInitialLoad(params: Params) {
         )
           return;
         const response = responses[0];
+        const historySinceMs = response.historySinceMs ?? effectiveFeed.historySinceMs ?? null;
+        const historyPeriodMs = response.historyPeriodMs ?? effectiveFeed.historyPeriodMs ?? null;
         const metadata = mergeInitialLoadMetadata(responses);
         current.mergeInboxCallsigns(feedId, metadata.callsigns, { replace: true });
         const loadedItems = responses.flatMap((loadedResponse) => loadedResponse.inboxItems);
@@ -262,11 +266,14 @@ export function useRerDutyInitialLoad(params: Params) {
           const tail = items.at(-1);
           if (tail) {
             current.installFeedUnreadCursorAndBaseline(
-              effectiveFeed,
+              { ...effectiveFeed, historySinceMs },
               historicalReadThrough ?? messageOrderCursor(tail[0], tail[1]),
             );
           } else if (pollCursor) {
-            current.installFeedUnreadCursorAndBaseline(effectiveFeed, pollCursor);
+            current.installFeedUnreadCursorAndBaseline(
+              { ...effectiveFeed, historySinceMs },
+              pollCursor,
+            );
           } else {
             current.setFeedUnreadCursor(feedId, null);
           }
@@ -279,8 +286,8 @@ export function useRerDutyInitialLoad(params: Params) {
                   items,
                   loading: false,
                   referenceTimeMs: Date.now(),
-                  historySinceMs: response.historySinceMs ?? candidate.historySinceMs ?? null,
-                  historyPeriodMs: response.historyPeriodMs ?? candidate.historyPeriodMs ?? null,
+                  historySinceMs,
+                  historyPeriodMs,
                   hasReachedStart: !initialTarget && loadedItems.length === 0,
                   pendingNewerItems: [],
                   evictedNewerTailId: initialTarget ? (historicalReadThrough?.id ?? null) : null,

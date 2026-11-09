@@ -247,6 +247,9 @@ export function useRerDutyFeeds(
   useEffect(() => {
     if (dutySettings.loadError) feedState.setError(dutySettings.loadError);
   }, [dutySettings.loadError, feedState.setError]);
+  useEffect(() => {
+    if (filterOpts.serverInfoError) feedState.setError(filterOpts.serverInfoError);
+  }, [filterOpts.serverInfoError, feedState.setError]);
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
@@ -291,6 +294,7 @@ export function useRerDutyFeeds(
           }) => {
             try {
               const membershipFiltersActive =
+                Boolean(inboxReq.search?.trim()) ||
                 (inboxReq.selectedGroups?.length ?? 0) > 0 ||
                 (inboxReq.deniedGroups?.length ?? 0) > 0 ||
                 (inboxReq.selectedUnitIds?.length ?? 0) > 0 ||

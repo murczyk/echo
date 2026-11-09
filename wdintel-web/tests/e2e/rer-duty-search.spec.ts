@@ -138,3 +138,92 @@ test('#3571 offers the preceding period at the oldest search result @regression'
   });
   await expect(page.locator('[data-duty-message-id]')).toHaveCount(20);
 });
+
+test('#3571 reports feature-discovery failures without loading an unfiltered search @regression', async ({
+  page,
+}) => {
+  const inboxRequests: unknown[] = [];
+  await installRerDutyShortStateMocks(page, {
+    inboxResponseForRequest: (request) => {
+      inboxRequests.push(request);
+      return response([1]);
+    },
+  });
+  await page.route('**/api-public/server-info', (route) =>
+    route.fulfill({ status: 503, contentType: 'application/json', body: '"Search unavailable"' }),
+  );
+  const state = encodeURIComponent(
+    JSON.stringify({ messageFeeds: [['mf-0', { search: 'needle' }]] }),
+  );
+  await page.goto(`/rer-duty-neo?state=${state}`);
+  await expect(page.getByRole('alert').filter({ hasText: 'налаштування пошуку' })).toBeVisible();
+  await expect(page.locator('[data-duty-message-id]')).toHaveCount(0);
+  expect(inboxRequests).toEqual([]);
+});
+
+test('#3571 persists search and mode through saved filters and reload on mobile @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    inboxResponse: response([1]),
+  });
+  await page.goto('/rer-duty-neo');
+  await page.getByRole('button', { name: 'Фільтри', exact: true }).first().click();
+  const panel = page.getByLabel('Панель фільтрів');
+  const search = panel.getByRole('combobox', { name: 'Пошук', exact: true });
+  await search.fill('needle');
+  await page.getByRole('option', { name: /Збіг за входженням/ }).click();
+  await expect(panel).toBeVisible();
+  await expect
+    .poll(() => fixture.getLastInboxRequest())
+    .toMatchObject({
+      search: 'needle',
+      search_mode: 'Substring',
+    });
+  const actions = panel.getByRole('button', { name: 'Дії зі збереженими фільтрами' });
+  await actions.click();
+  await page.getByText('Зберегти як новий', { exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Зберегти як новий' });
+  await dialog.getByRole('textbox', { name: 'Назва' }).fill('Пошук колонки');
+  await dialog.getByRole('button', { name: 'Зберегти', exact: true }).click();
+  await expect(panel.getByRole('combobox', { name: 'Фільтр', exact: true })).toHaveValue(
+    'Пошук колонки',
+  );
+  expect(fixture.getSavedFilters()[0]?.req).toMatchObject({
+    search: 'needle',
+    search_mode: 'Substring',
+  });
+  await search.fill('changed');
+  await page.keyboard.press('Escape');
+  await actions.click();
+  const update = page.getByText('Оновити вибраний фільтр', { exact: true });
+  await expect(update).toBeEnabled();
+  await update.click();
+  await expect
+    .poll(() => fixture.getSavedFilters()[0]?.req)
+    .toMatchObject({
+      search: 'changed',
+      search_mode: 'Substring',
+    });
+  await panel.getByRole('button', { name: 'Скинути поточний фільтр' }).click();
+  await expect(search).toHaveValue('');
+  await panel.getByRole('combobox', { name: 'Фільтр', exact: true }).click();
+  await page.getByRole('option', { name: 'Пошук колонки' }).click();
+  await expect(search).toHaveValue('changed');
+  await page.reload();
+  await expect(page.locator('[data-duty-message-id]')).toHaveCount(1);
+  await page
+    .getByRole('button', { name: /^Фільтри/ })
+    .first()
+    .click();
+  await expect(search).toHaveValue('changed');
+  await expect
+    .poll(() => fixture.getLastInboxRequest())
+    .toMatchObject({
+      search: 'changed',
+      search_mode: 'Substring',
+      sort_by: 'IMSCreatedAt',
+    });
+});

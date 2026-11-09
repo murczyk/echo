@@ -197,6 +197,11 @@ export async function installRerDutyShortStateMocks(
       return;
     }
 
+    if (pathname === '/api/sigint/units/hierarchy') {
+      await fulfillJson(route, { revision: 'duty-fixture', groups: [], units: [] });
+      return;
+    }
+
     if (pathname === '/api/1.1/submit-direct/settings') {
       await route.fulfill({
         json: { unitRequired: false, deviceRequired: false, allowUnitCreation: true },

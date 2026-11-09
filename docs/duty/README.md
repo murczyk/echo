@@ -121,6 +121,10 @@ search control below saved filters in every Duty Neo column. The default is
 false; both search and the older-period button are hidden when disabled.
 Search text and mode belong to the column filter and saved/linked filters.
 Search, counts, and all pages use the column filters and creation time.
+Inbox events recheck search membership for displayed, buffered, and off-window
+unread messages. Messages that stop matching are removed from all three.
+If server settings fail to load, a toast reports the error and restored searches
+remain blocked until the page is successfully reloaded.
 
 The initial request keeps the adaptive limit: traffic above 100,000 messages
 in the preceding three days, unit filters, or unavailable statistics restrict
@@ -135,6 +139,9 @@ creation times between milliseconds; cursors and deduplication prevent repeats.
 Changing filters resets the history boundary. When the
 adaptive limit is unnecessary, the initial search covers all history and there
 is no earlier period to load.
+Reconciliation that changes the oldest result discards an in-flight older page
+without advancing the period or blocking retry. Counts from a previous history
+boundary are discarded as well.
 
 Regression coverage:
 `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.search.spec.tsx`

@@ -59,6 +59,7 @@ export function AnalysisSearchControls({
           <li
             key={key}
             {...props}
+            data-search-mode-option
             aria-selected={option.mode === (queryState.searchMode ?? 'Fuzzy')}
           >
             <span>
