@@ -31,6 +31,7 @@ type SystemSettingsItemRaw = {
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search?: SystemSettingsCurrentRsp['enableDutySearch'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -85,6 +86,7 @@ type SystemSettingsCurrentRspRaw = {
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search?: SystemSettingsCurrentRsp['enableDutySearch'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -131,6 +133,7 @@ type CreateSystemSettingsReqRaw = {
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   duty_selected_groups_enabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search: SystemSettingsCurrentRsp['enableDutySearch'] | null;
   important_notify_all_enabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -192,6 +195,7 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch: SystemSettingsCurrentRsp['enableDutySearch'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -246,6 +250,7 @@ export type SystemSettingsCurrent = {
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch: SystemSettingsCurrentRsp['enableDutySearch'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -288,6 +293,7 @@ export type CreateSystemSettingsInput = {
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch?: SystemSettingsCurrentRsp['enableDutySearch'];
   importantNotifyAllEnabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -346,6 +352,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
+    enableDutySearch: raw.enable_duty_search ?? false,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -402,6 +409,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
+    enableDutySearch: raw.enable_duty_search ?? false,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -453,6 +461,7 @@ export async function createSystemSettings(
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
     duty_selected_groups_enabled: input.dutySelectedGroupsEnabled ?? null,
+    enable_duty_search: input.enableDutySearch ?? null,
     important_notify_all_enabled: input.importantNotifyAllEnabled ?? null,
     api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs,
     api_rate_limit_burst_size: input.apiRateLimitBurstSize,

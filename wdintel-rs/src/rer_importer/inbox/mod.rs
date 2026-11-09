@@ -1282,13 +1282,17 @@ async fn inbox_messages(
         None
     };
     let mut req = req;
-    let history_since_ms = if env.config.enable_duty_search.unwrap_or(false) {
-        rer_duty_neo_adaptive_lower_bound(&login, &env, &req)
+    let history_since_ms =
+        if crate::system_settings::duty_search_enabled(&env.dbx)
             .await
-            .map(|since| since.and_utc().timestamp_millis())
-    } else {
-        None
-    };
+            .c(h!())?
+        {
+            rer_duty_neo_adaptive_lower_bound(&login, &env, &req)
+                .await
+                .map(|since| since.and_utc().timestamp_millis())
+        } else {
+            None
+        };
     let history_period_ms = history_since_ms.map(|_| {
         Duration::days(RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS).num_milliseconds()
     });
@@ -8744,9 +8748,13 @@ mod tests {
     #[serial]
     async fn duty_search_returns_and_pages_effective_history_3571() {
         let (env, _guard) = cleanup_locked().await.unwrap();
-        let mut env = env.as_ref().clone();
-        env.config.enable_duty_search = Some(true);
-        let env = Arc::new(env);
+        system_settings::ActiveModel {
+            enable_duty_search: Set(Some(true)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let group = find_test_datasource_group(&env.dbx).await.unwrap();
         let recent = seed_message_with_media(

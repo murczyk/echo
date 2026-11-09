@@ -2193,6 +2193,7 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
+    /// Imported into system settings at startup for backwards compatibility.
     pub enable_duty_search: Option<bool>,
     pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,

@@ -116,9 +116,12 @@ transport, including updates to buffered messages. Browser regressions are in
 
 ## Search and older periods
 
-`enable_duty_search = true` at the root of `config.toml` enables the Analysis
-search control below saved filters in every Duty Neo column. The default is
-false; both search and the older-period button are hidden when disabled.
+The «Пошук в оперативному» toggle in admin system settings enables the Analysis
+search control below saved filters in every Duty Neo column without a server
+restart. The default is false; both search and the older-period button are
+hidden when disabled. Reload Duty after changing the setting. Existing
+`enable_duty_search` values in `config.toml` are imported at startup only when
+the database setting is unset; the legacy key can then be removed.
 Search text and mode belong to the column filter and saved/linked filters.
 Search, counts, and all pages use the column filters and creation time.
 Inbox events recheck search membership for displayed, buffered, and off-window

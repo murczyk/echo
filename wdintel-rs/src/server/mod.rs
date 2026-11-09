@@ -153,9 +153,6 @@ async fn new_env_from_config(
     initialize: bool,
     config: Config,
 ) -> Result<Arc<Env>, AppError> {
-    if config.enable_duty_search.is_none() {
-        warn!("enable_duty_search is not configured; Duty search is disabled");
-    }
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await
@@ -170,6 +167,9 @@ async fn new_env_from_config(
             .c(h!())?;
     }
     if initialize {
+        crate::system_settings::import_legacy_duty_search_config(&dbx, &config)
+            .await
+            .c(h!())?;
         crate::ai_agent::dispatcher::import_legacy_config(
             &dbx,
             config.ai_agent_dispatcher.as_ref(),
