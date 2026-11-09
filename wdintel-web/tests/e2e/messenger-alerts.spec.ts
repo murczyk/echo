@@ -4,6 +4,8 @@ import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 test('@regression #3610 sending settings preserve sender order and paginate delivery history', async ({
   page,
 }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
   const settings = { enabled: false, senderDatasourceIds: [] as number[] };
   const historyRequests: Array<string | null> = [];
@@ -98,9 +100,11 @@ test('@regression #3610 sending settings preserve sender order and paginate deli
   await expect(page.getByText('Recipient 1', { exact: true })).toBeVisible();
   expect(historyRequests).toEqual([null, 'older-cursor', null]);
 
-  const pageErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.evaluate(() => {
+  const storageWarnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning') storageWarnings.push(message.text());
+  });
+  const quotaError = await page.evaluate(() => {
     localStorage.removeItem('columnOrder-messenger-alert-history');
     let size = 1024 * 1024;
     let index = 0;
@@ -113,15 +117,46 @@ test('@regression #3610 sending settings preserve sender order and paginate deli
         size = Math.floor(size / 2);
       }
     }
+    try {
+      localStorage.setItem('quota-regression-probe', 'x');
+      return null;
+    } catch (error) {
+      if (!(error instanceof DOMException)) throw error;
+      return error.name;
+    }
   });
+  expect(quotaError).toBe('QuotaExceededError');
   await page.reload();
   await expect(page.getByRole('tab', { name: 'Відправка', exact: true })).toHaveAttribute(
     'aria-selected',
     'true',
   );
   await expect(page.getByText('Recipient 1', { exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      storageWarnings.some((warning) =>
+        warning.includes('Failed to save local storage item "columnOrder-messenger-alert-history"'),
+      ),
+    )
+    .toBe(true);
+  await page
+    .getByRole('columnheader', { name: /^Помилка/ })
+    .getByRole('button', { name: 'Дії стовпця' })
+    .click();
+  await page.getByRole('menuitem', { name: 'Приховати стовпець Помилка', exact: true }).click();
+  await expect(page.getByRole('columnheader', { name: /^Помилка/ })).toHaveCount(0);
+  await expect
+    .poll(() =>
+      storageWarnings.some((warning) =>
+        warning.includes(
+          'Failed to save local storage item "hiddenColumns-messenger-alert-history"',
+        ),
+      ),
+    )
+    .toBe(true);
   await page.getByRole('button', { name: 'Наступна сторінка' }).click();
   await expect(page.getByText('Older recipient', { exact: true })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /^Помилка/ })).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
 
@@ -176,7 +211,7 @@ test('@regression #3610 admins link a messenger profile when creating a user and
       json: { data: { 'profile-3610': { given_name: 'Messenger', family_name: 'Recipient' } } },
     }),
   );
-  await page.route('**/api/login/create-delta', async (route) => {
+  await page.route('**/api/login/create', async (route) => {
     const request = route.request().postDataJSON();
     writes.push(request);
     login = {
@@ -187,7 +222,7 @@ test('@regression #3610 admins link a messenger profile when creating a user and
       organism_enabled: true,
       organism_name: 'Test organization',
       sigint_zone_name: 'Test zone',
-      delta_login: request.login,
+      delta_login: request.delta_login,
     };
     await route.fulfill({ json: login });
   });
@@ -200,6 +235,9 @@ test('@regression #3610 admins link a messenger profile when creating a user and
   await page.goto('/admin/users-neo');
   await page.getByRole('button', { name: 'Додати користувача', exact: true }).click();
   const dialog = page.getByRole('dialog');
+  await dialog
+    .getByRole('textbox', { name: 'Delta логін', exact: true })
+    .fill('messenger-recipient');
   await dialog.getByRole('textbox', { name: 'Логін', exact: true }).fill('messenger-recipient');
   await dialog.getByRole('combobox', { name: 'Зона' }).click();
   await page.getByRole('option', { name: 'Test zone' }).click();
