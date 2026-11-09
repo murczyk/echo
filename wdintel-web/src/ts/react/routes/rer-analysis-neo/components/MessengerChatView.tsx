@@ -50,6 +50,8 @@ const ANCHOR_FEED_POLICY: MessageFeedPolicy = { ...FEED_POLICY, initialPosition:
 
 const URL_WRITE_DELAY_MS = 300;
 const COPIED_NOTICE_MS = 2000;
+// How far from the bottom of the feed the reader still counts as being at the end of the chat.
+const AT_END_THRESHOLD_PX = 52;
 
 const getMessageId = (message: MessengersMessageItem) => message.id;
 
@@ -77,6 +79,8 @@ export function MessengerChatView({
     return () => onBusyChange?.(false);
   }, [busy, onBusyChange]);
   const [firstVisibleId, setFirstVisibleId] = useState<string | null>(null);
+  // The chat opens at its end, so the reader starts there.
+  const [atBottom, setAtBottom] = useState(true);
   const [copied, setCopied] = useState(false);
   const [alignPending, setAlignPending] = useState(true);
   // The feed asks for an edge page once; changing this key lets it ask again after a failed page.
@@ -109,8 +113,9 @@ export function MessengerChatView({
   );
 
   // The URL keeps the first visible analysis messenger message, so a refresh or a shared link reopens the same spot.
-  // At the chat end there is nothing to keep: the chat opens there by itself.
-  const anchorForUrl = hasMoreBelow ? firstVisibleId : null;
+  // Only a reader at the very end has nothing to keep: the chat opens there by itself. The loaded
+  // window often reaches the newest message while the reader is far above it, so that alone is no reason to drop it.
+  const anchorForUrl = !hasMoreBelow && atBottom ? null : firstVisibleId;
   useEffect(() => {
     // Until the anchor is aligned the first visible message is just the top of the page.
     if (loading || navigationTarget != null) return;
@@ -265,7 +270,14 @@ export function MessengerChatView({
             loadingBelow={chatState.loadingBelow}
             hasMoreAbove={hasMoreAbove}
             hasMoreBelow={hasMoreBelow}
-            scrollerProps={{ className: 'min-h-0 flex-1', 'data-messenger-feed-scroller': true }}
+            scrollerProps={{
+              className: 'min-h-0 flex-1',
+              'data-messenger-feed-scroller': true,
+              onScroll: ({ currentTarget: el }) =>
+                setAtBottom(
+                  el.scrollHeight - el.scrollTop - el.clientHeight <= AT_END_THRESHOLD_PX,
+                ),
+            }}
             listProps={{ className: 'pb-echo-xl' }}
             scrollOptions={{
               policy: landedOnAnchor ? ANCHOR_FEED_POLICY : FEED_POLICY,

@@ -132,6 +132,45 @@ describe('MessengerChatView', () => {
     expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
   });
 
+  describe('position in the address bar', () => {
+    // The newest page reaches the chat end, as when the reader is within the last messages.
+    const newestPage = () => ({
+      items: [message('m2'), message('m1')],
+      olderCursor: 'o',
+      newerCursor: 'n',
+    });
+    const scrollTo = (scrollTop: number) =>
+      act(async () =>
+        latestFeed().scrollerProps?.onScroll?.({
+          currentTarget: { scrollHeight: 1000, clientHeight: 300, scrollTop },
+        } as unknown as React.UIEvent<HTMLDivElement>),
+      );
+    // The write is debounced.
+    const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 350))));
+
+    it('keeps the first visible message while the window reaches the chat end but the reader is above it', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(newestPage());
+      await mount();
+      await act(async () => latestFeed().scrollOptions.onFirstVisibleMessage?.('m1', 0));
+      await scrollTo(100);
+      await settle();
+      expect(window.location.search).toContain('messengerChat=c1');
+      expect(window.location.search).toContain('messengerAnchor=m1');
+    });
+
+    it('drops the anchor when the reader is at the end of the chat', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(newestPage());
+      await mount();
+      await act(async () => latestFeed().scrollOptions.onFirstVisibleMessage?.('m1', 0));
+      await scrollTo(100);
+      await settle();
+      await scrollTo(700);
+      await settle();
+      expect(window.location.search).toContain('messengerChat=c1');
+      expect(window.location.search).not.toContain('messengerAnchor');
+    });
+  });
+
   describe('date pill', () => {
     // Noon UTC keeps the day the same in every time zone that matters here. The matches use word
     // boundaries because the year 2025 also contains a 5.
