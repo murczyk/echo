@@ -5,6 +5,8 @@ import type {
   MessengersChatMembersListReq,
   MessengersChatMembersListRsp,
   MessengersChatsListRsp,
+  MessengersContactsListReq,
+  MessengersContactsListRsp,
   MessengersMessagesListReq,
   MessengersMessagesListRsp,
 } from '../../../../Bindings';
@@ -59,5 +61,15 @@ export async function listMessengersMessages(
 ): Promise<MessengersMessagesListRsp> {
   return transformSnakeToCamel<MessengersMessagesListRsp>(
     await postJson<unknown>('/api/messengers/messages/list', transformCamelToSnake(req), options),
+  );
+}
+
+// One page of an account's address book (pages from 1, at most 100 per page). There is no search: filter what is loaded.
+export async function listMessengersContacts(
+  req: MessengersContactsListReq,
+  options?: RequestOptions,
+): Promise<MessengersContactsListRsp> {
+  return transformSnakeToCamel<MessengersContactsListRsp>(
+    await postJson<unknown>('/api/messengers/contacts/list', transformCamelToSnake(req), options),
   );
 }

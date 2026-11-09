@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { postJson } from '../client';
-import { listMessengersChatMembers, listMessengersMessages } from '../analysis-messengers';
+import {
+  listMessengersChatMembers,
+  listMessengersContacts,
+  listMessengersMessages,
+} from '../analysis-messengers';
 
 vi.mock('../client', () => ({
   postJson: vi.fn(),
@@ -92,6 +96,40 @@ describe('analysis messengers API', () => {
     expect(rsp.items[0].attachments[0].media).toMatchObject({
       contentType: 'image/jpeg',
       href: '/api/messenger/media/media1',
+    });
+  });
+
+  it('lists a page of contacts with snake_case request and camelCase response', async () => {
+    const signal = new AbortController().signal;
+    postJsonMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'c1',
+          external_id: '7',
+          first_name: 'Ivan',
+          is_mutual: true,
+          created_at: 1760431100000,
+          telegram: { user_id: '7991943788' },
+        },
+      ],
+      total: 120,
+      page: 2,
+      page_size: 100,
+    });
+
+    const rsp = await listMessengersContacts({ accountId: 'a1', page: 2, limit: 100 }, { signal });
+
+    expect(postJsonMock).toHaveBeenLastCalledWith(
+      '/api/messengers/contacts/list',
+      { account_id: 'a1', page: 2, limit: 100 },
+      { signal },
+    );
+    expect(rsp).toMatchObject({ total: 120, page: 2, pageSize: 100 });
+    expect(rsp.items[0]).toMatchObject({
+      firstName: 'Ivan',
+      isMutual: true,
+      createdAt: 1760431100000,
+      telegram: { userId: '7991943788' },
     });
   });
 });

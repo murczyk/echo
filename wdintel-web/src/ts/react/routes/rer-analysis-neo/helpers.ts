@@ -59,6 +59,9 @@ const MESSENGER_ACCOUNT_PARAM = 'messengerAccount';
 const MESSENGER_CHAT_PARAM = 'messengerChat';
 // The first message the reader has in view in an analysis messenger chat; reopening the URL starts the chat there.
 const MESSENGER_ANCHOR_PARAM = 'messengerAnchor';
+// A view of the account other than a chat, e.g. `contacts`. The chat and the view exclude each other.
+const MESSENGER_VIEW_PARAM = 'messengerView';
+const MESSENGER_VIEWS = ['contacts'] as const;
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
@@ -282,6 +285,7 @@ export function replaceMessengerQueryStateInUrl(state: MessengerQueryState): voi
     if (url.searchParams.get(MESSENGER_ACCOUNT_PARAM) !== state.messengerAccountId) {
       url.searchParams.delete(MESSENGER_CHAT_PARAM);
       url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
+      url.searchParams.delete(MESSENGER_VIEW_PARAM);
     }
     if (state.messengerAccountId == null) url.searchParams.delete(MESSENGER_ACCOUNT_PARAM);
     else url.searchParams.set(MESSENGER_ACCOUNT_PARAM, state.messengerAccountId);
@@ -290,6 +294,7 @@ export function replaceMessengerQueryStateInUrl(state: MessengerQueryState): voi
     url.searchParams.delete(MESSENGER_ACCOUNT_PARAM);
     url.searchParams.delete(MESSENGER_CHAT_PARAM);
     url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
+    url.searchParams.delete(MESSENGER_VIEW_PARAM);
   }
   const query = url.searchParams.toString();
   const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
@@ -969,6 +974,54 @@ export function replaceMessengerChatQueryInUrl(state: MessengerChatQueryState): 
   for (const [param, value] of entries) {
     if (value == null) url.searchParams.delete(param);
     else url.searchParams.set(param, value);
+  }
+  // A chat is open instead of a view.
+  if (state.chatId != null) url.searchParams.delete(MESSENGER_VIEW_PARAM);
+  const query = url.searchParams.toString();
+  const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
+  if (href === `${window.location.pathname}${window.location.search}${url.hash}`) return;
+  window.history.replaceState(window.history.state, '', href);
+}
+
+// The messenger tables keep their sorting, filters and search in the URL (`TableStateProvider`). They are not for the
+// echo tab, whose summary table reads the same params, so a messenger table clears them when it is left.
+const TABLE_STATE_PARAMS = ['sorting', 'columnFilters', 'globalFilter'] as const;
+
+export function clearTableQueryInUrl(): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (url.pathname.replace(/\/+$/, '') !== `/${ANALYSIS_ROUTE_PAGE_ID}`) return;
+  for (const param of TABLE_STATE_PARAMS) url.searchParams.delete(param);
+  const query = url.searchParams.toString();
+  const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
+  if (href === `${window.location.pathname}${window.location.search}${url.hash}`) return;
+  window.history.replaceState(window.history.state, '', href);
+}
+
+export type MessengerView = (typeof MESSENGER_VIEWS)[number];
+
+// The view of the account in the URL; it only counts for that account, and a chat in the URL wins.
+export function parseMessengerViewFromWindow(accountId: string): MessengerView | null {
+  if (typeof window === 'undefined') return null;
+  const searchParams = new URL(window.location.href).searchParams;
+  if (searchParams.get(MESSENGER_ACCOUNT_PARAM)?.trim() !== accountId) return null;
+  if (searchParams.get(MESSENGER_CHAT_PARAM)?.trim()) return null;
+  const view = searchParams.get(MESSENGER_VIEW_PARAM)?.trim();
+  return MESSENGER_VIEWS.find((known) => known === view) ?? null;
+}
+
+// Opening a view leaves the chat; closing it leaves the account. Only the analysis route is ever written.
+export function replaceMessengerViewInUrl(view: MessengerView | null): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (url.pathname.replace(/\/+$/, '') !== `/${ANALYSIS_ROUTE_PAGE_ID}`) return;
+  if (!url.searchParams.has(MESSENGER_ACCOUNT_PARAM)) return;
+  if (view == null) {
+    url.searchParams.delete(MESSENGER_VIEW_PARAM);
+  } else {
+    url.searchParams.set(MESSENGER_VIEW_PARAM, view);
+    url.searchParams.delete(MESSENGER_CHAT_PARAM);
+    url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
   }
   const query = url.searchParams.toString();
   const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
