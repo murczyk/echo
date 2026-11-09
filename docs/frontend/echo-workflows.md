@@ -259,10 +259,20 @@ client trust, managed policy, model access and effective filters must be verifie
 on each team's client/OS. Do not change global trust, permissions or main defaults.
 Unsupported clients can read documentation but cannot silently emulate named roles.
 
-**Runtime smoke: UNVERIFIED.** This adaptation validates configuration, local
-skill discovery and source integrity. The current chat's dispatch schema lacks native `agent_type`;
-no role launch, filtered runtime catalog, fresh-context isolation or effective
-model has been verified. Metadata discovery is not that smoke.
+**Runtime smoke: PASSED (read-only, 2026-11-09; this client).** Native `agent_type`
+was available; `designer` → `dev` → `qa` launched sequentially with
+`fork_turns="none"` and no model/effort overrides. Before file reads, each role
+reported its expected injected safety/skill profiles and filtered runtime catalog
+(designer: 5 skills; dev: 4; QA: 2). All read the synthetic fixture marker and
+their assigned repository helper: Impeccable, `make-interfaces-feel-better` and
+`playwright-best-practices`, respectively, without executing helper workflows.
+HEAD, diff and status remained unchanged; no product tests/builds were run.
+
+**Actual backend models/reasoning effort and complete context isolation:
+UNVERIFIED.** Configured roles specify `gpt-6.1-sol` / `high` for designer/dev and
+`gpt-6-luna` / `high` for QA, but runtime metadata did not expose backend identity.
+No role reported seeing the parent-only canary; fresh-context dispatch and these
+self-reports provide limited evidence, not proof of complete isolation.
 
 When the user explicitly invokes the three entrypoints for a read-only smoke in
 a supported client, run it sequentially and preserve that invocation in handoffs:
