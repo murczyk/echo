@@ -47,17 +47,23 @@ and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
 runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
 
-Role skill profile: echo-dev-skills-2026-11-09-v1.
+Role skill profile: echo-dev-skills-2026-11-09-v3.
 Allowed repository guidance (read applicable files directly, without discovery aliases):
 .github/skills/frontend-elm-implementation/SKILL.md,
 .github/skills/frontend-react-mui-implementation/SKILL.md,
 .github/skills/frontend-html-css-accessibility/SKILL.md,
 .github/skills/frontend-regression-safety/SKILL.md,
-.github/skills/power-wrapper-components/SKILL.md and
-.github/skills/make-interfaces-feel-better/SKILL.md; available ponytail,
-entry-ponytail, explicitly assigned code-simplification (including their
-engineering-suite-ponytail aliases), and systematic-debugging (including its
-superpowers alias). Missing personal helpers are not prerequisites.
+.github/skills/power-wrapper-components/SKILL.md,
+.github/skills/make-interfaces-feel-better/SKILL.md,
+.github/skills/ponytail/SKILL.md,
+.github/skills/systematic-debugging/SKILL.md and
+.github/skills/verification-before-completion/SKILL.md. Read repository debugging
+guidance when investigating failures and verification guidance before reporting
+results; do not substitute personal copies or superpowers aliases.
+Read repository Ponytail before implementation, using its
+full level unless the task selects another. Do not substitute personal Ponytail,
+its plugin router or code-simplification skill. Missing personal helpers are not
+prerequisites.
 
 Before product edits require the approved specification, implementation
 authorization and prepared tests/coverage map (QA or equivalent manual work).
@@ -125,7 +131,7 @@ config = [
   { name = "builderii:diagram", enabled = false },
   { name = "builderii:feedback", enabled = false },
   { name = "builderii:summarize", enabled = false },
-  { name = "code-simplification", enabled = true },
+  { name = "code-simplification", enabled = false },
   { name = "connect", enabled = false },
   { name = "create-pet", enabled = false },
   { name = "customize-data-plugin", enabled = false },
@@ -153,15 +159,15 @@ config = [
   { name = "echo-dev", enabled = false },
   { name = "echo-qa", enabled = false },
   { name = "echo-spec", enabled = false },
-  { name = "engineering-suite-ponytail:code-simplification", enabled = true },
-  { name = "engineering-suite-ponytail:entry-ponytail", enabled = true },
-  { name = "engineering-suite-ponytail:ponytail", enabled = true },
+  { name = "engineering-suite-ponytail:code-simplification", enabled = false },
+  { name = "engineering-suite-ponytail:entry-ponytail", enabled = false },
+  { name = "engineering-suite-ponytail:ponytail", enabled = false },
   { name = "engineering-suite-ponytail:ponytail-audit", enabled = false },
   { name = "engineering-suite-ponytail:ponytail-debt", enabled = false },
   { name = "engineering-suite-ponytail:ponytail-gain", enabled = false },
   { name = "engineering-suite-ponytail:ponytail-help", enabled = false },
   { name = "engineering-suite-ponytail:ponytail-review", enabled = false },
-  { name = "entry-ponytail", enabled = true },
+  { name = "entry-ponytail", enabled = false },
   { name = "executing-plans", enabled = false },
   { name = "feedback", enabled = false },
   { name = "finishing-a-development-branch", enabled = false },
@@ -231,7 +237,7 @@ config = [
   { name = "superpowers:receiving-code-review", enabled = false },
   { name = "superpowers:requesting-code-review", enabled = false },
   { name = "superpowers:subagent-driven-development", enabled = false },
-  { name = "superpowers:systematic-debugging", enabled = true },
+  { name = "superpowers:systematic-debugging", enabled = false },
   { name = "superpowers:test-driven-development", enabled = false },
   { name = "superpowers:using-git-worktrees", enabled = false },
   { name = "superpowers:using-superpowers", enabled = false },
@@ -245,7 +251,7 @@ config = [
   { name = "using-git-worktrees", enabled = false },
   { name = "using-superpowers", enabled = false },
   { name = "validate-data", enabled = false },
-  { name = "verification-before-completion", enabled = false },
+  { name = "verification-before-completion", enabled = true },
   { name = "visualize", enabled = false },
   { name = "visualize-data", enabled = false },
   { name = "visualize:visualize", enabled = false },

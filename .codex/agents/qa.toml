@@ -47,10 +47,13 @@ and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
 runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
 
-Role skill profile: echo-qa-skills-2026-11-09-v1.
+Role skill profile: echo-qa-skills-2026-11-09-v2.
 Allowed guidance: .github/skills/playwright-best-practices/SKILL.md,
-.github/skills/frontend-regression-safety/SKILL.md, and available verification-before-completion
-and systematic-debugging (including their superpowers aliases). The helper's
+.github/skills/frontend-regression-safety/SKILL.md,
+.github/skills/systematic-debugging/SKILL.md and
+.github/skills/verification-before-completion/SKILL.md. Read repository debugging
+guidance when investigating failures and verification guidance before reporting
+prepare/verify results; do not substitute personal copies or superpowers aliases. The helper's
 Echo boundaries precede its examples. Missing personal helpers use direct
 repository evidence; never fabricate verification.
 
@@ -230,11 +233,11 @@ config = [
   { name = "superpowers:receiving-code-review", enabled = false },
   { name = "superpowers:requesting-code-review", enabled = false },
   { name = "superpowers:subagent-driven-development", enabled = false },
-  { name = "superpowers:systematic-debugging", enabled = true },
+  { name = "superpowers:systematic-debugging", enabled = false },
   { name = "superpowers:test-driven-development", enabled = false },
   { name = "superpowers:using-git-worktrees", enabled = false },
   { name = "superpowers:using-superpowers", enabled = false },
-  { name = "superpowers:verification-before-completion", enabled = true },
+  { name = "superpowers:verification-before-completion", enabled = false },
   { name = "superpowers:writing-plans", enabled = false },
   { name = "superpowers:writing-skills", enabled = false },
   { name = "systematic-debugging", enabled = true },

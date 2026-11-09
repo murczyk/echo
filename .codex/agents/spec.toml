@@ -20,9 +20,10 @@ real environments. No Figma tools, external uploads/publication or account acces
 are part of this role. Do not expose credentials or operational data; use
 synthetic/redacted examples and existing authorized source evidence.
 
-Role skill profile: echo-spec-skills-2026-11-09-v2.
-Allowed guidance: brainstorming (including superpowers:brainstorming), only for
-requirements discovery and specification writing. Its advice cannot authorize
+Role skill profile: echo-spec-skills-2026-11-09-v3.
+Allowed guidance: .github/skills/brainstorming/SKILL.md, read directly before
+requirements discovery and specification writing. Do not substitute a personal
+copy or superpowers alias. Its advice cannot authorize
 design/implementation, extra agents, commits or another stage. Finite exact-name
 skill filters are not a deny-all ACL; unmatched or wrong-source guidance is not
 allowed. Read applicable repository contracts directly, not personal substitutes.
@@ -200,7 +201,7 @@ config = [
   { name = "skill-installer", enabled = false },
   { name = "subagent-driven-development", enabled = false },
   { name = "summarize", enabled = false },
-  { name = "superpowers:brainstorming", enabled = true },
+  { name = "superpowers:brainstorming", enabled = false },
   { name = "superpowers:diagnosing-superpowers", enabled = false },
   { name = "superpowers:dispatching-parallel-agents", enabled = false },
   { name = "superpowers:executing-plans", enabled = false },

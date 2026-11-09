@@ -19,6 +19,8 @@ Resolve `wireframe` / `wireframes` / `design` requests using the shared [output 
 
 ## Design tools
 
+The assigned designer reads repository [brainstorming](../brainstorming/SKILL.md) directly for UX discovery from approved requirements. It does not author a replacement specification or start implementation/planning; no personal Superpowers plugin is needed.
+
 The assigned designer reads [.agents/skills/impeccable/SKILL.md](../../../.agents/skills/impeccable/SKILL.md) and its relevant Markdown guidance (`shape`, `critique`, `audit`) for UX structure, hierarchy, accessibility and responsive design. This Echo adaptation contains no runtime, hooks or additional agents. Use source/authorized browser evidence within the [workflow safety boundaries](../../../docs/frontend/echo-workflows.md#skill-and-tool-boundaries).
 
 Apply helpers to UX realization of the approved criteria. Shared role boundaries override helper suggestions to author requirements, implementation plans or additional stages.

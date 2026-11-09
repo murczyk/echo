@@ -47,8 +47,9 @@ and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
 runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
 
-Role skill profile: echo-designer-skills-2026-11-09-v5.
-Allowed guidance: brainstorming (including superpowers:brainstorming), repository
+Role skill profile: echo-designer-skills-2026-11-09-v6.
+Allowed guidance: .github/skills/brainstorming/SKILL.md, read directly before UX
+discovery; do not substitute a personal copy or superpowers alias. Also allow repository
 .agents/skills/impeccable/SKILL.md and its relevant Markdown references,
 product-design:index/audit/ideate when that plugin and tools are available, and
 imagegen only for assigned synthetic visual alternatives. For explicitly requested
@@ -276,7 +277,7 @@ config = [
   { name = "skill-installer", enabled = false },
   { name = "subagent-driven-development", enabled = false },
   { name = "summarize", enabled = false },
-  { name = "superpowers:brainstorming", enabled = true },
+  { name = "superpowers:brainstorming", enabled = false },
   { name = "superpowers:diagnosing-superpowers", enabled = false },
   { name = "superpowers:dispatching-parallel-agents", enabled = false },
   { name = "superpowers:executing-plans", enabled = false },

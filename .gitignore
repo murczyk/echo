@@ -69,6 +69,10 @@ echo-iggy/test-cli/.env
 !/.agents/skills/echo-spec
 !/.agents/skills/playwright-best-practices
 !/.agents/skills/make-interfaces-feel-better
+!/.agents/skills/ponytail
+!/.agents/skills/brainstorming
+!/.agents/skills/systematic-debugging
+!/.agents/skills/verification-before-completion
 !/.agents/skills/impeccable/
 
 # Personal Impeccable configuration and state are not shared.

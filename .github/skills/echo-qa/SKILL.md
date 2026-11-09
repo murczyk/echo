@@ -13,6 +13,8 @@ This is a main-chat entrypoint. Read the [invocation contract](../../../docs/fro
 4. Missing native named-role dispatch, fresh context, role or model is a blocker, not permission for a generic agent, inline replacement or nested AI CLI. Never present configuration validation as runtime smoke.
 5. Inspect the result and actual diff. The assigned role uses repository `playwright-best-practices` and relevant regression guidance, within its mode and the [safety boundaries](../../../docs/frontend/echo-workflows.md#skill-and-tool-boundaries). Reference examples cannot authorize installs, remote reporters, environment mutations or assertion changes.
 
+The assigned QA role reads repository [systematic-debugging](../systematic-debugging/SKILL.md) for failures and [verification-before-completion](../verification-before-completion/SKILL.md) before reporting either mode's result. No personal Superpowers plugin is needed; these helpers do not permit repairs or extra execution.
+
 Prepare returns acceptance-ID → test → baseline/new behavior → result/not-run/gap and stops. Verify returns scenario-level pass/fail/not-run, exact commands, evidence limits, severity, reproduction and expected/actual results. Environment failures are not product RED; mocked tests do not prove server permissions or persistence.
 
 A QA-only request stops after its report. Main may dispatch bounded repairs only in an explicitly requested dev+QA chain; QA never fixes application code or delegates. Role verification is not human acceptance, and separation of roles alone does not prove review independence or usability.

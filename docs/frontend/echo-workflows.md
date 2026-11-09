@@ -174,6 +174,8 @@ status database is implied. Resume from these materials after compaction.
 ## Specification
 
 The `spec` role owns requirements and acceptance criteria, not visual design.
+Read repository [brainstorming](../../.github/skills/brainstorming/SKILL.md)
+directly for requirements discovery; no personal Superpowers plugin is needed.
 Read the feature description, current business logic, owning contracts and
 existing coverage before asking targeted questions through main. For main UI,
 use PRODUCT.md and the relevant UI context; derive permissions from code/contracts.
@@ -205,6 +207,10 @@ specification's business rules and acceptance IDs. Resolve UX decisions through
 main and report requirement gaps/changes to the specification owner; pause
 dependent design until revised requirements are approved. Record UX decisions
 and state mappings in design notes, not rewritten requirements.
+
+Read repository [brainstorming](../../.github/skills/brainstorming/SKILL.md)
+directly for UX discovery within those requirements; it does not start planning
+or implementation. No personal Superpowers plugin is needed.
 
 Read actual routes/components and relevant coverage; name reused exports,
 source paths and variants/props. Where relevant, inspect the
@@ -259,6 +265,19 @@ Use repository `make-interfaces-feel-better` for approved details with Echo toke
 and reduced-motion/accessibility rules. No new styling system or global visual
 change follows from loading it. Full E2E/final acceptance waits for its owner gate.
 
+Before implementation, read repository [Ponytail](../../.github/skills/ponytail/SKILL.md)
+directly and apply its default `full` level unless the task selects `lite`/`ultra`.
+This core Markdown adaptation needs no personal plugin. Do not substitute a
+personal copy or its router/code-simplification modes. Minimal implementation
+still preserves the entire approved scope, Power wrappers and required checks.
+
+For failures, read repository [systematic-debugging](../../.github/skills/systematic-debugging/SKILL.md)
+directly. Before reporting results, read repository
+[verification-before-completion](../../.github/skills/verification-before-completion/SKILL.md).
+Neither requires a personal Superpowers plugin or expands permitted commands,
+test scope or real-environment approval. Reuse evidence only for matching source,
+dirty state, environment and scenarios; rerun affected checks after changes.
+
 Read applicable existing guidance directly from `.github/skills`:
 [Elm](../../.github/skills/frontend-elm-implementation/SKILL.md),
 [React/MUI](../../.github/skills/frontend-react-mui-implementation/SKILL.md),
@@ -272,6 +291,12 @@ These sources are unchanged; this workflow adds no `.agents/skills` aliases for 
 Main assigns exactly one mode. Use the repository `playwright-best-practices` and
 [regression guidance](../../.github/skills/frontend-regression-safety/SKILL.md)
 within that mode; guidance cannot authorize product fixes or extra execution.
+
+Read repository [systematic-debugging](../../.github/skills/systematic-debugging/SKILL.md)
+for failures and [verification-before-completion](../../.github/skills/verification-before-completion/SKILL.md)
+before returning prepare/verify results, not personal copies or Superpowers aliases.
+Prepared tests without authorized execution remain not-run; a verify assignment
+does not permit product or permanent test/assertion edits.
 
 **Prepare:** after spec approval, map stable acceptance IDs to existing tests/gaps,
 then add useful behavior tests/fixtures before product changes. Follow Echo's
@@ -298,7 +323,7 @@ These boundaries apply to main while coordinating this workflow and to every
 assigned child. They do not install or reconfigure teammates' personal plugins.
 
 - Children use only their declared skill profile; missing/unrecognized skills are reported, not installed or silently substituted. All four entrypoint skills are disabled in child catalogs to prevent recursive dispatch. No child delegates, invokes nested Codex/Claude CLI, changes branches/worktrees or performs Git/release operations.
-- Read repository sources for the two new helpers, even if personal copies share a name. Their entrypoints and [source notices](design-tools.md#managed-role-helper-skills) describe the reviewed subset and precedence. Optional personal plugin access is checked per developer; a clone grants no account access.
+- Read repository sources for the six helpers, even if personal copies share a name. Their entrypoints and [source notices](design-tools.md#managed-role-helper-skills) describe the reviewed subset and precedence. Optional personal plugin access is checked per developer; a clone grants no account access.
 - Repository Impeccable contains only adapted Markdown guidance (`shape`, `critique`, `audit`), explicit-only metadata and provenance/license files. No runtime, hooks, detector or additional agents are included. Use product/design files and authorized source/browser tools; do not fetch or substitute a personal runtime. Preserve the caller's environment/settings.
 - Product Design is limited to assigned audit/ideate with authorized synthetic/redacted inputs. Do not publish/upload operational messages, identifiers, raw traces, credentials or other sensitive data. An external tool request needs the corresponding user-authorized destination/data scope.
 - No package/browser/plugin installation, automatic updates, remote reporters/webhooks, CI changes, destructive cleanup or sandbox/approval bypass follows from skill examples. Report missing capabilities to main. Use existing runners and disposable local/test-owned data; all real-environment mutations require the existing explicit approval.
@@ -313,7 +338,7 @@ plugin changes. Do not claim that disabling a skill disables all equivalent tool
 
 ## Availability and validation
 
-Role files are tracked under `.codex/agents`; dispatcher and the two helper sources
+Role files are tracked under `.codex/agents`; dispatcher and the six helper sources
 are in `.github/skills` with relative `.agents/skills` links. The Markdown-only
 Impeccable subset lives directly in `.agents/skills/impeccable`. Root/subdirectory discovery,
 client trust, managed policy, model access and effective filters must be verified
@@ -321,13 +346,22 @@ on each team's client/OS. Do not change global trust, permissions or main defaul
 Unsupported clients can read documentation but cannot silently emulate named roles.
 
 **Runtime smoke: PASSED (read-only, 2026-11-09; this client).** Native `agent_type`
-was available; `designer` → `dev` → `qa` launched sequentially with
+was available; `spec` → `designer` → `dev` → `qa` launched sequentially with
 `fork_turns="none"` and no model/effort overrides. Before file reads, each role
-reported its expected injected safety/skill profiles and filtered runtime catalog
-(designer: 5 skills; dev: 4; QA: 2). All read the synthetic fixture marker and
-their assigned repository helper: Impeccable, `make-interfaces-feel-better` and
-`playwright-best-practices`, respectively, without executing helper workflows.
-HEAD, diff and status remained unchanged; no product tests/builds were run.
+reported its injected safety/skill profiles and visible catalog. The injected
+skill profiles matched the current files: spec `v3`, designer `v6`, dev `v3`, QA `v2`.
+All read the synthetic metadata marker and every assigned repository skill
+entrypoint: spec 1, designer 2, dev 9, QA 4, without executing helper workflows.
+HEAD, diff, status and hashes of all 32 preexisting changed/untracked paths
+remained unchanged; no product tests/builds or external operations were run.
+
+**Catalog exposure is separate from source access.** No automatic skill catalog
+was exposed to spec/dev/QA. Designer saw `imagegen` and Product Design
+`index`/`audit`/`ideate`; the four optional Figma skills were absent. Local
+explicit-only skills were not exposed in these catalogs, but all assigned exact
+repository paths were readable. The five frontend/Power references remain
+direct-path guidance without discovery aliases. This smoke verifies that path,
+not automatic invocation, every filter rule or optional Figma access.
 
 **Actual backend models/reasoning effort and complete context isolation:
 UNVERIFIED.** Configured roles specify `gpt-6.1-sol` / `high` for designer/dev and
@@ -335,12 +369,12 @@ UNVERIFIED.** Configured roles specify `gpt-6.1-sol` / `high` for designer/dev a
 No role reported seeing the parent-only canary; fresh-context dispatch and these
 self-reports provide limited evidence, not proof of complete isolation.
 
-The subsequent Figma extension, responsibility split and deliverable limits
-update designer to `v5` and spec to skill profile `v2`. The historical smoke above does not verify these
-profiles. Reload/start a session and check actual native role availability; if
-`spec` is absent, report the blocker without a generic/inline replacement.
-Native spec launch, effective current skill catalogs and Figma authoring/rendering
-remain **UNVERIFIED** until explicitly invoked tasks exercise them.
+Reload/start a session after profile changes and check actual native role
+availability; if a required role is absent, report the blocker without a
+generic/inline replacement. Figma MCP access, authoring/rendering and complete
+effective-filter behavior remain **UNVERIFIED** until explicitly invoked tasks
+exercise them. This client's direct-read smoke does not establish teammate or
+other client/OS availability.
 
 When the user explicitly invokes the desired entrypoints for a read-only smoke in
 a supported client, run it sequentially and preserve that invocation in handoffs:

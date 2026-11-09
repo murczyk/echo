@@ -36,9 +36,10 @@ skill folders ([official documentation](https://learn.chatgpt.com/docs/build-ski
 Reload/start a session after checkout or updates; a running session may retain
 an older catalog, including aliases removed from the checkout.
 
-Four relative links expose `echo-spec`, `echo-designer`, `echo-dev` and `echo-qa`. Two more
-expose `playwright-best-practices` and `make-interfaces-feel-better`; Impeccable
-lives directly in `.agents/skills/impeccable`. All seven have
+Four relative links expose `echo-spec`, `echo-designer`, `echo-dev` and `echo-qa`. Six more
+expose `playwright-best-practices`, `make-interfaces-feel-better`, `ponytail`,
+`brainstorming`, `systematic-debugging` and `verification-before-completion`; Impeccable
+lives directly in `.agents/skills/impeccable`. All eleven have
 `policy.allow_implicit_invocation: false`. Helper guidance does not launch stages.
 
 Explicitly invoke `$echo-spec`, `$echo-designer`, `$echo-dev` or `$echo-qa`, including the target
@@ -73,11 +74,30 @@ the Git root and retain working symlinks. Metadata discovery is not execution.
 | --- | --- | --- | --- |
 | [playwright-best-practices](../../.github/skills/playwright-best-practices/SKILL.md) | QA prepare/verify | [currents-dev, `0b75b5835a87de1fdd202ba965f3bc5a27738fdf`](https://github.com/currents-dev/playwright-best-practices-skill/tree/0b75b5835a87de1fdd202ba965f3bc5a27738fdf/playwright-best-practices) | Echo entrypoint, nine selected Markdown references, MIT license and source notice |
 | [make-interfaces-feel-better](../../.github/skills/make-interfaces-feel-better/SKILL.md) | Dev, approved UI details | [jakubkrehel, `35545ea1512ad59fa463e6b1f95ca9c052981fe6`](https://github.com/jakubkrehel/make-interfaces-feel-better/tree/35545ea1512ad59fa463e6b1f95ca9c052981fe6/skills/make-interfaces-feel-better) | Echo entrypoint, five Markdown references, MIT license and source notice |
+| [ponytail](../../.github/skills/ponytail/SKILL.md) | Dev, minimal complete implementation | [DietrichGebert, `356918eba965ee1eac64bd3a7f0dd02108350de5`](https://github.com/DietrichGebert/ponytail/tree/356918eba965ee1eac64bd3a7f0dd02108350de5) | Self-contained Echo adaptation of the core skill, MIT license and source notice |
+| [brainstorming](../../.github/skills/brainstorming/SKILL.md) | Spec requirements, designer UX discovery | [Superpowers `v7.0.1`, `2ce8aa15d05bd57213e6f746f953aafb7ded7a8b`](https://github.com/obra/superpowers/tree/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b) | Self-contained Echo adaptation, MIT license, source pin/hash and notice |
+| [systematic-debugging](../../.github/skills/systematic-debugging/SKILL.md) | Dev/QA failure investigation | [Superpowers `v7.0.1`, `2ce8aa15d05bd57213e6f746f953aafb7ded7a8b`](https://github.com/obra/superpowers/tree/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b) | Self-contained Echo adaptation, MIT license, source pin/hash and notice |
+| [verification-before-completion](../../.github/skills/verification-before-completion/SKILL.md) | Dev/QA evidence before reporting results | [Superpowers `v7.0.1`, `2ce8aa15d05bd57213e6f746f953aafb7ded7a8b`](https://github.com/obra/superpowers/tree/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b) | Self-contained Echo adaptation, MIT license, source pin/hash and notice |
 
 These are project-local adaptations, not personal-plugin installations or full
 upstream bundles. Each `NOTICE.md` records the source, pinned version and local
 adaptations. No executable helpers, hooks, installer, CI configuration or product
 package dependency is included.
+
+Dev always reads repository Ponytail directly; a personal Ponytail installation
+is not needed and is not substituted when present. Its default level is `full`;
+`lite`/`ultra` remain task choices within the approved scope. The plugin router,
+code-simplification and review/audit/debt/gain/help modes are not bundled or used
+by this role. Echo's Power components, test scope and handoff requirements take
+precedence over upstream native-control, demo-test and terse-output advice.
+
+The three Superpowers adaptations are read directly from their repository paths;
+personal copies and namespaced aliases are not substituted. Brainstorming keeps
+the spec/designer ownership split; debugging keeps QA reporting separate from
+dev repairs; verification respects test scope, evidence reuse and environment
+approval. No other Superpowers skills, runtime, task-document commits, automatic
+planning/delegation or browser setup are required. Their presence does not invoke
+an Echo stage or override the owner's requested scope.
 
 The static review identified instructional risks in generic examples: Playwright
 setup, reporters/uploads, cleanup, retries/force clicks and incompatible tag
@@ -135,8 +155,10 @@ needed; personal configuration remains separate.
 
 The safety review is static: provenance, file types, instructions/examples, scope
 and invocation metadata. It cannot guarantee model compliance, isolation or external
-service behavior. **Runtime smoke is unverified**, including effective role filters,
-model selection and context isolation; see the
+service behavior. A read-only native-role smoke verified current profile injection
+and direct reading of every assigned repository skill for all four roles. Automatic
+catalog exposure differs from direct access; complete effective filters, backend
+model identity, context isolation and Figma execution remain unverified. See the
 [validation contract](echo-workflows.md#availability-and-validation).
 
 Before calling rollout complete, run the [pilot measurements](design-workflow.md#pilot-measurements),
