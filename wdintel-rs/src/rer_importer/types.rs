@@ -2039,6 +2039,7 @@ mod tests {
             "parent_messages".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),
+            "unit_display".to_string(),
             "unit_ids".to_string(),
         ]);
 
