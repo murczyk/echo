@@ -280,7 +280,7 @@ export function MessengerChatView({
             hasMoreAbove={hasMoreAbove}
             hasMoreBelow={hasMoreBelow}
             scrollerProps={{
-              className: 'min-h-0 flex-1',
+              className: 'slim-scrollbar min-h-0 flex-1',
               'data-messenger-feed-scroller': true,
               onScroll: ({ currentTarget: el }) =>
                 setAtBottom(
