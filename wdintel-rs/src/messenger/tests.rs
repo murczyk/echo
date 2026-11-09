@@ -74,6 +74,8 @@ async fn test_bl_group_update_add_second_aor() {
     .unwrap();
 
     let req1 = GroupUpdateReq {
+        send_messages: None,
+        sender_organism_ids: None,
         is_sigint_unit_mandatory: None,
         is_device_mandatory: None,
         master_key: group.master_key.clone(),
@@ -136,6 +138,8 @@ async fn test_bl_group_update_add_second_aor() {
     .unwrap();
 
     let req2 = GroupUpdateReq {
+        send_messages: None,
+        sender_organism_ids: None,
         is_sigint_unit_mandatory: None,
         is_device_mandatory: None,
         master_key: group.master_key.clone(),
@@ -283,6 +287,8 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
     assert!(expected_since_ts < group_created_at);
 
     let req = GroupUpdateReq {
+        send_messages: None,
+        sender_organism_ids: None,
         is_sigint_unit_mandatory: None,
         is_device_mandatory: None,
         master_key: group.master_key.clone(),

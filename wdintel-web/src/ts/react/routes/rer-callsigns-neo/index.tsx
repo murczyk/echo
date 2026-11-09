@@ -10,7 +10,7 @@ import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { ELLIPSIS } from '../../utils/misc';
-import { CreateCallsignsDrawer } from './components/CreateCallsignsDrawer';
+import { CreateCallsignsDraftDrawer } from './components/CreateCallsignsDraftDrawer';
 import { CallsignsDateInputs, CallsignsFiltersTopRow } from './components/CallsignsFilters';
 import {
   CallsignsTable,
@@ -462,7 +462,7 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         </Stack>
       </Stack>
 
-      <CreateCallsignsDrawer
+      <CreateCallsignsDraftDrawer
         open={page.addDrawerOpen}
         onClose={page.onCloseAddDrawer}
         units={page.selectableUnits}
@@ -474,15 +474,8 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         submitting={page.addSubmitting}
         disabled={!page.permissions.canEdit}
         validationError={page.addValidationError}
-        duplicateHintGroups={page.addPotentialDuplicateGroups}
-        onAddUnitIdChange={page.setAddUnitId}
-        onAddSourceIdChange={page.setAddSourceId}
-        onAddCallsignAdditionalSourceIdsChange={page.setAddCallsignAdditionalSourceIds}
-        onRowChange={page.onRowChange}
-        onAppendRow={page.onAppendRow}
-        onRemoveRow={page.onRemoveRow}
-        onClearRows={page.onClearRows}
-        onApplyPastedRows={page.onApplyPastedRows}
+        callsigns={page.callsigns}
+        allUnits={page.units}
         onSubmit={page.onSubmitAdd}
       />
 
@@ -494,7 +487,6 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
         submitting={page.editSubmitting}
         error={page.editValidationError}
         onClose={page.onCloseEdit}
-        onChange={page.setEditForm}
         onSave={page.onSaveEdit}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />

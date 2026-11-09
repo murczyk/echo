@@ -51,10 +51,9 @@ type Props = {
   referenceLoading: boolean;
   aorOptions: DeviceLookupOption[];
   unitOptions: DeviceLookupOption[];
-  hasChanges?: boolean;
+  hasChanges?: (form: DeviceUpsertForm) => boolean;
   nameRequired?: boolean;
   onClose: () => void;
-  onChange: (form: DeviceUpsertForm | null) => void;
   onSave: (form: DeviceUpsertForm) => void;
   onArchive?: () => void;
 };
@@ -82,24 +81,29 @@ export function DeviceUpsertDrawer({
   onStatsRebuilt,
   mode,
   fieldPermissions,
-  form,
+  form: initialForm,
   saving,
   error,
   serverFieldErrors,
   referenceLoading,
   aorOptions,
   unitOptions,
-  hasChanges = true,
+  hasChanges = () => true,
   nameRequired = true,
   onClose,
-  onChange,
   onSave,
   onArchive,
 }: Props) {
   const mobile = useDeviceMobileLayout();
   const titleId = 'device-upsert-drawer-title';
+  const [form, setForm] = useState(initialForm);
+  const [errorsDismissed, setErrorsDismissed] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<TouchedField, true>>>({});
+  const changed = form !== null && hasChanges(form);
+  const visibleServerFieldErrors: DeviceServerFieldErrors = errorsDismissed
+    ? {}
+    : serverFieldErrors;
   const validation = useMemo(
     () => validateDeviceUpsertForm(form, fieldPermissions, nameRequired),
     [fieldPermissions, form, nameRequired],
@@ -108,12 +112,17 @@ export function DeviceUpsertDrawer({
     archived || saving || (mode === 'edit' && fieldPermissions.analyticalData && referenceLoading);
   const saveLabel = mode === 'create' ? 'Створити' : 'Зберегти';
   const drawerTitle = mode === 'create' ? 'Створити пристрій' : 'Редагувати пристрій';
-  const canTrySave = form !== null && !formBlocked && (mode === 'create' || hasChanges);
+  const canTrySave = form !== null && !formBlocked && (mode === 'create' || changed);
 
   useEffect(() => {
+    setForm(initialForm);
     setSubmitted(false);
     setTouched({});
-  }, [mode, open]);
+  }, [initialForm, mode, open]);
+
+  useEffect(() => {
+    setErrorsDismissed(false);
+  }, [error, serverFieldErrors, saving, open]);
 
   const selectedAors = useMemo(
     () => selectedLookupOptions(aorOptions, form?.aorIds ?? []),
@@ -126,14 +135,15 @@ export function DeviceUpsertDrawer({
 
   const patchForm = (patch: Partial<DeviceUpsertForm>) => {
     if (form === null) return;
-    onChange({ ...form, ...patch });
+    setForm({ ...form, ...patch });
+    setErrorsDismissed(true);
   };
 
   const showFieldError = (field: TouchedField) => submitted || touched[field] === true;
   const fieldError = (field: TouchedField): string | undefined => {
     const local = validation?.[field];
     if (showFieldError(field) && local !== undefined) return local;
-    return serverFieldErrors[field];
+    return visibleServerFieldErrors[field];
   };
 
   const handleAorChange = (_event: SyntheticEvent, next: DeviceLookupOption[]) => {
@@ -156,7 +166,7 @@ export function DeviceUpsertDrawer({
   const customFieldRows = showCollectionErrors
     ? (validation?.customFieldRows ?? EMPTY_CUSTOM_FIELD_ROW_ERRORS)
     : EMPTY_CUSTOM_FIELD_ROW_ERRORS;
-  const noEditChanges = mode === 'edit' && !archived && form !== null && !hasChanges;
+  const noEditChanges = mode === 'edit' && !archived && form !== null && !changed;
 
   return (
     <Drawer
@@ -200,7 +210,7 @@ export function DeviceUpsertDrawer({
 
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
-          {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+          {error && !errorsDismissed ? <PowerAlert severity="error">{error}</PowerAlert> : null}
           {fieldPermissions.analyticalData && referenceLoading ? (
             <PowerAlert severity="info">Завантажуємо довідники…</PowerAlert>
           ) : null}
@@ -212,11 +222,11 @@ export function DeviceUpsertDrawer({
           {noEditChanges ? (
             <PowerAlert severity="info">Немає змін для збереження.</PowerAlert>
           ) : null}
-          {fieldPermissions.analyticalData && serverFieldErrors.aorIds ? (
-            <PowerAlert severity="error">{serverFieldErrors.aorIds}</PowerAlert>
+          {fieldPermissions.analyticalData && visibleServerFieldErrors.aorIds ? (
+            <PowerAlert severity="error">{visibleServerFieldErrors.aorIds}</PowerAlert>
           ) : null}
-          {fieldPermissions.analyticalData && serverFieldErrors.unitId ? (
-            <PowerAlert severity="error">{serverFieldErrors.unitId}</PowerAlert>
+          {fieldPermissions.analyticalData && visibleServerFieldErrors.unitId ? (
+            <PowerAlert severity="error">{visibleServerFieldErrors.unitId}</PowerAlert>
           ) : null}
 
           {form ? (
@@ -226,7 +236,7 @@ export function DeviceUpsertDrawer({
                   form={form}
                   permissions={fieldPermissions}
                   disabled={formBlocked}
-                  errors={{ ...serverFieldErrors, ...(submitted ? (validation ?? {}) : {}) }}
+                  errors={{ ...visibleServerFieldErrors, ...(submitted ? (validation ?? {}) : {}) }}
                   onChange={patchForm}
                 />
               ) : null}
@@ -248,8 +258,10 @@ export function DeviceUpsertDrawer({
                   {showCollectionErrors && validation?.customFields ? (
                     <PowerAlert severity="error">{validation.customFields}</PowerAlert>
                   ) : null}
-                  {serverFieldErrors.customFields ? (
-                    <PowerAlert severity="error">{serverFieldErrors.customFields}</PowerAlert>
+                  {visibleServerFieldErrors.customFields ? (
+                    <PowerAlert severity="error">
+                      {visibleServerFieldErrors.customFields}
+                    </PowerAlert>
                   ) : null}
                   <DeviceCustomFieldsEditor
                     rows={form.customFields}

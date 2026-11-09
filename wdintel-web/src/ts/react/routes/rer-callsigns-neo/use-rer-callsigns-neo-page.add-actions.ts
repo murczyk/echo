@@ -13,7 +13,7 @@ import {
 } from './helpers-form';
 import { hasAnyDuplicateHintInput } from './use-rer-callsigns-neo-page.shared';
 import { normalizeCallsign } from './use-rer-callsigns-neo-page.shared';
-import type { CallsignDraftRow, ExportPermission, UiStatus } from './types';
+import type { CallsignCreateDraft, CallsignDraftRow, ExportPermission, UiStatus } from './types';
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
 
@@ -175,25 +175,31 @@ export function useRerCallsignsNeoPageAddActions({
     [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError],
   );
 
-  const onSubmitAdd = useCallback(async () => {
+  const onSubmitAdd = useCallback(async (draft?: CallsignCreateDraft) => {
+    const { rows, unitId, sourceId, callsignAdditionalSourceIds } = draft ?? {
+      rows: addRows,
+      unitId: addUnitId,
+      sourceId: addSourceId,
+      callsignAdditionalSourceIds: addCallsignAdditionalSourceIds,
+    };
     if (!permissions.canEdit) return;
 
     setStatus(null);
     setAddValidationError(null);
 
-    if (addUnitId === null) {
+    if (unitId === null) {
       setAddValidationError(UNIT_SELECTION_REQUIRED_ERROR);
       return;
     }
-    if (addSourceId === null) {
+    if (sourceId === null) {
       setAddValidationError('Оберіть джерело');
       return;
     }
-    if (!addRows.some((row) => hasAnyDraftValue(row))) {
+    if (!rows.some((row) => hasAnyDraftValue(row))) {
       return;
     }
 
-    const validation = validateDraftRows(addRows, addSourceId, radioFeaturesAllowed);
+    const validation = validateDraftRows(rows, sourceId, radioFeaturesAllowed);
     if (!validation.valid) {
       if (validation.error === 'Заповніть хоча б один рядок') return;
       setAddValidationError(validation.error);
@@ -205,14 +211,14 @@ export function useRerCallsignsNeoPageAddActions({
     setAddDuplicateHintsImmediate(false);
 
     try {
-      const nonEmptyRows = addRows.filter((row) => hasAnyDraftValue(row));
+      const nonEmptyRows = rows.filter((row) => hasAnyDraftValue(row));
       const created: Callsign[] = [];
       const failed: Array<{ row: CallsignDraftRow; error: string }> = [];
 
       for (const row of nonEmptyRows) {
         try {
           const item = await createCallsign(
-            makeCreatePayload(row, addUnitId, addSourceId, addCallsignAdditionalSourceIds),
+            makeCreatePayload(row, unitId, sourceId, callsignAdditionalSourceIds),
           );
           created.push(normalizeCallsign(item));
         } catch (error) {

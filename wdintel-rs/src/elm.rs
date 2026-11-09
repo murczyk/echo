@@ -155,6 +155,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::SignalProfilesRsp,
             crate::messenger::group::types::SignalGroupEntry,
             crate::messenger::group::types::GroupCreationInfo,
+            crate::messenger::group::sending::GroupSendingSettings,
             crate::messenger::group::types::OrphanSignalGroupEntry,
             crate::rer_importer::types::SignalProfileEntry,
             crate::rer_importer::types::BatchSignalGroupReq,

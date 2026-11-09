@@ -77,7 +77,9 @@ export function useNetworksTableColumns({
             enableColumnFilter: true,
             enableSorting: true,
             meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
-            Cell: mrtCustomCell(({ row }) => <NetworkCell network={row.original} />),
+            Cell: mrtCustomCell(({ row }) => (
+              <NetworkCell network={row.original} includeFrequenciesInCopy={radioFeaturesAllowed} />
+            )),
           },
           {
             id: 'aors',

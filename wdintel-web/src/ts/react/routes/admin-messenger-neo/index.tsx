@@ -754,14 +754,35 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
   return <MaterialReactTable table={table} />;
 }
 
-function AdminMessengerAccountsSection() {
-  const [accounts, setAccounts] = useState<EchoAccountF1[]>([]);
-  const [accountsStatus, setAccountsStatus] = useState<LoadingStatus>('idle');
-  const [accountsError, setAccountsError] = useState<string | null>(null);
-  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
-  const [aorsStatus, setAorsStatus] = useState<LoadingStatus>('idle');
-  const [linkStep, setLinkStep] = useState<LinkStep>('form');
-  const [linkSidebarOpen, setLinkSidebarOpen] = useState(false);
+function LinkAccountDrawer({
+  linkSidebarOpen,
+  linkStep,
+  qrData,
+  linkSuccessAccount,
+  linkStatus,
+  isMutating,
+  aors,
+  aorsStatus,
+  onClose,
+  onSubmit,
+  onRefreshQr,
+  onMutatingChange,
+  onStatusChange,
+}: {
+  linkSidebarOpen: boolean;
+  linkStep: LinkStep;
+  qrData: QrData | null;
+  linkSuccessAccount: EchoAccountF1 | null;
+  linkStatus: StatusMessage;
+  isMutating: boolean;
+  aors: AreaOfResponsibility[];
+  aorsStatus: LoadingStatus;
+  onClose: () => void;
+  onSubmit: (request: LinkAccountReq) => Promise<string | undefined>;
+  onRefreshQr: (accountId: number) => Promise<void>;
+  onMutatingChange: (value: boolean) => void;
+  onStatusChange: (status: StatusMessage) => void;
+}) {
   const [phoneForm, setPhoneForm] = useState<PhoneForm>(defaultPhoneForm);
   const {
     systemServiceName,
@@ -779,135 +800,13 @@ function AdminMessengerAccountsSection() {
     messengerType: phoneForm.messengerType,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [qrData, setQrData] = useState<QrData | null>(null);
-  const [linkSuccessAccount, setLinkSuccessAccount] = useState<EchoAccountF1 | null>(null);
-  const [linkStatus, setLinkStatus] = useState<StatusMessage>(null);
-  const [editSidebarOpen, setEditSidebarOpen] = useState(false);
-  const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
-  const [deleteAccountId, setDeleteAccountId] = useState<number | null>(null);
-  const [actionStatus, setActionStatus] = useState<StatusMessage>(null);
-  const [isMutating, setIsMutating] = useState(false);
-
-  async function loadAccounts() {
-    setAccountsStatus('loading');
-    setAccountsError(null);
-    try {
-      const rsp = await listAccounts();
-      setAccounts(transformAccounts(rsp.accounts));
-      setAccountsStatus('success');
-    } catch (error) {
-      setAccountsStatus('error');
-      setAccountsError(formatErrorMessage(error));
-    }
-  }
-
-  async function loadAors() {
-    setAorsStatus('loading');
-    try {
-      const list = await listAors({ sortBy: null });
-      setAors(list);
-      setAorsStatus('success');
-    } catch (error) {
-      setAorsStatus('error');
-      setActionStatus({
-        kind: 'error',
-        message: `Помилка завантаження смуг: ${formatErrorMessage(error)}`,
-      });
-    }
-  }
 
   useEffect(() => {
-    loadAccounts();
-    loadAors();
-  }, []);
-
-  useEffect(() => {
-    if (linkStep !== 'qr' || !qrData) return;
-
-    const intervalId = window.setInterval(async () => {
-      try {
-        const rsp = await isLinked({ accountId: qrData.accountId });
-        if (extractIsLinked(rsp)) {
-          setAccounts((prev) =>
-            updateAccountInList(prev, qrData.accountId, (account) => ({
-              ...account,
-              isLinked: true,
-            })),
-          );
-          setLinkSuccessAccount(qrData.account);
-          setLinkStep('success');
-        }
-      } catch (_) {
-        // silent polling failure
-      }
-    }, 3000);
-
-    return () => window.clearInterval(intervalId);
-  }, [linkStep, qrData?.accountId]);
-
-  function resetLinkFlow() {
-    setLinkStep('form');
-    setLinkSidebarOpen(false);
+    if (linkSidebarOpen) return;
     setPhoneForm(defaultPhoneForm);
     resetSystemServiceName();
     setFormErrors({});
-    setQrData(null);
-    setLinkSuccessAccount(null);
-    setLinkStatus(null);
-  }
-
-  function openLinkSidebar() {
-    setLinkSidebarOpen(true);
-    setLinkStep('form');
-    setLinkStatus(null);
-    setLinkSuccessAccount(null);
-    setQrData(null);
-    setPhoneForm(defaultPhoneForm);
-    setFormErrors({});
-    resetSystemServiceName();
-  }
-
-  function closeLinkSidebar() {
-    resetLinkFlow();
-  }
-
-  async function fetchQrCode(accountId: number) {
-    const maxAttempts = 2;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      try {
-        const qrRsp = await getQrCode({ accountId });
-        const qrCode = extractQrCodeBase64(qrRsp);
-
-        if (qrCode.trim().length > 0) {
-          setQrData((prev) => (prev && prev.accountId === accountId ? { ...prev, qrCode } : prev));
-          return;
-        }
-
-        if (attempt < maxAttempts - 1) {
-          await wait(1000);
-          continue;
-        }
-      } catch (error) {
-        if (attempt < maxAttempts - 1) {
-          await wait(1000);
-          continue;
-        }
-
-        setLinkStatus({
-          kind: 'error',
-          message: `Помилка отримання QR коду: ${formatErrorMessage(error)}`,
-        });
-        return;
-      }
-    }
-
-    setLinkStatus({
-      kind: 'error',
-      message: 'Помилка отримання QR коду: порожня відповідь сервера',
-    });
-  }
+  }, [linkSidebarOpen]);
 
   async function submitLinkForm() {
     const errors: Record<string, string> = {};
@@ -930,14 +829,14 @@ function AdminMessengerAccountsSection() {
       return;
     }
 
-    setIsMutating(true);
-    setLinkStatus(null);
+    onMutatingChange(true);
+    onStatusChange(null);
 
     try {
       const isSystemServiceNameAvailable = await checkSystemServiceNameAvailability();
       if (!isSystemServiceNameAvailable) return;
     } finally {
-      setIsMutating(false);
+      onMutatingChange(false);
     }
 
     const request: LinkAccountReq = {
@@ -950,178 +849,8 @@ function AdminMessengerAccountsSection() {
       aorId: phoneForm.aorId,
     };
 
-    setIsMutating(true);
-    setLinkStatus(null);
-
-    try {
-      const rsp = await linkAccount(request);
-      setAccounts((prev) => [rsp.account, ...prev]);
-      setQrData({
-        accountId: rsp.account.id,
-        qrCode: '',
-        account: rsp.account,
-      });
-      setLinkStep('qr');
-      await fetchQrCode(rsp.account.id);
-    } catch (error) {
-      const message = formatErrorMessage(error);
-      if (message.toLowerCase().includes('systemd unit')) {
-        showSystemServiceNameError(message);
-      } else {
-        setLinkStatus({
-          kind: 'error',
-          message: `Помилка прив'язування акаунту: ${message}`,
-        });
-      }
-    } finally {
-      setIsMutating(false);
-    }
-  }
-
-  function openEditSidebar(accountId: number) {
-    const account = accounts.find((item) => item.id === accountId);
-    if (!account) return;
-
-    setEditForm({
-      id: account.id,
-      displayName: account.displayName,
-      description: account.description || '',
-      canReadMessages: account.canReadMessages ?? true,
-      canSendMessages: account.canSendMessages ?? false,
-      aorId: account.areaOfResponsibility?.id ?? null,
-    });
-    setEditErrors({});
-    setEditSidebarOpen(true);
-  }
-
-  function closeEditSidebar() {
-    setEditSidebarOpen(false);
-    setEditForm(null);
-    setEditErrors({});
-  }
-
-  async function submitEditForm() {
-    if (!editForm) return;
-
-    const errors: Record<string, string> = {};
-    const nameError = validateDisplayName(editForm.displayName);
-    if (nameError) errors.displayName = nameError;
-    const aorError = validateAorId(editForm.aorId);
-    if (aorError) errors.aorId = aorError;
-
-    if (Object.keys(errors).length > 0) {
-      setEditErrors(errors);
-      return;
-    }
-
-    const account = accounts.find((item) => item.id === editForm.id);
-    if (!account) return;
-
-    setIsMutating(true);
-    try {
-      await editAccount(buildEditRequest(editForm, account));
-      const updatedAor = aors.find((aor) => aor.id === editForm.aorId) || null;
-      setAccounts((prev) =>
-        updateAccountInList(prev, editForm.id, (current) => ({
-          ...current,
-          displayName: editForm.displayName,
-          canReadMessages: editForm.canReadMessages,
-          canSendMessages: editForm.canSendMessages,
-          description: normalizeDescription(editForm.description),
-          areaOfResponsibility: updatedAor,
-        })),
-      );
-      closeEditSidebar();
-    } catch (error) {
-      setActionStatus({
-        kind: 'error',
-        message: `Помилка редагування акаунту: ${formatErrorMessage(error)}`,
-      });
-    } finally {
-      setIsMutating(false);
-    }
-  }
-
-  async function handleDeleteConfirm() {
-    if (deleteAccountId === null) return;
-    setIsMutating(true);
-    try {
-      await unlinkAccount({ accountId: deleteAccountId });
-      setAccounts((prev) => prev.filter((account) => account.id !== deleteAccountId));
-      setDeleteAccountId(null);
-    } catch (error) {
-      setActionStatus({
-        kind: 'error',
-        message: `Помилка видалення акаунту: ${formatErrorMessage(error)}`,
-      });
-      setDeleteAccountId(null);
-    } finally {
-      setIsMutating(false);
-    }
-  }
-
-  async function handleToggleStatus(accountId: number) {
-    const account = accounts.find((item) => item.id === accountId);
-    if (!account) return;
-
-    const request: AccountStatusReq = {
-      accountId: account.id,
-      aorId: account.areaOfResponsibility?.id ?? null,
-      canReadMessages: account.canReadMessages,
-      canSendMessages: account.canSendMessages,
-      isActive: account.status !== 'active',
-      displayName: account.displayName,
-      description: account.description,
-      apiLogin: account.apiLogin,
-      apiEndpoint: account.apiEndpoint,
-    };
-
-    setIsMutating(true);
-    try {
-      await editAccount(request);
-      setAccounts((prev) =>
-        updateAccountInList(prev, accountId, (current) => ({
-          ...current,
-          status: current.status === 'active' ? 'paused' : 'active',
-        })),
-      );
-    } catch (error) {
-      setActionStatus({
-        kind: 'error',
-        message: `Помилка зміни статусу акаунту: ${formatErrorMessage(error)}`,
-      });
-    } finally {
-      setIsMutating(false);
-    }
-  }
-
-  async function handleRestartDatasource(accountId: number) {
-    setIsMutating(true);
-    try {
-      await restartDatasource(accountId);
-      setActionStatus({
-        kind: 'success',
-        message: 'Запит на перезапуск надіслано',
-      });
-    } catch (error) {
-      setActionStatus({
-        kind: 'error',
-        message: `Помилка перезапуску джерела: ${formatErrorMessage(error)}`,
-      });
-    } finally {
-      setIsMutating(false);
-    }
-  }
-
-  async function handleConnectExisting(accountId: number) {
-    const account = accounts.find((item) => item.id === accountId);
-    if (!account) return;
-    setLinkSidebarOpen(true);
-    setLinkStep('qr');
-    setQrData({ accountId, qrCode: '', account });
-    setLinkStatus(null);
-    setLinkSuccessAccount(null);
-    await fetchQrCode(accountId);
+    const systemServiceError = await onSubmit(request);
+    if (systemServiceError) showSystemServiceNameError(systemServiceError);
   }
 
   const aorOptions = aors.map((aor) => (
@@ -1130,60 +859,11 @@ function AdminMessengerAccountsSection() {
     </MenuItem>
   ));
 
-  const renderAccountsTable = () => {
-    return (
-      <TableContentState
-        status={accountsStatus}
-        errorMessage={accountsError || 'Помилка завантаження'}
-        fillAvailableHeight
-        loadingContent={
-          <div className="flex w-full min-w-0 flex-1 min-h-0">
-            <MessengerAccountsTable
-              data={accounts}
-              loading
-              actionsDisabled={isMutating}
-              onRestart={handleRestartDatasource}
-              onEdit={openEditSidebar}
-              onDelete={setDeleteAccountId}
-              onToggleStatus={handleToggleStatus}
-              onConnect={handleConnectExisting}
-            />
-          </div>
-        }
-      >
-        <div className="flex w-full min-w-0 flex-1 min-h-0">
-          <MessengerAccountsTable
-            data={accounts}
-            loading={false}
-            actionsDisabled={isMutating}
-            onRestart={handleRestartDatasource}
-            onEdit={openEditSidebar}
-            onDelete={setDeleteAccountId}
-            onToggleStatus={handleToggleStatus}
-            onConnect={handleConnectExisting}
-          />
-        </div>
-      </TableContentState>
-    );
-  };
-
-  const renderDeleteDialog = () => (
-    <ConfirmDangerDialog
-      open={deleteAccountId !== null}
-      onClose={() => setDeleteAccountId(null)}
-      onConfirm={handleDeleteConfirm}
-      description="Ви впевнені, що хочете видалити цей акаунт месенджера?"
-      submitting={isMutating}
-      disabled={deleteAccountId === null}
-      disableRestoreFocus
-    />
-  );
-
-  const renderLinkSidebar = () => (
+  return (
     <Drawer
       anchor="right"
       open={linkSidebarOpen}
-      onClose={closeLinkSidebar}
+      onClose={onClose}
       ModalProps={{ disableRestoreFocus: true }}
       slotProps={{ paper: { sx: { width: { xs: '100%', sm: 420 } } } }}
     >
@@ -1351,10 +1031,10 @@ function AdminMessengerAccountsSection() {
             </div>
             {linkStatus?.kind === 'error' ? <Info text={linkStatus.message} color="error" /> : null}
             <div className="flex items-center justify-center gap-2">
-              <PowerButton onClick={closeLinkSidebar}>Скасувати</PowerButton>
+              <PowerButton onClick={onClose}>Скасувати</PowerButton>
               <PowerButton
                 variant="outlined"
-                onClick={() => fetchQrCode(qrData.accountId)}
+                onClick={() => onRefreshQr(qrData.accountId)}
                 startIcon={<RefreshIcon />}
               >
                 Оновити QR код
@@ -1372,7 +1052,7 @@ function AdminMessengerAccountsSection() {
             <Typography variant="body2" className="text-muted-foreground">
               {getMessengerLabel(linkSuccessAccount.messenger)}: {linkSuccessAccount.phoneNumber}
             </Typography>
-            <PowerButton variant="contained" onClick={closeLinkSidebar}>
+            <PowerButton variant="contained" onClick={onClose}>
               Закрити
             </PowerButton>
           </Box>
@@ -1389,7 +1069,7 @@ function AdminMessengerAccountsSection() {
               gap: 2,
             }}
           >
-            <PowerButton onClick={closeLinkSidebar}>Скасувати</PowerButton>
+            <PowerButton onClick={onClose}>Скасувати</PowerButton>
             <PowerButton variant="contained" onClick={submitLinkForm} disabled={isMutating}>
               Прив'язати
             </PowerButton>
@@ -1398,12 +1078,61 @@ function AdminMessengerAccountsSection() {
       </Box>
     </Drawer>
   );
+}
 
-  const renderEditSidebar = () => (
+function EditAccountDrawer({
+  editSidebarOpen,
+  initialForm,
+  aors,
+  aorsStatus,
+  isMutating,
+  onClose,
+  onSubmit,
+}: {
+  editSidebarOpen: boolean;
+  initialForm: EditForm | null;
+  aors: AreaOfResponsibility[];
+  aorsStatus: LoadingStatus;
+  isMutating: boolean;
+  onClose: () => void;
+  onSubmit: (editForm: EditForm) => Promise<void>;
+}) {
+  const [editForm, setEditForm] = useState(initialForm);
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setEditForm(initialForm);
+    setEditErrors({});
+  }, [initialForm]);
+
+  function submitEditForm() {
+    if (!editForm) return;
+
+    const errors: Record<string, string> = {};
+    const nameError = validateDisplayName(editForm.displayName);
+    if (nameError) errors.displayName = nameError;
+    const aorError = validateAorId(editForm.aorId);
+    if (aorError) errors.aorId = aorError;
+
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      return;
+    }
+
+    onSubmit(editForm);
+  }
+
+  const aorOptions = aors.map((aor) => (
+    <MenuItem key={aor.id} value={aor.id}>
+      {aor.name}
+    </MenuItem>
+  ));
+
+  return (
     <Drawer
       anchor="right"
       open={editSidebarOpen}
-      onClose={closeEditSidebar}
+      onClose={onClose}
       ModalProps={{ disableRestoreFocus: true }}
       slotProps={{ paper: { sx: { width: { xs: '100%', sm: 420 } } } }}
     >
@@ -1484,7 +1213,7 @@ function AdminMessengerAccountsSection() {
           </Box>
         ) : null}
         <Box className="p-6 border-t border-border flex gap-3">
-          <PowerButton onClick={closeEditSidebar}>Скасувати</PowerButton>
+          <PowerButton onClick={onClose}>Скасувати</PowerButton>
           <PowerButton
             variant="contained"
             onClick={submitEditForm}
@@ -1495,6 +1224,347 @@ function AdminMessengerAccountsSection() {
         </Box>
       </Box>
     </Drawer>
+  );
+}
+
+function AdminMessengerAccountsSection() {
+  const [accounts, setAccounts] = useState<EchoAccountF1[]>([]);
+  const [accountsStatus, setAccountsStatus] = useState<LoadingStatus>('idle');
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [aorsStatus, setAorsStatus] = useState<LoadingStatus>('idle');
+  const [linkStep, setLinkStep] = useState<LinkStep>('form');
+  const [linkSidebarOpen, setLinkSidebarOpen] = useState(false);
+  const [qrData, setQrData] = useState<QrData | null>(null);
+  const [linkSuccessAccount, setLinkSuccessAccount] = useState<EchoAccountF1 | null>(null);
+  const [linkStatus, setLinkStatus] = useState<StatusMessage>(null);
+  const [editSidebarOpen, setEditSidebarOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [deleteAccountId, setDeleteAccountId] = useState<number | null>(null);
+  const [actionStatus, setActionStatus] = useState<StatusMessage>(null);
+  const [isMutating, setIsMutating] = useState(false);
+
+  async function loadAccounts() {
+    setAccountsStatus('loading');
+    setAccountsError(null);
+    try {
+      const rsp = await listAccounts();
+      setAccounts(transformAccounts(rsp.accounts));
+      setAccountsStatus('success');
+    } catch (error) {
+      setAccountsStatus('error');
+      setAccountsError(formatErrorMessage(error));
+    }
+  }
+
+  async function loadAors() {
+    setAorsStatus('loading');
+    try {
+      const list = await listAors({ sortBy: null });
+      setAors(list);
+      setAorsStatus('success');
+    } catch (error) {
+      setAorsStatus('error');
+      setActionStatus({
+        kind: 'error',
+        message: `Помилка завантаження смуг: ${formatErrorMessage(error)}`,
+      });
+    }
+  }
+
+  useEffect(() => {
+    loadAccounts();
+    loadAors();
+  }, []);
+
+  useEffect(() => {
+    if (linkStep !== 'qr' || !qrData) return;
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const rsp = await isLinked({ accountId: qrData.accountId });
+        if (extractIsLinked(rsp)) {
+          setAccounts((prev) =>
+            updateAccountInList(prev, qrData.accountId, (account) => ({
+              ...account,
+              isLinked: true,
+            })),
+          );
+          setLinkSuccessAccount(qrData.account);
+          setLinkStep('success');
+        }
+      } catch (_) {
+        // silent polling failure
+      }
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [linkStep, qrData?.accountId]);
+
+  function resetLinkFlow() {
+    setLinkStep('form');
+    setLinkSidebarOpen(false);
+    setQrData(null);
+    setLinkSuccessAccount(null);
+    setLinkStatus(null);
+  }
+
+  function openLinkSidebar() {
+    setLinkSidebarOpen(true);
+    setLinkStep('form');
+    setLinkStatus(null);
+    setLinkSuccessAccount(null);
+    setQrData(null);
+  }
+
+  function closeLinkSidebar() {
+    resetLinkFlow();
+  }
+
+  async function fetchQrCode(accountId: number) {
+    const maxAttempts = 2;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const qrRsp = await getQrCode({ accountId });
+        const qrCode = extractQrCodeBase64(qrRsp);
+
+        if (qrCode.trim().length > 0) {
+          setQrData((prev) => (prev && prev.accountId === accountId ? { ...prev, qrCode } : prev));
+          return;
+        }
+
+        if (attempt < maxAttempts - 1) {
+          await wait(1000);
+          continue;
+        }
+      } catch (error) {
+        if (attempt < maxAttempts - 1) {
+          await wait(1000);
+          continue;
+        }
+
+        setLinkStatus({
+          kind: 'error',
+          message: `Помилка отримання QR коду: ${formatErrorMessage(error)}`,
+        });
+        return;
+      }
+    }
+
+    setLinkStatus({
+      kind: 'error',
+      message: 'Помилка отримання QR коду: порожня відповідь сервера',
+    });
+  }
+
+  async function submitLinkForm(request: LinkAccountReq) {
+    setIsMutating(true);
+    setLinkStatus(null);
+
+    try {
+      const rsp = await linkAccount(request);
+      setAccounts((prev) => [rsp.account, ...prev]);
+      setQrData({
+        accountId: rsp.account.id,
+        qrCode: '',
+        account: rsp.account,
+      });
+      setLinkStep('qr');
+      await fetchQrCode(rsp.account.id);
+    } catch (error) {
+      const message = formatErrorMessage(error);
+      if (message.toLowerCase().includes('systemd unit')) {
+        return message;
+      } else {
+        setLinkStatus({
+          kind: 'error',
+          message: `Помилка прив'язування акаунту: ${message}`,
+        });
+      }
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  function openEditSidebar(accountId: number) {
+    const account = accounts.find((item) => item.id === accountId);
+    if (!account) return;
+
+    setEditForm({
+      id: account.id,
+      displayName: account.displayName,
+      description: account.description || '',
+      canReadMessages: account.canReadMessages ?? true,
+      canSendMessages: account.canSendMessages ?? false,
+      aorId: account.areaOfResponsibility?.id ?? null,
+    });
+    setEditSidebarOpen(true);
+  }
+
+  function closeEditSidebar() {
+    setEditSidebarOpen(false);
+    setEditForm(null);
+  }
+
+  async function submitEditForm(editForm: EditForm) {
+    const account = accounts.find((item) => item.id === editForm.id);
+    if (!account) return;
+
+    setIsMutating(true);
+    try {
+      await editAccount(buildEditRequest(editForm, account));
+      const updatedAor = aors.find((aor) => aor.id === editForm.aorId) || null;
+      setAccounts((prev) =>
+        updateAccountInList(prev, editForm.id, (current) => ({
+          ...current,
+          displayName: editForm.displayName,
+          canReadMessages: editForm.canReadMessages,
+          canSendMessages: editForm.canSendMessages,
+          description: normalizeDescription(editForm.description),
+          areaOfResponsibility: updatedAor,
+        })),
+      );
+      closeEditSidebar();
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        message: `Помилка редагування акаунту: ${formatErrorMessage(error)}`,
+      });
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (deleteAccountId === null) return;
+    setIsMutating(true);
+    try {
+      await unlinkAccount({ accountId: deleteAccountId });
+      setAccounts((prev) => prev.filter((account) => account.id !== deleteAccountId));
+      setDeleteAccountId(null);
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        message: `Помилка видалення акаунту: ${formatErrorMessage(error)}`,
+      });
+      setDeleteAccountId(null);
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleToggleStatus(accountId: number) {
+    const account = accounts.find((item) => item.id === accountId);
+    if (!account) return;
+
+    const request: AccountStatusReq = {
+      accountId: account.id,
+      aorId: account.areaOfResponsibility?.id ?? null,
+      canReadMessages: account.canReadMessages,
+      canSendMessages: account.canSendMessages,
+      isActive: account.status !== 'active',
+      displayName: account.displayName,
+      description: account.description,
+      apiLogin: account.apiLogin,
+      apiEndpoint: account.apiEndpoint,
+    };
+
+    setIsMutating(true);
+    try {
+      await editAccount(request);
+      setAccounts((prev) =>
+        updateAccountInList(prev, accountId, (current) => ({
+          ...current,
+          status: current.status === 'active' ? 'paused' : 'active',
+        })),
+      );
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        message: `Помилка зміни статусу акаунту: ${formatErrorMessage(error)}`,
+      });
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleRestartDatasource(accountId: number) {
+    setIsMutating(true);
+    try {
+      await restartDatasource(accountId);
+      setActionStatus({
+        kind: 'success',
+        message: 'Запит на перезапуск надіслано',
+      });
+    } catch (error) {
+      setActionStatus({
+        kind: 'error',
+        message: `Помилка перезапуску джерела: ${formatErrorMessage(error)}`,
+      });
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleConnectExisting(accountId: number) {
+    const account = accounts.find((item) => item.id === accountId);
+    if (!account) return;
+    setLinkSidebarOpen(true);
+    setLinkStep('qr');
+    setQrData({ accountId, qrCode: '', account });
+    setLinkStatus(null);
+    setLinkSuccessAccount(null);
+    await fetchQrCode(accountId);
+  }
+
+  const renderAccountsTable = () => {
+    return (
+      <TableContentState
+        status={accountsStatus}
+        errorMessage={accountsError || 'Помилка завантаження'}
+        fillAvailableHeight
+        loadingContent={
+          <div className="flex w-full min-w-0 flex-1 min-h-0">
+            <MessengerAccountsTable
+              data={accounts}
+              loading
+              actionsDisabled={isMutating}
+              onRestart={handleRestartDatasource}
+              onEdit={openEditSidebar}
+              onDelete={setDeleteAccountId}
+              onToggleStatus={handleToggleStatus}
+              onConnect={handleConnectExisting}
+            />
+          </div>
+        }
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <MessengerAccountsTable
+            data={accounts}
+            loading={false}
+            actionsDisabled={isMutating}
+            onRestart={handleRestartDatasource}
+            onEdit={openEditSidebar}
+            onDelete={setDeleteAccountId}
+            onToggleStatus={handleToggleStatus}
+            onConnect={handleConnectExisting}
+          />
+        </div>
+      </TableContentState>
+    );
+  };
+
+  const renderDeleteDialog = () => (
+    <ConfirmDangerDialog
+      open={deleteAccountId !== null}
+      onClose={() => setDeleteAccountId(null)}
+      onConfirm={handleDeleteConfirm}
+      description="Ви впевнені, що хочете видалити цей акаунт месенджера?"
+      submitting={isMutating}
+      disabled={deleteAccountId === null}
+      disableRestoreFocus
+    />
   );
 
   return (
@@ -1538,8 +1608,30 @@ function AdminMessengerAccountsSection() {
           {renderAccountsTable()}
         </Box>
         {renderDeleteDialog()}
-        {renderLinkSidebar()}
-        {renderEditSidebar()}
+        <LinkAccountDrawer
+          linkSidebarOpen={linkSidebarOpen}
+          linkStep={linkStep}
+          qrData={qrData}
+          linkSuccessAccount={linkSuccessAccount}
+          linkStatus={linkStatus}
+          isMutating={isMutating}
+          aors={aors}
+          aorsStatus={aorsStatus}
+          onClose={closeLinkSidebar}
+          onSubmit={submitLinkForm}
+          onRefreshQr={fetchQrCode}
+          onMutatingChange={setIsMutating}
+          onStatusChange={setLinkStatus}
+        />
+        <EditAccountDrawer
+          editSidebarOpen={editSidebarOpen}
+          initialForm={editForm}
+          aors={aors}
+          aorsStatus={aorsStatus}
+          isMutating={isMutating}
+          onClose={closeEditSidebar}
+          onSubmit={submitEditForm}
+        />
       </Stack>
     </Box>
   );

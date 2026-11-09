@@ -36,6 +36,14 @@ pub async fn bl_szd_group_update(
     szd: &sigint_zone_datasource::Model,
     txn: &DatabaseTransaction,
 ) -> Result<BlSzdGroupUpdateRes, AppError> {
+    crate::messenger::group::sending::set(
+        txn,
+        &szd.group_master_key,
+        req.send_messages,
+        req.sender_organism_ids.as_deref(),
+    )
+    .await
+    .c(h!())?;
     let color_key =
         set_signal_group_color(txn, &szd.group_master_key, req.color_key)
             .await
