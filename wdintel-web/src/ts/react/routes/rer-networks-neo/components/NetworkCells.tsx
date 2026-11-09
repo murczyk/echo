@@ -138,6 +138,8 @@ function NetworkCopyButton({ getText }: { getText: () => string }) {
           transition: 'opacity 120ms',
           color: copyState === 'error' ? 'error.main' : 'text.secondary',
           '&:focus-visible': { opacity: 1 },
+          // No hover on touch screens: keep the action discoverable.
+          '@media (hover: none)': { opacity: 1 },
         }}
       >
         <ContentCopyOutlinedIcon sx={{ fontSize: 16 }} />
