@@ -59,6 +59,7 @@ type SystemSettingsForm = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsItem['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
   analysisAorFilterEnabled: boolean;
@@ -111,6 +112,7 @@ type SystemSettingsPayload = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsItem['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
   analysisAorFilterEnabled: boolean;
@@ -163,6 +165,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   showPelengDistanceToBattleline: false,
   disableBotTags: false,
   hideNetworks: false,
+  docMediaServeFromB2: false,
   dutyExcludeMenuEnabled: true,
   dutySelectedGroupsEnabled: true,
   analysisAorFilterEnabled: true,
@@ -266,6 +269,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     disableBotTags: item?.disableBotTags ?? false,
     hideNetworks: item?.hideNetworks ?? false,
+    docMediaServeFromB2: item?.docMediaServeFromB2 ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     dutySelectedGroupsEnabled: item?.dutySelectedGroupsEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
@@ -321,6 +325,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.disableBotTags === b.disableBotTags &&
     a.hideNetworks === b.hideNetworks &&
+    a.docMediaServeFromB2 === b.docMediaServeFromB2 &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.dutySelectedGroupsEnabled === b.dutySelectedGroupsEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
@@ -433,6 +438,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     disableBotTags: form.disableBotTags,
     hideNetworks: form.hideNetworks,
+    docMediaServeFromB2: form.docMediaServeFromB2,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     dutySelectedGroupsEnabled: form.dutySelectedGroupsEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
@@ -678,6 +684,14 @@ function MainSettingsSection({
             />
           }
           onChange={(checked) => patchForm({ aiPositionHighlightsEnabled: checked })}
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Медіа документації">
+        <MainSettingsSwitchRow
+          checked={form.docMediaServeFromB2}
+          label="Завантажувати медіа документації безпосередньо з B2"
+          onChange={(checked) => patchForm({ docMediaServeFromB2: checked })}
         />
       </MainSettingsGroup>
 
@@ -1500,6 +1514,7 @@ export function AdminSystemSettingsNeoPage() {
       showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
       disableBotTags: payload.disableBotTags,
       hideNetworks: payload.hideNetworks,
+      docMediaServeFromB2: payload.docMediaServeFromB2,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       dutySelectedGroupsEnabled: payload.dutySelectedGroupsEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,

@@ -18,6 +18,15 @@ server {
     gzip_comp_level 6;
     gzip_vary on;
 
+    location ^~ /doc-media/ {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_buffering off;
+    }
+    location ^~ /docs/ {
+        return 404;
+    }
+
     # Caching for immutable assets
     location ~* \.(?:css|js|wasm|jpg|jpeg|gif|png|ico|cur|gz|svg|svgz|mp4|ogg|ogv|webm|htc|woff|woff2)$ {
         expires 30d;
