@@ -92,6 +92,8 @@ type GroupUpdateReqBody = {
   fetch_new_messages: boolean | null;
   is_sigint_unit_mandatory: boolean | null;
   is_device_mandatory: boolean | null;
+  send_messages: boolean | null;
+  sender_organism_ids: number[] | null;
 };
 
 type AccountStatsTimelinePointLike = {
@@ -303,6 +305,8 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     fetch_new_messages: req.fetchNewMessages ?? null,
     is_sigint_unit_mandatory: req.isSigintUnitMandatory ?? null,
     is_device_mandatory: req.isDeviceMandatory ?? null,
+    send_messages: req.sendMessages ?? null,
+    sender_organism_ids: req.senderOrganismIds ?? null,
   };
 }
 

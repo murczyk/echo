@@ -93,6 +93,7 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 import { getUserSigintGroups } from '../../services/api/inbox-reference-data';
 import { fetchCurrentUser } from '../../services/api/user';
 import { NativeGroupDialog } from './NativeGroupDialog';
+import { GroupSendingFields, useGroupSendingSettings } from './GroupSendingFields';
 import { ZoneGroupCell } from './ZoneGroupCell';
 import { buildAccessItems, type ZoneGroupAccessItem } from './zone-group-access';
 import {
@@ -1743,6 +1744,8 @@ function AdminDirectionsNeoPageBody() {
 
   const [editDialog, setEditDialog] = useState<GroupEditState | null>(null);
   const [orphanEditDialog, setOrphanEditDialog] = useState<OrphanEditState | null>(null);
+  const groupSending = useGroupSendingSettings(editDialog?.group.groupMasterKey ?? null);
+  const orphanGroupSending = useGroupSendingSettings(orphanEditDialog?.group.masterKey ?? null);
   const [assignDialog, setAssignDialog] = useState<OrphanAssignState | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteState | null>(null);
   const [archiveDialog, setArchiveDialog] = useState<ArchiveState | null>(null);
@@ -2260,7 +2263,7 @@ function AdminDirectionsNeoPageBody() {
   }
 
   async function handleSaveGroupEdit() {
-    if (!editDialog) return;
+    if (!editDialog || !groupSending.isReady) return;
     setEditDialog({ ...editDialog, isSaving: true, error: null });
 
     const selectedUsers = editDialog.isSecret ? editDialog.selectedUsers : [];
@@ -2276,6 +2279,7 @@ function AdminDirectionsNeoPageBody() {
       fetchNewMessages: editDialog.fetchNewMessages,
       isSigintUnitMandatory: editDialog.isSigintUnitMandatory,
       isDeviceMandatory: editDialog.isDeviceMandatory,
+      ...groupSending.request,
       userLogins: selectedUsers,
       organismIds: selectedOrganismIds,
       adminLogins: editDialog.selectedAdmins,
@@ -2334,7 +2338,7 @@ function AdminDirectionsNeoPageBody() {
   }
 
   async function handleSaveOrphanEdit() {
-    if (!orphanEditDialog) return;
+    if (!orphanEditDialog || !orphanGroupSending.isReady) return;
     setOrphanEditDialog({ ...orphanEditDialog, isSaving: true, error: null });
 
     try {
@@ -2353,6 +2357,7 @@ function AdminDirectionsNeoPageBody() {
         fetchNewMessages: orphanEditDialog.fetchNewMessages,
         isSigintUnitMandatory: orphanEditDialog.isSigintUnitMandatory,
         isDeviceMandatory: orphanEditDialog.isDeviceMandatory,
+        ...orphanGroupSending.request,
       });
 
       setOrphanGroups((prev) =>
@@ -2771,6 +2776,11 @@ function AdminDirectionsNeoPageBody() {
               />
             }
           />
+          <GroupSendingFields
+            {...groupSending}
+            organisms={organisms}
+            disabled={editDialog?.isSaving ?? false}
+          />
           <GroupMessageRequirements
             isSigintUnitMandatory={editDialog?.isSigintUnitMandatory ?? false}
             isDeviceMandatory={editDialog?.isDeviceMandatory ?? false}
@@ -2906,7 +2916,7 @@ function AdminDirectionsNeoPageBody() {
           <PowerButton
             variant="contained"
             onClick={handleSaveGroupEdit}
-            disabled={editDialog?.isSaving}
+            disabled={editDialog?.isSaving || !groupSending.isReady}
           >
             Зберегти
           </PowerButton>
@@ -2987,6 +2997,11 @@ function AdminDirectionsNeoPageBody() {
                 }}
               />
             }
+          />
+          <GroupSendingFields
+            {...orphanGroupSending}
+            organisms={organisms}
+            disabled={orphanEditDialog?.isSaving ?? false}
           />
           <GroupMessageRequirements
             isSigintUnitMandatory={orphanEditDialog?.isSigintUnitMandatory ?? false}
@@ -3081,7 +3096,7 @@ function AdminDirectionsNeoPageBody() {
           <PowerButton
             variant="contained"
             onClick={handleSaveOrphanEdit}
-            disabled={orphanEditDialog?.isSaving}
+            disabled={orphanEditDialog?.isSaving || !orphanGroupSending.isReady}
           >
             Зберегти
           </PowerButton>

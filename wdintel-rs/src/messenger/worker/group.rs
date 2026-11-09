@@ -162,6 +162,7 @@ pub async fn sync_groups(
         match existing_groups.get(&(group_id.clone(), datasource.id)) {
             None => {
                 let model = signal_group::ActiveModel {
+                    send_messages: sea_orm::NotSet,
                     is_sigint_unit_mandatory: sea_orm::NotSet,
                     is_device_mandatory: sea_orm::NotSet,
                     name: Set(Some(g.name.clone())),
