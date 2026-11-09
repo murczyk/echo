@@ -9678,10 +9678,33 @@ mod tests {
             seed_message_with_media(&env, &datasource_group, None, "units")
                 .await
                 .unwrap();
-        let first_unit =
-            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
-        let second_unit =
-            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            unit_v2: Set(Some("Stored unit name".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let first_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("First current unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Second current unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let network = mk_sigint_network(&env.dbx, Default::default())
             .await
             .unwrap();
@@ -9735,6 +9758,52 @@ mod tests {
         expected_unit_ids.sort_unstable();
 
         assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
+        assert_eq!(
+            messages[0].1.unit.as_deref(),
+            Some("First current unit, Second current unit")
+        );
+
+        for (unit_id, deleted) in
+            [(second_unit.id, true), (first_unit.id, false)]
+        {
+            sigint_unit::ActiveModel {
+                id: Set(unit_id),
+                name: Set("Renamed unit".to_string()),
+                deleted: Set(deleted),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(messages[0].1.unit_ids, vec![first_unit.id]);
+        assert_eq!(messages[0].1.unit.as_deref(), Some("Renamed unit"));
+
+        sigint_inbox_item_unit::Entity::delete_many()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(message.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        assert!(messages[0].1.unit_ids.is_empty());
+        assert_eq!(messages[0].1.unit.as_deref(), Some("Stored unit name"));
     }
 
     #[serial]
