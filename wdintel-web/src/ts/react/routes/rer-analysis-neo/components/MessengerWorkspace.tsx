@@ -158,7 +158,7 @@ function MessengerSidebar({
       aria-label="Навігація акаунту"
       className="slim-scrollbar flex min-h-0 w-72 shrink-0 flex-col gap-2 overflow-y-auto border-r border-solid border-black/12 py-2 dark:border-white/12"
     >
-      <div className="flex items-center gap-3 px-3 py-1">
+      <div className="flex items-center gap-3 px-3 pb-1">
         <MessengerAccountAvatar account={account} />
         <span className="flex min-w-0 flex-col">
           <CopyValue text={account.name} className="group-navigation-name">
