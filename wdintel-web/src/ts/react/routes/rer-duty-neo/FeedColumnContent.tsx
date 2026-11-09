@@ -671,6 +671,11 @@ export const FeedColumnContent = memo(
     ref,
   ) {
     const { feed, view, messageCard, actions } = column;
+    const cardFilterState = useMemo(
+      () =>
+        view.enableDutySearch ? feed.filter : { ...feed.filter, search: null, searchMode: null },
+      [feed.filter, view.enableDutySearch],
+    );
     const debugEnabled = useDutyScrollDebugEnabled();
     const onDebugRender = useCallback<ProfilerOnRenderCallback>(
       (_id, phase, actualDuration) => {
@@ -873,7 +878,7 @@ export const FeedColumnContent = memo(
           featureStrictNetworks={featureStrictNetworks}
           tagsMap={tagsMap}
           tagsOrder={tagsOrder}
-          filterState={feed.filter}
+          filterState={cardFilterState}
           onMessageBookmark={stableOnMessageBookmark}
           onMessageImportant={stableOnMessageImportant}
           onMessageCopy={stableOnMessageCopy}

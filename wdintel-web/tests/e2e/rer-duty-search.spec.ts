@@ -96,6 +96,40 @@ test('#3571 hides search and history loading when the flag is absent @regression
   await expect(page.getByRole('button', { name: 'Завантажити ще', exact: true })).toHaveCount(0);
 });
 
+for (const enabled of [false, true]) {
+  test(`#3571 restored search highlights and filter indicators respect enableDutySearch=${enabled} @regression`, async ({
+    page,
+  }) => {
+    const inboxResponse = response([1]);
+    inboxResponse.inbox_items[0][1].textMarked = [
+      { CNCallsignC: { text: 'needle', begin: 0, end: 6, etalon: 'needle' } },
+    ];
+    const fixture = await installRerDutyShortStateMocks(page, {
+      enableDutySearch: enabled,
+      inboxResponse,
+    });
+    const state = encodeURIComponent(
+      JSON.stringify({ messageFeeds: [['mf-0', { search: 'needle', searchMode: 'Substring' }]] }),
+    );
+    await page.goto(`/rer-duty-neo?state=${state}`);
+    const message = page.locator('[data-duty-message-id="1"]');
+    await expect(message.getByTestId('callsign-token')).toHaveText('NEEDLE');
+    await expect(message.locator('.badge-highlighed-token--callsign')).toHaveCount(enabled ? 1 : 0);
+    await expect(page.locator('[data-duty-active-filter-indicator]')).toHaveCount(enabled ? 1 : 0);
+    expect(fixture.getLastInboxRequest()).toMatchObject({
+      search: enabled ? 'needle' : null,
+      search_mode: enabled ? 'Substring' : null,
+    });
+    await page
+      .getByRole('button', { name: /^Фільтри/ })
+      .first()
+      .click();
+    await expect(page.getByRole('combobox', { name: 'Пошук', exact: true })).toHaveCount(
+      enabled ? 1 : 0,
+    );
+  });
+}
+
 test('#3571 offers the preceding period at the oldest search result @regression', async ({
   page,
 }) => {

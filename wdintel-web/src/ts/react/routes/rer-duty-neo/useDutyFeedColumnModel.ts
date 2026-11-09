@@ -177,11 +177,11 @@ function buildFeedFilterPanel(
       : undefined,
     hideGroupSelection: Boolean(feed.groupScopeMasterKey),
     hasActiveFilter:
-      hasActiveFeedFilter(
-        feed.groupScopeMasterKey
-          ? { ...feed.filter, groupsSelected: null, groupsDenied: null }
-          : feed.filter,
-      ) ||
+      hasActiveFeedFilter({
+        ...feed.filter,
+        ...(feed.groupScopeMasterKey ? { groupsSelected: null, groupsDenied: null } : {}),
+        search: deps.feeds.enableDutySearch ? feed.filter.search : null,
+      }) ||
       feed.adjacentFreqsRange !== 0 ||
       feed.highlightSignalsEnabled ||
       feed.onlyMyUnitTagsEnabled,
