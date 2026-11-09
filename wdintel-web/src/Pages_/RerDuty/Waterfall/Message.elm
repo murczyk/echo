@@ -233,7 +233,7 @@ clipboardMessage message vps =
             (message.date |> mmap (\x -> "Дата: " ++ x ++ ";\n") |> def "")
                 ++ (message.freq |> mmap (\x -> "Частота: " ++ x ++ ";\n") |> def "")
                 ++ (message.location |> mmap (\x -> "Локація: " ++ x ++ ";\n") |> def "")
-                ++ (message.unit |> mmap (\x -> "Підрозділ: " ++ x ++ ";\n") |> def "")
+                ++ (MaybeX.orElse message.unit message.unitDisplay |> mmap (\x -> "Підрозділ: " ++ x ++ ";\n") |> def "")
                 ++ (message.time |> mmap (\x -> "Час: " ++ x ++ ";\n") |> def "")
                 ++ (message.callsigns
                         |> ListX.getAt 0
@@ -1121,7 +1121,7 @@ rightColumn ( messageId, message ) ps model =
                                     |> Maybe.withDefault False
                         in
                         if ps.hideNetworks then
-                            text <| " " ++ (message.unit |> def "Не встановлена")
+                            text <| " " ++ (MaybeX.orElse message.unit message.unitDisplay |> def "Не встановлена")
 
                         else
                             case (if Core.Auth.canUseRadioFeatures ps.user then message.freq else Just "") of
@@ -1134,7 +1134,7 @@ rightColumn ( messageId, message ) ps model =
                                             text "Не встановлена"
 
                                         else
-                                            text <| " " ++ (message.unit |> def "Не встановлена")
+                                            text <| " " ++ (MaybeX.orElse message.unit message.unitDisplay |> def "Не встановлена")
 
                                     else
                                         div [] <|
