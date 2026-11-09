@@ -190,8 +190,7 @@ export function NetworkDialogs({ page }: Props) {
         postOptions={page.postOptions}
         encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeCreateDialog}
-        onChange={page.setCreateDialog}
-        onSave={() => void page.saveNetworkCreate()}
+        onSave={(form) => void page.saveNetworkCreate(form)}
         frequencyOptional={page.supportNonRerInterceptions}
         unitMaskVisible={page.supportNonRerInterceptions}
       />
@@ -213,7 +212,6 @@ export function NetworkDialogs({ page }: Props) {
         postOptions={page.postOptions}
         encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeEditDialog}
-        onChange={page.setEditDialog}
         onSave={(form) => void page.saveNetworkEdit(form)}
         unitMaskVisible={page.supportNonRerInterceptions}
         {...MRT_ROW_ACTION_MODAL_PROPS}

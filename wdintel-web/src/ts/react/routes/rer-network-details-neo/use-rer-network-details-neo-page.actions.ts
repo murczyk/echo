@@ -180,9 +180,9 @@ export function useRerNetworkDetailsNeoPageActions({
     });
   }, [setState]);
 
-  const saveNetworkEdit = useCallback(async () => {
+  const saveNetworkEdit = useCallback(async (formArg?: NetworkEditForm | null) => {
     const network = state.network;
-    const editForm = state.editForm;
+    const editForm = formArg ?? state.editForm;
     const networkId = editForm?.id ?? null;
 
     if (!network || !editForm || networkId === null || state.editInProgress) return;

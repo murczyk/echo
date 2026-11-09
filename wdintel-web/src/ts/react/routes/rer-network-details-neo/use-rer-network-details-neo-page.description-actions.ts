@@ -149,9 +149,9 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
     }));
   }, [setState]);
 
-  const saveDescription = useCallback(async () => {
+  const saveDescription = useCallback(async (formArg?: NetworkDescriptionForm) => {
     const network = state.network;
-    const form = state.descriptionDrawerForm;
+    const form = formArg ?? state.descriptionDrawerForm;
     const descriptionId = state.descriptionDrawerDescriptionId;
     const descrType = state.descriptionDrawerDescrType;
     if (!network || state.descriptionDrawerSaving) return;

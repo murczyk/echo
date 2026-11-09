@@ -24,21 +24,13 @@ import { fetchCurrentUser } from '../../services/api/user';
 import {
   buildFolderTree,
   buildTableRows,
-  DEFAULT_COLOR_HEX,
   formatErrorMessage,
   normalizeFolderPathForUi,
   getAvailableAccessTypes,
   getExistingFolderOptions,
   getInitialCreateForm,
 } from './helpers';
-import type {
-  FolderActionDialogState,
-  KmzColorOption,
-  PalitraCreateMode,
-  PalitraFormState,
-  TableRowView,
-  UiStatus,
-} from './types';
+import type { FolderActionDialogState, PalitraFormState, TableRowView, UiStatus } from './types';
 import { createPalitraFolderActionHandlers } from './use-rer-palitra-neo-page.folder-actions';
 import { createPalitraPageActionHandlers } from './use-rer-palitra-neo-page.palitra-actions';
 import {
@@ -95,15 +87,12 @@ export function useRerPalitraNeoPage() {
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [createMode, setCreateMode] = useState<PalitraCreateMode>('basic');
   const [createForm, setCreateForm] = useState<PalitraFormState>(getInitialCreateForm(null, null));
   const [createInFlight, setCreateInFlight] = useState(false);
 
   const [kmzFile, setKmzFile] = useState<File | null>(null);
   const [kmzAnalysis, setKmzAnalysis] = useState<AnalyzeKmzResponse | null>(null);
   const [kmzAnalyzing, setKmzAnalyzing] = useState(false);
-  const [kmzColorOptions, setKmzColorOptions] = useState<KmzColorOption[]>([]);
-  const [selectedColorFromKmz, setSelectedColorFromKmz] = useState<string>(DEFAULT_COLOR_HEX);
 
   const [editPalitraId, setEditPalitraId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<PalitraFormState | null>(null);
@@ -183,21 +172,6 @@ export function useRerPalitraNeoPage() {
     [palitraRows],
   );
   const folderActionsBlocked = folderActionInFlight || folderDialogState !== null;
-  const updateCreateForm = useCallback(
-    (updater: (prev: PalitraFormState) => PalitraFormState) =>
-      setCreateForm((prev) => updater(prev)),
-    [],
-  );
-  const updateKmzColorOptions = useCallback(
-    (updater: (prev: KmzColorOption[]) => KmzColorOption[]) =>
-      setKmzColorOptions((prev) => updater(prev)),
-    [],
-  );
-  const updateEditForm = useCallback(
-    (updater: (prev: PalitraFormState | null) => PalitraFormState | null) =>
-      setEditForm((prev) => updater(prev)),
-    [],
-  );
 
   useEffect(() => {
     function onPopState() {
@@ -424,13 +398,9 @@ export function useRerPalitraNeoPage() {
     folderActionsBlocked,
     createOpen,
     createInFlight,
-    createForm,
     editPalitraId,
-    editForm,
     editInFlight,
     kmzFile,
-    kmzColorOptions,
-    selectedColorFromKmz,
     archiveDialogPalitra,
     archiveDialogOpen,
     downloadDialogPalitra,
@@ -451,15 +421,12 @@ export function useRerPalitraNeoPage() {
     pendingUploadPalitraIdRef,
     createCloseClearErrorRef,
     setStatus,
-    setCreateMode,
     setCreateOpen,
     setCreateForm,
     setCreateInFlight,
     setKmzFile,
     setKmzAnalysis,
     setKmzAnalyzing,
-    setKmzColorOptions,
-    setSelectedColorFromKmz,
     setEditPalitraId,
     setEditForm,
     setEditInFlight,
@@ -627,29 +594,18 @@ export function useRerPalitraNeoPage() {
     historyLoading,
     historyError,
     createOpen,
-    createMode,
     createForm,
     createInFlight,
     referenceDataReady,
     kmzFile,
     kmzAnalysis,
     kmzAnalyzing,
-    kmzColorOptions,
-    selectedColorFromKmz,
     editPalitraId,
     editForm,
     editInFlight,
     availableAccessTypes,
     uploadPointsInputRef,
     uploadKmzInputRef,
-    setCreateForm,
-    setEditForm,
-    setKmzColorOptions,
-    setSelectedColorFromKmz,
-    updateCreateForm,
-    setCreateMode,
-    updateKmzColorOptions,
-    updateEditForm,
     openCreate,
     resetCreateFlow,
     openEdit,
