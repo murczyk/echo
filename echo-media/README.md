@@ -5,10 +5,10 @@ Sandboxed ffmpeg and ffprobe jobs for Echo. It addresses G1, I2 and I3 in
 and limits the damage of G2 (services running as root) for the processes it
 starts.
 
-Messenger and Device thumbnails (through `wdintel-rs/src/thumbnail.rs`), the
-transcription audio probe, the messenger playback copy and the messenger HLS
-preview use it. The other ffmpeg call sites are not wired
-yet; see [Wiring](#wiring).
+Every production ffmpeg and ffprobe call in wdintel-rs goes through it:
+thumbnails, the transcription probe, the messenger playback copy and HLS
+preview, the messenger wave and spectrogram images, and device audio. Only
+tests still run ffmpeg directly, to build fixtures. See [Wiring](#wiring).
 
 ## Threat model
 
@@ -149,12 +149,11 @@ media
 | Method | Call sites in wdintel-rs | Status |
 | --- | --- | --- |
 | `thumbnail` | `thumbnail.rs` `generate`, called by `messenger/media_thumbnail.rs` and `devices/files/content/thumbnail/source.rs` | Wired |
-| `probe` | `transcription/worker.rs` `ensure_audio`, `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info` | Wired |
-| `probe` | `devices/audio/probe.rs` `media_metadata` | Not wired |
+| `probe` | `transcription/worker.rs` `ensure_audio`, `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata` | Wired |
 | `remux_mp4_faststart` | `media_local_cache/playback.rs` `remux_watching_disk` | Wired |
 | `hls_segments` | `media_preview/mod.rs` `render_window` | Wired |
-| `decode_verify` | `devices/audio/probe.rs` `decoder_command`, `run_media_process`, `read_output` | Not wired |
-| `audio_rendition` | `devices/audio/content.rs` `media_command` | Not wired |
+| `decode_verify` | `devices/audio/probe.rs` `probe_owned` | Wired |
+| `audio_rendition` | `devices/audio/probe.rs` `render`, called by `devices/audio/content.rs` | Wired |
 | `audio_image` | `messenger/media_wave.rs` `generate_png` (replaced `milgeo-audio-wave`) | Wired |
 
 `MediaError::is_terminal()` separates "this input will never work" from
@@ -165,26 +164,37 @@ can wrap other decoders later, such as `pdftotext`.
 
 ## Wiring
 
-Thumbnails are done:
+All call sites are wired. Across them:
+
+- `MediaError::is_terminal()` errors (input that can never decode) map to each
+  call site's terminal failure; timeouts and environment failures stay
+  transient or retryable.
+- On Linux the default is `Enforce`. A host without Landlock, or a root service
+  without `CAP_SYS_ADMIN`, now fails media jobs as transient errors instead of
+  running them unsandboxed. Check every host's kernel before deploying.
+- wdintel-rs passes its own `config.rs` constants (filters, limits, timeouts)
+  through the option structs.
+
+### Thumbnails
 
 - `wdintel-rs/src/thumbnail.rs` keeps its `generate` and `InvalidMedia`
-  interface and calls `Ffmpeg::shared()`.
-- `MediaError::is_terminal()` errors become `InvalidMedia`; timeouts and
-  environment failures stay transient.
+  interface and calls `Ffmpeg::shared()`; terminal errors become
+  `InvalidMedia`.
 - Messenger thumbnails gained the whitelists they lacked. Device thumbnails
-  keep their 2 MiB output cap. The `*_THUMBNAIL_FFMPEG_BIN` constants and
+  keep their 2 MiB output cap; messenger thumbnails pass no cap.
+- The `*_THUMBNAIL_FFMPEG_BIN` constants and
   `THUMBNAIL_LOCAL_FORMAT_WHITELIST` are gone.
-- On Linux the default is `Enforce`: a host without Landlock, or a root service
-  without `CAP_SYS_ADMIN`, now fails thumbnail jobs as transient errors instead
-  of running them unsandboxed. Check every host's kernel before deploying.
 
-The transcription probe (`transcription/worker.rs` `ensure_audio`) uses
-`Formats::AUDIO`, which now includes `mpegts` for audio-only transport
-streams. Input that cannot decode is a terminal `WorkError`; timeouts and
-environment failures are retryable, as before.
+### Transcription probe
 
-The messenger playback copy (`media_local_cache/playback.rs`) probes and
-remuxes with `Formats::VIDEO`:
+`transcription/worker.rs` `ensure_audio` probes with `Formats::AUDIO`, which
+includes `mpegts` for audio-only transport streams. Input without an audio
+stream, or that cannot decode, is a terminal `WorkError`; a timeout and
+environment failures are retryable.
+
+### Messenger playback copy
+
+`media_local_cache/playback.rs` probes and remuxes with `Formats::VIDEO`:
 
 - A source ffprobe can never read is marked `unsupported`, so clients get the
   original; previously it was retried. Transient probe errors still retry.
@@ -192,11 +202,11 @@ remuxes with `Formats::VIDEO`:
   reservation. wdintel-rs still validates it, renames it to
   `<id>.playback.mp4`, and stops the job when free space on the cache volume
   drops below the configured floor.
-- The `.echo-media-*` job directory lives in the cache root for the length of a
-  remux. Cache cleanup ignores it, so one left by a crash is never removed.
 
-The messenger HLS preview (`media_preview/`) reads either the locally
-retained original (`Input::File`) or a pre-signed S3 URL:
+### Messenger HLS preview
+
+`media_preview/` reads either the locally retained original (`Input::File`) or
+a pre-signed S3 URL:
 
 - The URL becomes `Input::Remote(RemoteUrl::new(url, &[s3_endpoint])?)`, so it
   must match the configured `s3_endpoint` origin. An empty endpoint fails the
@@ -208,26 +218,45 @@ retained original (`Input::File`) or a pre-signed S3 URL:
   `RLIMIT_FSIZE`. wdintel-rs still publishes segments from that directory.
 - The pre-signed URL is still visible in `/proc/<pid>/cmdline` (G7).
 
-Remaining:
+### Messenger wave and spectrogram images
 
-1. Replace the device audio call sites in the table above. Pass the existing
-   wdintel-rs `config.rs` constants (filters, limits, timeouts) through the
-   option structs.
-2. Close G1, I2 and I3 in the checklist once device audio is done.
+`messenger/media_wave.rs` uses `audio_image` with `Formats::AUDIO`, and the
+`milgeo-audio-wave` dependency is gone:
 
-The messenger wave and spectrogram images (`messenger/media_wave.rs`) use
-`audio_image` with `Formats::AUDIO`, and the `milgeo-audio-wave` dependency is
-gone:
-
-- PNGs are cached in `<storage_dir>/messenger_media_cache/audio_png/` (a `0700`
-  directory, `0600` files published atomically) instead of predictable `/tmp`
-  paths (G8). Only a regular file is served from the cache.
-- `delete_local_media_files` removes a message's PNGs (S7). Nothing else
-  expires them, so the directory grows with the number of audio messages whose
-  images were opened.
+- PNGs keep their `/tmp/wave-<id>.png` and `/tmp/spectrogram-<id>.png` names.
+  Each is published atomically from a private job directory, and only a
+  regular file is served from the cache, so a planted symlink is ignored. The
+  names are still predictable in a shared `/tmp`, so G8 is only partly fixed.
+- `delete_local_media_files` removes a message's PNGs (S7).
 - Audio that cannot decode returns the existing "generation failed" error.
   Timeouts (120 s, `ECHO_MEDIA_AUDIO_IMAGE_TIMEOUT`) and environment failures
   are internal errors.
+
+### Device audio
+
+`devices/audio/probe.rs` runs every job, and `content.rs` calls its `render`:
+
+- `media_metadata` probes with `Formats::AUDIO`, so FLAC or Ogg is reported as
+  unsupported rather than invalid. Only WAV and MP3 continue.
+- `decode_verify` decodes the whole WAV or MP3 source and checks framecrc
+  progress, with `DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT` as the stall limit.
+- `audio_rendition` writes the MP3 rendition (capped at 512 MiB) and the wave
+  and spectrogram PNGs (capped at 1 MiB), using the device audio filters.
+- Each job is dropped, killing its process group, when finalization shuts
+  down.
+- Every terminal failure becomes one `InvalidAudio` reason ("повне
+  декодування або визначення формату завершилося з помилкою"); the more
+  specific reasons from the old code are gone.
+
+### Remaining
+
+1. Close G1, I2 and I3 in the checklist after the device audio tests pass.
+2. Clean up `.echo-media-*` job directories left by a crash. Cache cleanup
+   ignores them in the playback cache root, the thumbnail directories and
+   `/tmp`.
+3. Check the deployment: Landlock in `/sys/kernel/security/lsm`,
+   `CAP_SYS_ADMIN` for the services, and root-owned `ffmpeg` and `ffprobe` on
+   the service `PATH`.
 
 ## Tests
 
