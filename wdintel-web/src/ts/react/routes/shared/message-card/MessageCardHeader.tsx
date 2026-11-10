@@ -1497,7 +1497,7 @@ function MessageCardHeaderComponent({
         </div>
       </div>
       {msg.important || !readOnly || isPresent(attachmentArchiveDownload) ? (
-        <div className="message-card-header-actions flex items-center justify-end gap-2">
+        <div className="message-card-header-actions flex items-center justify-end gap-2 self-start">
           {msg.important ? (
             <span
               className="message-card-important-status"
