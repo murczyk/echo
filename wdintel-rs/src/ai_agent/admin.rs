@@ -855,7 +855,22 @@ async fn list_request_page(
         .map(access::parse_uuid)
         .transpose()
         .c(h!())?;
+    let search_id = req
+        .search_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(access::parse_uuid)
+        .transpose()
+        .c(h!())?;
     let mut query = ai_agent_request::Entity::find();
+    if let Some(id) = search_id {
+        query = query.filter(
+            Condition::any()
+                .add(ai_agent_request::Column::Id.eq(id))
+                .add(ai_agent_request::Column::ConversationId.eq(id)),
+        );
+    }
     if let Some(state) = req.state.as_deref() {
         query = query.filter(ai_agent_request::Column::State.eq(state));
     }
@@ -1344,6 +1359,7 @@ mod tests {
             state: None,
             suspicious: None,
             page_start_id: None,
+            search_id: None,
         };
         let first = list_request_page(&txn, &req).await.unwrap();
         assert_eq!(first.total, None);
@@ -1398,6 +1414,72 @@ mod tests {
         assert!(empty.items.is_empty());
         assert_eq!(empty.total, None);
         assert_eq!(empty.page_start_ids, Some(vec![expected[25].clone()]));
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn request_list_finds_a_request_or_its_conversation_by_id() {
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let other = request_fixture(&txn, human.id).await;
+        ai_agent_request::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            ..other
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let request = request_fixture(&txn, human.id).await;
+        let conversation_id = request.conversation_id.clone().unwrap();
+        let mut expected = Vec::new();
+        for _ in 0..3 {
+            let id = Uuid::now_v7();
+            expected.push(id.to_string());
+            ai_agent_request::ActiveModel {
+                id: Set(id),
+                ..request.clone()
+            }
+            .insert(&txn)
+            .await
+            .unwrap();
+        }
+        expected.reverse();
+        let mut req = AiAgentAdminRequestListReq {
+            state: None,
+            suspicious: None,
+            page_start_id: None,
+            search_id: Some(format!(
+                " {} ",
+                conversation_id.to_string().to_uppercase()
+            )),
+        };
+        let conversation = list_request_page(&txn, &req).await.unwrap();
+        assert_eq!(
+            conversation
+                .items
+                .into_iter()
+                .map(|item| item.id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(conversation.total, Some(3));
+        req.search_id = Some(expected[1].clone());
+        let single = list_request_page(&txn, &req).await.unwrap();
+        assert_eq!(
+            single
+                .items
+                .into_iter()
+                .map(|item| item.id)
+                .collect::<Vec<_>>(),
+            vec![expected[1].clone()]
+        );
+        req.search_id = Some("not-an-id".to_string());
+        assert!(list_request_page(&txn, &req).await.is_err());
         txn.rollback().await.unwrap();
     }
 

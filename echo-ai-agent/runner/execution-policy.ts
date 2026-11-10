@@ -258,7 +258,8 @@ export interface CompletionDiagnostic {
     | "time_limit"
     | "tool_limit"
     | "continued"
-    | "draft_refresh";
+    | "draft_refresh"
+    | "research_text";
   stopReason?: string;
   rawStopReason?: string;
   inputTokens?: number;
@@ -418,6 +419,32 @@ type SynthesisOptions = {
   images?: { type: "image"; data: string; mimeType: string }[];
   onOutcome?: (outcome: CompletionDiagnostic) => void;
 };
+
+/**
+ * History for final synthesis, oldest first: the newest entries that fit the budget, plus
+ * the opening user message, which often sets rules the whole conversation follows.
+ */
+export function synthesisConversation(
+  history: readonly { role: string; content: string }[],
+  budgetTokens: number,
+): { role: string; content: string }[] {
+  const cost = (entry: { content: string }) => Math.ceil(entry.content.length / 3);
+  const kept = new Set<number>();
+  let remaining = budgetTokens;
+  const opening = history.findIndex((entry) => entry.role === "user");
+  if (opening >= 0 && cost(history[opening]) <= budgetTokens / 2) {
+    kept.add(opening);
+    remaining -= cost(history[opening]);
+  }
+  for (let index = history.length - 1; index >= 0 && !kept.has(index); index--) {
+    if (cost(history[index]) > remaining) break;
+    kept.add(index);
+    remaining -= cost(history[index]);
+  }
+  return history
+    .filter((_, index) => kept.has(index))
+    .map(({ role, content }) => ({ role, content }));
+}
 
 function synthesisContext(options: SynthesisOptions): Context | null {
   const records = evidenceRecords(options.evidence);

@@ -960,8 +960,9 @@ function normalizeUserStatus(value: AiAgentAdminUserItem): AiAgentUserStatus {
 
 export async function listAiAgentAuditRequests(
   pageStartId: string | null = null,
+  searchId: string | null = null,
 ): Promise<Omit<AiAgentAdminRequestListRsp, 'items'> & { items: AiAgentAuditRequest[] }> {
-  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId };
+  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId, searchId };
   const response = await postJson<AiAgentAdminRequestListRsp>(
     '/api/admin/ai-agent/requests/list',
     req,

@@ -1474,7 +1474,7 @@ fn next_model_failure(
         // The provider answered, even if the answer itself was unusable.
         Some(
             "complete" | "output_limit" | "empty" | "citation_rejected"
-            | "no_evidence",
+            | "no_evidence" | "research_text",
         ) => None,
         Some("content_filter") => Some(AI_AGENT_REASON_MODEL_REFUSAL),
         Some("provider_error" | "transient_error") => {
@@ -2104,9 +2104,14 @@ mod tests {
             None
         );
         assert_eq!(
-            after(&[failed, json!({"outcome": "citation_rejected"})]),
+            after(&[failed.clone(), json!({"outcome": "citation_rejected"})]),
             None,
             "the provider answered"
+        );
+        assert_eq!(
+            after(&[failed, json!({"outcome": "research_text"})]),
+            None,
+            "#4115: research's own reply was delivered"
         );
     }
 

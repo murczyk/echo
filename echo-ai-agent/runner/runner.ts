@@ -11,6 +11,7 @@ import {
   chooseBudgetAnswer,
   isProviderAuthorizationError,
   synthesizeBudgetEvidence,
+  synthesisConversation,
   type ExecutionPolicy,
   type BudgetEvidence,
   type ResearchLimitReason,
@@ -115,7 +116,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.10.1";
+const HARNESS_RELEASE = "2026.11.10.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3624,6 +3625,14 @@ function lastAssistantMessage(messages: unknown[]): JsonObject | undefined {
   ) as JsonObject | undefined;
 }
 
+/** Whether the request asked for any tool, including private ones and calls rejected before they ran. */
+function requestedTools(messages: unknown[]): boolean {
+  return messages.some((message) => {
+    const content = (message as JsonObject | undefined)?.content;
+    return Array.isArray(content) && content.some((block) => (block as JsonObject | null)?.type === "toolCall");
+  });
+}
+
 function isOutputTokenLimit(message: JsonObject | undefined): boolean {
   return message?.stopReason === "length" || (message?.stopReason === "error" &&
     /output token limit|max_tokens|model output limit/i.test(String(message.errorMessage ?? "")));
@@ -3823,6 +3832,8 @@ async function completeLimitedResearch(options: {
   images?: TurnImage[];
   /** Whether any Echo data retrieval ran in this request. */
   retrieved?: boolean;
+  /** The validated reply of research that ran no tool; synthesis could only rewrite it. */
+  answer?: string;
 }): Promise<void> {
   const {
     payload,
@@ -3832,7 +3843,7 @@ async function completeLimitedResearch(options: {
     deliveredFiles,
     mapRegistry,
   } = options;
-  emit({ type: "progress", summary: "Підсумовую зібрані джерела" });
+  if (!options.answer) emit({ type: "progress", summary: "Підсумовую зібрані джерела" });
   const signal = AbortSignal.any([
     options.cancellation,
     budget.finalization.signal,
@@ -3846,9 +3857,8 @@ async function completeLimitedResearch(options: {
     policy: budget.policy,
     systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}` : ""),
     prompt: JSON.stringify({
-      conversation: payload.history
-        .slice(-4)
-        .map(({ role, content }) => ({ role, content })),
+      // A quarter of the input leaves the rest for evidence.
+      conversation: synthesisConversation(payload.history, Math.floor((options.selectedEngine.contextWindow - maxTokens) / 4)),
       request: payload.prompt,
       ...(options.research ? { completedActions: options.research.completedActions(), ...options.research.groupScope(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
@@ -3863,12 +3873,12 @@ async function completeLimitedResearch(options: {
     onOutcome: options.research ? undefined : (event) => emit({ type: "completion_diagnostic", ...event, remainingMs: budget.remainingFinalizationMs() }),
     prepareContext: options.research ? (context) => options.research!.beforeProvider("synthesis", context, budget, options.toolRemaining ?? 0, payload.contextWindow, maxTokens) : undefined,
   };
-  const candidate = options.research
+  const candidate = options.answer ?? (options.research
     ? await options.research.complete(synthesis, budget)
     : await synthesizeBudgetEvidence(synthesis).catch((error) => {
         if (error instanceof SynthesisAuthorizationError || error instanceof SynthesisContentFilterError) throw error;
         return null;
-      });
+      }));
   if (options.cancellation.aborted) return;
   const availableCitations = citationsForCanonical(
     deliveredCitationsThisTurn,
@@ -4275,10 +4285,13 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       assertResearch();
       if (contextCompaction.failure()) throw contextCompaction.failure();
       if (research && budget) {
-        // Synthesis writes the answer, so research may simply end without any text.
+        // Synthesis writes the answer after tools, so research may simply end without any text.
         const researchEnd = { allowEmpty: true };
-        if (!research.noteFailedStart(lastAssistantMessage(currentTurnAssistantMessages)))
-          validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
+        const failedStart = research.noteFailedStart(lastAssistantMessage(currentTurnAssistantMessages));
+        if (!failedStart) validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
+        // The reply to the request itself: a Deep reminder to search that still runs no tool
+        // only confirms it, and its own reply is the completion note that reminder asks for.
+        const reply = failedStart ? undefined : assistantMessageText(lastAssistantMessage(currentTurnAssistantMessages));
         await continueOpenResearch(session, research, budget);
         if (journal?.failure) throw journal.failure;
         if (toolLimitError) throw toolLimitError;
@@ -4290,10 +4303,15 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         if (contentFilterFailure) throw contentFilterFailure;
         if (cancelled) return;
         validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
+        // Research that ran no tool already answered from the whole conversation. A document
+        // must be saved during research, so synthesis says when it was not.
+        const answer = !requestedTools(currentTurnAssistantMessages) && !payload.executionPolicy?.documentTask && !payload.documentTarget
+          ? research.directAnswer(reply ?? assistantMessageText(lastAssistantMessage(currentTurnAssistantMessages)), budget)
+          : undefined;
         await completeLimitedResearch({ payload, budget, selectedEngine: selectedModel,
           evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence },
           deliveredCitationsThisTurn, deliveredFiles, mapRegistry, documentRegistry, cancellation: cancellation.signal,
-          checkpoint: contextCompaction.latestCheckpoint(), research, toolRemaining: maxToolInvocations - toolInvocations, images, retrieved: echoRetrievals > 0 });
+          checkpoint: contextCompaction.latestCheckpoint(), research, toolRemaining: maxToolInvocations - toolInvocations, images, retrieved: echoRetrievals > 0, answer });
         return;
       }
       validateFinalAssistantMessage(currentTurnAssistantMessages);

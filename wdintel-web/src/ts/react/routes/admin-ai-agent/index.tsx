@@ -103,7 +103,13 @@ import { MattermostWebhookField } from './MattermostWebhookField';
 import { ProviderHealthEditor } from './ProviderHealthEditor';
 import { errorMessage, formatDateTime, statusColor } from './format';
 import { RequestDetailsDialog } from './request-details/RequestDetailsDialog';
-import { readAiAgentRequestDeepLink, writeAiAgentRequestDeepLink } from './url-state';
+import { RequestIdSearchField } from './RequestIdSearchField';
+import {
+  readAiAgentRequestDeepLink,
+  readAiAgentRequestSearch,
+  writeAiAgentRequestDeepLink,
+  writeAiAgentRequestSearch,
+} from './url-state';
 
 export type AiAgentAdminSection =
   | 'providers'
@@ -629,6 +635,8 @@ function RequestsPage() {
   const [firstPage, setFirstPage] = useState(1);
   const loadVersion = useRef(0);
   const openVersion = useRef(0);
+  const [searchId, setSearchId] = useState(() => readAiAgentRequestSearch());
+  const searchRef = useRef(searchId);
   const [selected, setSelected] = useState<AiAgentAuditRequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -640,14 +648,25 @@ function RequestsPage() {
       if (requestId) void openRequest(requestId);
       else closeRequest();
     };
+    const onPopState = () => {
+      const nextSearch = readAiAgentRequestSearch();
+      if (nextSearch !== searchRef.current) search(nextSearch);
+      openDeepLink();
+    };
     void load().then(openDeepLink);
-    window.addEventListener('popstate', openDeepLink);
+    window.addEventListener('popstate', onPopState);
     return () => {
       loadVersion.current += 1;
       openVersion.current += 1;
-      window.removeEventListener('popstate', openDeepLink);
+      window.removeEventListener('popstate', onPopState);
     };
   }, []);
+
+  function search(nextSearch: string | null) {
+    searchRef.current = nextSearch;
+    setSearchId(nextSearch);
+    void load();
+  }
 
   async function load(nextPage = 1, append = false) {
     const version = ++loadVersion.current;
@@ -656,6 +675,7 @@ function RequestsPage() {
     try {
       const response = await listAiAgentAuditRequests(
         nextPage === 1 ? null : pageStartIds[nextPage - 1],
+        searchRef.current,
       );
       if (version !== loadVersion.current) return;
       setRequests((current) => (append ? [...current, ...response.items] : response.items));
@@ -719,6 +739,15 @@ function RequestsPage() {
         <TablePageToolbar
           title="Запити ШІ агентів"
           withGlobalTextFilter
+          filter={
+            <RequestIdSearchField
+              value={searchId}
+              onSearch={(nextSearch) => {
+                writeAiAgentRequestSearch(nextSearch);
+                search(nextSearch);
+              }}
+            />
+          }
           internalActionsDisabled={loading && requests.length === 0}
           actions={
             <PowerButton

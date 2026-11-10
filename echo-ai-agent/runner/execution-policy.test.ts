@@ -14,6 +14,7 @@ import {
   terminalProviderFailure,
   validateExecutionPolicy,
   type ExecutionPolicy,
+  synthesisConversation,
 } from "./execution-policy.ts";
 import { fileCitationHref } from "./devices.ts";
 
@@ -478,4 +479,27 @@ test("#4112 reports provider failures that end a run so Echo can offer another m
   );
   assert.equal(terminalProviderFailure(new Error("bootstrap exchange returned HTTP 500")), null);
   assert.equal(terminalProviderFailure(new Error("work journal append failed")), null);
+});
+
+test("#4115 synthesis keeps the opening rules and the newest turns within its budget", () => {
+  const entry = (role: string, chars: number, tag: string) => ({ role, content: `${tag}${"x".repeat(chars - tag.length)}` });
+  const history = [
+    entry("user", 30, "rules"),
+    entry("assistant", 300, "a1"),
+    entry("user", 300, "u2"),
+    entry("assistant", 300, "a2"),
+    entry("user", 300, "u3"),
+  ];
+  const tags = (budget: number, from = history) =>
+    synthesisConversation(from, budget).map(({ content }) => content.replace(/x+$/, ""));
+  // 10 tokens of rules, then 100 per entry, newest first, oldest first in the result.
+  assert.deepEqual(tags(230), ["rules", "a2", "u3"]);
+  // A gap stops filling, so the recent part stays contiguous.
+  assert.deepEqual(tags(320, [...history.slice(0, 3), entry("assistant", 900, "big"), history[4]]), ["rules", "u3"]);
+  // Rules larger than half the budget give way to recent turns.
+  assert.deepEqual(tags(210, [entry("user", 330, "rules"), ...history.slice(1)]), ["a2", "u3"]);
+  // A short history is kept whole, without a duplicate opening.
+  assert.deepEqual(tags(10_000), ["rules", "a1", "u2", "a2", "u3"]);
+  assert.deepEqual(synthesisConversation([], 1000), []);
+  assert.deepEqual(Object.keys(synthesisConversation([{ role: "user", content: "a", citations: [] } as any], 10)[0]), ["role", "content"]);
 });

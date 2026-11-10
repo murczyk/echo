@@ -397,6 +397,8 @@ pub struct AiAgentAdminRequestListReq {
     pub state: Option<String>,
     pub suspicious: Option<bool>,
     pub page_start_id: Option<String>,
+    /// Matches either a request ID or a conversation ID.
+    pub search_id: Option<String>,
 }
 
 #[derive(
