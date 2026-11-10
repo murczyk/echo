@@ -1123,12 +1123,19 @@ export function AiAgentChat({
     window.requestAnimationFrame(() => collapsedHistoryToggleRef.current?.focus());
   }
 
-  /** Selects `candidateId`, or a healthy engine when an admin marked it unhealthy. */
+  /**
+   * Selects `candidateId`, the default when the chat no longer offers it, or a healthy
+   * engine when an admin marked the choice unhealthy.
+   */
   function chooseProvider(candidateId: string) {
-    if (!candidateId) return;
-    const replacement = healthyReplacement(configurationRef.current, candidateId);
-    setProviderId(replacement?.id ?? candidateId);
-    setReplacedProviderId(replacement ? candidateId : null);
+    const offered = configurationRef.current?.providers.some(
+      (provider) => provider.id === candidateId,
+    );
+    const choice = offered ? candidateId : defaultProviderIdRef.current;
+    if (!choice) return;
+    const replacement = healthyReplacement(configurationRef.current, choice);
+    setProviderId(replacement?.id ?? choice);
+    setReplacedProviderId(replacement ? choice : null);
   }
 
   function selectProviderExplicitly(id: string) {
@@ -1785,10 +1792,12 @@ export function AiAgentChat({
     ? null
     : modelFallback(conversationTurns(messages, liveRequests), providers);
   const fallbackTurn = fallback?.turn;
+  // The suggested engine is offered even when the failed turn's engine no longer is.
+  const fallbackDisabled = interactionLocked || loadingConversation || conversationLoadFailed;
   const fallbackActions = fallback ? (
     <ModelFallbackActions
       next={fallback.next}
-      disabled={retryDisabled}
+      disabled={fallbackDisabled}
       onSwitch={(provider) => retryWithProvider(fallback.turn, provider)}
       onRetry={
         fallback.turn.state === 'completed' &&

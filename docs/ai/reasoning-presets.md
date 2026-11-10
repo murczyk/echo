@@ -83,7 +83,9 @@ Echo also records `model_refusal` with `coverageLimited: false` (#4112): on a fi
 answer whose opening declines an operational request (`wdintel-rs/src/ai_agent/refusal.rs`,
 patterns in `config.rs` under `AI_AGENT_REFUSAL_`), and on a run that failed after the
 runner reported a content filter. A run that failed after a provider error or rate limit
-records `provider_error` the same way. The chat offers another model for both reasons.
+records `provider_error` the same way, and so does research that only fell back to a saved
+draft (`incomplete_research`) because the provider kept failing without a later reply.
+The chat offers another model for both reasons.
 Conversation reload restores the selected preset, worker start time, and completion metadata.
 
 The new modes use the selected provider for checkpoints. Luna's vision role,

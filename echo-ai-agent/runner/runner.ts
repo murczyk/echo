@@ -3721,6 +3721,9 @@ export function validateFinalAssistantMessage(
     if (/context window|context length|input exceeds/i.test(errorMessage)) {
       throw new Error("provider context window exceeded");
     }
+    if (/content_filter|ResponsibleAIPolicyViolation/i.test(errorMessage)) {
+      throw new Error("provider request failed: content_filter: provider content filter");
+    }
     throw new Error(
       `provider request failed: ${providerFailureDetail(errorMessage)}`,
     );

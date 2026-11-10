@@ -306,28 +306,25 @@ function providerFailureFacts(
 
 /**
  * A provider failure or filter that ended the run, reported so Echo can offer another
- * model (#4112). Authorization and infrastructure failures report nothing.
+ * model (#4112). Only provider-origin errors count: the typed content-filter error and the
+ * `provider request failed: <kind>: …` errors the runner raises for a failed model reply.
+ * Authorization, Echo-side and infrastructure failures report nothing.
  */
 export function terminalProviderFailure(
   error: unknown,
 ): ({ type: "completion_diagnostic" } & CompletionDiagnostic) | null {
-  const message = error instanceof Error ? error.message : String(error ?? "");
-  if (isProviderAuthorizationError(message)) return null;
-  if (
-    error instanceof SynthesisContentFilterError ||
-    /content_filter|ResponsibleAIPolicyViolation/i.test(message)
-  )
+  if (error instanceof SynthesisContentFilterError)
     return { type: "completion_diagnostic", stage: "answer", outcome: "content_filter" };
-  if (
-    /\b(429|50[0234])\b|rate.?limit|too many requests|no deployments available|provider (connection|request) failed/i.test(
-      message,
-    )
-  )
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const kind = message.match(/provider request failed: ([a-z_]+)/)?.[1];
+  if (kind === "content_filter")
+    return { type: "completion_diagnostic", stage: "answer", outcome: "content_filter" };
+  if (kind === "rate_limit" || kind === "interrupted_stream" || kind === "provider_error")
     return {
       type: "completion_diagnostic",
       stage: "answer",
       outcome: "transient_error",
-      ...providerFailureFacts(message),
+      failureKind: kind,
     };
   return null;
 }

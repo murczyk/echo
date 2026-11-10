@@ -75,6 +75,21 @@ test("rejects provider errors and empty assistant responses", () => {
   );
 });
 
+test("#4112 keeps a provider content filter recognizable", () => {
+  assert.throws(
+    () =>
+      validateFinalAssistantMessage([
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "400 content_filter: ResponsibleAIPolicyViolation",
+          content: [],
+        },
+      ]),
+    /provider request failed: content_filter/,
+  );
+});
+
 test("classifies provider output and context limits", () => {
   assert.throws(
     () =>

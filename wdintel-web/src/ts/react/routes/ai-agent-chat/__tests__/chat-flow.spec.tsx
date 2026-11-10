@@ -1721,6 +1721,15 @@ describe('#4112 switching engines after a provider failure or refusal', () => {
     expect(buttonTexts().some((text) => text?.startsWith('Спробувати з'))).toBe(false);
   });
 
+  it('offers a replacement when the failed engine is no longer offered', async () => {
+    await openConversation(turn('request-removed', 'provider-removed', PROVIDER_ERROR));
+    expect(selector('Провайдер ШІ').textContent).toContain(PROVIDER.name);
+    const fallback = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Спробувати з Gemma',
+    );
+    expect(fallback?.disabled).toBe(false);
+  });
+
   it('switches the engine mid-conversation', async () => {
     await openConversation(turn('request-ok', PROVIDER.id, null));
     await chooseOption('Провайдер ШІ', SOL.name);

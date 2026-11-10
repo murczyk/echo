@@ -430,6 +430,7 @@ async fn process_claimed_request(
     }
     match result {
         Ok(RunOutcome::Completed(response, metadata)) => {
+            let metadata = provider_limited_metadata(metadata, model_failure);
             if let Err(err) =
                 complete_request(env, request_id, response, metadata).await
             {
@@ -858,9 +859,7 @@ async fn run_request_inner(
                     }
                     if let Some(diagnostic) = events::completion_diagnostic(&event) {
                         info!("AI agent completion request_id={} diagnostic={diagnostic}", request.id);
-                        if let Some(reason) = model_failure_reason(&diagnostic) {
-                            *model_failure = Some(reason);
-                        }
+                        *model_failure = next_model_failure(*model_failure, &diagnostic);
                         continue;
                     }
                     if let Some(diagnostic) = events::tool_diagnostic(&event) {
@@ -1448,20 +1447,50 @@ fn interrupted_error() -> AppError {
     }
 }
 
-/// Which completion reason a failed run gets from a provider diagnostic, so
-/// the chat can offer another model. Infrastructure failures produce none.
-fn model_failure_reason(diagnostic: &Value) -> Option<&'static str> {
-    if diagnostic.get("failureKind").and_then(Value::as_str)
-        == Some("authorization")
+/// The model failure still standing after a provider diagnostic, so a run
+/// that ends on it can offer another model. A later provider reply or an
+/// authorization failure clears an earlier one; progress outcomes keep it.
+fn next_model_failure(
+    current: Option<&'static str>,
+    diagnostic: &Value,
+) -> Option<&'static str> {
+    let outcome = diagnostic.get("outcome").and_then(Value::as_str);
+    if outcome == Some("authorization")
+        || diagnostic.get("failureKind").and_then(Value::as_str)
+            == Some("authorization")
     {
         return None;
     }
-    match diagnostic.get("outcome").and_then(Value::as_str)? {
-        "content_filter" => Some(AI_AGENT_REASON_MODEL_REFUSAL),
-        "provider_error" | "transient_error" => {
+    match outcome {
+        // The provider answered, even if the answer itself was unusable.
+        Some(
+            "complete" | "output_limit" | "empty" | "citation_rejected"
+            | "no_evidence",
+        ) => None,
+        Some("content_filter") => Some(AI_AGENT_REASON_MODEL_REFUSAL),
+        Some("provider_error" | "transient_error") => {
             Some(AI_AGENT_REASON_PROVIDER_ERROR)
         }
-        _ => None,
+        _ => current,
+    }
+}
+
+/// Research that only fell back to a saved draft because the provider kept
+/// failing reports the provider, not unfinished research, so the chat
+/// offers another model instead of a Deep continuation on the same one.
+fn provider_limited_metadata(
+    metadata: Option<super::types::AiAgentCompletionMetadata>,
+    model_failure: Option<&'static str>,
+) -> Option<super::types::AiAgentCompletionMetadata> {
+    match metadata {
+        Some(mut metadata)
+            if metadata.reason == "incomplete_research"
+                && model_failure == Some(AI_AGENT_REASON_PROVIDER_ERROR) =>
+        {
+            metadata.reason = AI_AGENT_REASON_PROVIDER_ERROR.to_string();
+            Some(metadata)
+        }
+        metadata => metadata,
     }
 }
 
@@ -2002,28 +2031,86 @@ mod tests {
 
     #[test]
     fn issue_4112_provider_diagnostics_choose_the_chat_reason() {
-        let reason = |diagnostic: serde_json::Value| {
-            super::model_failure_reason(&diagnostic)
+        let after = |diagnostics: &[serde_json::Value]| {
+            diagnostics.iter().fold(None, |current, diagnostic| {
+                super::next_model_failure(current, diagnostic)
+            })
         };
+        let failed = json!({"outcome": "transient_error", "httpStatus": 503});
         assert_eq!(
-            reason(json!({"outcome": "transient_error", "httpStatus": 500})),
+            after(std::slice::from_ref(&failed)),
             Some("provider_error")
         );
         assert_eq!(
-            reason(json!({"outcome": "provider_error", "stage": "research"})),
+            after(&[json!({"outcome": "provider_error", "stage": "research"})]),
             Some("provider_error")
         );
         assert_eq!(
-            reason(json!({"outcome": "content_filter"})),
+            after(&[json!({"outcome": "content_filter"})]),
             Some("model_refusal")
         );
         assert_eq!(
-            reason(
+            after(&[failed.clone(), json!({"outcome": "continued"})]),
+            Some("provider_error"),
+            "progress keeps the failure"
+        );
+        assert_eq!(
+            after(&[failed.clone(), json!({"outcome": "complete"})]),
+            None,
+            "a later reply succeeded"
+        );
+        assert_eq!(
+            after(&[
+                failed.clone(),
                 json!({"outcome": "transient_error", "failureKind": "authorization"})
-            ),
+            ]),
+            None,
+            "authorization ended the run"
+        );
+        assert_eq!(
+            after(&[failed.clone(), json!({"outcome": "authorization"})]),
             None
         );
-        assert_eq!(reason(json!({"outcome": "continued"})), None);
+        assert_eq!(
+            after(&[failed, json!({"outcome": "citation_rejected"})]),
+            None,
+            "the provider answered"
+        );
+    }
+
+    #[test]
+    fn issue_4112_provider_failure_replaces_incomplete_research() {
+        let metadata = |reason: &str| {
+            Some(crate::ai_agent::types::AiAgentCompletionMetadata {
+                coverage_limited: true,
+                reason: reason.to_string(),
+            })
+        };
+        assert_eq!(
+            super::provider_limited_metadata(
+                metadata("incomplete_research"),
+                Some("provider_error")
+            ),
+            metadata("provider_error")
+        );
+        assert_eq!(
+            super::provider_limited_metadata(
+                metadata("incomplete_research"),
+                None
+            ),
+            metadata("incomplete_research")
+        );
+        assert_eq!(
+            super::provider_limited_metadata(
+                metadata("time_limit"),
+                Some("provider_error")
+            ),
+            metadata("time_limit")
+        );
+        assert_eq!(
+            super::provider_limited_metadata(None, Some("provider_error")),
+            None
+        );
     }
 
     #[test]

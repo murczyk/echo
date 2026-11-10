@@ -428,16 +428,21 @@ test("#3985 document requests in short modes and Deep runs get their own budgets
 });
 
 test("#4112 reports provider failures that end a run so Echo can offer another model", () => {
-  assert.deepEqual(terminalProviderFailure(new Error("500 Provider request failed")), {
-    type: "completion_diagnostic",
-    stage: "answer",
-    outcome: "transient_error",
-    failureKind: "provider_error",
-    httpStatus: 500,
-  });
+  assert.deepEqual(
+    terminalProviderFailure(
+      new Error("provider request failed: provider_error: unclassified provider failure"),
+    ),
+    {
+      type: "completion_diagnostic",
+      stage: "answer",
+      outcome: "transient_error",
+      failureKind: "provider_error",
+    },
+  );
   assert.equal(
-    terminalProviderFailure(new Error("429 No deployments available for selected model"))
-      ?.failureKind,
+    terminalProviderFailure(
+      new Error("provider request failed: rate_limit: provider rate limit or model deployment cooldown"),
+    )?.failureKind,
     "rate_limit",
   );
   assert.deepEqual(terminalProviderFailure(new SynthesisContentFilterError("filtered")), {
@@ -446,9 +451,17 @@ test("#4112 reports provider failures that end a run so Echo can offer another m
     outcome: "content_filter",
   });
   assert.equal(
-    terminalProviderFailure(new Error("ResponsibleAIPolicyViolation"))?.outcome,
+    terminalProviderFailure(
+      new Error("provider request failed: content_filter: provider content filter"),
+    )?.outcome,
     "content_filter",
   );
-  assert.equal(terminalProviderFailure(new Error("401 Unauthorized")), null);
+  assert.equal(
+    terminalProviderFailure(
+      new Error("provider request failed: authorization: provider authorization rejected"),
+    ),
+    null,
+  );
+  assert.equal(terminalProviderFailure(new Error("bootstrap exchange returned HTTP 500")), null);
   assert.equal(terminalProviderFailure(new Error("work journal append failed")), null);
 });
