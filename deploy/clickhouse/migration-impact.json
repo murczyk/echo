@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261110_072243_ai_engine_health_and_agent_order": {
+      "changes": [
+        { "table": "public.ai_engine", "strategy": "excluded" },
+        { "table": "public.ai_agent_allowed_engine", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261109_141057_group_message_sending": {
       "changes": [
         { "table": "public.signal_group", "strategy": "cdc_additive" },

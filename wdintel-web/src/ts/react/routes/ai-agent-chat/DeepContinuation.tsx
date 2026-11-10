@@ -5,6 +5,7 @@ import { useId } from 'react';
 import { PowerButton } from '../../components/PowerButton';
 import type { AiAgentMessage } from '../../services/api/ai-agent';
 import type { LiveRequest } from './index';
+import { modelFailureNote } from './provider-fallback';
 
 // Follow-ups may legitimately reuse the previous answer without using tools, so the
 // prompt has to ask for the work itself. It stays task-neutral: the unfinished request
@@ -32,6 +33,7 @@ export function continuableRequestId(
   return requestId &&
     state === 'completed' &&
     latest?.completionMetadata?.coverageLimited &&
+    !modelFailureNote(latest.completionMetadata) &&
     latest.reasoningPreset !== 'deep'
     ? requestId
     : null;

@@ -972,6 +972,10 @@ mod tests {
             callsign_enabled: true,
             ocr_enabled: false,
             ocr_request_profile: "openai_vision".to_string(),
+            unhealthy: None,
+            health_message: None,
+            health_updated_at: None,
+            health_updated_by_login_id: None,
         }
     }
 
@@ -1539,6 +1543,10 @@ mod tests {
                 callsign_enabled: Set(callsign_enabled),
                 ocr_enabled: Set(false),
                 ocr_request_profile: Set("openai_vision".to_string()),
+                unhealthy: Set(None),
+                health_message: Set(None),
+                health_updated_at: Set(None),
+                health_updated_by_login_id: Set(None),
             };
         let disabled =
             insert_engine(false, true).insert(&env.dbx).await.unwrap();

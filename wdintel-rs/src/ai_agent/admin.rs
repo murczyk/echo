@@ -19,6 +19,7 @@ use crate::mattermost;
 use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::{get, post, web::Json};
+use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
@@ -212,10 +213,11 @@ pub async fn update_settings(
         .exec(&txn)
         .await
         .c(h!())?;
-    for ai_engine_id in allowed_ids {
+    for (position, ai_engine_id) in (0..).zip(allowed_ids) {
         ai_agent_allowed_engine::ActiveModel {
             ai_engine_id: Set(ai_engine_id),
             created_at: Set(Utc::now().naive_utc()),
+            position: Set(Some(position)),
         }
         .insert(&txn)
         .await
@@ -286,14 +288,12 @@ async fn settings_item(
 ) -> Result<AiAgentAdminSettingsItem, AppError> {
     let settings = access::settings(&env.dbx).await?;
     let template_login_id = access::template_login_id(&settings)?;
-    let mut allowed_ai_engine_ids = ai_agent_allowed_engine::Entity::find()
-        .all(&env.dbx)
+    let allowed_ai_engine_ids = access::ordered_allowed_engines(&env.dbx)
         .await
-        .c(h!())?
+        .context(h!())?
         .into_iter()
-        .map(|allowed| allowed.ai_engine_id.to_string())
+        .map(|ai_engine| ai_engine.id.to_string())
         .collect::<Vec<_>>();
-    allowed_ai_engine_ids.sort();
     let mut provider_runtime_profiles =
         ai_agent_engine_runtime_profile::Entity::find()
             .all(&env.dbx)

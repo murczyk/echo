@@ -25,6 +25,10 @@ async fn issue_3913_government_cooldown_is_shared_across_engine_rows_and_respect
             callsign_enabled: true,
             ocr_enabled: false,
             ocr_request_profile: "openai_vision".to_string(),
+            unhealthy: None,
+            health_message: None,
+            health_updated_at: None,
+            health_updated_by_login_id: None,
         };
         let other_engine = ai_engine::Model {
             id: uuid::Uuid::new_v4(),
@@ -466,6 +470,10 @@ fn metrics_test_engine(url: &str) -> ai_engine::Model {
         callsign_enabled: false,
         ocr_enabled: false,
         ocr_request_profile: "openai_vision".to_string(),
+        unhealthy: None,
+        health_message: None,
+        health_updated_at: None,
+        health_updated_by_login_id: None,
     }
 }
 

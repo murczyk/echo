@@ -4,6 +4,7 @@ import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import StopOutlinedIcon from '@mui/icons-material/StopOutlined';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import {
   Badge,
   Box,
@@ -85,6 +86,16 @@ import {
   isConversationId,
   writeConversationUrl,
 } from './conversation-url';
+import { ModelFallbackActions } from './ModelFallback';
+import {
+  conversationTurns,
+  healthyReplacement,
+  modelFailureNote,
+  modelFallback,
+  nextProvider,
+  presetFor,
+} from './provider-fallback';
+import type { ConversationTurn } from './provider-fallback';
 import {
   continuableRequestId,
   DEEP_CONTINUATION_PROMPT,
@@ -101,6 +112,7 @@ import {
   AiAgentConversationDetail,
   AiAgentEvent,
   AiAgentMessage,
+  AiAgentProvider,
   AiAgentRequestState,
   AiAgentUpload,
   cancelAiAgentRequest,
@@ -123,6 +135,8 @@ type Source = { title: string; url: string | null };
 
 export type LiveRequest = {
   reasoningPreset?: AiAgentReasoningPreset | null;
+  /** The engine the request was sent to; turns may switch engines (#4112). */
+  providerId?: string | null;
   maxRuntimeSeconds?: number | null;
   startedAt?: number | null;
   completionMetadata?: AiAgentCompletionMetadata | null;
@@ -181,6 +195,7 @@ const TERMINAL_STATES = new Set<AiAgentRequestState>(['completed', 'failed', 'ca
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 48;
 const GENERIC_REQUEST_FAILURE = 'Не вдалося виконати запит. Спробуйте ще раз.';
 const GENERIC_STREAM_FAILURE = 'Не вдалося відновити з’єднання з потоком відповіді.';
+const PROVIDER_UNHEALTHY_DEFAULT = 'провайдер тимчасово працює нестабільно.';
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'echo.ai-agent.active-conversation-id';
 
 export const AI_AGENT_CHAT_CARD_HEIGHT = '100%';
@@ -261,13 +276,9 @@ export function historyPaneMotionStyles(open: boolean) {
   } as const;
 }
 
-export function providerOptionDisabled(
-  enabled: boolean,
-  activeConversationId: string | null,
-  selectedProviderId: string,
-  optionProviderId: string,
-): boolean {
-  return !enabled || Boolean(activeConversationId && optionProviderId !== selectedProviderId);
+/** Any offered engine may be chosen, also mid-conversation (#4112). */
+export function providerOptionDisabled(enabled: boolean): boolean {
+  return !enabled;
 }
 
 function viewportIsNearBottom(): boolean {
@@ -303,6 +314,7 @@ export function activeRequestsFromConversation(
       id: message.requestId,
       conversationId: conversation.id,
       prompt: message.content,
+      providerId: message.aiEngineId ?? null,
       reasoningPreset: message.reasoningPreset,
       maxRuntimeSeconds: message.maxRuntimeSeconds,
       startedAt: message.startedAt,
@@ -548,12 +560,14 @@ export function MarkdownContent({
 
 function AssistantMessage({
   content,
+  engineName,
   citations = [],
   fileCitations = [],
   maps = [],
   documents = [],
 }: {
   content: string;
+  engineName?: string | null;
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
@@ -582,6 +596,7 @@ function AssistantMessage({
     >
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
+        {engineName ? ` · ${engineName}` : ''}
       </Typography>
       <MarkdownContent
         citations={citations}
@@ -617,26 +632,42 @@ function ConversationMessage({
   continuation,
 }: {
   message: AiAgentMessage;
-  onRetry?: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
+  onRetry?: (
+    prompt: string,
+    preset?: AiAgentReasoningPreset | null,
+    providerId?: string | null,
+  ) => void;
   retryDisabled?: boolean;
   continuation?: ReactNode;
 }) {
+  const failureNote = modelFailureNote(message.completionMetadata);
   if (message.role === 'assistant') {
     return (
       <Stack spacing={0.5}>
-        {message.startedAt ? (
+        {message.startedAt || failureNote ? (
           <Typography variant="caption" color="text.secondary">
-            <RequestDuration
-              createdAt={message.startedAt}
-              finishedAt={message.createdAt}
-              active={false}
-            />
-            {message.completionMetadata?.coverageLimited && message.reasoningPreset !== 'deep'
-              ? ' · Охоплення джерел неповне'
-              : ''}
+            {message.startedAt ? (
+              <RequestDuration
+                createdAt={message.startedAt}
+                finishedAt={message.createdAt}
+                active={false}
+              />
+            ) : null}
+            {failureNote ? (
+              <Box component="span" sx={{ color: 'warning.main' }}>
+                {message.startedAt ? ' · ' : ''}
+                {failureNote}
+              </Box>
+            ) : message.completionMetadata?.coverageLimited &&
+              message.reasoningPreset !== 'deep' ? (
+              ' · Охоплення джерел неповне'
+            ) : (
+              ''
+            )}
           </Typography>
         ) : null}
         <AssistantMessage
+          engineName={message.aiEngineName}
           content={message.content}
           citations={message.citations}
           fileCitations={message.fileCitations}
@@ -650,7 +681,9 @@ function ConversationMessage({
 
   const stateMessage =
     message.requestState === 'failed'
-      ? GENERIC_REQUEST_FAILURE
+      ? failureNote
+        ? `${failureNote}.`
+        : GENERIC_REQUEST_FAILURE
       : message.requestState === 'cancelled'
         ? 'Запит скасовано.'
         : null;
@@ -693,27 +726,94 @@ function ConversationMessage({
           color="inherit"
           startIcon={<RefreshIcon />}
           disabled={retryDisabled}
-          onClick={() => onRetry(message.content, message.reasoningPreset)}
+          onClick={() => onRetry(message.content, message.reasoningPreset, message.aiEngineId)}
           sx={{ mt: 0.5, color: 'text.secondary' }}
         >
           Спробувати ще раз
         </PowerButton>
       ) : null}
+      {continuation ? <Box sx={{ mt: 0.5 }}>{continuation}</Box> : null}
+    </Box>
+  );
+}
+
+/** Warns about an unhealthy engine; the action wraps under the text on narrow screens. */
+function ProviderHealthNotice({
+  message,
+  actionLabel,
+  onAction,
+}: {
+  message: string;
+  actionLabel: string | null;
+  onAction: () => void;
+}) {
+  return (
+    <PowerAlert
+      severity="warning"
+      autoHideDuration={null}
+      dismissible={false}
+      sx={{
+        width: '100%',
+        maxWidth: 768,
+        alignSelf: 'center',
+        mb: 1,
+        '& .MuiAlert-message': { minWidth: 0 },
+      }}
+    >
+      <Stack spacing={0.5} alignItems="flex-start">
+        <span>{message}</span>
+        {actionLabel ? (
+          <PowerButton
+            type="button"
+            size="small"
+            color="inherit"
+            variant="outlined"
+            style={{ whiteSpace: 'normal' }}
+            onClick={onAction}
+          >
+            {actionLabel}
+          </PowerButton>
+        ) : null}
+      </Stack>
+    </PowerAlert>
+  );
+}
+
+/** An engine's name; unhealthy engines show a warning colour and icon (#4112). */
+function ProviderName({ provider }: { provider?: AiAgentProvider | null }) {
+  if (!provider) return null;
+  if (!provider.unhealthy) return <>{provider.name}</>;
+  return (
+    <Box
+      component="span"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'warning.main' }}
+    >
+      <WarningAmberRoundedIcon sx={{ fontSize: '1em' }} aria-label="Несправний" />
+      {provider.name}
     </Box>
   );
 }
 
 function LiveResponse({
   request,
+  engineName,
   continuation,
 }: {
   request: LiveRequest;
+  engineName?: string | null;
   continuation?: ReactNode;
 }) {
+  const failureNote = modelFailureNote(request.completionMetadata);
   return (
     <Stack spacing={1.5} alignItems="flex-start">
+      {failureNote && request.state === 'completed' ? (
+        <Typography variant="caption" sx={{ color: 'warning.main' }}>
+          {failureNote}
+        </Typography>
+      ) : null}
       {request.assistantText || request.maps?.length || request.documents?.length ? (
         <AssistantMessage
+          engineName={engineName}
           content={request.assistantText}
           citations={request.citations}
           fileCitations={request.fileCitations}
@@ -724,7 +824,9 @@ function LiveResponse({
       {continuation}
 
       {request.state === 'failed' ? (
-        <PowerAlert severity="error">{GENERIC_REQUEST_FAILURE}</PowerAlert>
+        <PowerAlert severity="error">
+          {failureNote ? `${failureNote}.` : GENERIC_REQUEST_FAILURE}
+        </PowerAlert>
       ) : null}
       {request.state === 'cancelled' ? (
         <PowerAlert severity="info">Запит скасовано.</PowerAlert>
@@ -802,6 +904,7 @@ function RequestControls({
 
 function LiveRequestView({
   request,
+  engineName,
   cancelling,
   onCancel,
   onReconnect,
@@ -810,15 +913,21 @@ function LiveRequestView({
   continuation,
 }: {
   request: LiveRequest;
+  engineName?: string | null;
   cancelling: boolean;
   onCancel: (id: string) => void;
   onReconnect: (request: LiveRequest) => void;
-  onRetry: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
+  onRetry: (
+    prompt: string,
+    preset?: AiAgentReasoningPreset | null,
+    providerId?: string | null,
+  ) => void;
   retryDisabled: boolean;
   continuation?: ReactNode;
 }) {
   const prompt: AiAgentMessage = {
     reasoningPreset: request.reasoningPreset,
+    aiEngineId: request.providerId ?? null,
     maxRuntimeSeconds: request.maxRuntimeSeconds,
     startedAt: request.startedAt,
     completionMetadata: request.completionMetadata,
@@ -869,7 +978,7 @@ function LiveRequestView({
           ) : undefined
         }
       />
-      <LiveResponse request={request} continuation={continuation} />
+      <LiveResponse request={request} engineName={engineName} continuation={continuation} />
     </Stack>
   );
 }
@@ -884,6 +993,8 @@ export function AiAgentChat({
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiAgentMessage[]>([]);
   const [providerId, setProviderId] = useState('');
+  // An admin marked this engine unhealthy, so a healthy one was preselected (#4112).
+  const [replacedProviderId, setReplacedProviderId] = useState<string | null>(null);
   const [reasoningPreset, setReasoningPreset] =
     useState<AiAgentReasoningPreset>(rememberedReasoningPreset);
   const [draft, setDraft] = useState('');
@@ -923,6 +1034,13 @@ export function AiAgentChat({
   const deletedIdsRef = useRef(new Set<string>());
   const requestedConversationIdRef = useRef<string | null>(null);
   const defaultProviderIdRef = useRef('');
+  const configurationRef = useRef<AiAgentConfiguration | null>(null);
+  const providerIdRef = useRef('');
+  providerIdRef.current = providerId;
+  const replacedProviderIdRef = useRef<string | null>(null);
+  replacedProviderIdRef.current = replacedProviderId;
+  // The user picked the engine in this view, so health changes must not replace it.
+  const explicitProviderRef = useRef(false);
   const readyRef = useRef(false);
   const mountedRef = useRef(true);
   const followOutputRef = useRef(false);
@@ -933,6 +1051,8 @@ export function AiAgentChat({
   navigationRef.current = syncConversationUrl;
   const resetRef = useRef(resetConversationView);
   resetRef.current = resetConversationView;
+  const refreshConfigurationRef = useRef(refreshConfiguration);
+  refreshConfigurationRef.current = refreshConfiguration;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -946,14 +1066,24 @@ export function AiAgentChat({
       requestedConversationIdRef.current = null;
       resetRef.current();
     };
+    // An admin may mark an engine unhealthy while the page stays open.
+    const refreshHealth = () => {
+      if (readyRef.current && document.visibilityState === 'visible') {
+        void refreshConfigurationRef.current();
+      }
+    };
     window.addEventListener('popstate', navigate);
     window.addEventListener(AI_AGENT_NEW_CONVERSATION_EVENT, reset);
+    window.addEventListener('focus', refreshHealth);
+    document.addEventListener('visibilitychange', refreshHealth);
     void loadPage();
     return () => {
       mountedRef.current = false;
       viewSequenceRef.current += 1;
       window.removeEventListener('popstate', navigate);
       window.removeEventListener(AI_AGENT_NEW_CONVERSATION_EVENT, reset);
+      window.removeEventListener('focus', refreshHealth);
+      document.removeEventListener('visibilitychange', refreshHealth);
       for (const controller of streamAbortRefs.current.values()) controller.abort();
       streamAbortRefs.current.clear();
     };
@@ -993,6 +1123,52 @@ export function AiAgentChat({
     window.requestAnimationFrame(() => collapsedHistoryToggleRef.current?.focus());
   }
 
+  /**
+   * Selects `candidateId`, the default when the chat no longer offers it, or a healthy
+   * engine when an admin marked the choice unhealthy.
+   */
+  function chooseProvider(candidateId: string) {
+    const offered = configurationRef.current?.providers.some(
+      (provider) => provider.id === candidateId,
+    );
+    const choice = offered ? candidateId : defaultProviderIdRef.current;
+    if (!choice) return;
+    const replacement = healthyReplacement(configurationRef.current, choice);
+    setProviderId(replacement?.id ?? choice);
+    setReplacedProviderId(replacement ? choice : null);
+  }
+
+  function selectProviderExplicitly(id: string) {
+    explicitProviderRef.current = true;
+    setReplacedProviderId(null);
+    setProviderId(id);
+  }
+
+  async function refreshConfiguration() {
+    try {
+      const next = await getAiAgentConfiguration();
+      if (!mountedRef.current) return;
+      const wasEnabled = configurationRef.current?.enabled;
+      configurationRef.current = next;
+      setConfiguration(next);
+      // The home page shows the classic view while the chat is switched off.
+      if (wasEnabled !== next.enabled) {
+        onAvailabilityChange?.(next.enabled ? 'enabled' : 'disabled');
+      }
+      // An admin may have removed the current or default engine meanwhile.
+      defaultProviderIdRef.current = rememberedProviderId(next);
+      const selectedOffered = next.providers.some(
+        (provider) => provider.id === providerIdRef.current,
+      );
+      if (!selectedOffered) explicitProviderRef.current = false;
+      if (!explicitProviderRef.current) {
+        chooseProvider(replacedProviderIdRef.current ?? providerIdRef.current);
+      }
+    } catch (_) {
+      // The last configuration stays; the next focus or finished request retries.
+    }
+  }
+
   async function loadPage() {
     setLoading(true);
     setUnavailable(false);
@@ -1000,9 +1176,10 @@ export function AiAgentChat({
     try {
       const nextConfiguration = await getAiAgentConfiguration();
       if (!mountedRef.current) return;
+      configurationRef.current = nextConfiguration;
       setConfiguration(nextConfiguration);
       defaultProviderIdRef.current = rememberedProviderId(nextConfiguration);
-      setProviderId(defaultProviderIdRef.current);
+      chooseProvider(defaultProviderIdRef.current);
       if (nextConfiguration.enabled) {
         const nextConversations = await listAiAgentConversations();
         if (!mountedRef.current) return;
@@ -1130,7 +1307,9 @@ export function AiAgentChat({
     activeConversationIdRef.current = conversation.id;
     setActiveConversationId(conversation.id);
     setMessages(conversation.messages);
-    if (conversation.providerId) setProviderId(conversation.providerId);
+    if (conversation.providerId && !explicitProviderRef.current) {
+      chooseProvider(conversation.providerId);
+    }
     const activeRequests = activeRequestsFromConversation(conversation);
     replaceLiveRequests(activeRequests);
     for (const request of activeRequests) {
@@ -1184,7 +1363,8 @@ export function AiAgentChat({
     activeConversationIdRef.current = null;
     submittingRef.current = false;
     setActiveConversationId(null);
-    setProviderId(defaultProviderIdRef.current);
+    explicitProviderRef.current = false;
+    chooseProvider(defaultProviderIdRef.current);
     setMessages([]);
     setSelectedMap(null);
     mapOpenerRef.current = null;
@@ -1233,6 +1413,9 @@ export function AiAgentChat({
     }
     if (event.type === 'error') {
       notify({ severity: 'error', message: GENERIC_REQUEST_FAILURE });
+    }
+    if (event.type === 'completion' || event.type === 'error') {
+      void refreshConfiguration();
     }
   }
 
@@ -1331,8 +1514,28 @@ export function AiAgentChat({
     }
   }
 
-  function retryRequest(prompt: string, preset?: AiAgentReasoningPreset | null) {
-    void submitPrompt(prompt, { preserveDraft: true, preset: preset ?? 'balanced' });
+  /** Repeats a request on its own engine while that engine is still offered. */
+  function retryRequest(
+    prompt: string,
+    preset?: AiAgentReasoningPreset | null,
+    requestProviderId?: string | null,
+  ) {
+    const offered = configuration?.providers.some((provider) => provider.id === requestProviderId);
+    void submitPrompt(prompt, {
+      preserveDraft: true,
+      preset: preset ?? 'balanced',
+      providerId: offered && requestProviderId ? requestProviderId : providerId,
+    });
+  }
+
+  /** Repeats a failed or refused request on another engine and keeps it for later turns. */
+  function retryWithProvider(turn: ConversationTurn, provider: AiAgentProvider) {
+    selectProviderExplicitly(provider.id);
+    void submitPrompt(turn.prompt, {
+      preserveDraft: true,
+      preset: presetFor(provider, turn.preset, rememberedReasoningPreset()),
+      providerId: provider.id,
+    });
   }
 
   function continueWithDeep(requestId: string) {
@@ -1361,16 +1564,18 @@ export function AiAgentChat({
       preset = reasoningPreset,
       withAttachments = false,
       continuedRequestId,
+      providerId: targetProviderId = providerId,
     }: {
       preserveDraft?: boolean;
       preset?: AiAgentReasoningPreset;
       withAttachments?: boolean;
       continuedRequestId?: string;
+      providerId?: string;
     } = {},
   ) {
     if (
       !prompt ||
-      !providerId ||
+      !targetProviderId ||
       submittingRef.current ||
       loadingConversation ||
       conversationLoadFailed ||
@@ -1412,7 +1617,7 @@ export function AiAgentChat({
           : null;
       const created = await submitAiAgentRequest({
         conversationId: activeConversationIdRef.current,
-        providerId,
+        providerId: targetProviderId,
         message: prompt,
         ...(configuration?.reasoningPresetsEnabled ? { reasoningPreset: preset } : {}),
         ...(mapEdit ? { mapEdit } : {}),
@@ -1436,10 +1641,11 @@ export function AiAgentChat({
           conversationId: created.conversationId,
           prompt,
           createdAt,
+          providerId: targetProviderId,
           reasoningPreset: configuration?.reasoningPresetsEnabled ? preset : null,
-          maxRuntimeSeconds: selectedProvider?.reasoningPresets?.find(
-            (option) => option.preset === preset,
-          )?.maxRuntimeSeconds,
+          maxRuntimeSeconds: configuration?.providers
+            .find((provider) => provider.id === targetProviderId)
+            ?.reasoningPresets?.find((option) => option.preset === preset)?.maxRuntimeSeconds,
           state: created.state,
           attachments,
           assistantText: '',
@@ -1592,6 +1798,62 @@ export function AiAgentChat({
         onClick={() => continueWithDeep(continuableId)}
       />
     ) : null;
+  const providers = configuration?.providers ?? [];
+  const fallback = pendingSubmission
+    ? null
+    : modelFallback(conversationTurns(messages, liveRequests), providers);
+  const fallbackTurn = fallback?.turn;
+  // The suggested engine is offered even when the failed turn's engine no longer is.
+  const fallbackDisabled = interactionLocked || loadingConversation || conversationLoadFailed;
+  const fallbackActions = fallback ? (
+    <ModelFallbackActions
+      next={fallback.next}
+      disabled={fallbackDisabled}
+      onSwitch={(provider) => retryWithProvider(fallback.turn, provider)}
+      onRetry={
+        fallback.turn.state === 'completed' &&
+        fallback.turn.completionMetadata?.reason === 'provider_error'
+          ? () => retryRequest(fallback.turn.prompt, fallback.turn.preset, fallback.turn.providerId)
+          : undefined
+      }
+    />
+  ) : null;
+  const answeredRequestIds = new Set(
+    messages.filter((message) => message.role === 'assistant').map((message) => message.requestId),
+  );
+  const messageContinuation = (message: AiAgentMessage): ReactNode => {
+    if (message.requestId === continuableId) {
+      return message.role === 'assistant' ? deepContinuation : null;
+    }
+    if (message.requestId !== fallbackTurn?.requestId) return null;
+    return message.role === 'assistant' || !answeredRequestIds.has(message.requestId)
+      ? fallbackActions
+      : null;
+  };
+  const providerName = (id: string | null | undefined) =>
+    providers.find((provider) => provider.id === id)?.name ?? null;
+  const replacedProvider = providers.find((provider) => provider.id === replacedProviderId);
+  const healthAlternative =
+    selectedProvider?.unhealthy && !replacedProvider
+      ? nextProvider(providers, selectedProvider.id)
+      : null;
+  const healthNotice = replacedProvider?.unhealthy ? (
+    <ProviderHealthNotice
+      message={`${replacedProvider.name} тимчасово недоступний${
+        replacedProvider.healthMessage ? `: ${replacedProvider.healthMessage}` : ''
+      }. Вибрано ${selectedProvider?.name ?? ''}.`}
+      actionLabel={`Все одно використати ${replacedProvider.name}`}
+      onAction={() => selectProviderExplicitly(replacedProvider.id)}
+    />
+  ) : selectedProvider?.unhealthy ? (
+    <ProviderHealthNotice
+      message={`${selectedProvider.name}: ${
+        selectedProvider.healthMessage || PROVIDER_UNHEALTHY_DEFAULT
+      }`}
+      actionLabel={healthAlternative ? `Перейти на ${healthAlternative.name}` : null}
+      onAction={() => healthAlternative && selectProviderExplicitly(healthAlternative.id)}
+    />
+  ) : null;
   const composerDisabled =
     submitting || loadingConversation || conversationLoadFailed || !selectedProvider;
 
@@ -1747,7 +2009,7 @@ export function AiAgentChat({
                     message={message}
                     onRetry={retryRequest}
                     retryDisabled={retryDisabled}
-                    continuation={message.requestId === continuableId ? deepContinuation : null}
+                    continuation={messageContinuation(message)}
                   />
                 ))
               )}
@@ -1755,11 +2017,18 @@ export function AiAgentChat({
                 <LiveRequestView
                   key={request.id}
                   request={request}
+                  engineName={providerName(request.providerId)}
                   cancelling={cancellingIds.has(request.id)}
                   onCancel={(id) => void cancelRequest(id)}
                   onRetry={retryRequest}
                   retryDisabled={retryDisabled}
-                  continuation={request.id === continuableId ? deepContinuation : null}
+                  continuation={
+                    request.id === continuableId
+                      ? deepContinuation
+                      : request.id === fallbackTurn?.requestId
+                        ? fallbackActions
+                        : null
+                  }
                   onReconnect={(current) =>
                     void connectToRequest(current.id, current.conversationId)
                   }
@@ -1791,6 +2060,7 @@ export function AiAgentChat({
               <Box ref={outputAnchorRef} aria-hidden />
             </Stack>
 
+            {healthNotice}
             <Box
               component="form"
               onSubmit={submit}
@@ -1895,20 +2165,25 @@ export function AiAgentChat({
                     variant="standard"
                     disableUnderline
                     value={providerId}
-                    disabled={interactionLocked || Boolean(activeConversationId)}
+                    disabled={interactionLocked}
                     onChange={(event) => {
-                      setProviderId(event.target.value);
+                      selectProviderExplicitly(event.target.value);
                       defaultProviderIdRef.current = event.target.value;
                       saveRememberedProviderId(event.target.value);
                       setReasoningPreset(rememberedReasoningPreset());
                     }}
                     inputProps={{ 'aria-label': 'Провайдер ШІ' }}
+                    renderValue={(value) => (
+                      <ProviderName
+                        provider={providers.find((provider) => provider.id === value)}
+                      />
+                    )}
                     sx={{
                       maxWidth: { xs: 150, sm: 240 },
                       minWidth: 0,
-                      color: 'text.secondary',
+                      color: selectedProvider?.unhealthy ? 'warning.main' : 'text.secondary',
                       fontSize: '0.75rem',
-                      opacity: 0.65,
+                      opacity: selectedProvider?.unhealthy ? 1 : 0.65,
                       '& .MuiSelect-select': { py: 0.25, pr: 3 },
                     }}
                   >
@@ -1916,14 +2191,28 @@ export function AiAgentChat({
                       <MenuItem
                         key={provider.id}
                         value={provider.id}
-                        disabled={providerOptionDisabled(
-                          provider.enabled,
-                          activeConversationId,
-                          providerId,
-                          provider.id,
-                        )}
+                        disabled={providerOptionDisabled(provider.enabled)}
                       >
-                        {provider.name}
+                        {provider.unhealthy ? (
+                          <ListItemText
+                            primary={<ProviderName provider={provider} />}
+                            secondary={provider.healthMessage || PROVIDER_UNHEALTHY_DEFAULT}
+                            slotProps={{
+                              secondary: {
+                                sx: {
+                                  maxWidth: 280,
+                                  whiteSpace: 'normal',
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden',
+                                },
+                              },
+                            }}
+                          />
+                        ) : (
+                          provider.name
+                        )}
                       </MenuItem>
                     ))}
                   </Select>

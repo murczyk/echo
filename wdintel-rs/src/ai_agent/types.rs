@@ -63,6 +63,10 @@ pub struct AiAgentProviderItem {
     pub id: String,
     pub name: String,
     pub model_name: String,
+    #[serde(default)]
+    pub unhealthy: bool,
+    #[serde(default)]
+    pub health_message: Option<String>,
 }
 
 #[derive(
@@ -145,6 +149,10 @@ pub struct AiAgentMessageItem {
     pub started_at: Option<i64>,
     #[serde(default)]
     pub completion_metadata: Option<AiAgentCompletionMetadata>,
+    #[serde(default)]
+    pub ai_engine_id: Option<String>,
+    #[serde(default)]
+    pub ai_engine_name: Option<String>,
     pub request_id: String,
     pub request_state: String,
     pub role: String,

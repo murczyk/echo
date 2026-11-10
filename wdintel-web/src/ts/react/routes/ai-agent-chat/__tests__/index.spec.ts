@@ -296,9 +296,8 @@ describe('applyAiAgentEvent', () => {
 });
 
 describe('providerOptionDisabled', () => {
-  it('keeps the standard selector enabled while locking incompatible options', () => {
-    expect(providerOptionDisabled(true, 'conversation-1', 'provider-1', 'provider-1')).toBe(false);
-    expect(providerOptionDisabled(true, 'conversation-1', 'provider-1', 'provider-2')).toBe(true);
-    expect(providerOptionDisabled(false, null, 'provider-1', 'provider-2')).toBe(true);
+  it('#4112 offers every enabled engine, also mid-conversation', () => {
+    expect(providerOptionDisabled(true)).toBe(false);
+    expect(providerOptionDisabled(false)).toBe(true);
   });
 });
