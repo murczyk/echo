@@ -11,6 +11,7 @@ use sea_orm::*;
 use std::sync::OnceLock;
 
 mod const_units;
+pub(crate) mod header_synonyms;
 pub mod parser;
 
 pub(crate) use const_units::{
@@ -166,7 +167,7 @@ pub fn to_unit_txt(units_list: Vec<String>) -> Option<String> {
 
 pub(crate) async fn parse_message_unit<C>(
     db: &C,
-    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    env: &Env,
     body: &str,
     callsigns: Vec<String>,
     aor_id: Option<i64>,
@@ -174,9 +175,28 @@ pub(crate) async fn parse_message_unit<C>(
 where
     C: ConnectionTrait,
 {
-    let unit_and_location =
-        parser::extract_unit_with_aor(settlements, body, callsigns, aor_id)
-            .c(h!())?;
+    if let Some(unit_name) = env
+        .unit_header_synonyms
+        .resolve(&env.dbx, body)
+        .await
+        .c(h!())?
+    {
+        let unit_and_location = parser::extract_first_line_unit_with_aor(
+            env.settlements.clone(),
+            body,
+            callsigns,
+            aor_id,
+        )
+        .c(h!())?;
+        return Ok((unit_and_location, Some(unit_name)));
+    }
+    let unit_and_location = parser::extract_unit_with_aor(
+        env.settlements.clone(),
+        body,
+        callsigns,
+        aor_id,
+    )
+    .c(h!())?;
     let Some(unit) = &unit_and_location.unit else {
         return Ok((unit_and_location, None));
     };

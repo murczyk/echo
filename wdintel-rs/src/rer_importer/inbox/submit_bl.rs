@@ -171,7 +171,7 @@ async fn parse_missing_submit_unit(
     };
     let (parsed, unit_v2) = crate::unit::parse_message_unit(
         txn,
-        env.settlements.clone(),
+        env,
         &body,
         super::submit_item_callsigns(&item),
         aor_id,
@@ -629,6 +629,31 @@ mod tests {
                 Some("98765 мсп"),
                 None,
             ),
+            (
+                json!({"full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял.")}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": format!("{label}\n10.11.2026, 11:08 (МСК)\n-уточни где они имущество скинули?\n-примерно метров 700 от нас, в ложбину спуститься")}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": "\r\n 24 ОББПС  РБПЛА\tВБПЛА КТ \r\n10.11.2026, 10:23 (МСК)\r\n- Принял."}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": format!("Невідомий заголовок\n10.11.2026, 10:23 (МСК)\n{label}")}),
+                None,
+                None,
+            ),
+            (
+                json!({"full_body": format!("{label} уточнення\n10.11.2026, 10:23 (МСК)\n- Принял.")}),
+                None,
+                None,
+            ),
             (json!({"full_body": "Звичайне повідомлення"}), None, None),
         ];
         for (overrides, expected_unit, expected_id) in cases {
@@ -654,6 +679,111 @@ mod tests {
             )
             .await;
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn header_synonym_snapshot_refreshes_after_expiry() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        let request = json!({
+            "full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял."),
+            "timestamp": "2026-11-10T07:23:00Z",
+            "freq": "145.5000",
+            "locations": ["Невідома локація 3920"],
+            "group_names": ["SC1"],
+        });
+        assert_submitted_unit(
+            &env_data,
+            &datasource,
+            &login.id,
+            request.clone(),
+            None,
+            None,
+        )
+        .await;
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        assert_submitted_unit(
+            &env_data,
+            &datasource,
+            &login.id,
+            request.clone(),
+            None,
+            None,
+        )
+        .await;
+        advance_synonym_cache_time(
+            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS / 2,
+        )
+        .await;
+        let disconnected = DatabaseConnection::default();
+        assert_eq!(
+            env.unit_header_synonyms
+                .resolve(&disconnected, label)
+                .await
+                .unwrap(),
+            None
+        );
+        advance_synonym_cache_time(
+            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS / 2 + 1,
+        )
+        .await;
+        for active in [true, false] {
+            crate::entities::sigint_unit::ActiveModel {
+                id: Set(unit.id),
+                active: Set(active),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+            assert_submitted_unit(
+                &env_data,
+                &datasource,
+                &login.id,
+                request.clone(),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            )
+            .await;
+            assert_eq!(
+                env.unit_header_synonyms
+                    .resolve(&disconnected, label)
+                    .await
+                    .unwrap(),
+                Some(unit.name.clone())
+            );
+        }
+        crate::entities::sigint_unit::ActiveModel {
+            id: Set(unit.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        advance_synonym_cache_time(
+            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS,
+        )
+        .await;
+        assert_submitted_unit(
+            &env_data,
+            &datasource,
+            &login.id,
+            request,
+            None,
+            None,
+        )
+        .await;
+    }
+
+    async fn advance_synonym_cache_time(seconds: u64) {
+        tokio::time::pause();
+        tokio::time::advance(std::time::Duration::from_secs(seconds)).await;
+        tokio::time::resume();
     }
 
     async fn seed_submit_unit(

@@ -339,7 +339,7 @@ where
             .c(h!())?;
     let (unit_and_location, unit_v2) = crate::unit::parse_message_unit(
         dbx,
-        env.settlements.clone(),
+        env,
         body,
         callsigns.clone(),
         aor_id,

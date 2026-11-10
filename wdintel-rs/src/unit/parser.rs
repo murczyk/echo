@@ -16,6 +16,36 @@ pub fn extract_unit(
     extract_unit_with_aor(settlements, inp, callsigns, None)
 }
 
+pub(crate) fn extract_first_line_unit_with_aor(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    body: &str,
+    callsigns: Vec<String>,
+    aor_id: Option<i64>,
+) -> Result<UnitAndLoc, AppError> {
+    let lines = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(2)
+        .map(|line| line.trim().to_string())
+        .collect_vec();
+    let mut lines = lines.iter();
+    let unit = lines.next().cloned();
+    let (locality, locality_v2) = try_lookup_next_line_loc_with_prefix(
+        settlements,
+        &mut lines,
+        None,
+        None,
+        &callsigns,
+        aor_id,
+    )
+    .c(h!())?;
+    Ok(UnitAndLoc {
+        unit,
+        locality,
+        locality_v2,
+    })
+}
+
 pub fn extract_unit_with_aor(
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     inp: &str,
@@ -1121,6 +1151,21 @@ mod tests {
                 vec!["КАМ’ЯНКА", "КРАСНЕ ПЕРШЕ", "ПАВЛІВКА"]
             );
         }
+    }
+
+    #[test]
+    fn known_unit_header_preserves_following_locality() {
+        let body = "24 обБпС рБпЛА вБпЛА КТ\nрайон ВАСИЛІВКА\n-примерно метров 700 от нас";
+        let parsed = extract_first_line_unit_with_aor(
+            test_settlements(),
+            body,
+            vec![],
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.unit.as_deref(), Some("24 обБпС рБпЛА вБпЛА КТ"));
+        assert_eq!(parsed.locality.as_deref(), Some("район ВАСИЛІВКА"));
     }
 
     #[test]
