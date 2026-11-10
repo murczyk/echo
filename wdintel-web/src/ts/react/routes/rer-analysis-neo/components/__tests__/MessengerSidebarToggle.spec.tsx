@@ -567,7 +567,7 @@ describe('the account sidebar of the messenger workspace', () => {
     it('slides the toggle along to the top of the rail and back', async () => {
       await mount();
       const toggle = () => wrapper().querySelector<HTMLElement>('[data-messenger-sidebar-toggle]')!;
-      expect(toggle().className).toContain('right-[calc(0.5rem_+_3px)]');
+      expect(toggle().className).toContain('right-[calc(0.5rem_+_4px)]');
       expect(toggle().className).toContain('transition-[right]');
       expect(toggle().className).toContain('motion-reduce:transition-none');
       await collapse();
@@ -576,7 +576,7 @@ describe('the account sidebar of the messenger workspace', () => {
         'Розгорнути панель акаунту',
       );
       await expand();
-      expect(toggle().className).toContain('right-[calc(0.5rem_+_3px)]');
+      expect(toggle().className).toContain('right-[calc(0.5rem_+_4px)]');
     });
 
     it('has a line between the account info and the pages, and between the pages and the search', async () => {
