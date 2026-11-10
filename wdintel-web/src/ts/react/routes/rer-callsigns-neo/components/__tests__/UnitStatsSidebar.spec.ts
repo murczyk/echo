@@ -90,6 +90,7 @@ describe('UnitStatsSidebar hierarchy', () => {
     expect(buildUnitTree(stats).map((node) => node.label)).toEqual(['R1', 'R2']);
     const tree = readUnitHierarchyTree({
       revision: '3527',
+      selections: [],
       groups: [
         { id: 'group:0:R1', label: 'R1', level: 0, parentIndex: null },
         { id: 'group:0:R1|1:D1', label: 'D1', level: 1, parentIndex: 0 },

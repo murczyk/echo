@@ -228,3 +228,95 @@ async fn regression_3527_invalid_or_unbounded_cache_is_rebuilt_from_units() {
     assert_eq!(load(&env).await.unwrap(), upgraded);
     clear_cache(&env).await;
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn regression_3571_scoped_hierarchy_resolves_complete_branches() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    clear_cache(&env).await;
+    let mut ids = Vec::new();
+    for (name, army, company) in [
+        ("Parent", "6 А|3:1 АК", ""),
+        ("Child", "6 А|3:1 АК", "1 мср"),
+        ("Inactive child", "6 А|3:1 АК", "2 мср"),
+        ("Other branch", "6 А", "1 мср"),
+    ] {
+        let unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set(name.to_string()),
+                army: Set(army.to_string()),
+                brigade: Set("27 омсбр".to_string()),
+                company: Set(company.to_string()),
+                active: Set(name != "Inactive child"),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ids.push(unit.id);
+    }
+    notify_change(&env).await;
+    let tree = load(&env).await.unwrap();
+    let scoped = scope_tree(
+        tree.clone(),
+        &UnitHierarchyReq {
+            known_revision: None,
+            unit_ids: Some(vec![ids[1]]),
+            selection_values: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        scoped.units.iter().map(|unit| unit.id).collect::<Vec<_>>(),
+        vec![ids[1]]
+    );
+    assert!(scoped
+        .groups
+        .iter()
+        .any(|group| group.label == "6 А|3:1 АК"));
+    assert!(!scoped.groups.iter().any(|group| group.label == "6 А"));
+    for (index, group) in scoped.groups.iter().enumerate() {
+        assert!(group
+            .parent_index
+            .is_none_or(|parent| (parent as usize) < index));
+    }
+    let group_index = tree
+        .units
+        .iter()
+        .find(|unit| unit.id == ids[0])
+        .unwrap()
+        .group_index
+        .unwrap();
+    for selection in [
+        format!("unit-id:{}", ids[0]),
+        format!("unit-parent:{}", tree.groups[group_index as usize].id),
+    ] {
+        let req = UnitHierarchyReq {
+            known_revision: None,
+            unit_ids: Some(Vec::new()),
+            selection_values: Some(vec![selection.clone()]),
+        };
+        let scoped = scope_tree(tree.clone(), &req).unwrap();
+        assert_eq!(scoped.units.len(), 1);
+        assert_eq!(scoped.units[0].id, ids[0]);
+        assert_eq!(scoped.selections[0].value, selection);
+        assert_eq!(scoped.selections[0].unit_ids, ids[..3]);
+        assert_eq!(scoped.selections[0].exact_unit_ids, vec![ids[0]]);
+        assert_eq!(scoped, scope_tree(tree.clone(), &req).unwrap());
+    }
+    let missing = scope_tree(
+        tree,
+        &UnitHierarchyReq {
+            known_revision: None,
+            unit_ids: Some(Vec::new()),
+            selection_values: Some(vec![
+                "unit-parent:group:missing".to_string()
+            ]),
+        },
+    )
+    .unwrap();
+    assert!(missing.units.is_empty());
+    assert!(missing.selections[0].unit_ids.is_empty());
+    clear_cache(&env).await;
+}

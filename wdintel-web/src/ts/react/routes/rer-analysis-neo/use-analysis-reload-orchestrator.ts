@@ -29,6 +29,7 @@ type FetchAnalysisNetworks = typeof import('../../services/api/analysis').fetchA
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type Params = {
+  loadUnitsByIds?: typeof import('../../services/api/units').getUnitsByIds;
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
   hideNetworks: boolean;
@@ -117,6 +118,7 @@ export type UseAnalysisReloadOrchestratorResult = {
 
 export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReloadOrchestratorResult {
   const {
+    loadUnitsByIds,
     centerTab,
     clearAnalysisResults,
     deferInitialLoad,
@@ -225,6 +227,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
 
       try {
         await reloadAnalysisData({
+          loadUnitsByIds,
           clearAnalysisResults,
           hideNetworks,
           focusedWindow,
@@ -306,6 +309,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       }
     },
     [
+      loadUnitsByIds,
       centerTab,
       clearAnalysisResults,
       focusedWindow,

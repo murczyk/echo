@@ -46,7 +46,12 @@ async function resolveThreadMembership(anchors: number[], signal: AbortSignal) {
   throw new Error('Повідомлення ланцюжка недоступні.');
 }
 
-async function loadThreadInbox(messageId: number, knownIds: number[], signal: AbortSignal) {
+async function loadThreadInbox(
+  messageId: number,
+  knownIds: number[],
+  signal: AbortSignal,
+  loadUnitsByIds: typeof getUnitsByIds,
+) {
   const options = { signal };
   const { replies, anchor } = await resolveThreadMembership(
     Array.from(new Set([messageId, ...knownIds])),
@@ -88,7 +93,7 @@ async function loadThreadInbox(messageId: number, knownIds: number[], signal: Ab
   );
   const [tags, units] = await Promise.all([
     getTagsForDisplay(options),
-    getUnitsByIds(unitIds, options),
+    loadUnitsByIds(unitIds, options),
   ]);
   return {
     inbox,
@@ -140,12 +145,14 @@ export function useAnalysisThreadData({
   queryState,
   newestFirst,
   onError,
+  loadUnitsByIds = getUnitsByIds,
 }: {
   messageId: number | null;
   enabled: boolean;
   queryState: AnalysisQueryState;
   newestFirst: boolean;
   onError: (error: string) => void;
+  loadUnitsByIds?: typeof getUnitsByIds;
 }) {
   const [inbox, setInbox] = useState(emptyInbox);
   const [tags, setTags] = useState<{ tagsMap: Record<number, Tag>; tagsOrder: number[] }>({
@@ -177,7 +184,12 @@ export function useAnalysisThreadData({
     setMembersLoading(true);
     void (async () => {
       try {
-        const result = await loadThreadInbox(messageId, knownIds.current, controller.signal);
+        const result = await loadThreadInbox(
+          messageId,
+          knownIds.current,
+          controller.signal,
+          loadUnitsByIds,
+        );
         controller.signal.throwIfAborted();
         knownIds.current = result.inbox.inboxItems.map(([id]) => id);
         setDeletedCount(result.deletedCount);
@@ -195,7 +207,7 @@ export function useAnalysisThreadData({
       }
     })();
     return () => controller.abort();
-  }, [messageId, enabled, revision]);
+  }, [messageId, enabled, revision, loadUnitsByIds]);
 
   const filterOptions = useMemo(
     () => analysisThreadOptions(inbox, tags.tagsMap, units),

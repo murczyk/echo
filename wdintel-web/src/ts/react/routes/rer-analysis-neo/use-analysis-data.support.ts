@@ -150,6 +150,9 @@ export function useLoadNewCallsigns({
 }
 
 type UseLoadMissingNetworksParams = {
+  loadUnitsByIds: typeof import('../../services/api/units').getUnitsByIds;
+  setUnitsMap: Dispatch<SetStateAction<Record<number, Unit>>>;
+  hideNetworks: boolean;
   networksRef: MutableRefObject<Network[]>;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -159,6 +162,9 @@ type UseLoadMissingNetworksParams = {
 };
 
 export function useLoadMissingNetworksForMessages({
+  loadUnitsByIds,
+  setUnitsMap,
+  hideNetworks,
   networksRef,
   onError,
   onUnauthorized,
@@ -169,25 +175,49 @@ export function useLoadMissingNetworksForMessages({
   return useCallback(
     async (messageItems: Array<[number, InboxMessage]>) => {
       const existingNetworkIds = new Set(networksRef.current.map((network) => network.id));
-      const missingNetworkIds = Array.from(
-        new Set(messageItems.flatMap(([, message]) => message.networkIds ?? [])),
-      ).filter((networkId) => !existingNetworkIds.has(networkId));
-      if (missingNetworkIds.length === 0) return;
-
+      const missingNetworkIds = hideNetworks
+        ? []
+        : Array.from(
+            new Set(messageItems.flatMap(([, message]) => message.networkIds ?? [])),
+          ).filter((networkId) => !existingNetworkIds.has(networkId));
       try {
-        const loadedNetworks = await fetchNetworksByIds(missingNetworkIds);
+        const loadedNetworks =
+          missingNetworkIds.length > 0 ? await fetchNetworksByIds(missingNetworkIds) : [];
+        const unitIds = [
+          ...new Set([
+            ...messageItems.flatMap(([, message]) => message.unitIds ?? []),
+            ...loadedNetworks.flatMap((network) => network.unitIds ?? []),
+          ]),
+        ];
+        const loadedUnits = await loadUnitsByIds(unitIds);
+        const loadedUnitsMap = Object.fromEntries(loadedUnits.map((unit) => [unit.id, unit]));
+        const nextUnitsMap = { ...unitsMap, ...loadedUnitsMap };
+        if (loadedUnits.some((unit) => unitsMap[unit.id] !== unit)) {
+          setUnitsMap((current) => ({ ...current, ...loadedUnitsMap }));
+        }
         if (loadedNetworks.length === 0) return;
         setNetworks((currentNetworks) => {
           const mergedNetworks = mergeNetworksById(currentNetworks, loadedNetworks);
-          setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, unitsMap));
+          setNetworkDisplayMap(buildNetworkDisplayMap(mergedNetworks, nextUnitsMap));
           return mergedNetworks;
         });
       } catch (loadError) {
+        if (isAbortError(loadError)) return;
         if (!onUnauthorized(loadError)) {
           onError(toErrorMessage(loadError));
         }
       }
     },
-    [networksRef, onError, onUnauthorized, setNetworkDisplayMap, setNetworks, unitsMap],
+    [
+      hideNetworks,
+      loadUnitsByIds,
+      networksRef,
+      onError,
+      onUnauthorized,
+      setNetworkDisplayMap,
+      setNetworks,
+      setUnitsMap,
+      unitsMap,
+    ],
   );
 }

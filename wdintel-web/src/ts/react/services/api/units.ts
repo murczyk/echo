@@ -130,8 +130,13 @@ export async function getUnitsPage(
 
 export async function getUnitHierarchy(
   knownRevision: string | null,
+  scope?: Pick<UnitHierarchyReq, 'unitIds' | 'selectionValues'>,
 ): Promise<UnitHierarchyRsp | null> {
-  const req: UnitHierarchyReq = { knownRevision };
+  const req: UnitHierarchyReq = {
+    knownRevision,
+    unitIds: scope?.unitIds ?? null,
+    selectionValues: scope?.selectionValues ?? null,
+  };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UNIT_HIERARCHY_REQUEST_TIMEOUT_MS);
   try {

@@ -35,7 +35,7 @@ import {
 import type { AnalysisStatsCountDimension } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { getGroupInfosBatch } from '../../services/api/inbox-reference-data';
-import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
+import { getUnitsByIds } from '../../services/api/units';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
@@ -66,6 +66,7 @@ import type {
 } from './types';
 
 type FilterSectionLoadContext = {
+  loadUnitsByIds?: typeof getUnitsByIds;
   analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
   loadVersion: number;
   loadVersionRef: React.MutableRefObject<number>;
@@ -116,11 +117,12 @@ async function loadMissingNetworkUnits(
   networks: Network[],
   unitsMap: Record<number, Unit>,
   requestOptions?: { signal?: AbortSignal },
+  loadUnitsByIds = getUnitsByIds,
 ): Promise<Record<number, Unit>> {
   const missingUnitIds = Array.from(
     new Set(networks.flatMap((network) => network.unitIds ?? [])),
   ).filter((unitId) => unitsMap[unitId] == null);
-  const units = await getUnitsByIds(missingUnitIds, requestOptions);
+  const units = await loadUnitsByIds(missingUnitIds, requestOptions);
   return {
     ...unitsMap,
     ...Object.fromEntries(units.map((unit) => [unit.id, unit])),
@@ -596,6 +598,7 @@ export async function loadFilterSectionData(
         networksById,
         context.unitsMap,
         requestOptions,
+        context.loadUnitsByIds,
       );
       if (isStale() || isAborted()) return;
       const networkNamesById = Object.fromEntries(
@@ -814,6 +817,7 @@ export function startAnalysisCountsLoad(
 }
 
 type ReloadParams = {
+  loadUnitsByIds?: typeof getUnitsByIds;
   hideNetworks?: boolean;
   clearAnalysisResults: () => void;
   focusedWindow?: InboxWindowRsp | null;
@@ -1196,8 +1200,20 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
     const loadReferenceData = async () => {
       try {
+        const loadUnitsByIds = params.loadUnitsByIds ?? getUnitsByIds;
+        const messageUnitIds = [
+          ...(criticalData.inboxRsp.inboxItems ?? []).flatMap(
+            ([, message]) => message.unitIds ?? [],
+          ),
+          ...criticalData.inboxRsp.callsigns.flatMap((callsign) =>
+            callsign.res.flatMap((info) => (info.unitId == null ? [] : [info.unitId])),
+          ),
+        ];
         if (params.hideNetworks) {
-          const units = await getUnitsList(params.signal ? { signal: params.signal } : undefined);
+          const units = await loadUnitsByIds(
+            [...new Set(messageUnitIds)],
+            params.signal ? { signal: params.signal } : undefined,
+          );
           if (isStaleReload() || params.signal?.aborted) return;
           params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
           params.setNetworks([]);
@@ -1208,10 +1224,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           'networks',
           criticalData.resolvedAnalysisReq,
         );
-        const [units, networksStatsRsp] = await Promise.all([
-          getUnitsList(params.signal ? { signal: params.signal } : undefined),
-          loadAnalysisNetworksWithCache(networksAnalysisReq, networkStatsCache, params.signal),
-        ]);
+        const networksStatsRsp = await loadAnalysisNetworksWithCache(
+          networksAnalysisReq,
+          networkStatsCache,
+          params.signal,
+        );
         if (isStaleReload() || params.signal?.aborted) return;
         const selectedNetworkIds = params.queryState.networksSelected
           .map((value) => Number(value))
@@ -1236,19 +1253,15 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const referencedUnitIds = Array.from(
           new Set([
             ...networksByAnalysisIds.flatMap((network) => network.unitIds ?? []),
-            ...criticalData.inboxRsp.callsigns.flatMap((callsign) =>
-              callsign.res.flatMap((info) => (info.unitId == null ? [] : [info.unitId])),
-            ),
+            ...messageUnitIds,
           ]),
         );
-        const referencedUnits = await getUnitsByIds(
+        const referencedUnits = await loadUnitsByIds(
           referencedUnitIds,
           params.signal ? { signal: params.signal } : undefined,
         );
         if (isStaleReload() || params.signal?.aborted) return;
-        const unitsMap = Object.fromEntries(
-          mergeUnitsById(units, referencedUnits).map((unit) => [unit.id, unit]),
-        );
+        const unitsMap = Object.fromEntries(referencedUnits.map((unit) => [unit.id, unit]));
         params.setUnitsMap(unitsMap);
         params.setNetworks((current) => {
           return mergeNetworks(current, networksByAnalysisIds);

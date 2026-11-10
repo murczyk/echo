@@ -323,7 +323,7 @@ fn append_stream_events(
                 let mut event: EventMsg =
                     serde_json::from_slice(bytes).c(h!())?;
                 let relevant = match event.event_type {
-                    EventType::ETGeneric => true,
+                    EventType::ETGeneric | EventType::ETUnitChanged => true,
                     EventType::ETInboxChanged(_) => matches!(
                         flavor,
                         LongPollFlavor::LpfRer | LongPollFlavor::LpfAnalysisNeo
@@ -512,6 +512,39 @@ mod tests {
         assert_eq!(event.origin, None);
         assert!(!event.intelligence_report);
         assert_eq!(event.event_type, EventType::ETInboxChanged(7));
+    }
+
+    #[test]
+    fn regression_3571_unit_changes_reach_catalog_consumers() {
+        let event = EventMsg::new(EventType::ETUnitChanged);
+        let reply = StreamReadReply {
+            keys: vec![StreamKey {
+                key: "session".to_string(),
+                ids: vec![StreamId {
+                    id: "1-0".to_string(),
+                    map: std::collections::HashMap::from([(
+                        "v".to_string(),
+                        redis::Value::BulkString(
+                            serde_json::to_vec(&event).unwrap(),
+                        ),
+                    )]),
+                    ..Default::default()
+                }],
+            }],
+        };
+        let mut cursor = "0-0".to_string();
+        let mut events = Vec::new();
+        append_stream_events(
+            Some(reply),
+            "session",
+            &LongPollFlavor::LpfAnalysisNeo,
+            &mut cursor,
+            &mut events,
+        )
+        .unwrap();
+        assert_eq!(cursor, "1-0");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::ETUnitChanged);
     }
 
     #[test]

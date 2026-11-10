@@ -1,5 +1,10 @@
+import type { UnitHierarchyReq } from '../../../../Bindings';
 import { useEffect, useRef, useState } from 'react';
 import { getUnitHierarchy } from '../../services/api/units';
+import {
+  UNIT_CATALOG_CHANGED_EVENT,
+  unitCatalogRevision,
+} from '../../services/unit-catalog-events';
 import { readUnitHierarchyTree, type TreeNode } from './unit-hierarchy';
 import {
   aggregateUnitParentOptions,
@@ -14,106 +19,115 @@ type HierarchyCatalog = {
   tree: TreeNode[];
 };
 
-const UNIT_HIERARCHY_RECONCILE_MS = 60_000;
-const pendingCatalogs = new Map<string | null, Promise<HierarchyCatalog>>();
+type HierarchyScope = Pick<UnitHierarchyReq, 'unitIds' | 'selectionValues'>;
+const catalogs = new Map<string, HierarchyCatalog>();
+const pendingCatalogs = new Map<string, Promise<HierarchyCatalog>>();
+let cachedRevision = unitCatalogRevision();
 
-function loadHierarchyCatalog(catalog: HierarchyCatalog | null): Promise<HierarchyCatalog> {
-  const revision = catalog?.revision ?? null;
-  const pending = pendingCatalogs.get(revision);
+function loadHierarchyCatalog(
+  scopeKey: string,
+  previous: HierarchyCatalog | null,
+): Promise<HierarchyCatalog> {
+  const revision = unitCatalogRevision();
+  if (cachedRevision !== revision) {
+    catalogs.clear();
+    pendingCatalogs.clear();
+    cachedRevision = revision;
+  }
+  const cached = catalogs.get(scopeKey);
+  if (cached) return Promise.resolve(cached);
+  const pending = pendingCatalogs.get(scopeKey);
   if (pending) return pending;
-  const request = getUnitHierarchy(revision)
+  const scope: HierarchyScope = JSON.parse(scopeKey);
+  const empty = scope.unitIds?.length === 0 && scope.selectionValues?.length === 0;
+  const request = (
+    empty ? Promise.resolve(null) : getUnitHierarchy(previous?.revision ?? null, scope)
+  )
     .then((response) => {
-      if (response) {
-        const tree = readUnitHierarchyTree(response);
-        return {
-          revision: response.revision,
-          hierarchy: indexUnitHierarchyTree(tree, response.units),
-          tree,
-        };
+      if (revision !== unitCatalogRevision()) {
+        throw new DOMException('Unit catalog changed', 'AbortError');
+      }
+      let catalog = previous;
+      if (response || empty) {
+        const tree = response ? readUnitHierarchyTree(response) : [];
+        const hierarchy = indexUnitHierarchyTree(tree, response?.units ?? []);
+        for (const selection of response?.selections ?? []) {
+          hierarchy.children.set(
+            selection.value,
+            selection.unitIds.map((id) => `unit-id:${id}`),
+          );
+          hierarchy.exact.set(
+            selection.value,
+            selection.exactUnitIds.map((id) => `unit-id:${id}`),
+          );
+          if (!hierarchy.parents.some((parent) => parent.value === selection.value)) {
+            hierarchy.parents.push({
+              value: selection.value,
+              label: selection.label,
+              descendants: selection.unitIds.map((id) => `unit-id:${id}`),
+            });
+          }
+        }
+        catalog = { revision: response?.revision ?? '', hierarchy, tree };
       }
       if (!catalog) throw new Error('Сервер не повернув ієрархію підрозділів');
+      catalogs.set(scopeKey, catalog);
       return catalog;
     })
     .finally(() => {
-      pendingCatalogs.delete(revision);
+      if (pendingCatalogs.get(scopeKey) === request) pendingCatalogs.delete(scopeKey);
     });
-  pendingCatalogs.set(revision, request);
+  pendingCatalogs.set(scopeKey, request);
   return request;
 }
 
 export function useUnitHierarchyCatalog(
   needed: boolean,
   onError: (message: string) => void,
-  refreshKey?: unknown,
+  scope?: Partial<HierarchyScope>,
 ) {
-  const [catalog, setCatalog] = useState<HierarchyCatalog | null>(null);
-  const catalogRef = useRef(catalog);
-  catalogRef.current = catalog;
-  const requestRef = useRef<Promise<HierarchyCatalog | null> | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [refresh, setRefresh] = useState(0);
+  const scopeKey = JSON.stringify({
+    unitIds: scope?.unitIds == null ? null : [...new Set(scope.unitIds)].sort((a, b) => a - b),
+    selectionValues: [...new Set(scope?.selectionValues ?? [])].sort(),
+  });
+  const [revision, setRevision] = useState(unitCatalogRevision);
+  const [state, setState] = useState<{
+    key: string;
+    revision: number;
+    catalog: HierarchyCatalog | null;
+  } | null>(null);
+  const previous = useRef(state);
+  previous.current = state;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   useEffect(() => {
-    if (!needed || !failed) return;
-    const timeout = setTimeout(() => setFailed(false), 2000);
-    return () => clearTimeout(timeout);
-  }, [failed, needed]);
+    const changed = () => setRevision(unitCatalogRevision());
+    window.addEventListener(UNIT_CATALOG_CHANGED_EVENT, changed);
+    return () => window.removeEventListener(UNIT_CATALOG_CHANGED_EVENT, changed);
+  }, []);
   useEffect(() => {
     if (!needed) return;
-    const refresh = () => {
-      setFailed(false);
-      setRefresh((value) => value + 1);
-    };
-    const reconcile = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    const interval = setInterval(reconcile, UNIT_HIERARCHY_RECONCILE_MS);
-    window.addEventListener('online', refresh);
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', reconcile);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('online', refresh);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', reconcile);
-    };
-  }, [needed]);
-  useEffect(() => {
-    if (!needed) {
-      setFailed(false);
-      return;
-    }
-    if (failed) return;
     let cancelled = false;
-    const load = () =>
-      cancelled ? Promise.resolve(null) : loadHierarchyCatalog(catalogRef.current);
-    const previousRequest = requestRef.current;
-    const request = previousRequest ? previousRequest.catch(() => null).then(load) : load();
-    requestRef.current = request;
-    request
+    const catalog = previous.current?.key === scopeKey ? previous.current.catalog : null;
+    loadHierarchyCatalog(scopeKey, catalog)
       .then((catalog) => {
-        if (!cancelled && catalog) {
-          catalogRef.current = catalog;
-          setCatalog(catalog);
-        }
+        if (!cancelled) setState({ key: scopeKey, revision, catalog });
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
-        setFailed(true);
+        if (cancelled || revision !== unitCatalogRevision()) return;
+        setState({ key: scopeKey, revision, catalog: null });
         onErrorRef.current(`Не вдалося завантажити ієрархію підрозділів: ${String(error)}`);
-      })
-      .finally(() => {
-        if (requestRef.current === request) requestRef.current = null;
       });
     return () => {
       cancelled = true;
     };
-  }, [failed, refresh, needed, refreshKey]);
+  }, [needed, scopeKey, revision]);
+  const current = state?.key === scopeKey && state.revision === revision;
+  const catalog = current ? state.catalog : null;
   return {
     hierarchy: catalog?.hierarchy ?? null,
     tree: catalog?.tree ?? null,
-    loading: needed && catalog === null && !failed,
+    loading: needed && !current,
   };
 }
 

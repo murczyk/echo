@@ -11,12 +11,14 @@ import type {
 import { buildNetworkDisplayMap } from './message-utils';
 import type { AnalysisFilterOptions } from './types';
 import { emptyOptions } from './use-analysis-data.shared';
+import { createUnitLookupCache } from '../../services/unit-lookup-cache';
 
 type Params = {
   shouldLoadNewCallsigns: boolean;
 };
 
 export function useAnalysisReferenceState({ shouldLoadNewCallsigns }: Params) {
+  const [loadUnitsByIds] = useState(createUnitLookupCache);
   const [options, setOptions] = useState<AnalysisFilterOptions>(emptyOptions);
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
   const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
@@ -59,6 +61,7 @@ export function useAnalysisReferenceState({ shouldLoadNewCallsigns }: Params) {
   }, [options.freqs, optionsFreqsRef]);
 
   return {
+    loadUnitsByIds,
     groupInfos,
     networkDisplayMap,
     networks,

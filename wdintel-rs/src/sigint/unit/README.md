@@ -27,18 +27,40 @@ may have committed part of a batch; dry-run commands do not invalidate.
 Maintenance that changes units directly in SQL should also invalidate this cache
 to make the changes available immediately.
 
-Revisions are hashes of the hierarchy contents, so reconciliation keeps the
-revision when the structure and names are unchanged. Clients send their known
-revision; an unchanged hierarchy returns JSON `null`. Mounted consumers check
-every minute while visible and on focus, network recovery or visibility recovery.
-Refreshes arriving during a request queue a fresh read after it completes.
-Hierarchy requests time out after thirty seconds so stalled connections release
-the shared request and allow retries.
-Message and callsign counts stay separate from the cached structure. Removing
-the tree key is sufficient to force reconstruction on the next request.
-The Callsigns sidebar keeps statistics rows absent from a snapshot as selectable
-root units until reconciliation supplies their hierarchy; search uses the names
-and paths displayed by the current snapshot.
+Clients can request `unit_ids` and `selection_values`. A scoped response contains
+only those units, the selected units and their ancestor paths; omitted
+`unit_ids` retains the complete-tree response for older clients. The server
+resolves selected unit IDs, names and virtual parents against the complete
+cached tree, returning descendant IDs in `selections` without transferring
+unrelated unit records. Inactive descendants and distinct regional paths remain
+part of parent selections. An unknown virtual parent resolves to no IDs rather
+than broadening a filter.
+
+Analysis and Duty request only their selected/denied branches. Their unit-count
+APIs already return parent options and counts. The Callsigns sidebar requests
+paths only for units present in its statistics. Empty scopes need no request.
+Scoped revisions hash the returned contents, including resolved selections;
+clients send their known revision and unchanged responses return JSON `null`.
+
+Mounted consumers share completed and in-flight requests by scope. Focus,
+visibility recovery, network recovery and timers do not reload the hierarchy.
+`ETUnitChanged` is delivered through the existing event stream, invalidates the
+client catalog and refreshes mounted consumers; an explicit Analysis reload
+also invalidates it. Failures are shown once and wait for a scope change or
+explicit invalidation before retrying. Hierarchy requests time out after thirty
+seconds. The server snapshot expiry still bounds stale cache contents on the
+next requested read after a lost notification or direct database write.
+
+Analysis and its thread view share a per-page unit lookup cache, fetching only
+newly referenced IDs and caching absent IDs as well. Unit changes and explicit
+reloads invalidate it. Responses started before invalidation cannot restore
+stale records. Reference loading uses those IDs instead of the complete active
+unit catalog.
+
+Regression coverage:
+`wdintel-rs/src/sigint/unit/hierarchy/tests.rs`,
+`wdintel-web/src/ts/react/routes/shared/__tests__/use-unit-hierarchy-catalog.spec.tsx`,
+`wdintel-web/src/ts/react/services/__tests__/unit-lookup-cache.spec.ts`.
 
 ## Inbox unit labels
 

@@ -10603,10 +10603,29 @@ unitHierarchyUnitEncoder struct =
         ]
 
 
+type alias UnitHierarchySelection =
+    { value : String
+    , label : String
+    , unitIds : List (Int)
+    , exactUnitIds : List (Int)
+    }
+
+
+unitHierarchySelectionEncoder : UnitHierarchySelection -> Json.Encode.Value
+unitHierarchySelectionEncoder struct =
+    Json.Encode.object
+        [ ( "value", (Json.Encode.string) struct.value )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "unit_ids", (Json.Encode.list (Json.Encode.int)) struct.unitIds )
+        , ( "exact_unit_ids", (Json.Encode.list (Json.Encode.int)) struct.exactUnitIds )
+        ]
+
+
 type alias UnitHierarchyRsp =
     { revision : String
     , groups : List (UnitHierarchyGroup)
     , units : List (UnitHierarchyUnit)
+    , selections : List (UnitHierarchySelection)
     }
 
 
@@ -10616,11 +10635,14 @@ unitHierarchyRspEncoder struct =
         [ ( "revision", (Json.Encode.string) struct.revision )
         , ( "groups", (Json.Encode.list (unitHierarchyGroupEncoder)) struct.groups )
         , ( "units", (Json.Encode.list (unitHierarchyUnitEncoder)) struct.units )
+        , ( "selections", (Json.Encode.list (unitHierarchySelectionEncoder)) struct.selections )
         ]
 
 
 type alias UnitHierarchyReq =
     { knownRevision : Maybe (String)
+    , unitIds : Maybe (List (Int))
+    , selectionValues : Maybe (List (String))
     }
 
 
@@ -10628,6 +10650,8 @@ unitHierarchyReqEncoder : UnitHierarchyReq -> Json.Encode.Value
 unitHierarchyReqEncoder struct =
     Json.Encode.object
         [ ( "known_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownRevision )
+        , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.unitIds )
+        , ( "selection_values", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectionValues )
         ]
 
 
@@ -28247,18 +28271,30 @@ unitHierarchyUnitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_index" (Json.Decode.nullable (Json.Decode.int))))
 
 
+unitHierarchySelectionDecoder : Json.Decode.Decoder UnitHierarchySelection
+unitHierarchySelectionDecoder =
+    Json.Decode.succeed UnitHierarchySelection
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exact_unit_ids" (Json.Decode.list (Json.Decode.int))))
+
+
 unitHierarchyRspDecoder : Json.Decode.Decoder UnitHierarchyRsp
 unitHierarchyRspDecoder =
     Json.Decode.succeed UnitHierarchyRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (unitHierarchyGroupDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitHierarchyUnitDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selections" (Json.Decode.list (unitHierarchySelectionDecoder))))
 
 
 unitHierarchyReqDecoder : Json.Decode.Decoder UnitHierarchyReq
 unitHierarchyReqDecoder =
     Json.Decode.succeed UnitHierarchyReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_revision" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selection_values" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 unitCombatTypeDecoder : Json.Decode.Decoder UnitCombatType

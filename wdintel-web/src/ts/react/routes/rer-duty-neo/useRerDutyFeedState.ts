@@ -236,6 +236,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
     true,
     setError,
+    {
+      unitIds: [],
+      selectionValues: messageFeeds.flatMap((feed) => [
+        ...(feed.filter.unitsSelected ?? []),
+        ...(feed.filter.unitsDenied ?? []),
+      ]),
+    },
   );
   const isFeedReady = useCallback(
     (feed: MessageFeedState) =>
