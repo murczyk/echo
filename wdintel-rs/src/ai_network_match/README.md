@@ -55,7 +55,9 @@ fails the attempt; a candidate the model leaves out scores 0.
 Before storing, the worker locks the message and the job, rebuilds the model
 input, and checks that its hash and the candidate set did not change during the
 call, so edits to the message, its metadata or a candidate network are not
-lost. If they did, the job runs again without counting an attempt. Failures
+lost. If they did, the job runs again without counting an attempt.
+Re-queueing a pending job bumps its `generation`, and the worker deletes a job
+only at the generation it read, so a request made during scoring runs again. Failures
 back off exponentially (5 s doubling to 300 s) and the job is dropped after 8
 attempts. Progress and the last error are recorded in `ai_worker_progress`
 under `network_match` and published in `POST /api/monitoring` as

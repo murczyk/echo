@@ -140,13 +140,13 @@ pub(crate) async fn process_next(
     };
     let item_id = job.sigint_inbox_item_id;
     let Some(context) = load_context(dbx, item_id).await.c(h!())? else {
-        delete_job(dbx, item_id).await.c(h!())?;
+        delete_job(dbx, &job).await.c(h!())?;
         return Ok(true);
     };
     let scored = score(ai_client, &engines, &context).await;
     let stored = match scored {
         Ok((candidates, engine_id)) => {
-            complete(dbx, item_id, &context, candidates, engine_id).await
+            complete(dbx, &job, &context, candidates, engine_id).await
         }
         Err(error) => Err(error),
     };
@@ -260,14 +260,15 @@ async fn score(
 /// `true` when scores were stored.
 pub(super) async fn complete(
     dbx: &DatabaseConnection,
-    item_id: i64,
+    job: &ai_network_match_worker_job::Model,
     context: &MatchContext,
     candidates: Vec<NetworkMatchCandidate>,
     engine_id: Uuid,
 ) -> anyhow::Result<bool> {
+    let item_id = job.sigint_inbox_item_id;
     let transaction = dbx.begin().await.c(h!())?;
     if !lock_item_and_job(&transaction, item_id).await.c(h!())? {
-        delete_job(&transaction, item_id).await.c(h!())?;
+        delete_job(&transaction, job).await.c(h!())?;
         transaction.commit().await.c(h!())?;
         return Ok(false);
     }
@@ -286,7 +287,7 @@ pub(super) async fn complete(
     )
     .await
     .c(h!())?;
-    delete_job(&transaction, item_id).await.c(h!())?;
+    delete_job(&transaction, job).await.c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(true)
 }
@@ -390,7 +391,7 @@ async fn fail_job(
         error!(
             "ai_network_match_worker dropped message_id={item_id} after {attempts} attempts: {error_text}"
         );
-        delete_job(&transaction, item_id).await.c(h!())?;
+        delete_job(&transaction, job).await.c(h!())?;
     } else {
         let next_attempt_at = Utc::now().naive_utc()
             + ChronoDuration::seconds(retry_delay_secs(attempts));
@@ -418,14 +419,18 @@ pub(crate) fn retry_delay_secs(attempts: i32) -> i64 {
         .min(AI_NETWORK_MATCH_WORKER_RETRY_MAX_SECS)
 }
 
-async fn delete_job<C: ConnectionTrait>(
+/// Deletes the job only at the generation the worker read; a re-queue since
+/// then keeps it, so the request runs again.
+pub(super) async fn delete_job<C: ConnectionTrait>(
     dbx: &C,
-    item_id: i64,
+    job: &ai_network_match_worker_job::Model,
 ) -> anyhow::Result<()> {
-    ai_network_match_worker_job::Entity::delete_by_id(item_id)
-        .exec(dbx)
-        .await
-        .c(h!())?;
+    dbx.execute_raw(sql(
+        "delete from ai_network_match_worker_job where sigint_inbox_item_id = $1 and generation = $2",
+        vec![job.sigint_inbox_item_id.into(), job.generation.into()],
+    ))
+    .await
+    .c(h!())?;
     Ok(())
 }
 

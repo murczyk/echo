@@ -15,6 +15,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub last_error: Option<String>,
     pub created_at: DateTime,
+    pub generation: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

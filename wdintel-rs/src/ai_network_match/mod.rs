@@ -198,14 +198,18 @@ async fn load_results<C: ConnectionTrait>(
 }
 
 /// Only recent messages are queued: network edits recalculate old messages
-/// in bulk, and historical imports arrive with old intercept times.
+/// in bulk, and historical imports arrive with old intercept times. A pending
+/// job gets a new generation, so the worker, which deletes a job only at the
+/// generation it read, cannot drop a request made while it was scoring.
+/// Callers write the message row before this, the worker's lock order; rows
+/// are taken in id order so concurrent enqueues cannot deadlock.
 async fn insert_recent_jobs<C: ConnectionTrait>(
     dbx: &C,
     item_ids: Vec<i64>,
 ) -> anyhow::Result<()> {
     let cutoff = enqueue_cutoff();
     dbx.execute_raw(sql(
-        "insert into ai_network_match_worker_job (sigint_inbox_item_id) select item.id from sigint_inbox_item item join signal_message message on message.id = item.id where item.id = any($1) and not message.deleted and message.created_at >= $2 and coalesce(item.datetime, message.created_at) >= $2 on conflict (sigint_inbox_item_id) do nothing",
+        "insert into ai_network_match_worker_job (sigint_inbox_item_id) select item.id from sigint_inbox_item item join signal_message message on message.id = item.id where item.id = any($1) and not message.deleted and message.created_at >= $2 and coalesce(item.datetime, message.created_at) >= $2 order by item.id on conflict (sigint_inbox_item_id) do update set generation = ai_network_match_worker_job.generation + 1",
         vec![item_ids.into(), cutoff.into()],
     ))
     .await

@@ -362,9 +362,10 @@ async fn worker_retries_bad_replies_and_skips_stale_results_4095() {
     ))
     .await
     .unwrap();
+    let pending = job(dbx, item.id).await.unwrap();
     let stored = worker::complete(
         dbx,
-        item.id,
+        &pending,
         &context,
         vec![candidate(ids[0], 90), candidate(ids[1], 10)],
         engine.engine.id,
@@ -379,4 +380,52 @@ async fn worker_retries_bad_replies_and_skips_stale_results_4095() {
         .await
         .unwrap()
         .is_empty());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn requeue_during_scoring_keeps_the_job_4095() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let dbx = &env.dbx;
+    let engine = engine(dbx, 200, "{}", false).await;
+    set_flag(dbx, true).await;
+    set_callsign_worker(dbx, true, &engine).await;
+    let ids = networks(dbx, 2).await;
+    let item = recent_item(dbx, "Береза").await;
+    link(dbx, item.id, &ids).await;
+    let pair = scores(item.id, &ids);
+    enqueue_for_calculated(dbx, &pair).await.unwrap();
+    let read = job(dbx, item.id).await.unwrap();
+    let context = context::load(dbx, item.id, candidate_set(&ids))
+        .await
+        .unwrap()
+        .unwrap();
+
+    enqueue_for_calculated(dbx, &pair).await.unwrap();
+    assert_eq!(
+        job(dbx, item.id).await.unwrap().generation,
+        read.generation + 1
+    );
+    let stored = worker::complete(
+        dbx,
+        &read,
+        &context,
+        vec![candidate(ids[0], 90), candidate(ids[1], 10)],
+        engine.engine.id,
+    )
+    .await
+    .unwrap();
+    assert!(stored);
+    assert!(
+        job(dbx, item.id).await.is_some(),
+        "a re-queue during scoring keeps the job"
+    );
+
+    assert!(run_once(&env).await);
+    assert!(job(dbx, item.id).await.is_none());
+    assert_eq!(
+        engine.calls.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "the re-run finds the stored scores current"
+    );
 }
