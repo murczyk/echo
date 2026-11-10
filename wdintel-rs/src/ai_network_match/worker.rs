@@ -370,7 +370,9 @@ async fn save_result(
     Ok(())
 }
 
-async fn fail_job(
+/// Counts the failed attempt only at the generation the worker read; a job
+/// re-queued during the call keeps its retry state and runs again.
+pub(super) async fn fail_job(
     dbx: &DatabaseConnection,
     job: &ai_network_match_worker_job::Model,
     error_text: &str,
@@ -397,12 +399,13 @@ async fn fail_job(
             + ChronoDuration::seconds(retry_delay_secs(attempts));
         transaction
             .execute_raw(sql(
-                "update ai_network_match_worker_job set attempts = $2, next_attempt_at = $3, last_error = $4 where sigint_inbox_item_id = $1",
+                "update ai_network_match_worker_job set attempts = $2, next_attempt_at = $3, last_error = $4 where sigint_inbox_item_id = $1 and generation = $5",
                 vec![
                     item_id.into(),
                     attempts.into(),
                     next_attempt_at.into(),
                     error_text.into(),
+                    job.generation.into(),
                 ],
             ))
             .await

@@ -449,6 +449,12 @@ async fn requeue_during_scoring_keeps_the_job_4095() {
         job(dbx, item.id).await.is_some(),
         "a re-queue during scoring keeps the job"
     );
+    worker::fail_job(dbx, &read, "superseded call failed")
+        .await
+        .unwrap();
+    let kept = job(dbx, item.id).await.unwrap();
+    assert_eq!(kept.attempts, 0, "the re-queued job keeps its retry budget");
+    assert!(kept.next_attempt_at <= chrono::Utc::now().naive_utc());
 
     assert!(run_once(&env).await);
     assert!(job(dbx, item.id).await.is_none());
