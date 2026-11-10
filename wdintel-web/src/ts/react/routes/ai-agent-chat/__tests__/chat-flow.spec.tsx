@@ -1762,6 +1762,23 @@ describe('#4112 switching engines after a provider failure or refusal', () => {
     expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
   });
 
+  it('tells the home page when a refresh finds the chat switched off', async () => {
+    const availability = vi.fn();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AiAgentChat onAvailabilityChange={availability} />));
+    await flush();
+    expect(availability).toHaveBeenLastCalledWith('enabled');
+    mocks.configuration.mockResolvedValue({
+      enabled: false,
+      defaultProviderId: PROVIDER.id,
+      providers: [PROVIDER],
+    });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await flush();
+    expect(availability).toHaveBeenLastCalledWith('disabled');
+  });
+
   it('switches the engine mid-conversation', async () => {
     await openConversation(turn('request-ok', PROVIDER.id, null));
     await chooseOption('Провайдер ШІ', SOL.name);

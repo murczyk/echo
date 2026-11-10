@@ -1148,8 +1148,13 @@ export function AiAgentChat({
     try {
       const next = await getAiAgentConfiguration();
       if (!mountedRef.current) return;
+      const wasEnabled = configurationRef.current?.enabled;
       configurationRef.current = next;
       setConfiguration(next);
+      // The home page shows the classic view while the chat is switched off.
+      if (wasEnabled !== next.enabled) {
+        onAvailabilityChange?.(next.enabled ? 'enabled' : 'disabled');
+      }
       // An admin may have removed the current or default engine meanwhile.
       defaultProviderIdRef.current = rememberedProviderId(next);
       const selectedOffered = next.providers.some(
