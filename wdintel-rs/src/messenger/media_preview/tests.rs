@@ -1,11 +1,12 @@
 use super::*;
 use serde_json::Value;
+use tokio::process::Command;
 
 #[tokio::test]
 async fn segments_preserve_seek_timestamps_and_decode_with_audio() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source.mp4");
-    let status = Command::new(MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN)
+    let status = Command::new("ffmpeg")
         .args([
             "-v",
             "error",
@@ -37,17 +38,16 @@ async fn segments_preserve_seek_timestamps_and_decode_with_audio() {
     assert!(status.success());
 
     let entry = cache::Entry::for_test(directory.path());
-    render_window(source.clone().into_os_string(), &entry, 3, 4, 6.2)
+    let input = echo_media::Input::file(&source).unwrap();
+    render_window(input.clone(), &entry, 3, 4, 6.2)
         .await
         .unwrap();
-    render_window(source.clone().into_os_string(), &entry, 0, 3, 6.2)
-        .await
-        .unwrap();
+    render_window(input, &entry, 0, 3, 6.2).await.unwrap();
     let mut segments = Vec::new();
     for index in 0..7 {
         let (start, length) = segment_bounds(index, 6.2).unwrap();
         let path = entry.path(&format!("{index}.ts"));
-        let output = Command::new(MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN)
+        let output = Command::new("ffprobe")
             .args([
                 "-v",
                 "error",
@@ -89,7 +89,7 @@ async fn segments_preserve_seek_timestamps_and_decode_with_audio() {
         bytes.extend(fs::read(path).await.unwrap());
     }
     fs::write(&joined, bytes).await.unwrap();
-    let output = Command::new(MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN)
+    let output = Command::new("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(joined)
         .args(["-f", "null", "-"])

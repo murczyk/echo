@@ -6,7 +6,8 @@ and limits the damage of G2 (services running as root) for the processes it
 starts.
 
 Messenger and Device thumbnails (through `wdintel-rs/src/thumbnail.rs`), the
-transcription audio probe and the messenger playback copy use it. The other ffmpeg call sites are not wired
+transcription audio probe, the messenger playback copy and the messenger HLS
+preview use it. The other ffmpeg call sites are not wired
 yet; see [Wiring](#wiring).
 
 ## Threat model
@@ -148,10 +149,10 @@ media
 | Method | Call sites in wdintel-rs | Status |
 | --- | --- | --- |
 | `thumbnail` | `thumbnail.rs` `generate`, called by `messenger/media_thumbnail.rs` and `devices/files/content/thumbnail/source.rs` | Wired |
-| `probe` | `transcription/worker.rs` `ensure_audio`, `media_local_cache/playback.rs` `supported_source` | Wired |
-| `probe` | `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata` | Not wired |
+| `probe` | `transcription/worker.rs` `ensure_audio`, `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info` | Wired |
+| `probe` | `devices/audio/probe.rs` `media_metadata` | Not wired |
 | `remux_mp4_faststart` | `media_local_cache/playback.rs` `remux_watching_disk` | Wired |
-| `hls_segments` | `media_preview/mod.rs` `segment_command` | Not wired |
+| `hls_segments` | `media_preview/mod.rs` `render_window` | Wired |
 | `decode_verify` | `devices/audio/probe.rs` `decoder_command`, `run_media_process`, `read_output` | Not wired |
 | `audio_rendition` | `devices/audio/content.rs` `media_command` | Not wired |
 | `audio_image` | `milgeo_audio_wave::generate_wave_png` / `generate_spectrogram_png` (`messenger/media_wave.rs`) | Not wired |
@@ -194,14 +195,25 @@ remuxes with `Formats::VIDEO`:
 - The `.echo-media-*` job directory lives in the cache root for the length of a
   remux. Cache cleanup ignores it, so one left by a crash is never removed.
 
+The messenger HLS preview (`media_preview/`) reads either the locally
+retained original (`Input::File`) or a pre-signed S3 URL:
+
+- The URL becomes `Input::Remote(RemoteUrl::new(url, &[s3_endpoint])?)`, so it
+  must match the configured `s3_endpoint` origin. An empty endpoint fails the
+  preview instead of trusting opendal's default host.
+- An `https` endpoint gets `https,tls,tcp`; an `http` endpoint (local MinIO)
+  gets `http,tcp`. Before, both used `file,http,https,tcp,tls`.
+- The encoder writes only into the window's `<id>.work` directory, and each
+  segment is capped at `MESSENGER_MEDIA_PREVIEW_SEGMENT_MAX_BYTES` by
+  `RLIMIT_FSIZE`. wdintel-rs still publishes segments from that directory.
+- The pre-signed URL is still visible in `/proc/<pid>/cmdline` (G7).
+
 Remaining:
 
-1. Replace the other call sites in the table above. Pass the existing wdintel-rs
-   `config.rs` constants (filters, limits, timeouts) through the option structs.
-2. For HLS from S3, build `Input::Remote(RemoteUrl::new(url, &[s3_origin])?)`,
-   where `s3_origin` is the configured endpoint, for example
-   `https://s3.eu-central-003.backblazeb2.com`.
-3. Remove the `milgeo-audio-wave` ffmpeg path, then close G1, I2 and I3 in the
+1. Replace the device audio call sites in the table above. Pass the existing
+   wdintel-rs `config.rs` constants (filters, limits, timeouts) through the
+   option structs.
+2. Remove the `milgeo-audio-wave` ffmpeg path, then close G1, I2 and I3 in the
    checklist.
 
 ## Tests

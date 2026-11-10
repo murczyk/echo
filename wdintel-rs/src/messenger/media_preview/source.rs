@@ -4,29 +4,18 @@ use crate::entities::signal_message_media;
 use crate::h;
 use crate::types::{Env, ShortContext};
 use anyhow::{bail, Result};
+use echo_media::ffmpeg::ProbeOptions;
+use echo_media::{Ffmpeg, Formats, RemoteUrl};
 use serde::{Deserialize, Serialize};
-use std::ffi::OsString;
-use std::process::Stdio;
 use std::time::Duration;
-use tokio::process::Command;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub(super) struct Info {
     pub duration: f64,
 }
 
-#[derive(Deserialize)]
-struct Probe {
-    format: ProbeFormat,
-}
-
-#[derive(Deserialize)]
-struct ProbeFormat {
-    duration: String,
-}
-
 pub(super) struct Input {
-    pub value: OsString,
+    pub value: echo_media::Input,
     pub min_free: u64,
 }
 
@@ -51,7 +40,7 @@ pub(super) async fn input(
             .c(h!())?
     {
         return Ok(Input {
-            value: path.into_os_string(),
+            value: echo_media::Input::file(&path).c(h!())?,
             min_free,
         });
     }
@@ -72,22 +61,24 @@ pub(super) async fn input(
         .await
         .c(h!())?;
     Ok(Input {
-        value: signed.uri().to_string().into(),
+        value: remote_input(storage, &signed.uri().to_string()).c(h!())?,
         min_free,
     })
 }
 
-pub(super) fn input_options(command: &mut Command) {
-    command.args([
-        "-threads",
-        MESSENGER_MEDIA_PREVIEW_VIDEO_THREADS,
-        "-protocol_whitelist",
-        "file,http,https,tcp,tls",
-        "-format_whitelist",
-        "mov",
-        "-rw_timeout",
-        MESSENGER_MEDIA_PREVIEW_SOURCE_TIMEOUT_MICROS,
-    ]);
+/// A pre-signed URL is only handed to ffmpeg when it points at the
+/// configured S3 endpoint (scheme, host and port), which also selects the
+/// `https,tls,tcp` or `http,tcp` protocol whitelist.
+fn remote_input(
+    storage: &crate::storage::S3Config,
+    url: &str,
+) -> Result<echo_media::Input> {
+    let endpoint = storage.endpoint.trim();
+    if endpoint.is_empty() {
+        bail!("s3 endpoint must be configured for remote video preview")
+    }
+    let url = RemoteUrl::new(url, &[endpoint]).c(h!())?;
+    Ok(echo_media::Input::Remote(url))
 }
 
 pub(super) async fn info(
@@ -109,37 +100,21 @@ pub(super) async fn info(
     }
     let _slot = cache.slot().await.c(h!())?.ok_or(super::Busy).c(h!())?;
     let source = input(env, media).await.c(h!())?;
-    let mut command = Command::new(MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN);
-    input_options(&mut command);
-    command
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "json",
-            "-i",
-        ])
-        .arg(source.value)
-        .kill_on_drop(true)
-        .stderr(Stdio::null());
-    let output = tokio::time::timeout(
-        Duration::from_secs(MESSENGER_MEDIA_PREVIEW_PROBE_TIMEOUT_SECS),
-        command.output(),
-    )
-    .await
-    .c(h!())?
-    .c(h!())?;
-    if !output.status.success() {
+    let options = ProbeOptions {
+        formats: Formats::MOV,
+        timeout: Duration::from_secs(
+            MESSENGER_MEDIA_PREVIEW_PROBE_TIMEOUT_SECS,
+        ),
+    };
+    let probe = Ffmpeg::shared()
+        .c(h!())?
+        .probe(&source.value, &options)
+        .await
+        .c(h!())?;
+    let Some(duration) = probe.duration_secs() else {
         bail!("could not inspect video preview duration")
-    }
-    let probe: Probe = serde_json::from_slice(&output.stdout).c(h!())?;
-    let duration: f64 = probe.format.duration.parse().c(h!())?;
-    if !duration.is_finite()
-        || duration <= 0.0
-        || duration > MESSENGER_MEDIA_PREVIEW_MAX_DURATION_SECS as f64
-    {
+    };
+    if duration > MESSENGER_MEDIA_PREVIEW_MAX_DURATION_SECS as f64 {
         bail!("video preview duration is outside supported bounds")
     }
     let info = Info { duration };
