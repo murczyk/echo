@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "echo-media"
-version = "0.1.1-rc.202611090807"
+version = "0.1.1-rc.202611101146"
 dependencies = [
  "anyhow",
  "landlock",
