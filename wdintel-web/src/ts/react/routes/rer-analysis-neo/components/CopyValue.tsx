@@ -15,10 +15,12 @@ export function CopyValue({
   text,
   className,
   children,
+  ...dataAttributes
 }: {
   text: string;
   className?: string;
   children: ReactNode;
+  [dataAttribute: `data-${string}`]: string | boolean | undefined;
 }) {
   const [status, setStatus] = useState<keyof typeof TITLES>('idle');
   const timerRef = useRef<number | null>(null);
@@ -48,6 +50,7 @@ export function CopyValue({
             () => show('failed'),
           );
         }}
+        {...dataAttributes}
       >
         {children}
       </button>
