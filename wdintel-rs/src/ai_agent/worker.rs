@@ -873,8 +873,10 @@ async fn run_request_inner(
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
                         if event_type == "completion_metadata" {
-                            if execution_policy.is_none() { continue; }
-                            completion_metadata = Some(serde_json::from_value(payload.clone()).c(h!())?);
+                            let metadata: super::types::AiAgentCompletionMetadata =
+                                serde_json::from_value(payload.clone()).c(h!())?;
+                            if !keeps_runner_metadata(execution_policy.is_some(), &metadata) { continue; }
+                            completion_metadata = Some(metadata);
                         }
                         let update = events::assistant_text_update(&event_type, &payload);
                         let (response_bytes, next_chars) = match &update {
@@ -1478,6 +1480,15 @@ fn next_model_failure(
         }
         _ => current,
     }
+}
+
+/// Runs without an execution policy (reasoning presets off) show no coverage
+/// notices, but a provider failure still lets the chat offer another model.
+fn keeps_runner_metadata(
+    has_execution_policy: bool,
+    metadata: &super::types::AiAgentCompletionMetadata,
+) -> bool {
+    has_execution_policy || metadata.reason == AI_AGENT_REASON_PROVIDER_ERROR
 }
 
 /// Research that only fell back to a saved draft because the provider kept
@@ -2086,6 +2097,24 @@ mod tests {
             None,
             "the provider answered"
         );
+    }
+
+    #[test]
+    fn issue_4112_legacy_runs_keep_only_provider_failures() {
+        let metadata =
+            |reason: &str| crate::ai_agent::types::AiAgentCompletionMetadata {
+                coverage_limited: true,
+                reason: reason.to_string(),
+            };
+        assert!(super::keeps_runner_metadata(
+            false,
+            &metadata("provider_error")
+        ));
+        assert!(!super::keeps_runner_metadata(
+            false,
+            &metadata("time_limit")
+        ));
+        assert!(super::keeps_runner_metadata(true, &metadata("time_limit")));
     }
 
     #[test]
