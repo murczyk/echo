@@ -125,6 +125,7 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | Device file content | S3 (`file_content`) | strong-box, AAD `bucket/full-key` |
 | Retained originals, playback copies | `<storage_dir>/messenger_media_cache/local` | dirs `0700`, files `0600`, file locks |
 | Image/video thumbnails | `<storage_dir>/messenger_media_cache/thumbnails/<id>.jpg` | `0700`/`0600` |
+| Device file thumbnails | `/tmp/echo-device-file-thumbnails` | 1 GiB budget, 24 h TTL, `0700`/`0600` |
 | Thumbnail sources | `<storage_dir>/messenger_media_cache/thumbnail_sources` | 20 GiB budget, 24 h TTL |
 | HLS preview segments | `<storage_dir>/messenger_media_cache/preview-v1` | 512 MiB budget, 24 h TTL |
 | Waveform/spectrogram PNG | `/tmp/wave-<id>.png`, `/tmp/spectrogram-<id>.png` (`MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR`) | system `/tmp` |
@@ -136,7 +137,7 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 
 | Job | Input | Component | Code | Limits and flags |
 | --- | --- | --- | --- | --- |
-| Image/video thumbnail | messenger image or video | `ffmpeg` (mjpeg out) | `messenger/media_thumbnail.rs` `build_thumbnail_command` | 120 s timeout, 1 thread, one generation at a time, `-map 0:v:0`; **no protocol or format whitelist** |
+| Image/video thumbnail | messenger image or video; Device file image or video | `ffmpeg` (mjpeg out) through [`echo-media`](../echo-media/README.md) | `thumbnail.rs` `generate`, called by `messenger/media_thumbnail.rs` and `devices/files/content/thumbnail/source.rs` | `-protocol_whitelist file` and a demuxer whitelist (`ECHO_MEDIA_FORMATS_THUMBNAIL`); sandboxed child; 120 s timeout, 1 decoder and encoder thread, `-map 0:v:0`; one messenger generation at a time; Device output ≤ 2 MiB |
 | Playback normalisation | H.264 yuv420p MP4 (+AAC) | `ffprobe`, `ffmpeg -c copy +faststart` | `messenger/media_local_cache/playback.rs` | `-protocol_whitelist file,pipe`; 5 min timeout |
 | HLS preview | plaintext MP4 ≥ 8 MiB, > 8 Mbps | `ffprobe`, `ffmpeg` libx264/aac, `hls.js` in browser | `messenger/media_preview/{source,mod}.rs` | input is a local file or a pre-signed S3 URL (10 min TTL); `-protocol_whitelist file,http,https,tcp,tls -format_whitelist mov`; 5 s probe, 30 s segment, 8 MiB per segment, 2 jobs |
 | Waveform, spectrogram | encrypted messenger audio | `milgeo-audio-wave` → `ffmpeg` | `messenger/media_wave.rs` | temp file plus PNG in `/tmp`; **no protocol whitelist** |
@@ -150,6 +151,13 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | Map conversion | GPX, GeoJSON, LDK, TRK, ... | Alpine conversion service over HTTP | `alpine/mod.rs`, `sigint/media_conversion/` | result is KMZ |
 | KML/KMZ, XLSX import | map and report files | `quick-xml`, `zip`, `calamine`, `geoconvert` | `kml/`, `rer_importer/`, `palitra/` | — |
 | AI-agent uploads | PNG, JPEG, WebP, PDF | `image` crate (jpeg/png/webp), `infer` | `ai_agent/uploads/` | own limits |
+
+Thumbnail ffmpeg processes run through `echo-media`. Each gets a cleared
+environment and no capabilities. Landlock limits it to reading system libraries
+and its input, and writing only a private job directory. Offline jobs run in
+their own network namespace when the service is root. The other ffmpeg rows
+above still spawn ffmpeg directly; the
+[echo-media README](../echo-media/README.md#wiring) tracks them.
 
 Some processing runs outside the main media path:
 
@@ -238,7 +246,7 @@ The only `add_header Content-Security-Policy` in `deploy/nginx/*` is on the
 
 | Component | Used for | Runs as |
 | --- | --- | --- |
-| FFmpeg / ffprobe (distro package) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker` |
+| FFmpeg / ffprobe (distro package, found on `PATH`) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker`; thumbnails run sandboxed through `echo-media` (no capabilities, Landlock) |
 | libx264, libmp3lame, AAC encoder | HLS preview, device audio rendition | same |
 | signal-cli-rest-api / signal-cli | Signal ingest and attachment download | `root` (`echo-signal-bot@`) |
 | whatsapp-cli | WhatsApp ingest | `root` (`echo-whatsapp-bot@`) |
@@ -267,6 +275,7 @@ options.
 | `calamine`, `docx-rs`, `rust_xlsxwriter`, `csv` | spreadsheet and report import/export |
 | `geoconvert`, `milgeo-rs` | coordinates, map formats |
 | `milgeo-audio-wave` | waveform/spectrogram (spawns `ffmpeg`) |
+| `echo-media` (workspace crate; `landlock` on Linux) | sandboxed ffmpeg/ffprobe jobs; used for thumbnails |
 | `actix-web`, `actix-files`, `actix-multipart` | HTTP serving and uploads |
 | `content_disposition` | header encoding |
 | `opencv` (optional feature) | image processing in `terminal` |

@@ -27,6 +27,7 @@ use crate::process::Spec;
 use crate::sandbox::{Limits, Policy, SandboxMode};
 use args::Args;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Binary locations and sandbox mode shared by every job.
@@ -97,10 +98,23 @@ struct Job<'a> {
     capture_stdout: bool,
 }
 
+static SHARED: OnceLock<Ffmpeg> = OnceLock::new();
+
 impl Ffmpeg {
     /// [`Ffmpeg::new`] with [`MediaConfig::from_path`].
     pub fn from_path() -> Result<Self> {
         Self::new(MediaConfig::from_path()?)
+    }
+
+    /// A process-wide instance from [`Ffmpeg::from_path`], created on first
+    /// use. A failed lookup is not cached, so installing ffmpeg later works
+    /// without a restart; once found, the paths never change.
+    pub fn shared() -> Result<&'static Self> {
+        if let Some(ffmpeg) = SHARED.get() {
+            return Ok(ffmpeg);
+        }
+        let ffmpeg = Self::from_path()?;
+        Ok(SHARED.get_or_init(|| ffmpeg))
     }
 
     pub fn new(config: MediaConfig) -> Result<Self> {
@@ -173,5 +187,13 @@ mod tests {
         assert!(sh.is_absolute(), "{sh:?}");
         assert_eq!(sh, sh.canonicalize().unwrap());
         assert!(find_program("echo-media-no-such-program").is_err());
+    }
+
+    #[test]
+    fn shared_instance_is_created_once() {
+        let first = Ffmpeg::shared().unwrap();
+        let second = Ffmpeg::shared().unwrap();
+        assert!(std::ptr::eq(first, second));
+        assert!(first.config().ffmpeg_bin.is_absolute());
     }
 }

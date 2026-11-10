@@ -8,6 +8,7 @@ description = "ЕХО"
 
 [dependencies]
 echo-migration = { version = "*", path = "../echo-migration" }
+echo-media = { path = "../echo-media" }
 wdfiles-migration = { version = "*", path = "../wdfiles-migration" }
 serde = { workspace = true }
 serde_ignored = "0.1.14"

@@ -1,26 +1,27 @@
+//! JPEG thumbnails through the sandboxed `echo-media` ffmpeg wrapper.
+
 use anyhow::{Context, Result};
+use echo_media::ffmpeg::ThumbnailOptions;
+use echo_media::{Ffmpeg, Input};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::Stdio;
 use std::time::Duration;
 use tokio::fs;
-use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 
 use crate::h;
 
 pub(crate) struct Options<'a> {
-    pub binary: &'a str,
     pub filter: &'a str,
     pub timeout: Duration,
     pub max_bytes: Option<u64>,
-    pub local_media_only: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("Thumbnail decoder could not produce a valid JPEG")]
 pub(crate) struct InvalidMedia;
 
+/// Writes one JPEG frame of `input` to `output` (mode `0600`, published
+/// atomically). Fails with [`InvalidMedia`] when retrying cannot help.
 pub(crate) async fn generate(
     input: &Path,
     output: &Path,
@@ -36,84 +37,28 @@ pub(crate) async fn generate(
     fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))
         .await
         .context(h!())?;
-    let temporary = tempfile::Builder::new()
-        .prefix("thumbnail.tmp-")
-        .suffix(".jpg")
-        .tempfile_in(directory)
-        .context(h!())?;
-    let status = tokio::time::timeout(
-        options.timeout,
-        command(input, temporary.path(), options).status(),
-    )
-    .await
-    .context(h!())?
-    .context(h!())?;
-    if !status.success() {
-        return Err(InvalidMedia).context(h!());
+    let thumbnail = ThumbnailOptions {
+        timeout: options.timeout,
+        max_bytes: options.max_bytes,
+        ..ThumbnailOptions::new(options.filter)
+    };
+    let result = match Input::file(input) {
+        Ok(input) => {
+            Ffmpeg::shared()?
+                .thumbnail(&input, output, &thumbnail)
+                .await
+        }
+        Err(error) => Err(error),
+    };
+    match result {
+        Ok(_) => Ok(()),
+        Err(error) if error.is_terminal() => {
+            log::debug!(
+                "thumbnail rejected input={}: {error:#?}",
+                input.display()
+            );
+            Err(InvalidMedia).context(h!())
+        }
+        Err(error) => Err(error).context(h!()),
     }
-    let metadata = fs::metadata(temporary.path()).await.context(h!())?;
-    if metadata.len() == 0
-        || options
-            .max_bytes
-            .is_some_and(|limit| metadata.len() > limit)
-    {
-        return Err(InvalidMedia).context(h!());
-    }
-    let mut file = fs::File::open(temporary.path()).await.context(h!())?;
-    let mut magic = [0u8; 3];
-    if file.read_exact(&mut magic).await.is_err() || magic != [0xff, 0xd8, 0xff]
-    {
-        return Err(InvalidMedia).context(h!());
-    }
-    fs::set_permissions(
-        temporary.path(),
-        std::fs::Permissions::from_mode(0o600),
-    )
-    .await
-    .context(h!())?;
-    fs::rename(temporary.path(), output).await.context(h!())?;
-    Ok(())
-}
-
-pub(crate) fn command(
-    input: &Path,
-    output: &Path,
-    options: &Options<'_>,
-) -> Command {
-    let mut command = Command::new(options.binary);
-    command
-        .kill_on_drop(true)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .args(["-nostdin", "-y", "-hide_banner", "-loglevel", "error"]);
-    if options.local_media_only {
-        command.args([
-            "-protocol_whitelist",
-            "file",
-            "-format_whitelist",
-            crate::config::THUMBNAIL_LOCAL_FORMAT_WHITELIST,
-        ]);
-    }
-    command
-        .arg("-i")
-        .arg(input)
-        .args(["-map", "0:v:0", "-vf", options.filter])
-        .args([
-            "-frames:v",
-            "1",
-            "-an",
-            "-sn",
-            "-threads",
-            "1",
-            "-f",
-            "image2",
-            "-c:v",
-            "mjpeg",
-        ]);
-    if let Some(max_bytes) = options.max_bytes {
-        command.arg("-fs").arg(max_bytes.to_string());
-    }
-    command.arg(output);
-    command
 }

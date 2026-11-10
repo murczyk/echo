@@ -10055,6 +10055,7 @@ dependencies = [
  "echo-gpu-client",
  "echo-im",
  "echo-install-utils",
+ "echo-media",
  "echo-migration",
  "elm_rs",
  "encoding_rs",

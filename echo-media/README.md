@@ -2,10 +2,11 @@
 
 Sandboxed ffmpeg and ffprobe jobs for Echo. It addresses G1, I2 and I3 in
 [media-security-audit-checklist.md](../docs/media-security-audit-checklist.md)
-and limits the damage of G2 (services running as root).
+and limits the damage of G2 (services running as root) for the processes it
+starts.
 
-Not wired into wdintel-rs yet. The call sites it replaces are listed under
-[Wiring](#wiring).
+Messenger and Device thumbnails use it (through `wdintel-rs/src/thumbnail.rs`).
+The other ffmpeg call sites are not wired yet; see [Wiring](#wiring).
 
 ## Threat model
 
@@ -36,7 +37,9 @@ sandbox separately.
    - `MediaConfig::from_path()` finds `ffmpeg` and `ffprobe` on `PATH` once
      (skipping relative entries) and stores canonical absolute paths. Jobs
      always run those paths, so a later `PATH` change cannot swap the
-     binary. The service's `PATH` must be trusted (checklist I3);
+     binary. The service's `PATH` must be trusted (checklist I3).
+     `Ffmpeg::shared()` keeps one such instance per process; a failed lookup
+     is retried on the next call;
    - the environment is cleared, keeping only `LC_ALL=C` and
      `AV_LOG_FORCE_NOCOLOR=1`;
    - the working directory is `/` and stdin is `/dev/null`;
@@ -44,8 +47,9 @@ sandbox separately.
      whole process group;
    - stderr is captured in full, with control characters replaced and remote
      URLs redacted. stdout is captured in full when a job reads it.
-3. **Child sandbox** (`sandbox/child.rs`). It runs between `fork` and `exec`,
-   using only async-signal-safe syscalls:
+3. **Child sandbox** (`sandbox/child.rs`, Linux-only steps in
+   `sandbox/linux.rs`). It runs between `fork` and `exec`, using only
+   async-signal-safe syscalls:
    - `PR_SET_PDEATHSIG(SIGKILL)`, and `SIGXFSZ` reset to its default action;
    - `unshare(CLONE_NEWNET | CLONE_NEWIPC)` for offline jobs, when the parent has
      `CAP_SYS_ADMIN` (root in production);
@@ -90,8 +94,9 @@ sandbox separately.
   anything other than the listed binary. A `Policy` syscall layer (for example
   with `seccompiler`) can be added without changing the API.
 - **Signals.** On kernels older than 6.12 (no Landlock ABI 6), a compromised
-  child still runs as uid 0 with no capabilities. It can `kill()` other root
-  processes, wdintel-rs included.
+  child keeps the service's uid (root in production), only without
+  capabilities. It can `kill()` other processes of that uid, wdintel-rs
+  included.
 - **Network.** For offline jobs, network isolation needs root (network
   namespace) or Landlock ABI 4. Unprivileged runs on 5.15 kernels have neither,
   so only the protocol whitelist stops network access. Network jobs can
@@ -126,22 +131,22 @@ wdintel-rs already does with `<id>.source` and `source-XXXX`.
 use echo_media::ffmpeg::ThumbnailOptions;
 use echo_media::{Ffmpeg, Input};
 
-let media = Ffmpeg::from_path()?; // or Ffmpeg::new(MediaConfig { .. })
+let media = Ffmpeg::shared()?; // process-wide; or Ffmpeg::new(MediaConfig { .. })
 let input = Input::file("/var/lib/echo/messenger_media_cache/thumbnail_sources/<id>.source")?;
 media
     .thumbnail(&input, &thumbnail_path, &ThumbnailOptions::new(filter))
     .await?;
 ```
 
-| Method | Replaces in wdintel-rs |
-| --- | --- |
-| `probe` | `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata`, `transcription/worker.rs` audio probe |
-| `thumbnail` | `thumbnail.rs` `generate`/`command` (messenger and device callers) |
-| `remux_mp4_faststart` | `media_local_cache/playback.rs` `normalization_command`, `run_normalizer` |
-| `hls_segments` | `media_preview/mod.rs` `segment_command` |
-| `decode_verify` | `devices/audio/probe.rs` `decoder_command`, `run_media_process`, `read_output` |
-| `audio_rendition` | `devices/audio/content.rs` `media_command` |
-| `audio_image` | `milgeo_audio_wave::generate_wave_png` / `generate_spectrogram_png` |
+| Method | Call sites in wdintel-rs | Status |
+| --- | --- | --- |
+| `thumbnail` | `thumbnail.rs` `generate`, called by `messenger/media_thumbnail.rs` and `devices/files/content/thumbnail/source.rs` | Wired |
+| `probe` | `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata`, `transcription/worker.rs` audio probe | Not wired |
+| `remux_mp4_faststart` | `media_local_cache/playback.rs` `normalization_command`, `run_normalizer` | Not wired |
+| `hls_segments` | `media_preview/mod.rs` `segment_command` | Not wired |
+| `decode_verify` | `devices/audio/probe.rs` `decoder_command`, `run_media_process`, `read_output` | Not wired |
+| `audio_rendition` | `devices/audio/content.rs` `media_command` | Not wired |
+| `audio_image` | `milgeo_audio_wave::generate_wave_png` / `generate_spectrogram_png` (`messenger/media_wave.rs`) | Not wired |
 
 `MediaError::is_terminal()` separates "this input will never work" from
 transient failures, matching today's `InvalidMedia` and transient split.
@@ -151,12 +156,25 @@ can wrap other decoders later, such as `pdftotext`.
 
 ## Wiring
 
-Not done yet.
+Thumbnails are done:
 
-1. Replace each call site in the table above. Pass the existing wdintel-rs
+- `wdintel-rs/src/thumbnail.rs` keeps its `generate` and `InvalidMedia`
+  interface and calls `Ffmpeg::shared()`.
+- `MediaError::is_terminal()` errors become `InvalidMedia`; timeouts and
+  environment failures stay transient.
+- Messenger thumbnails gained the whitelists they lacked. Device thumbnails
+  keep their 2 MiB output cap. The `*_THUMBNAIL_FFMPEG_BIN` constants and
+  `THUMBNAIL_LOCAL_FORMAT_WHITELIST` are gone.
+- On Linux the default is `Enforce`: a host without Landlock, or a root service
+  without `CAP_SYS_ADMIN`, now fails thumbnail jobs as transient errors instead
+  of running them unsandboxed. Check every host's kernel before deploying.
+
+Remaining:
+
+1. Replace the other call sites in the table above. Pass the existing wdintel-rs
    `config.rs` constants (filters, limits, timeouts) through the option structs.
 2. For HLS from S3, build `Input::Remote(RemoteUrl::new(url, &[s3_host])?)`.
-3. Remove the `milgeo-audio-wave` ffmpeg path, then update G1, I2 and I3 in the
+3. Remove the `milgeo-audio-wave` ffmpeg path, then close G1, I2 and I3 in the
    checklist.
 
 ## Tests

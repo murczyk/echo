@@ -48,7 +48,6 @@ pub(super) async fn generate(
         temporary.path(),
         destination,
         &crate::thumbnail::Options {
-            binary: DEVICE_FILE_THUMBNAIL_FFMPEG_BIN,
             filter: if image {
                 DEVICE_FILE_THUMBNAIL_IMAGE_FILTER
             } else {
@@ -58,7 +57,6 @@ pub(super) async fn generate(
                 DEVICE_FILE_THUMBNAIL_FFMPEG_TIMEOUT_SECS,
             ),
             max_bytes: Some(DEVICE_FILE_THUMBNAIL_MAX_BYTES),
-            local_media_only: true,
         },
     )
     .await;

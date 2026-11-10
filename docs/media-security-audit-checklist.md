@@ -24,15 +24,18 @@ HTTP routes that serve media, and the browser viewers.
 - `OK`: a control exists. The auditor should still try to break it.
 
 Code references use `wdintel-rs/src/` unless they say otherwise.
+`echo-media/` is the sandboxed ffmpeg crate
+([README](../echo-media/README.md)).
 
 ## Known gaps (start here)
 
 These came from reading the code while preparing this checklist. None have been
-fixed or tested on a live system.
+tested on a live system. G1, I2 and I3 are partly fixed: thumbnails now run
+through `echo-media`. No other gap has been worked on.
 
 | # | Gap | Where | CWE | Severity guess |
 | --- | --- | --- | --- | --- |
-| G1 | ffmpeg/ffprobe run on attacker files **without `-protocol_whitelist` / `-format_whitelist`**. The HLS and concat demuxers can read local files (sending them to a remote listener) or make network requests (SSRF). | `messenger/media_thumbnail.rs` `build_thumbnail_command`; `transcription/worker.rs` audio probe; `milgeo-audio-wave` `src/ffmpeg.rs` (waveform/spectrogram) | 918, 73, 200 | High |
+| G1 | ffmpeg/ffprobe run on attacker files **without `-protocol_whitelist` / `-format_whitelist`**. The HLS and concat demuxers can read local files (sending them to a remote listener) or make network requests (SSRF). Partly fixed: messenger and Device thumbnails go through `echo-media`, which whitelists every input. `echo-media/tests/hostile.rs` reproduces the leak with plain ffmpeg and shows both the whitelists and the sandbox block it. | Remaining: `transcription/worker.rs` audio probe; `milgeo-audio-wave` `src/ffmpeg.rs` (waveform/spectrogram) | 918, 73, 200 | High |
 | G2 | Every service unit runs as **`root`** with no systemd hardening: no `NoNewPrivileges`, `ProtectSystem`, `PrivateTmp`, `ProtectHome`, `CapabilityBoundingSet`, `SystemCallFilter`, `MemoryMax` per child, or network restrictions. One decoder RCE gives an attacker root on the host, plus S3 credentials and the StrongBox key. | `wdintel-rs/debian/*.service` | 250, 269 | High |
 | G3 | The stored `content_type` is **taken from the sender or collector**. Any declared `image/*`, `audio/*` or `video/*` type, or any non-generic type, wins over the sniffed type. The original is served with that type. | `messenger/media.rs` `resolve_attachment_content_type` | 434, 646, 345 | Medium (mitigated by G4's CSP on the main route) |
 | G4 | `GET /api/admin/ocr/{id}/media` serves originals through `serve_messenger_media` **without** the CSP sandbox, `nosniff`, CORP or Referrer-Policy that `/api/messenger/media/{id}` sets. | `ocr/mod.rs` media route; `rer_importer/mod.rs` `apply_media_document_security_headers` | 79, 80, 116 | Medium |
@@ -78,9 +81,9 @@ V12.6 and V5.5.
 
 | ID | Check | Where | Refs | Status |
 | --- | --- | --- | --- | --- |
-| P1 | Every ffmpeg/ffprobe call sets `-protocol_whitelist` (`file,pipe`, or exactly the network protocols it needs) and `-format_whitelist`. Test with HLS (`#EXTM3U`), `concat:`, `ffconcat`, `subfile`, `tee`, `data:` and image2 globbing payloads, using a real-type name such as `.mp4` or `.jpg` and the production `.source` name. | `media_thumbnail.rs`, `transcription/worker.rs`, `milgeo-audio-wave`; compare with `media_local_cache/playback.rs` and `devices/audio/*` | V12.3.3, V12.6.1, CWE-918, 73 | GAP (G1) |
+| P1 | Every ffmpeg/ffprobe call sets `-protocol_whitelist` (`file,pipe`, or exactly the network protocols it needs) and `-format_whitelist`. Test with HLS (`#EXTM3U`), `concat:`, `ffconcat`, `subfile`, `tee`, `data:` and image2 globbing payloads, using a real-type name such as `.mp4` or `.jpg` and the production `.source` name. | `echo-media` adds both whitelists to every input it runs (thumbnails); `echo-media/tests/hostile.rs` covers HLS (`file://`, path, `http://`, `concat:`, `subfile:`), ffconcat and image2 `%d` names, but not `tee` or `data:`. Remaining: `transcription/worker.rs`, `milgeo-audio-wave`; compare with `media_local_cache/playback.rs` and `devices/audio/*` | V12.3.3, V12.6.1, CWE-918, 73 | GAP (G1; thumbnails OK) |
 | P2 | The HLS preview's `mov` demuxer keeps `enable_drefs` off, and `http`/`https` cannot be redirected off the S3 host. | `media_preview/source.rs` `input_options` | CWE-918, 601 | VERIFY |
-| P3 | Decompression bombs are bounded: pixel floods (huge-dimension PNG/JPEG/WebP/GIF), long or high-frame-rate video, and audio with an extreme sample rate or channel count. Each needs a time, memory and output-size bound. The thumbnail job has a 120 s timeout and 1 thread, but its memory is bounded only by the service-wide `MemoryMax=16G`. | `media_thumbnail.rs`, `media_preview/`, `image` crate users, `ai_agent/uploads/image.rs` | V12.1.2, CWE-400, 409, 789 | VERIFY |
+| P3 | Decompression bombs are bounded: pixel floods (huge-dimension PNG/JPEG/WebP/GIF), long or high-frame-rate video, and audio with an extreme sample rate or channel count. Each needs a time, memory and output-size bound. The thumbnail job has a 120 s timeout and 1 thread, but its memory is bounded only by the service-wide `MemoryMax` (16G for `wdintel-rs`, 28G for `wdintel-rs-bgworker`). `echo-media` deliberately sets no CPU or address-space limit and caps only output size (Device thumbnails 2 MiB). `echo-media/tests/hostile.rs` checks that a 65535×65535 PNG fails fast. | `thumbnail.rs`, `echo-media/`, `media_preview/`, `image` crate users, `ai_agent/uploads/image.rs` | V12.1.2, CWE-400, 409, 789 | VERIFY |
 | P4 | Archive extraction defends against zip bombs, nested archives, path traversal (`../`, absolute, `\`), symlink entries, duplicate and case-colliding names, and encrypted entries. | `devices/files/archive/` helper (limits documented); `ocr/package.rs` `safe_archive_name`; frontend `zip-preview.worker.ts`; extractor libarchive | V12.1.2, V12.3.1, CWE-22, 409, 59 | OK (Device ZIP), VERIFY others |
 | P5 | `ocr/package.rs` `read_entry` allocates from the declared entry size and reads to the end. Confirm that the zip crate caps real output at the declared size, or add a `take()`. | `ocr/package.rs` | CWE-409, 789 | VERIFY |
 | P6 | XML parsers do not expand external or recursive entities (XXE, billion laughs). Check KML/KMZ, DOCX/XLSX/PPTX (lxml, openpyxl, python-docx in the extractor), `quick-xml`, `@xmldom/xmldom` and `togeojson`. | `kml/`, `rer_importer/`, extractor, `kmz/` | V5.5.2, CWE-611, 776 | VERIFY |
@@ -141,8 +144,8 @@ Covers A05 and A04, and ASVS V1.14 and V14.1.
 | ID | Check | Where | Refs | Status |
 | --- | --- | --- | --- | --- |
 | I1 | Media workers run as a dedicated unprivileged user, with no write access to binaries or config and no read access to keys they do not need. | `debian/*.service` (G2) | V14.1.x, CWE-250, 269 | GAP (G2) |
-| I2 | Child decoders run with systemd or bubblewrap sandboxing, per-process memory, CPU and time limits, no network unless required (only the HLS preview needs S3), and a scrubbed environment so S3 and DB secrets are not inherited. | `Command::new` call sites | CWE-250, 526, 400 | GAP |
-| I3 | `Command::new("ffmpeg")` resolves through `PATH`. Pin absolute binary paths, or ensure `PATH` is trusted for root units. | `config.rs` `*_FFMPEG_BIN`, `devices/audio/*`, `transcription/worker.rs` | CWE-426, 427 | VERIFY |
+| I2 | Child decoders run with systemd or bubblewrap sandboxing, per-process memory, CPU and time limits, no network unless required (only the HLS preview needs S3), and a scrubbed environment so S3 and DB secrets are not inherited. | Thumbnails: `echo-media` gives each child a cleared environment, no capabilities, `NO_NEW_PRIVS`, Landlock (read system libraries and the input, write one job directory, execute only ffmpeg), a network namespace when root, a wall-clock timeout and an output-size `RLIMIT_FSIZE`. There are no per-process memory or CPU limits and no seccomp. Remaining: other `Command::new` call sites | CWE-250, 526, 400 | GAP (thumbnails partly OK) |
+| I3 | `Command::new("ffmpeg")` resolves through `PATH`. Pin absolute binary paths, or ensure `PATH` is trusted for root units. | `echo-media` `MediaConfig::from_path` resolves `ffmpeg`/`ffprobe` once to canonical absolute paths and skips relative `PATH` entries (thumbnails). Remaining: `config.rs` `MESSENGER_MEDIA_LOCAL_CACHE_FF*_BIN`, `devices/audio/*`, `transcription/worker.rs` | CWE-426, 427 | VERIFY (unit `PATH` must be trusted) |
 | I4 | Signal and WhatsApp bots run as root with attachment directories under `/etc/echo`. Review their isolation from `wdintel-rs`. | `debian/echo-signal-bot@.service`, `echo-whatsapp-bot@.service` | CWE-250 | GAP |
 | I5 | The extractor host has an outbound network allowlist (routers only) and inbound bearer authentication, and its spool is private. | `echo-document-extractor` | V12.6.1, CWE-918 | VERIFY |
 
@@ -152,7 +155,7 @@ Covers A08 Integrity, A09 Logging, and ASVS V7, V10 and V14.2.
 
 | ID | Check | Where | Refs | Status |
 | --- | --- | --- | --- | --- |
-| L1 | File names and decoder stderr written to logs are escaped (log injection) and contain no secrets or signed URLs. | worker logs, `vector` → SigNoz | V7.1.1, V7.3.1, CWE-117, 532 | VERIFY |
+| L1 | File names and decoder stderr written to logs are escaped (log injection) and contain no secrets or signed URLs. | worker logs, `vector` → SigNoz; `echo-media` `process::sanitize` replaces control characters in decoder stderr and redacts remote URLs and their query strings | V7.1.1, V7.3.1, CWE-117, 532 | VERIFY |
 | L2 | Alerts fire on decoder crashes, timeouts and repeated failures per sender. A spike may be an exploit attempt. | thumbnail, preview, OCR and transcription logs | V7.2.2, A09 | VERIFY |
 | L3 | Media access is audit-logged per user (who opened which attachment). | serving routes | V7.1.3 | VERIFY |
 | L4 | Dependencies are pinned and checked: `Cargo.lock`, `package-lock.json` and extractor `uv.lock` pass `cargo audit`, `npm audit` and `pip-audit`. Git dependencies (`echo-im`, `milgeo-rs`, `echo-gpu`) are pinned by rev. | repo, CI | V14.2.1, V14.2.4, A06, A08, CWE-1104 | VERIFY |
@@ -223,6 +226,8 @@ inline route for each sample.
   - RTL override, NUL, CR/LF, `"`, `;`, a 4 KiB name, and `<script>`.
 
 Suggested tools: `cargo fuzz` or `afl` for the Rust parsers;
-`ffmpeg -protocol_whitelist` regression tests; `cargo audit`, `npm audit` and
+`ffmpeg -protocol_whitelist` regression tests (the FFmpeg payloads above, except
+MOV `dref` atoms, run in `echo-media/tests/hostile.rs` against every
+`echo-media` job); `cargo audit`, `npm audit` and
 `pip-audit` in CI; and a headless browser that opens every
 inline route and records network requests.
