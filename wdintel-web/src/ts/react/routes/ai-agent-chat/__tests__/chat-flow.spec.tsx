@@ -1316,7 +1316,8 @@ describe('AiAgentChat conversation controls', () => {
     expect(document.body.querySelector('aside')?.getAttribute('aria-hidden')).toBe('true');
     expect(
       container.querySelector('[aria-label="Провайдер ШІ"]')?.getAttribute('aria-disabled'),
-    ).toBe('true');
+      '#4112 engines can switch mid-conversation',
+    ).not.toBe('true');
     expect(document.body.querySelector('[aria-label="Перейменувати розмову"]')).toBeNull();
     expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
   });
@@ -1626,5 +1627,129 @@ describe('#3064 history deletion safeguards', () => {
     await flush();
     expect(container.querySelector('aside')?.textContent).not.toContain(CONVERSATION.title);
     expect(connections.get('other')?.signal.aborted).toBe(false);
+  });
+});
+
+describe('#4112 switching engines after a provider failure or refusal', () => {
+  const FLASH = { ...PROVIDER, id: 'provider-flash', name: 'GLM-5.3 Flash', isDefault: false };
+  const SOL = { ...PROVIDER, id: 'provider-sol', name: 'GPT-6.1 Sol', isDefault: false };
+  const PROVIDER_ERROR = { coverageLimited: true, reason: 'provider_error' };
+  const REFUSAL = { coverageLimited: false, reason: 'model_refusal' };
+
+  function turn(
+    requestId: string,
+    aiEngineId: string,
+    completionMetadata: object | null,
+    requestState = 'completed',
+  ) {
+    const shared = {
+      requestId,
+      requestState,
+      reasoningPreset: 'balanced',
+      completionMetadata,
+      aiEngineId,
+      aiEngineName: [PROVIDER, FLASH, SOL].find((provider) => provider.id === aiEngineId)?.name,
+      citations: [],
+      createdAt: Date.now(),
+      startedAt: Date.now() - 60_000,
+    };
+    const user = { ...shared, id: `${requestId}-user`, role: 'user', content: 'Де зараз позиції?' };
+    if (requestState === 'failed') return [user];
+    return [
+      user,
+      { ...shared, id: `${requestId}-assistant`, role: 'assistant', content: 'Не вдалося.' },
+    ];
+  }
+
+  async function openConversation(messages: object[], providers = [PROVIDER, FLASH, SOL]) {
+    mocks.conversation.mockResolvedValue({ ...CONVERSATION, messages });
+    window.history.replaceState({}, '', `?conversation=${CONVERSATION.id}`);
+    await remountWithProviders(providers as Array<typeof PROVIDER>);
+  }
+
+  function buttonTexts() {
+    return Array.from(container.querySelectorAll('button')).map((button) =>
+      button.textContent?.trim(),
+    );
+  }
+
+  it('offers the next engine after a provider error and retries the prompt there', async () => {
+    await openConversation(turn('request-glm', PROVIDER.id, PROVIDER_ERROR));
+    expect(container.textContent).toContain('Провайдер не відповів');
+    expect(container.textContent).toContain('ЕХО Агент · Gemma');
+    expect(buttonTexts()).toContain('Спробувати з GLM-5.3 Flash');
+    expect(buttonTexts()).toContain('Спробувати ще раз');
+    expect(buttonTexts()).not.toContain('Продовжити в глибокому режимі');
+
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-flash',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    await act(async () => clickButton('Спробувати з GLM-5.3 Flash'));
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        conversationId: CONVERSATION.id,
+        providerId: FLASH.id,
+        message: 'Де зараз позиції?',
+        reasoningPreset: 'balanced',
+      }),
+    );
+    await act(async () =>
+      streamEvent('request-flash', 1, 'completion_metadata', '', {
+        completionMetadata: PROVIDER_ERROR,
+      }),
+    );
+    await act(async () => streamEvent('request-flash', 2, 'completion', ''));
+    await flush();
+    expect(buttonTexts(), 'GLM-5.3 already failed in this run').toContain(
+      'Спробувати з GPT-6.1 Sol',
+    );
+  });
+
+  it('offers another engine after a refusal, without retrying the refusing one', async () => {
+    await openConversation(turn('request-sol', SOL.id, REFUSAL));
+    expect(container.textContent).toContain('Модель відмовилася відповідати');
+    expect(buttonTexts()).toContain('Спробувати з Gemma');
+    expect(buttonTexts()).not.toContain('Спробувати ще раз');
+  });
+
+  it('keeps only the plain retry when the failure was not the model', async () => {
+    await openConversation(turn('request-upgrade', PROVIDER.id, null, 'failed'));
+    expect(buttonTexts()).toContain('Спробувати ще раз');
+    expect(buttonTexts().some((text) => text?.startsWith('Спробувати з'))).toBe(false);
+  });
+
+  it('switches the engine mid-conversation', async () => {
+    await openConversation(turn('request-ok', PROVIDER.id, null));
+    await chooseOption('Провайдер ШІ', SOL.name);
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-next',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Наступне питання');
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ conversationId: CONVERSATION.id, providerId: SOL.id }),
+    );
+  });
+
+  it('preselects a healthy engine when the default is marked unhealthy', async () => {
+    const unhealthy = { ...PROVIDER, unhealthy: true, healthMessage: 'Шлюз недоступний' };
+    await remountWithProviders([unhealthy, FLASH] as Array<typeof PROVIDER>);
+    expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
+    expect(container.textContent).toContain(
+      'Gemma тимчасово недоступний: Шлюз недоступний. Вибрано GLM-5.3 Flash.',
+    );
+
+    await act(async () => clickButton('Все одно використати Gemma'));
+    await flush();
+    expect(selector('Провайдер ШІ').textContent).toContain('Gemma');
+    expect(selector('Провайдер ШІ').querySelector('[aria-label="Несправний"]')).not.toBeNull();
+    expect(container.textContent).toContain('Gemma: Шлюз недоступний');
+    expect(buttonTexts()).toContain('Перейти на GLM-5.3 Flash');
   });
 });
