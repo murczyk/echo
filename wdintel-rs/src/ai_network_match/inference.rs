@@ -122,7 +122,8 @@ fn validate(
             .filter(|index| *index < network_ids.len())
             .ok_or_else(|| {
                 anyhow::anyhow!("AI returned unknown key {}", network.key)
-            })?;
+            })
+            .c(h!())?;
         let candidate = NetworkMatchCandidate {
             network_id: network_ids[index],
             certainty: network.certainty.round().clamp(0.0, 100.0) as i32,

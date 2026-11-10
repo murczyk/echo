@@ -443,3 +443,27 @@ async fn requeue_during_scoring_keeps_the_job_4095() {
         "the re-run finds the stored scores current"
     );
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn submitted_dmr_metadata_reaches_the_model_and_its_hash_4095() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let dbx = &env.dbx;
+    let ids = networks(dbx, 2).await;
+    let item = recent_item(dbx, "Береза").await;
+    link(dbx, item.id, &ids).await;
+    let load = || context::load(dbx, item.id, candidate_set(&ids));
+    let before = load().await.unwrap().unwrap();
+    assert!(!before.input_json.contains(r#""color_codes""#));
+
+    dbx.execute_raw(sql(
+        "insert into sigint_inbox_item_metadata (sigint_inbox_item_id, color_code, call_group_id, created_at) values ($1, '7', '2001', now() at time zone 'utc')",
+        vec![item.id.into()],
+    ))
+    .await
+    .unwrap();
+    let after = load().await.unwrap().unwrap();
+    assert!(after.input_json.contains(r#""color_codes":["7"]"#));
+    assert!(after.input_json.contains(r#""call_groups":["2001"]"#));
+    assert_ne!(before.input_md5, after.input_md5);
+}

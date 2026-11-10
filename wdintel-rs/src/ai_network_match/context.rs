@@ -7,8 +7,8 @@ use crate::config::{
     AI_NETWORK_MATCH_MESSAGE_MAX_CHARS,
 };
 use crate::entities::{
-    sigint_inbox_item, sigint_inbox_item_network, sigint_network,
-    sigint_network_freq, sigint_post, signal_message,
+    sigint_inbox_item, sigint_inbox_item_metadata, sigint_inbox_item_network,
+    sigint_network, sigint_network_freq, sigint_post, signal_message,
 };
 use crate::h;
 use crate::types::ShortContext;
@@ -136,6 +136,7 @@ async fn message_input<C: ConnectionTrait>(
     body: &str,
     item: sigint_inbox_item::Model,
 ) -> anyhow::Result<MessageInput> {
+    let stored_metadata = stored_metadata(dbx, item.id).await.c(h!())?;
     let post = match item.post_id {
         Some(post_id) => sigint_post::Entity::find_by_id(post_id)
             .one(dbx)
@@ -155,11 +156,33 @@ async fn message_input<C: ConnectionTrait>(
             .map(|datetime| datetime.format("%Y-%m-%d %H:%M").to_string()),
         post,
         unit: item.unit_v2.filter(|unit| !unit.trim().is_empty()),
-        dmr: dmr_input(body),
+        dmr: dmr_input(body, stored_metadata),
     })
 }
 
-fn dmr_input(body: &str) -> Option<DmrInput> {
+/// Stored DMR metadata: parsed from the text, and submitted through the API
+/// without appearing in the text (`save_submit_dmr_metadata`).
+async fn stored_metadata<C: ConnectionTrait>(
+    dbx: &C,
+    sigint_inbox_item_id: i64,
+) -> anyhow::Result<Vec<sigint_inbox_item_metadata::Model>> {
+    sigint_inbox_item_metadata::Entity::find()
+        .filter(
+            sigint_inbox_item_metadata::Column::SigintInboxItemId
+                .eq(sigint_inbox_item_id),
+        )
+        .order_by_asc(sigint_inbox_item_metadata::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())
+}
+
+/// DMR values from the text and the stored metadata, deduplicated and
+/// sorted, so the input hash changes only when the values do.
+fn dmr_input(
+    body: &str,
+    stored: Vec<sigint_inbox_item_metadata::Model>,
+) -> Option<DmrInput> {
     let mut color_codes = BTreeSet::new();
     let mut call_groups = BTreeSet::new();
     let mut subscribers = BTreeSet::new();
@@ -168,6 +191,12 @@ fn dmr_input(body: &str) -> Option<DmrInput> {
         call_groups.extend(labelled(entry.cg, entry.cg_name));
         subscribers.extend(labelled(entry.id, entry.id_name));
         subscribers.extend(entry.hash_id);
+    }
+    for row in stored {
+        color_codes.extend(row.color_code);
+        call_groups.extend(labelled(row.call_group_id, row.call_group_name));
+        subscribers.extend(labelled(row.sender_id, row.sender_name));
+        subscribers.extend(row.hash_id);
     }
     if color_codes.is_empty()
         && call_groups.is_empty()
