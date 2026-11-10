@@ -54,6 +54,7 @@ function sameIdSet(previous: Set<number> | null, next: Set<number>): boolean {
  * Pointer / wheel / touch wake the feed and remount the full window.
  * Programmatic scroll (follow / settle) does not wake, but must still refresh which ids stay
  * mounted — otherwise stick-bottom restore/ease leaves the viewport on placeholders (black gap).
+ * A feed width change also wakes it: placeholder heights are only valid at the measured width.
  */
 export function useFeedIdleViewportOffload(options: {
   enabled: boolean;
@@ -76,6 +77,7 @@ export function useFeedIdleViewportOffload(options: {
   const offloadActiveRef = useRef(false);
   const itemIdsRef = useRef(itemIds);
   const scrollSyncRafRef = useRef<number | null>(null);
+  const offloadWidthRef = useRef<number | null>(null);
   offloadActiveRef.current = offloadActive;
   itemIdsRef.current = itemIds;
 
@@ -102,8 +104,9 @@ export function useFeedIdleViewportOffload(options: {
   const applyOffloadSnapshot = useCallback(() => {
     if (!enabled) return;
     syncMountedToViewport();
+    offloadWidthRef.current = scrollerRef.current?.clientWidth ?? null;
     setOffloadActive(true);
-  }, [enabled, syncMountedToViewport]);
+  }, [enabled, scrollerRef, syncMountedToViewport]);
 
   const scheduleIdleOffload = useCallback(() => {
     clearIdleTimeout();
@@ -147,6 +150,26 @@ export function useFeedIdleViewportOffload(options: {
       scroller.removeEventListener('wheel', onUserInteract);
       scroller.removeEventListener('touchstart', onUserInteract);
     };
+  }, [enabled, itemIds.length, scrollerRef, wakeFromOffload]);
+
+  // Placeholder heights only hold at the width they were measured at. When the feed width changes
+  // (the embedded editor opens or closes, the window resizes), remount the full window right away:
+  // the feed's resize anchor restore absorbs the new card heights while no reader scroll is in
+  // flight. Left stale, the next wheel tick wakes the feed instead, and the height difference above
+  // the viewport turns into a jump of several cards. Compare with the width at snapshot time, not
+  // at observer creation: the observer is recreated when the feed length changes, which can land in
+  // the same commit as the width change (the report editor closing as the new message arrives).
+  useEffect(() => {
+    if (!enabled || typeof ResizeObserver === 'undefined') return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const observer = new ResizeObserver(() => {
+      if (!offloadActiveRef.current || scroller.clientWidth === offloadWidthRef.current) return;
+      heightByIdRef.current.clear();
+      wakeFromOffload();
+    });
+    observer.observe(scroller);
+    return () => observer.disconnect();
   }, [enabled, itemIds.length, scrollerRef, wakeFromOffload]);
 
   // While offloaded, keep the mounted set aligned with the viewport after window trims / follow stick.
