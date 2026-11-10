@@ -306,8 +306,9 @@ function providerFailureFacts(
 
 /**
  * A provider failure or filter that ended the run, reported so Echo can offer another
- * model (#4112). Only provider-origin errors count: the typed content-filter error and the
- * `provider request failed: <kind>: …` errors the runner raises for a failed model reply.
+ * model (#4112). Only provider-origin errors count: the typed content-filter error, the
+ * `provider request failed: <kind>: …` errors the runner raises for a failed model reply,
+ * and `context checkpoint failed: … (reason: <kind>)` from context compaction.
  * Authorization, Echo-side and infrastructure failures report nothing.
  */
 export function terminalProviderFailure(
@@ -316,7 +317,10 @@ export function terminalProviderFailure(
   if (error instanceof SynthesisContentFilterError)
     return { type: "completion_diagnostic", stage: "answer", outcome: "content_filter" };
   const message = error instanceof Error ? error.message : String(error ?? "");
-  const kind = message.match(/provider request failed: ([a-z_]+)/)?.[1];
+  const match = message.match(
+    /provider request failed: ([a-z_]+)|context checkpoint failed: [a-z_]+ \(reason: ([a-z_]+)\)/,
+  );
+  const kind = match?.[1] ?? match?.[2];
   if (kind === "content_filter")
     return { type: "completion_diagnostic", stage: "answer", outcome: "content_filter" };
   if (kind === "rate_limit" || kind === "interrupted_stream" || kind === "provider_error")

@@ -462,6 +462,20 @@ test("#4112 reports provider failures that end a run so Echo can offer another m
     ),
     null,
   );
+  assert.equal(
+    terminalProviderFailure(new Error("context checkpoint failed: error (reason: provider_error)"))
+      ?.outcome,
+    "transient_error",
+  );
+  assert.equal(
+    terminalProviderFailure(new Error("context checkpoint failed: error (reason: content_filter)"))
+      ?.outcome,
+    "content_filter",
+  );
+  assert.equal(
+    terminalProviderFailure(new Error("context checkpoint failed: error (reason: authorization)")),
+    null,
+  );
   assert.equal(terminalProviderFailure(new Error("bootstrap exchange returned HTTP 500")), null);
   assert.equal(terminalProviderFailure(new Error("work journal append failed")), null);
 });

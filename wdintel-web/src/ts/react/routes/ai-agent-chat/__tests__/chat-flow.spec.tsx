@@ -1730,6 +1730,19 @@ describe('#4112 switching engines after a provider failure or refusal', () => {
     expect(fallback?.disabled).toBe(false);
   });
 
+  it('moves to the refreshed default when the selected engine is removed', async () => {
+    await openConversation(turn('request-ok', PROVIDER.id, null), [PROVIDER, FLASH]);
+    mocks.configuration.mockResolvedValue({
+      enabled: true,
+      reasoningPresetsEnabled: true,
+      defaultProviderId: FLASH.id,
+      providers: [{ ...FLASH, reasoningAvailable: true, reasoningPresets: REASONING_PRESETS }],
+    });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await flush();
+    expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
+  });
+
   it('switches the engine mid-conversation', async () => {
     await openConversation(turn('request-ok', PROVIDER.id, null));
     await chooseOption('Провайдер ШІ', SOL.name);

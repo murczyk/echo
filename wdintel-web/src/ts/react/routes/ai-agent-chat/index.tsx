@@ -1150,6 +1150,12 @@ export function AiAgentChat({
       if (!mountedRef.current) return;
       configurationRef.current = next;
       setConfiguration(next);
+      // An admin may have removed the current or default engine meanwhile.
+      defaultProviderIdRef.current = rememberedProviderId(next);
+      const selectedOffered = next.providers.some(
+        (provider) => provider.id === providerIdRef.current,
+      );
+      if (!selectedOffered) explicitProviderRef.current = false;
       if (!explicitProviderRef.current) {
         chooseProvider(replacedProviderIdRef.current ?? providerIdRef.current);
       }
