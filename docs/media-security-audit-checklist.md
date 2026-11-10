@@ -30,8 +30,9 @@ Code references use `wdintel-rs/src/` unless they say otherwise.
 ## Known gaps (start here)
 
 These came from reading the code while preparing this checklist. None have been
-tested on a live system. G1, I2 and I3 are partly fixed: thumbnails and the
-transcription probe now run through `echo-media`. No other gap has been worked on.
+tested on a live system. G1, I2 and I3 are partly fixed: thumbnails, the
+transcription probe and the messenger playback copy now run through
+`echo-media`. No other gap has been worked on.
 
 | # | Gap | Where | CWE | Severity guess |
 | --- | --- | --- | --- | --- |
@@ -144,8 +145,8 @@ Covers A05 and A04, and ASVS V1.14 and V14.1.
 | ID | Check | Where | Refs | Status |
 | --- | --- | --- | --- | --- |
 | I1 | Media workers run as a dedicated unprivileged user, with no write access to binaries or config and no read access to keys they do not need. | `debian/*.service` (G2) | V14.1.x, CWE-250, 269 | GAP (G2) |
-| I2 | Child decoders run with systemd or bubblewrap sandboxing, per-process memory, CPU and time limits, no network unless required (only the HLS preview needs S3), and a scrubbed environment so S3 and DB secrets are not inherited. | Thumbnails and the transcription probe: `echo-media` gives each child a cleared environment, no capabilities, `NO_NEW_PRIVS`, Landlock (read system libraries and the input, write one job directory, execute only ffmpeg), a network namespace when root, a wall-clock timeout and an output-size `RLIMIT_FSIZE`. There are no per-process memory or CPU limits and no seccomp. Remaining: other `Command::new` call sites | CWE-250, 526, 400 | GAP (thumbnails and transcription probe partly OK) |
-| I3 | `Command::new("ffmpeg")` resolves through `PATH`. Pin absolute binary paths, or ensure `PATH` is trusted for root units. | `echo-media` `MediaConfig::from_path` resolves `ffmpeg`/`ffprobe` once to canonical absolute paths and skips relative `PATH` entries (thumbnails, transcription probe). Remaining: `config.rs` `MESSENGER_MEDIA_LOCAL_CACHE_FF*_BIN`, `devices/audio/*` | CWE-426, 427 | VERIFY (unit `PATH` must be trusted) |
+| I2 | Child decoders run with systemd or bubblewrap sandboxing, per-process memory, CPU and time limits, no network unless required (only the HLS preview needs S3), and a scrubbed environment so S3 and DB secrets are not inherited. | Thumbnails, the transcription probe and playback copies: `echo-media` gives each child a cleared environment, no capabilities, `NO_NEW_PRIVS`, Landlock (read system libraries and the input, write one job directory, execute only ffmpeg), a network namespace when root, a wall-clock timeout and an output-size `RLIMIT_FSIZE`. There are no per-process memory or CPU limits and no seccomp. Remaining: other `Command::new` call sites | CWE-250, 526, 400 | GAP (thumbnails, transcription probe and playback copy partly OK) |
+| I3 | `Command::new("ffmpeg")` resolves through `PATH`. Pin absolute binary paths, or ensure `PATH` is trusted for root units. | `echo-media` `MediaConfig::from_path` resolves `ffmpeg`/`ffprobe` once to canonical absolute paths and skips relative `PATH` entries (thumbnails, transcription probe, playback copy). Remaining: `config.rs` `MESSENGER_MEDIA_LOCAL_CACHE_FF*_BIN` (HLS preview), `devices/audio/*` | CWE-426, 427 | VERIFY (unit `PATH` must be trusted) |
 | I4 | Signal and WhatsApp bots run as root with attachment directories under `/etc/echo`. Review their isolation from `wdintel-rs`. | `debian/echo-signal-bot@.service`, `echo-whatsapp-bot@.service` | CWE-250 | GAP |
 | I5 | The extractor host has an outbound network allowlist (routers only) and inbound bearer authentication, and its spool is private. | `echo-document-extractor` | V12.6.1, CWE-918 | VERIFY |
 

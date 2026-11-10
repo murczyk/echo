@@ -138,7 +138,7 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | Job | Input | Component | Code | Limits and flags |
 | --- | --- | --- | --- | --- |
 | Image/video thumbnail | messenger image or video; Device file image or video | `ffmpeg` (mjpeg out) through [`echo-media`](../echo-media/README.md) | `thumbnail.rs` `generate`, called by `messenger/media_thumbnail.rs` and `devices/files/content/thumbnail/source.rs` | `-protocol_whitelist file` and a demuxer whitelist (`ECHO_MEDIA_FORMATS_THUMBNAIL`); sandboxed child; 120 s timeout, 1 decoder and encoder thread, `-map 0:v:0`; one messenger generation at a time; Device output ≤ 2 MiB |
-| Playback normalisation | H.264 yuv420p MP4 (+AAC) | `ffprobe`, `ffmpeg -c copy +faststart` | `messenger/media_local_cache/playback.rs` | `-protocol_whitelist file,pipe`; 5 min timeout |
+| Playback normalisation | H.264 yuv420p (+AAC) in a container on `ECHO_MEDIA_FORMATS_VIDEO` | `ffprobe`, `ffmpeg -c copy +faststart` through `echo-media` | `messenger/media_local_cache/playback.rs` | `-protocol_whitelist file` and a demuxer whitelist; sandboxed child; 15 s probe, 5 min remux; output ≤ the reservation (`RLIMIT_FSIZE`); stops when the cache volume reaches its free-space floor |
 | HLS preview | plaintext MP4 ≥ 8 MiB, > 8 Mbps | `ffprobe`, `ffmpeg` libx264/aac, `hls.js` in browser | `messenger/media_preview/{source,mod}.rs` | input is a local file or a pre-signed S3 URL (10 min TTL); `-protocol_whitelist file,http,https,tcp,tls -format_whitelist mov`; 5 s probe, 30 s segment, 8 MiB per segment, 2 jobs |
 | Waveform, spectrogram | encrypted messenger audio | `milgeo-audio-wave` → `ffmpeg` | `messenger/media_wave.rs` | temp file plus PNG in `/tmp`; **no protocol whitelist** |
 | Transcription probe | message and device audio | `ffprobe` through `echo-media` | `transcription/worker.rs` `ensure_audio` | 100 MiB plaintext cap; `-protocol_whitelist file`, `ECHO_MEDIA_FORMATS_AUDIO` demuxers (includes `mpegts`); sandboxed child; 30 s timeout |
@@ -152,7 +152,8 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | KML/KMZ, XLSX import | map and report files | `quick-xml`, `zip`, `calamine`, `geoconvert` | `kml/`, `rer_importer/`, `palitra/` | — |
 | AI-agent uploads | PNG, JPEG, WebP, PDF | `image` crate (jpeg/png/webp), `infer` | `ai_agent/uploads/` | own limits |
 
-Thumbnail and transcription-probe processes run through `echo-media`. Each gets a cleared
+Thumbnail, transcription-probe and playback-copy processes run through
+`echo-media`. Each gets a cleared
 environment and no capabilities. Landlock limits it to reading system libraries
 and its input, and writing only a private job directory. Offline jobs run in
 their own network namespace when the service is root. The other ffmpeg rows
@@ -246,7 +247,7 @@ The only `add_header Content-Security-Policy` in `deploy/nginx/*` is on the
 
 | Component | Used for | Runs as |
 | --- | --- | --- |
-| FFmpeg / ffprobe (distro package, found on `PATH`) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker`; thumbnails and the transcription probe run sandboxed through `echo-media` (no capabilities, Landlock) |
+| FFmpeg / ffprobe (distro package, found on `PATH`) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker`; thumbnails, the transcription probe and playback copies run sandboxed through `echo-media` (no capabilities, Landlock) |
 | libx264, libmp3lame, AAC encoder | HLS preview, device audio rendition | same |
 | signal-cli-rest-api / signal-cli | Signal ingest and attachment download | `root` (`echo-signal-bot@`) |
 | whatsapp-cli | WhatsApp ingest | `root` (`echo-whatsapp-bot@`) |
@@ -275,7 +276,7 @@ options.
 | `calamine`, `docx-rs`, `rust_xlsxwriter`, `csv` | spreadsheet and report import/export |
 | `geoconvert`, `milgeo-rs` | coordinates, map formats |
 | `milgeo-audio-wave` | waveform/spectrogram (spawns `ffmpeg`) |
-| `echo-media` (workspace crate; `landlock` on Linux) | sandboxed ffmpeg/ffprobe jobs; used for thumbnails and the transcription probe |
+| `echo-media` (workspace crate; `landlock` on Linux) | sandboxed ffmpeg/ffprobe jobs; used for thumbnails, the transcription probe and playback copies |
 | `actix-web`, `actix-files`, `actix-multipart` | HTTP serving and uploads |
 | `content_disposition` | header encoding |
 | `opencv` (optional feature) | image processing in `terminal` |

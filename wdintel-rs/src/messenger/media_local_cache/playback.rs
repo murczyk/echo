@@ -1,8 +1,6 @@
 use super::{entry, files, settings, worker};
 use crate::config::{
     MESSENGER_MEDIA_CACHE_FAILURE_TTL_SECS,
-    MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN,
-    MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN,
     MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_EXTRA_BYTES,
     MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_TIMEOUT_SECS,
     MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS,
@@ -12,14 +10,13 @@ use crate::h;
 use crate::types::{warn, Env, ShortContext};
 use anyhow::{bail, Result};
 use chrono::Utc;
-use serde::Deserialize;
+use echo_media::ffmpeg::{ProbeOptions, RemuxOptions};
+use echo_media::{Ffmpeg, Formats, Input};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tokio::fs;
-use tokio::process::Command;
 
 pub(super) mod mp4;
 
@@ -28,18 +25,6 @@ pub(crate) enum PlaybackStatus {
     Pending,
     Original,
     Failed,
-}
-
-#[derive(Deserialize)]
-struct Probe {
-    streams: Vec<ProbeStream>,
-}
-
-#[derive(Deserialize)]
-struct ProbeStream {
-    codec_type: Option<String>,
-    codec_name: Option<String>,
-    pix_fmt: Option<String>,
 }
 
 /// Entries that recently failed to get cache room, so polling clients are sent
@@ -162,45 +147,30 @@ pub(super) async fn prepare(
     entry.write_metadata(&metadata).await.c(h!())
 }
 
+/// Whether the retained original is H.264 yuv420p with optional AAC, which a
+/// stream copy can turn into a playable MP4. Input that ffprobe can never read
+/// (corrupt, or a demuxer outside the whitelist) counts as unsupported.
 async fn supported_source(source: &Path) -> Result<bool> {
-    let output = tokio::time::timeout(
-        Duration::from_secs(MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS),
-        Command::new(MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN)
-            .args([
-                "-v",
-                "error",
-                "-show_entries",
-                "stream=codec_type,codec_name,pix_fmt",
-                "-of",
-                "json",
-                "-protocol_whitelist",
-                "file,pipe",
-                "-i",
-            ])
-            .arg(source)
-            .kill_on_drop(true)
-            .stderr(Stdio::null())
-            .output(),
-    )
-    .await
-    .c(h!())?
-    .c(h!())?;
-    if !output.status.success() {
-        bail!("ffprobe could not inspect the attachment")
-    }
-    let probe: Probe = serde_json::from_slice(&output.stdout).c(h!())?;
-    let video = probe
-        .streams
-        .iter()
-        .find(|stream| stream.codec_type.as_deref() == Some("video"));
-    let audio = probe
-        .streams
-        .iter()
-        .find(|stream| stream.codec_type.as_deref() == Some("audio"));
-    Ok(video.is_some_and(|stream| {
+    let options = ProbeOptions {
+        formats: Formats::VIDEO,
+        timeout: Duration::from_secs(
+            MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS,
+        ),
+    };
+    let input = Input::file(source).c(h!())?;
+    let probe = match Ffmpeg::shared().c(h!())?.probe(&input, &options).await {
+        Ok(probe) => probe,
+        Err(error) if error.is_terminal() => {
+            warn!("video probe rejected {}: {error:#}", source.display());
+            return Ok(false);
+        }
+        Err(error) => return Err(error).c(h!()),
+    };
+    Ok(probe.first("video").is_some_and(|stream| {
         stream.codec_name.as_deref() == Some("h264")
             && stream.pix_fmt.as_deref() == Some("yuv420p")
-    }) && audio
+    }) && probe
+        .first("audio")
         .is_none_or(|stream| stream.codec_name.as_deref() == Some("aac")))
 }
 
@@ -212,20 +182,10 @@ async fn normalize(
 ) -> Result<u64> {
     let temporary = files::TemporaryFile(entry.path("playback.tmp"));
     files::remove_if_present(&temporary.0).await.c(h!())?;
-    drop(files::create_private_file(&temporary.0).await.c(h!())?);
-    let command = normalization_command(source, &temporary.0);
-    tokio::time::timeout(
-        Duration::from_secs(MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_TIMEOUT_SECS),
-        run_normalizer(
-            command,
-            &temporary.0,
-            reserved,
-            settings(&env.config).c(h!())?.min_free_space_bytes,
-        ),
-    )
-    .await
-    .c(h!())?
-    .c(h!())?;
+    let min_free = settings(&env.config).c(h!())?.min_free_space_bytes;
+    remux_watching_disk(source, &temporary.0, &entry.root, reserved, min_free)
+        .await
+        .c(h!())?;
     mp4::validate(&temporary.0).await.c(h!())?;
     let file = fs::File::open(&temporary.0).await.c(h!())?;
     let size = file.metadata().await.c(h!())?.len();
@@ -240,56 +200,36 @@ async fn normalize(
     Ok(size)
 }
 
-pub(super) fn normalization_command(source: &Path, target: &Path) -> Command {
-    let mut command = Command::new(MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN);
-    command
-        .args([
-            "-nostdin",
-            "-v",
-            "error",
-            "-y",
-            "-protocol_whitelist",
-            "file,pipe",
-            "-i",
-        ])
-        .arg(source)
-        .args([
-            "-map",
-            "0:v:0",
-            "-map",
-            "0:a:0?",
-            "-c",
-            "copy",
-            "-bsf:v",
-            "h264_metadata=level=auto",
-            "-movflags",
-            "+faststart",
-            "-f",
-            "mp4",
-        ])
-        .arg(target)
-        .kill_on_drop(true)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    command
-}
-
-async fn run_normalizer(
-    mut command: Command,
-    path: &Path,
-    max_size: u64,
+/// Sandboxed stream copy into `target`, capped at `reserved` bytes by the
+/// kernel. Stops the copy (dropping it kills ffmpeg) when free space on the
+/// cache volume falls below `min_free`.
+async fn remux_watching_disk(
+    source: &Path,
+    target: &Path,
+    root: &Path,
+    reserved: u64,
     min_free: u64,
 ) -> Result<()> {
-    let mut child = command.spawn().c(h!())?;
+    let options = RemuxOptions {
+        formats: Formats::VIDEO,
+        timeout: Duration::from_secs(
+            MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_TIMEOUT_SECS,
+        ),
+        ..RemuxOptions::new(reserved)
+    };
+    let input = Input::file(source).c(h!())?;
+    let remux = Ffmpeg::shared()
+        .c(h!())?
+        .remux_mp4_faststart(&input, target, &options);
+    tokio::pin!(remux);
     loop {
         tokio::select! {
-            status = child.wait() => {
-                if !status.c(h!())?.success() { bail!("ffmpeg failed to normalize the attachment") }
+            result = &mut remux => {
+                result.c(h!())?;
                 return Ok(());
             }
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                if fs::metadata(path).await.c(h!())?.len() > max_size || fs2::available_space(path).c(h!())? < min_free {
-                    child.kill().await.c(h!())?;
+                if fs2::available_space(root).c(h!())? < min_free {
                     bail!("video normalization exhausted its disk reservation");
                 }
             }

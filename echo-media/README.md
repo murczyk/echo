@@ -5,8 +5,8 @@ Sandboxed ffmpeg and ffprobe jobs for Echo. It addresses G1, I2 and I3 in
 and limits the damage of G2 (services running as root) for the processes it
 starts.
 
-Messenger and Device thumbnails (through `wdintel-rs/src/thumbnail.rs`) and the
-transcription audio probe use it. The other ffmpeg call sites are not wired
+Messenger and Device thumbnails (through `wdintel-rs/src/thumbnail.rs`), the
+transcription audio probe and the messenger playback copy use it. The other ffmpeg call sites are not wired
 yet; see [Wiring](#wiring).
 
 ## Threat model
@@ -148,9 +148,9 @@ media
 | Method | Call sites in wdintel-rs | Status |
 | --- | --- | --- |
 | `thumbnail` | `thumbnail.rs` `generate`, called by `messenger/media_thumbnail.rs` and `devices/files/content/thumbnail/source.rs` | Wired |
-| `probe` | `transcription/worker.rs` `ensure_audio` | Wired |
-| `probe` | `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata` | Not wired |
-| `remux_mp4_faststart` | `media_local_cache/playback.rs` `normalization_command`, `run_normalizer` | Not wired |
+| `probe` | `transcription/worker.rs` `ensure_audio`, `media_local_cache/playback.rs` `supported_source` | Wired |
+| `probe` | `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata` | Not wired |
+| `remux_mp4_faststart` | `media_local_cache/playback.rs` `remux_watching_disk` | Wired |
 | `hls_segments` | `media_preview/mod.rs` `segment_command` | Not wired |
 | `decode_verify` | `devices/audio/probe.rs` `decoder_command`, `run_media_process`, `read_output` | Not wired |
 | `audio_rendition` | `devices/audio/content.rs` `media_command` | Not wired |
@@ -181,6 +181,18 @@ The transcription probe (`transcription/worker.rs` `ensure_audio`) uses
 `Formats::AUDIO`, which now includes `mpegts` for audio-only transport
 streams. Input that cannot decode is a terminal `WorkError`; timeouts and
 environment failures are retryable, as before.
+
+The messenger playback copy (`media_local_cache/playback.rs`) probes and
+remuxes with `Formats::VIDEO`:
+
+- A source ffprobe can never read is marked `unsupported`, so clients get the
+  original; previously it was retried. Transient probe errors still retry.
+- The remux writes `<id>.playback.tmp` with `RLIMIT_FSIZE` set to the
+  reservation. wdintel-rs still validates it, renames it to
+  `<id>.playback.mp4`, and stops the job when free space on the cache volume
+  drops below the configured floor.
+- The `.echo-media-*` job directory lives in the cache root for the length of a
+  remux. Cache cleanup ignores it, so one left by a crash is never removed.
 
 Remaining:
 
