@@ -6,9 +6,16 @@ let serverRevision: string | null = null;
 export function reconcileUnitCatalog(nextRevision: string | null, changed: boolean): void {
   const missedChange =
     nextRevision != null && serverRevision != null && nextRevision !== serverRevision;
+  const reconciliationOnly =
+    !changed &&
+    nextRevision != null &&
+    serverRevision != null &&
+    nextRevision.slice(nextRevision.indexOf(':') + 1) ===
+      serverRevision.slice(serverRevision.indexOf(':') + 1);
   const unversionedChange = changed && (nextRevision == null || serverRevision == null);
   if (nextRevision != null) serverRevision = nextRevision;
-  if (unversionedChange || missedChange) invalidateUnitCatalog();
+  if (unversionedChange || missedChange)
+    invalidateUnitCatalog({ refreshMessages: !reconciliationOnly });
 }
 
 export function unitCatalogRevision(): number {

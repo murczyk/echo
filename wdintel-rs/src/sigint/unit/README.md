@@ -56,7 +56,9 @@ seconds. Existing long-poll responses also carry an optional catalog revision:
 a persistent nonce changes whenever the hierarchy is marked dirty, even with
 no connected sessions, and a five-minute window bounds missed notifications
 and quiet direct database writes. The client invalidates only when this token
-changes, without introducing another polling request. Combined with the
+changes, without introducing another polling request. Window-only changes refresh
+catalog references without reloading Analysis messages; nonce changes and explicit
+unit events still reload messages. Combined with the
 five-minute server snapshot expiry, structural SQL changes reconcile within
 two windows plus event-transport delay while connected. Interrupted clients
 reconcile on their next successful poll. Older servers may omit the token.
