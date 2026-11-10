@@ -29,7 +29,10 @@ sandbox separately.
 
 1. **ffmpeg allowlists** (`ffmpeg/args.rs`). Every input gets
    `-protocol_whitelist` and `-format_whitelist`:
-   - Local inputs use `file`, remote inputs `https,tls,tcp`.
+   - Local inputs use `file`. Remote inputs use `https,tls,tcp` or `http,tcp`,
+     chosen by the URL scheme. `RemoteUrl::new` accepts only `http` and
+     `https` URLs whose origin (scheme, host and port) is on the caller's
+     allowlist, such as `https://s3.example.com` or `http://127.0.0.1:9000`.
    - Local paths are passed as `file:<absolute path>`.
    - `hls`, `concat`, `lavfi`, `dash` and the RTP family can never be
      whitelisted (`Formats::custom` refuses them).
@@ -101,7 +104,10 @@ sandbox separately.
   namespace) or Landlock ABI 4. Unprivileged runs on 5.15 kernels have neither,
   so only the protocol whitelist stops network access. Network jobs can
   `connect()` to any host on the allowed port when Landlock has no TCP support.
-  ffmpeg follows HTTP redirects within `https,tls,tcp`.
+  ffmpeg follows HTTP redirects to any host its protocol whitelist allows, so
+  the origin allowlist covers only the first request. Plain `http` origins also
+  send pre-signed URLs unencrypted; allow them only for local storage such as a
+  development MinIO.
 - **Pre-signed URLs in argv (G7).** A remote input's URL is visible in
   `/proc/<pid>/cmdline` for the length of the job. Mount `/proc` with
   `hidepid=2`, or later serve S3 reads through a loopback proxy.
@@ -173,7 +179,9 @@ Remaining:
 
 1. Replace the other call sites in the table above. Pass the existing wdintel-rs
    `config.rs` constants (filters, limits, timeouts) through the option structs.
-2. For HLS from S3, build `Input::Remote(RemoteUrl::new(url, &[s3_host])?)`.
+2. For HLS from S3, build `Input::Remote(RemoteUrl::new(url, &[s3_origin])?)`,
+   where `s3_origin` is the configured endpoint, for example
+   `https://s3.eu-central-003.backblazeb2.com`.
 3. Remove the `milgeo-audio-wave` ffmpeg path, then close G1, I2 and I3 in the
    checklist.
 

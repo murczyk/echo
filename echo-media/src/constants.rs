@@ -62,10 +62,12 @@ pub const ECHO_MEDIA_SANDBOX_NETWORK_READ_FILES: &[&str] = &[
 pub const ECHO_MEDIA_SANDBOX_NETWORK_READ_DIRS: &[&str] = &["/etc/ssl"];
 
 pub const ECHO_MEDIA_PROTOCOLS_LOCAL: &str = "file";
-pub const ECHO_MEDIA_PROTOCOLS_REMOTE: &str = "https,tls,tcp";
+/// ffmpeg protocols for a remote input, chosen by its URL scheme.
+pub const ECHO_MEDIA_PROTOCOLS_HTTPS: &str = "https,tls,tcp";
+pub const ECHO_MEDIA_PROTOCOLS_HTTP: &str = "http,tcp";
 
-pub const ECHO_MEDIA_REMOTE_SCHEME: &str = "https://";
-pub const ECHO_MEDIA_REMOTE_DEFAULT_PORT: u16 = 443;
+pub const ECHO_MEDIA_HTTPS_DEFAULT_PORT: u16 = 443;
+pub const ECHO_MEDIA_HTTP_DEFAULT_PORT: u16 = 80;
 
 /// Same list as wdintel-rs `THUMBNAIL_LOCAL_FORMAT_WHITELIST`. `image2`
 /// handles images ffmpeg recognises by extension (e.g. `.jpg`); its `%d` and

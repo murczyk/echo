@@ -59,7 +59,6 @@ use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-#[cfg(test)]
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 

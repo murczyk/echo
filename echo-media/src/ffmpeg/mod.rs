@@ -15,7 +15,7 @@ pub use audio::{
     RenditionOptions, RenditionReport,
 };
 pub use hls::{HlsOptions, HlsSegments};
-pub use input::{Formats, Input, LocalFile, RemoteUrl};
+pub use input::{Formats, Input, LocalFile, RemoteUrl, Scheme};
 pub use probe::{Probe, ProbeFormat, ProbeOptions, ProbeStream};
 pub use remux::RemuxOptions;
 pub use thumbnail::ThumbnailOptions;

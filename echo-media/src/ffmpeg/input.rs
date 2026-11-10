@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-/// Media to read: a local regular file or an allowlisted HTTPS object.
+/// Media to read: a local regular file or an object on an allowlisted origin.
 #[derive(Debug, Clone)]
 pub enum Input {
     File(LocalFile),
@@ -20,7 +20,7 @@ impl Input {
     pub(crate) fn protocols(&self) -> &'static str {
         match self {
             Self::File(_) => ECHO_MEDIA_PROTOCOLS_LOCAL,
-            Self::Remote(_) => ECHO_MEDIA_PROTOCOLS_REMOTE,
+            Self::Remote(url) => url.origin.scheme.protocols(),
         }
     }
 
@@ -41,7 +41,7 @@ impl Input {
         match self {
             Self::File(file) => policy.read_file(&file.path),
             Self::Remote(url) => {
-                policy.network(Network::TcpConnect(vec![url.port]))
+                policy.network(Network::TcpConnect(vec![url.origin.port]))
             }
         }
     }
@@ -84,46 +84,110 @@ impl LocalFile {
     }
 }
 
-/// An `https://` URL whose host is on the caller's allowlist. `Debug` and
-/// `Display` never print it, and it is redacted from stderr.
-#[derive(Clone)]
-pub struct RemoteUrl {
-    url: String,
+/// URL scheme of a remote input. It selects ffmpeg's protocol whitelist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scheme {
+    Http,
+    Https,
+}
+
+impl Scheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https => "https",
+        }
+    }
+
+    fn protocols(self) -> &'static str {
+        match self {
+            Self::Http => ECHO_MEDIA_PROTOCOLS_HTTP,
+            Self::Https => ECHO_MEDIA_PROTOCOLS_HTTPS,
+        }
+    }
+
+    fn default_port(self) -> u16 {
+        match self {
+            Self::Http => ECHO_MEDIA_HTTP_DEFAULT_PORT,
+            Self::Https => ECHO_MEDIA_HTTPS_DEFAULT_PORT,
+        }
+    }
+
+    /// Splits `scheme://` off `url`, ignoring ASCII case.
+    fn strip(url: &str) -> Option<(Self, &str)> {
+        [Self::Https, Self::Http].into_iter().find_map(|scheme| {
+            let prefix_len = scheme.as_str().len() + 3;
+            let prefix = url.get(..prefix_len)?;
+            let expected = format!("{}://", scheme.as_str());
+            prefix
+                .eq_ignore_ascii_case(&expected)
+                .then(|| (scheme, &url[prefix_len..]))
+        })
+    }
+}
+
+/// Scheme, host and port: what an allowlist entry and a URL must share.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Origin {
+    scheme: Scheme,
     host: String,
     port: u16,
 }
 
+impl Origin {
+    /// Parses the origin of `url`, returning it and the rest of the URL
+    /// (path, query and fragment).
+    fn parse(url: &str) -> Result<(Self, &str)> {
+        let (scheme, rest) = Scheme::strip(url).ok_or_else(|| {
+            MediaError::rejected("remote URL must use http or https")
+        })?;
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let (host, port) = split_authority(&rest[..end], scheme)?;
+        Ok((Self { scheme, host, port }, &rest[end..]))
+    }
+}
+
+/// An `http://` or `https://` URL whose origin (scheme, host and port) is on
+/// the caller's allowlist. The scheme picks ffmpeg's protocol whitelist.
+/// `Debug` and `Display` never print the path or query, and the URL is
+/// redacted from stderr.
+#[derive(Clone)]
+pub struct RemoteUrl {
+    url: String,
+    origin: Origin,
+}
+
 impl RemoteUrl {
-    pub fn new(url: &str, allowed_hosts: &[&str]) -> Result<Self> {
+    /// `allowed_origins` are origins such as `https://s3.example.com` or
+    /// `http://127.0.0.1:9000`; a missing port means the scheme's default.
+    pub fn new(url: &str, allowed_origins: &[&str]) -> Result<Self> {
         if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
             return Err(MediaError::rejected(
                 "remote URL has control characters",
             ));
         }
-        let rest = url
-            .strip_prefix(ECHO_MEDIA_REMOTE_SCHEME)
-            .ok_or_else(|| MediaError::rejected("remote URL must use https"))?;
-        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-        let (host, port) = split_authority(&rest[..end])?;
-        if !allowed_hosts
-            .iter()
-            .any(|allowed| allowed.eq_ignore_ascii_case(&host))
-        {
-            return Err(MediaError::rejected("remote host is not allowed"));
+        let (origin, _) = Origin::parse(url)?;
+        for allowed in allowed_origins {
+            if allowed_origin(allowed)? == origin {
+                return Ok(Self {
+                    url: url.to_string(),
+                    origin,
+                });
+            }
         }
-        Ok(Self {
-            url: url.to_string(),
-            host,
-            port,
-        })
+        Err(MediaError::rejected("remote origin is not allowed"))
+    }
+
+    pub fn scheme(&self) -> Scheme {
+        self.origin.scheme
     }
 
     pub fn host(&self) -> &str {
-        &self.host
+        &self.origin.host
     }
 
     pub fn port(&self) -> u16 {
-        self.port
+        self.origin.port
     }
 
     fn secrets(&self) -> Vec<String> {
@@ -135,7 +199,17 @@ impl RemoteUrl {
     }
 }
 
-fn split_authority(authority: &str) -> Result<(String, u16)> {
+fn allowed_origin(allowed: &str) -> Result<Origin> {
+    let (origin, rest) = Origin::parse(allowed)?;
+    if !rest.is_empty() && rest != "/" {
+        return Err(MediaError::rejected(
+            "allowed origin must not have a path or query",
+        ));
+    }
+    Ok(origin)
+}
+
+fn split_authority(authority: &str, scheme: Scheme) -> Result<(String, u16)> {
     if authority.is_empty() || authority.contains('@') {
         return Err(MediaError::rejected(
             "remote URL has an invalid authority",
@@ -151,7 +225,7 @@ fn split_authority(authority: &str) -> Result<(String, u16)> {
             })?;
             (host, port)
         }
-        None => (authority, ECHO_MEDIA_REMOTE_DEFAULT_PORT),
+        None => (authority, scheme.default_port()),
     };
     if host.is_empty() || port == 0 {
         return Err(MediaError::rejected(
@@ -164,8 +238,9 @@ fn split_authority(authority: &str) -> Result<(String, u16)> {
 impl fmt::Debug for RemoteUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RemoteUrl")
-            .field("host", &self.host)
-            .field("port", &self.port)
+            .field("scheme", &self.origin.scheme)
+            .field("host", &self.origin.host)
+            .field("port", &self.origin.port)
             .field("url", &ECHO_MEDIA_REDACTED)
             .finish()
     }
@@ -173,7 +248,14 @@ impl fmt::Debug for RemoteUrl {
 
 impl fmt::Display for RemoteUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "https://{}/{ECHO_MEDIA_REDACTED}", self.host)
+        let origin = &self.origin;
+        write!(
+            f,
+            "{}://{}:{}/{ECHO_MEDIA_REDACTED}",
+            origin.scheme.as_str(),
+            origin.host,
+            origin.port
+        )
     }
 }
 
@@ -216,36 +298,69 @@ impl Formats {
 mod tests {
     use super::*;
 
-    const S3: &str = "s3.eu-central-003.backblazeb2.com";
+    const S3: &str = "https://s3.eu-central-003.backblazeb2.com";
+    const MINIO: &str = "http://127.0.0.1:9000";
 
     #[test]
-    fn remote_url_requires_https_and_an_allowed_host() {
-        let url = format!("https://{S3}/bucket/key?X-Amz-Signature=abc");
+    fn remote_url_must_match_an_allowed_origin() {
+        let url = format!("{S3}/bucket/key?X-Amz-Signature=abc");
         let remote = RemoteUrl::new(&url, &[S3]).unwrap();
+        assert_eq!(remote.scheme(), Scheme::Https);
         assert_eq!(remote.port(), 443);
+        let explicit = "HTTPS://S3.eu-central-003.backblazeb2.com:443/key";
+        assert!(RemoteUrl::new(explicit, &[S3]).is_ok());
+        let local =
+            RemoteUrl::new(&format!("{MINIO}/bucket/key"), &[S3, MINIO])
+                .unwrap();
+        assert_eq!((local.scheme(), local.port()), (Scheme::Http, 9000));
         for bad in [
-            format!("http://{S3}/key"),
+            "http://s3.eu-central-003.backblazeb2.com/key".to_string(),
+            "https://s3.eu-central-003.backblazeb2.com:8443/key".to_string(),
+            "http://127.0.0.1/key".to_string(),
+            "https://127.0.0.1:9000/key".to_string(),
             "https://evil.example/key".to_string(),
-            format!("https://user@{S3}/key"),
-            format!("https://evil.example@{S3}/key"),
-            format!("https://{S3}:0/key"),
-            format!("https://{S3}/key with space"),
+            "ftp://s3.eu-central-003.backblazeb2.com/key".to_string(),
+            "file:///etc/passwd".to_string(),
+            "https://user@s3.eu-central-003.backblazeb2.com/key".to_string(),
+            "https://evil.example@s3.eu-central-003.backblazeb2.com/key"
+                .to_string(),
+            format!("{S3}:0/key"),
+            format!("{S3}/key with space"),
             "https://[::1]/key".to_string(),
         ] {
-            assert!(RemoteUrl::new(&bad, &[S3]).is_err(), "{bad}");
+            assert!(RemoteUrl::new(&bad, &[S3, MINIO]).is_err(), "{bad}");
         }
     }
 
     #[test]
+    fn allowed_origins_must_be_bare_origins() {
+        let url = format!("{S3}/key");
+        let with_path = format!("{S3}/bucket");
+        assert!(RemoteUrl::new(&url, &[&with_path]).is_err());
+        assert!(RemoteUrl::new(&url, &[&format!("{S3}/")]).is_ok());
+        assert!(RemoteUrl::new(&url, &["s3.eu-central-003.backblazeb2.com"])
+            .is_err());
+    }
+
+    #[test]
+    fn scheme_selects_the_protocol_whitelist() {
+        let https = RemoteUrl::new(&format!("{S3}/key"), &[S3]).unwrap();
+        let http = RemoteUrl::new(&format!("{MINIO}/key"), &[MINIO]).unwrap();
+        assert_eq!(Input::Remote(https).protocols(), "https,tls,tcp");
+        assert_eq!(Input::Remote(http).protocols(), "http,tcp");
+    }
+
+    #[test]
     fn remote_url_is_never_printed() {
-        let url = format!("https://{S3}:8443/key?X-Amz-Signature=secret");
-        let remote = RemoteUrl::new(&url, &[S3]).unwrap();
+        let url = "https://s3.eu-central-003.backblazeb2.com:8443/key?X-Amz-Signature=secret";
+        let origin = "https://s3.eu-central-003.backblazeb2.com:8443";
+        let remote = RemoteUrl::new(url, &[origin]).unwrap();
         assert_eq!(remote.port(), 8443);
         let printed = format!("{remote:?} {remote}");
         assert!(!printed.contains("secret"), "{printed}");
         assert!(!printed.contains("/key"), "{printed}");
         let secrets = Input::Remote(remote).secrets();
-        assert!(secrets.contains(&url));
+        assert!(secrets.contains(&url.to_string()));
         assert!(secrets.contains(&"X-Amz-Signature=secret".to_string()));
     }
 
