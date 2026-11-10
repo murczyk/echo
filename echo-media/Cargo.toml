@@ -1,0 +1,23 @@
+[package]
+name = "echo-media"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+libc = "0.2"
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = "3.27.0"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "time"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4.7"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync"] }
