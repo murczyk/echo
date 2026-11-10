@@ -8,7 +8,10 @@ import type { UnitHierarchyRsp } from '../../../../../Bindings';
 import { getUnitHierarchy } from '../../../services/api/units';
 import { invalidateUnitCatalog } from '../../../services/unit-catalog-events';
 import { buildAnalysisReq, emptyQueryState } from '../../rer-analysis-neo/helpers';
-import { useUnitHierarchyCatalog } from '../use-unit-children-filter';
+import {
+  loadUnitHierarchyForSelections,
+  useUnitHierarchyCatalog,
+} from '../use-unit-children-filter';
 
 vi.mock('../../../services/api/units', () => ({ getUnitHierarchy: vi.fn() }));
 
@@ -121,6 +124,32 @@ describe('scoped hierarchy regression #3571', () => {
     expect(onError).toHaveBeenCalledTimes(1);
     await act(async () => invalidateUnitCatalog());
     expect(catalogs.get('first')?.tree?.[0].label).toBe('recovered');
+  });
+
+  it('retains the displayed branch while a reload resolves changed descendants', async () => {
+    const refreshed = deferred<UnitHierarchyRsp>();
+    vi.mocked(getUnitHierarchy)
+      .mockResolvedValueOnce(response('original'))
+      .mockReturnValueOnce(refreshed.promise);
+    const props = { id: 'selected', unitIds: [], selectionValues: ['unit-id:1'] };
+    await act(async () => root.render(createElement(Harness, props)));
+    const original = catalogs.get('selected')?.hierarchy;
+    let reload!: ReturnType<typeof loadUnitHierarchyForSelections>;
+    await act(async () => {
+      invalidateUnitCatalog();
+      reload = loadUnitHierarchyForSelections(['unit-id:1']);
+    });
+    expect(catalogs.get('selected')?.loading).toBe(true);
+    expect(catalogs.get('selected')?.hierarchy).toBe(original);
+    await act(async () =>
+      refreshed.resolve({
+        ...response('moved'),
+        selections: [{ value: 'unit-id:1', label: 'Parent', unitIds: [1, 3], exactUnitIds: [1] }],
+      }),
+    );
+    expect((await reload).children.get('unit-id:1')).toEqual(['unit-id:1', 'unit-id:3']);
+    expect(getUnitHierarchy).toHaveBeenCalledTimes(2);
+    expect(catalogs.get('selected')?.loading).toBe(false);
   });
 
   it('skips empty scopes and uses server-resolved descendants outside downloaded paths', async () => {

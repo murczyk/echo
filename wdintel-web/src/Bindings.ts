@@ -8020,6 +8020,7 @@ export type LongPollRsp = {
   events: Array<EventMsg>;
   lastEventId: string | null;
   deploymentMaintenance: DeploymentMaintenance | null;
+  unitCatalogRevision: string | null;
 };
 
 export type EchoAccountF1 = {

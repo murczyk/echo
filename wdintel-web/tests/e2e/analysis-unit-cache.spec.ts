@@ -10,6 +10,9 @@ async function installUnitMocks(page: Page) {
   const inboxRequests: { selected_unit_ids?: number[] }[] = [];
   let renamed = false;
   let emitChange = false;
+  let descendants = [1, 2, 3];
+  let catalogRevision = 'original';
+  let pollCount = 0;
   page.on('request', (request) => {
     if (new URL(request.url()).pathname === '/api/rer-importer/get-inbox') {
       inboxRequests.push(request.postDataJSON());
@@ -31,7 +34,7 @@ async function installUnitMocks(page: Page) {
                 {
                   value: 'unit-id:1',
                   label: renamed ? 'Renamed parent' : 'Parent',
-                  unit_ids: [1, 2, 3],
+                  unit_ids: descendants,
                   exact_unit_ids: [1],
                 },
               ],
@@ -48,6 +51,7 @@ async function installUnitMocks(page: Page) {
     });
   });
   await page.route('**/api/event-stream/long-poll', (route) => {
+    pollCount += 1;
     const events = emitChange
       ? [
           {
@@ -60,15 +64,28 @@ async function installUnitMocks(page: Page) {
         ]
       : [];
     emitChange = false;
-    return route.fulfill({ json: { events, last_event_id: events.length ? 'unit-change' : null } });
+    return route.fulfill({
+      json: {
+        events,
+        last_event_id: events.length ? 'unit-change' : null,
+        unit_catalog_revision: catalogRevision,
+      },
+    });
   });
   return {
     hierarchyRequests,
     unitRequests,
     inboxRequests,
+    pollCount: () => pollCount,
     rename: () => {
       renamed = true;
       emitChange = true;
+      catalogRevision = 'renamed';
+    },
+    moveChildWithoutEvent: () => {
+      renamed = true;
+      descendants = [1, 3];
+      catalogRevision = 'moved';
     },
   };
 }
@@ -114,4 +131,24 @@ test('@regression #3571 resolves parent selections without downloading descendan
   await expect.poll(() => requests.unitRequests.length).toBe(3);
   await expect.poll(() => requests.hierarchyRequests.length).toBe(3);
   expect(requests.unitRequests).toEqual([[1], [1], [1]]);
+});
+
+test('@regression #3571 reconciles a missed unit event before reloading parent filters', async ({
+  page,
+}) => {
+  const requests = await installUnitMocks(page);
+  await page.goto('/rer-analysis-neo?units=unit-id%3A1');
+  await expect(page.locator('[data-message-id="101"]')).toBeVisible();
+  await expect.poll(() => requests.unitRequests.length).toBe(1);
+  await expect.poll(requests.pollCount).toBeGreaterThan(1);
+  const before = requests.inboxRequests.length;
+  requests.moveChildWithoutEvent();
+  await expect.poll(() => requests.inboxRequests.length).toBeGreaterThan(before);
+  await expect.poll(() => requests.unitRequests.length).toBe(2);
+  expect(
+    requests.inboxRequests
+      .slice(before)
+      .every((request) => JSON.stringify(request.selected_unit_ids) === '[1,3]'),
+  ).toBe(true);
+  await expect(page.locator('[data-message-id="101"]')).toBeVisible();
 });

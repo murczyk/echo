@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Unit } from '../../../../Bindings';
 import { getUnitsByIds } from '../api/units';
-import { invalidateUnitCatalog } from '../unit-catalog-events';
+import { invalidateUnitCatalog, reconcileUnitCatalog } from '../unit-catalog-events';
 import { createUnitLookupCache } from '../unit-lookup-cache';
 
 vi.mock('../api/units', () => ({ getUnitsByIds: vi.fn() }));
@@ -96,6 +96,26 @@ describe('Analysis unit lookup regression #3571', () => {
     vi.mocked(getUnitsByIds).mockResolvedValueOnce([unit(1)]);
     await expect(lookup([1])).resolves.toEqual([unit(1)]);
     expect(getUnitsByIds).toHaveBeenCalledTimes(2);
+  });
+
+  it('reconciles missed notifications and quiet-table windows without refetching every poll', async () => {
+    const lookup = createUnitLookupCache();
+    vi.mocked(getUnitsByIds).mockResolvedValue([unit(1)]);
+    reconcileUnitCatalog('window-1:original', false);
+    await lookup([1]);
+    reconcileUnitCatalog('window-1:original', false);
+    await lookup([1]);
+    expect(getUnitsByIds).toHaveBeenCalledTimes(1);
+    vi.mocked(getUnitsByIds).mockResolvedValue([unit(1, 'Missed edit')]);
+    reconcileUnitCatalog('window-1:edited', false);
+    await expect(lookup([1])).resolves.toEqual([unit(1, 'Missed edit')]);
+    reconcileUnitCatalog('window-1:edited', true);
+    await lookup([1]);
+    expect(getUnitsByIds).toHaveBeenCalledTimes(2);
+    vi.mocked(getUnitsByIds).mockResolvedValue([unit(1, 'Direct SQL edit')]);
+    reconcileUnitCatalog('window-2:edited', false);
+    await expect(lookup([1])).resolves.toEqual([unit(1, 'Direct SQL edit')]);
+    expect(getUnitsByIds).toHaveBeenCalledTimes(3);
   });
 
   it('cancels a caller without aborting another caller sharing the same batch', async () => {

@@ -548,7 +548,7 @@ export function useAnalysisData({
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
-  const referenceState = useAnalysisReferenceState({ shouldLoadNewCallsigns });
+  const referenceState = useAnalysisReferenceState({ shouldLoadNewCallsigns, onError });
   const thread = useAnalysisThreadData({
     messageId: threadMessageId,
     enabled: !deferInitialLoad && currentUser != null && authUserName != null,
@@ -601,6 +601,7 @@ export function useAnalysisData({
   const localInboxChangeOrigins = useLocalInboxChangeOrigins();
 
   const hydrateNetworksForMessages = useLoadMissingNetworksForMessages({
+    scopeKey: reloadTriggerKey,
     hideNetworks,
     loadUnitsByIds: referenceState.loadUnitsByIds,
     setUnitsMap: referenceState.setUnitsMap,

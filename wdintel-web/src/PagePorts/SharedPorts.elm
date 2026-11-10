@@ -33,7 +33,7 @@ port shared_triggerResize : () -> Cmd msg
 port shared_dispatchInboxChanged : List InboxChangedEvent -> Cmd msg
 
 
-port shared_dispatchUnitChanged : () -> Cmd msg
+port shared_dispatchUnitChanged : { revision : Maybe String, changed : Bool } -> Cmd msg
 
 
 port shared_showAnalysisError : { title : String, content : String } -> Cmd msg

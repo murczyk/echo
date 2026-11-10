@@ -20551,6 +20551,7 @@ type alias LongPollRsp =
     { events : List (EventMsg)
     , lastEventId : Maybe (String)
     , deploymentMaintenance : Maybe (DeploymentMaintenance)
+    , unitCatalogRevision : Maybe (String)
     }
 
 
@@ -20560,6 +20561,7 @@ longPollRspEncoder struct =
         [ ( "events", (Json.Encode.list (eventMsgEncoder)) struct.events )
         , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastEventId )
         , ( "deployment_maintenance", (Maybe.withDefault Json.Encode.null << Maybe.map (deploymentMaintenanceEncoder)) struct.deploymentMaintenance )
+        , ( "unit_catalog_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitCatalogRevision )
         ]
 
 
@@ -33934,6 +33936,7 @@ longPollRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list (eventMsgDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "unit_catalog_revision" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
 
 
 echoAccountF1Decoder : Json.Decode.Decoder EchoAccountF1

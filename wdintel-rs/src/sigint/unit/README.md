@@ -42,25 +42,39 @@ paths only for units present in its statistics. Empty scopes need no request.
 Scoped revisions hash the returned contents, including resolved selections;
 clients send their known revision and unchanged responses return JSON `null`.
 
-Mounted consumers share completed and in-flight requests by scope. Focus,
+Mounted consumers share completed and in-flight requests by scope, keeping at
+most 32 completed scopes. Focus,
 visibility recovery, network recovery and timers do not reload the hierarchy.
 `ETUnitChanged` is delivered through the existing event stream, invalidates the
 client catalog and refreshes mounted consumers; an explicit Analysis reload
-also invalidates it. Failures are shown once and wait for a scope change or
+also invalidates it. Reloads resolve the current selected branches before
+requesting messages; the previous catalog remains visible during refresh.
+Duty waits for branch refresh before reloading filtered feeds.
+Failures are shown once and wait for a scope change or
 explicit invalidation before retrying. Hierarchy requests time out after thirty
-seconds. The server snapshot expiry still bounds stale cache contents on the
-next requested read after a lost notification or direct database write.
+seconds. Existing long-poll responses also carry an optional catalog revision:
+a persistent nonce changes whenever the hierarchy is marked dirty, even with
+no connected sessions, and a five-minute window bounds missed notifications
+and quiet direct database writes. The client invalidates only when this token
+changes, without introducing another polling request. Combined with the
+five-minute server snapshot expiry, structural SQL changes reconcile within
+two windows plus event-transport delay while connected. Interrupted clients
+reconcile on their next successful poll. Older servers may omit the token.
 
 Analysis and its thread view share a per-page unit lookup cache, fetching only
 newly referenced IDs and caching absent IDs as well. Unit changes and explicit
 reloads invalidate it. Responses started before invalidation cannot restore
 stale records. Reference loading uses those IDs instead of the complete active
-unit catalog.
+unit catalog. New callsign metadata, including later pages, targeted refreshes
+and summary data, hydrates its own unit IDs. Reference hydration cannot commit
+after its catalog, query scope or mounted consumer changes.
 
 Regression coverage:
 `wdintel-rs/src/sigint/unit/hierarchy/tests.rs`,
 `wdintel-web/src/ts/react/routes/shared/__tests__/use-unit-hierarchy-catalog.spec.tsx`,
-`wdintel-web/src/ts/react/services/__tests__/unit-lookup-cache.spec.ts`.
+`wdintel-web/src/ts/react/services/__tests__/unit-lookup-cache.spec.ts`,
+`wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-unit-references.spec.tsx`,
+`wdintel-web/tests/e2e/analysis-unit-cache.spec.ts`.
 
 ## Inbox unit labels
 

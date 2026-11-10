@@ -22,7 +22,25 @@ type HierarchyCatalog = {
 type HierarchyScope = Pick<UnitHierarchyReq, 'unitIds' | 'selectionValues'>;
 const catalogs = new Map<string, HierarchyCatalog>();
 const pendingCatalogs = new Map<string, Promise<HierarchyCatalog>>();
+const UNIT_HIERARCHY_CACHED_SCOPES = 32;
 let cachedRevision = unitCatalogRevision();
+
+function hierarchyScopeKey(scope?: Partial<HierarchyScope>): string {
+  return JSON.stringify({
+    unitIds: scope?.unitIds == null ? null : [...new Set(scope.unitIds)].sort((a, b) => a - b),
+    selectionValues: [...new Set(scope?.selectionValues ?? [])].sort(),
+  });
+}
+
+export async function loadUnitHierarchyForSelections(
+  values: string[],
+): Promise<UnitHierarchyIndex> {
+  const catalog = await loadHierarchyCatalog(
+    hierarchyScopeKey({ unitIds: [], selectionValues: values }),
+    null,
+  );
+  return catalog.hierarchy;
+}
 
 function loadHierarchyCatalog(
   scopeKey: string,
@@ -35,7 +53,11 @@ function loadHierarchyCatalog(
     cachedRevision = revision;
   }
   const cached = catalogs.get(scopeKey);
-  if (cached) return Promise.resolve(cached);
+  if (cached) {
+    catalogs.delete(scopeKey);
+    catalogs.set(scopeKey, cached);
+    return Promise.resolve(cached);
+  }
   const pending = pendingCatalogs.get(scopeKey);
   if (pending) return pending;
   const scope: HierarchyScope = JSON.parse(scopeKey);
@@ -72,6 +94,9 @@ function loadHierarchyCatalog(
       }
       if (!catalog) throw new Error('Сервер не повернув ієрархію підрозділів');
       catalogs.set(scopeKey, catalog);
+      if (catalogs.size > UNIT_HIERARCHY_CACHED_SCOPES) {
+        catalogs.delete(catalogs.keys().next().value!);
+      }
       return catalog;
     })
     .finally(() => {
@@ -86,10 +111,7 @@ export function useUnitHierarchyCatalog(
   onError: (message: string) => void,
   scope?: Partial<HierarchyScope>,
 ) {
-  const scopeKey = JSON.stringify({
-    unitIds: scope?.unitIds == null ? null : [...new Set(scope.unitIds)].sort((a, b) => a - b),
-    selectionValues: [...new Set(scope?.selectionValues ?? [])].sort(),
-  });
+  const scopeKey = hierarchyScopeKey(scope);
   const [revision, setRevision] = useState(unitCatalogRevision);
   const [state, setState] = useState<{
     key: string;
@@ -123,7 +145,7 @@ export function useUnitHierarchyCatalog(
     };
   }, [needed, scopeKey, revision]);
   const current = state?.key === scopeKey && state.revision === revision;
-  const catalog = current ? state.catalog : null;
+  const catalog = state?.key === scopeKey ? state.catalog : null;
   return {
     hierarchy: catalog?.hierarchy ?? null,
     tree: catalog?.tree ?? null,

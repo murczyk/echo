@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { loadUnitHierarchyForSelections } from '../shared/use-unit-children-filter';
+import { isAbortError } from '../../services/api/client';
+import { toErrorMessage } from './use-analysis-data.shared';
 
 import type {
   InboxMessage,
@@ -226,6 +229,14 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
       try {
+        const resolvedQueryState =
+          queryState.unitsSelected.length > 0
+            ? {
+                ...queryState,
+                unitHierarchy: await loadUnitHierarchyForSelections(queryState.unitsSelected),
+              }
+            : queryState;
+        if (abortController.signal.aborted) return;
         await reloadAnalysisData({
           loadUnitsByIds,
           clearAnalysisResults,
@@ -250,7 +261,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
             onError(message, critical && !hasLoadedMessagesRef.current),
           onUnauthorized,
           optionsFreqsRef: optionsFreqValuesRef,
-          queryState,
+          queryState: resolvedQueryState,
           reloadRequestRef,
           newCallsignsRequestRef,
           newCallsignsLoadedKeyRef,
@@ -299,6 +310,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           rightSidebarTab,
           signal: abortController.signal,
         });
+      } catch (error) {
+        if (!abortController.signal.aborted && !isAbortError(error) && !onUnauthorized(error)) {
+          onError(toErrorMessage(error));
+        }
       } finally {
         if (
           reloadAbortControllerRef.current === abortController &&

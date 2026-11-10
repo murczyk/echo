@@ -46,6 +46,8 @@ async fn regression_3527_cached_tree_tracks_committed_creates_edits_and_deletes(
     .unwrap();
     notify_change(&env).await;
     let first = load(&env).await.unwrap();
+    let first_revision =
+        catalog_revision(&mut env.redis.clone()).await.unwrap();
     let unit = first.units.iter().find(|unit| unit.id == child.id).unwrap();
     let group = &first.groups[unit.group_index.unwrap() as usize];
     assert_eq!(group.label, "1 мср");
@@ -65,6 +67,10 @@ async fn regression_3527_cached_tree_tracks_committed_creates_edits_and_deletes(
     child.army = Set("7 А".to_string());
     let child = child.update(&env.dbx).await.unwrap();
     notify_change(&env).await;
+    assert_ne!(
+        catalog_revision(&mut env.redis.clone()).await.unwrap(),
+        first_revision
+    );
     assert!(env
         .redis
         .clone()
@@ -256,8 +262,22 @@ async fn regression_3571_scoped_hierarchy_resolves_complete_branches() {
         .unwrap();
         ids.push(unit.id);
     }
+    let legacy_name = format!("unit-id:0{}", ids[0]);
+    let legacy_unit = mk_sigint_unit(
+        &env.dbx,
+        sigint_unit::ActiveModel {
+            name: Set(legacy_name.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     notify_change(&env).await;
     let tree = load(&env).await.unwrap();
+    assert_eq!(
+        resolve_selection(&tree, &legacy_name).unwrap().unit_ids,
+        vec![legacy_unit.id]
+    );
     let scoped = scope_tree(
         tree.clone(),
         &UnitHierarchyReq {

@@ -116,6 +116,7 @@ pub async fn deployment_only_poll<B: MessageBody>(
         events: vec![],
         last_event_id: poll.last_event_id,
         deployment_maintenance: state.current(),
+        unit_catalog_revision: None,
     };
     Ok(req
         .into_response(HttpResponse::Ok().json(response))
@@ -186,6 +187,7 @@ async fn long_poll(
             events: vec![],
             last_event_id: None,
             deployment_maintenance: None,
+            unit_catalog_revision: None,
         }));
     };
 
@@ -234,6 +236,13 @@ async fn long_poll(
             events: vec![],
             last_event_id: req.last_event_id,
             deployment_maintenance,
+            unit_catalog_revision: Some(
+                crate::sigint::unit::hierarchy::catalog_revision(
+                    &mut env.redis.clone(),
+                )
+                .await
+                .c(h!())?,
+            ),
         }));
     }
     let redis_con_config =
@@ -258,6 +267,13 @@ async fn long_poll(
         events,
         last_event_id,
         deployment_maintenance,
+        unit_catalog_revision: Some(
+            crate::sigint::unit::hierarchy::catalog_revision(
+                &mut env.redis.clone(),
+            )
+            .await
+            .c(h!())?,
+        ),
     }))
 }
 

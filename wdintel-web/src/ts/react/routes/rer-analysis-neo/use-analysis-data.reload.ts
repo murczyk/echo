@@ -1215,7 +1215,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             params.signal ? { signal: params.signal } : undefined,
           );
           if (isStaleReload() || params.signal?.aborted) return;
-          params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
+          params.setUnitsMap((current) => ({
+            ...current,
+            ...Object.fromEntries(units.map((unit) => [unit.id, unit])),
+          }));
           params.setNetworks([]);
           params.setOptions((current) => ({ ...current, networks: [] }));
           return;
@@ -1262,7 +1265,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         );
         if (isStaleReload() || params.signal?.aborted) return;
         const unitsMap = Object.fromEntries(referencedUnits.map((unit) => [unit.id, unit]));
-        params.setUnitsMap(unitsMap);
+        params.setUnitsMap((current) => ({ ...current, ...unitsMap }));
         params.setNetworks((current) => {
           return mergeNetworks(current, networksByAnalysisIds);
         });

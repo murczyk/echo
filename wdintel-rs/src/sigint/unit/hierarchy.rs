@@ -3,9 +3,9 @@ use super::types::{
     UnitHierarchySelection, UnitHierarchyUnit,
 };
 use crate::config::{
-    ROLE_CYBER_VIEWER_RESTRICTED, SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY,
-    SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, SIGINT_UNIT_TREE_RECONCILE_SECS,
-    SIGINT_UNIT_TREE_REDIS_KEY,
+    ROLE_CYBER_VIEWER_RESTRICTED, SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY,
+    SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY, SIGINT_UNIT_TREE_DIRTY_REDIS_KEY,
+    SIGINT_UNIT_TREE_RECONCILE_SECS, SIGINT_UNIT_TREE_REDIS_KEY,
 };
 use crate::entities::sigint_unit;
 use crate::error::AppError;
@@ -131,9 +131,11 @@ fn resolve_selection(
     value: &str,
 ) -> Option<UnitHierarchySelection> {
     let parent = value.strip_prefix("unit-parent:");
-    let id = value
-        .strip_prefix("unit-id:")
-        .and_then(|id| id.parse::<i64>().ok());
+    let id = value.strip_prefix("unit-id:").and_then(|raw| {
+        raw.parse::<i64>()
+            .ok()
+            .filter(|id| *id > 0 && id.to_string() == raw)
+    });
     let mut groups = BTreeSet::new();
     let mut exact_unit_ids = BTreeSet::new();
     let mut label = value.to_string();
@@ -205,12 +207,31 @@ fn descendant_unit_ids(
 pub(crate) async fn mark_dirty(
     redis: &mut impl ConnectionLike,
 ) -> anyhow::Result<()> {
-    redis::cmd("SET")
-        .arg(SIGINT_UNIT_TREE_DIRTY_REDIS_KEY)
-        .arg(true)
+    redis::pipe()
+        .atomic()
+        .set(SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, true)
+        .ignore()
+        .set(
+            SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY,
+            uuid::Uuid::now_v7().to_string(),
+        )
+        .ignore()
         .query_async::<()>(redis)
         .await
         .c(h!())
+}
+
+pub(crate) async fn catalog_revision(
+    redis: &mut impl ConnectionLike,
+) -> anyhow::Result<String> {
+    let revision: Option<String> = redis::cmd("GET")
+        .arg(SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY)
+        .query_async(redis)
+        .await
+        .c(h!())?;
+    let reconciliation =
+        chrono::Utc::now().timestamp() as u64 / SIGINT_UNIT_TREE_RECONCILE_SECS;
+    Ok(format!("{reconciliation}:{}", revision.unwrap_or_default()))
 }
 
 pub(crate) async fn mark_dirty_for_mode(mode: Mode) -> anyhow::Result<()> {
