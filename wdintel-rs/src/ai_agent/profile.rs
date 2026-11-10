@@ -183,12 +183,10 @@ async fn load_profile(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let allowed_ai_engine_ids = ai_agent_allowed_engine::Entity::find()
-        .all(dbx)
-        .await
-        .c(h!())?
+    let allowed_ai_engine_ids = access::ordered_allowed_engines(dbx)
+        .await?
         .into_iter()
-        .map(|allowed| allowed.ai_engine_id)
+        .map(|ai_engine| ai_engine.id)
         .collect::<Vec<_>>();
     let engine_ids = profile_engine_ids(&settings, &allowed_ai_engine_ids);
     let engines = ai_engine::Entity::find()
@@ -734,6 +732,10 @@ where
         callsign_enabled: Set(profile_engine.callsign_enabled),
         ocr_enabled: Set(false),
         ocr_request_profile: Set("openai_vision".to_string()),
+        unhealthy: Set(false),
+        health_message: Set(None),
+        health_updated_at: Set(None),
+        health_updated_by_login_id: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -776,13 +778,16 @@ where
         .exec(dbx)
         .await
         .c(h!())?;
-    for profile_engine_id in &profile.allowed_ai_engine_ids {
+    for (position, profile_engine_id) in
+        (0..).zip(&profile.allowed_ai_engine_ids)
+    {
         ai_agent_allowed_engine::ActiveModel {
             ai_engine_id: Set(remap_required_engine_id(
                 *profile_engine_id,
                 engine_ids,
             )?),
             created_at: Set(Utc::now().naive_utc()),
+            position: Set(position),
         }
         .insert(dbx)
         .await
@@ -860,6 +865,10 @@ fn engine_record(engine: &ProfileEngine) -> ai_engine::Model {
         callsign_enabled: engine.callsign_enabled,
         ocr_enabled: false,
         ocr_request_profile: "openai_vision".to_string(),
+        unhealthy: false,
+        health_message: None,
+        health_updated_at: None,
+        health_updated_by_login_id: None,
     }
 }
 

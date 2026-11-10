@@ -147,6 +147,9 @@ async fn bootstrap_app(
         .service(crate::ai_agent::maps::workspace::undo_map)
         .service(crate::ai_agent::maps::workspace::redo_map)
         .service(crate::ai_agent::cancel_request)
+        .service(crate::ai_agent::configuration)
+        .service(crate::ai_agent::create_request)
+        .service(crate::ai_agent::get_conversation)
 }
 
 async fn test_human_login(
@@ -2151,5 +2154,244 @@ async fn issue_3770_internal_work_append_requires_live_binding_without_spending_
     )
     .await
     .is_err());
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_4112_conversation_switches_engine_in_admin_order() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let settings = checkpoint_test_settings(&env).await;
+    let engine = |name: &str| ai_engine::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        name: Set(format!("{name}-{}", Uuid::now_v7())),
+        url: Set("http://vllm.example:8000/v1".to_string()),
+        model_name: Set("test".to_string()),
+        enabled: Set(true),
+        ..Default::default()
+    };
+    let glm = engine("a-glm").insert(&env.dbx).await.unwrap();
+    let mut flash = engine("b-flash");
+    flash.unhealthy = Set(true);
+    flash.health_message = Set(Some("Шлюз недоступний".to_string()));
+    let flash = flash.insert(&env.dbx).await.unwrap();
+    for (position, ai_engine_id) in [(1, glm.id), (0, flash.id)] {
+        ai_agent_allowed_engine::ActiveModel {
+            ai_engine_id: Set(ai_engine_id),
+            position: Set(position),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+    }
+    let app = test::init_service(bootstrap_app(env.clone()).await).await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/test-human-login")
+            .set_json(fixture.human.id)
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let call = |path: &str, body: serde_json::Value| {
+        test::TestRequest::post()
+            .uri(path)
+            .cookie(cookie.clone())
+            .set_json(body)
+            .to_request()
+    };
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/ai-agent/configuration")
+            .cookie(cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = test::read_body_json(response).await;
+    let providers = body["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|provider| {
+            [glm.id.to_string(), flash.id.to_string()]
+                .contains(&provider["id"].as_str().unwrap().to_string())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(providers[0]["id"], flash.id.to_string(), "admin order");
+    assert_eq!(providers[0]["unhealthy"], true);
+    assert_eq!(providers[0]["healthMessage"], "Шлюз недоступний");
+    assert_eq!(providers[1]["id"], glm.id.to_string());
+
+    let response = test::call_service(
+        &app,
+        call(
+            "/api/ai-agent/requests/create",
+            serde_json::json!({ "aiEngineId": glm.id, "prompt": "Перший" }),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = test::read_body_json(response).await;
+    let conversation_id = body["conversationId"].as_str().unwrap().to_string();
+    let request_id =
+        Uuid::parse_str(body["requestId"].as_str().unwrap()).unwrap();
+    let mut first = ai_agent_request::Entity::find_by_id(request_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    first.state = Set("completed".to_string());
+    first.response = Set(Some("Відповідь".to_string()));
+    first.update(&env.dbx).await.unwrap();
+
+    let response = test::call_service(
+        &app,
+        call(
+            "/api/ai-agent/requests/create",
+            serde_json::json!({
+                "conversationId": conversation_id,
+                "aiEngineId": flash.id,
+                "prompt": "Другий",
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK, "#4112 switch");
+    let response = test::call_service(
+        &app,
+        call(
+            "/api/ai-agent/conversations/get",
+            serde_json::json!({ "id": conversation_id }),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = test::read_body_json(response).await;
+    assert_eq!(body["aiEngineId"], flash.id.to_string(), "last engine");
+    let engines = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "user")
+        .map(|message| message["aiEngineName"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(engines, [glm.name.clone(), flash.name.clone()]);
+
+    ai_agent_allowed_engine::Entity::delete_many()
+        .filter(
+            ai_agent_allowed_engine::Column::AiEngineId
+                .is_in([glm.id, flash.id]),
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    restore_checkpoint_test_settings(&env, settings).await;
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_4112_model_failures_are_recorded_for_the_chat() {
+    use crate::entities::ai_agent_request_event;
+    use sea_orm::QueryOrder;
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let metadata = |request_id: Uuid| {
+        let env = env.clone();
+        async move {
+            ai_agent_request::Entity::find_by_id(request_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .completion_metadata
+        }
+    };
+    let runner_failed = AppError::BL {
+        msg: "AI agent runner failed".to_string(),
+    };
+
+    let provider_failed = running_request(&env, &fixture).await;
+    crate::ai_agent::worker::fail_request(
+        &env,
+        provider_failed.id,
+        &runner_failed,
+        Some("provider_error"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        metadata(provider_failed.id).await,
+        Some(
+            serde_json::json!({"coverageLimited": false, "reason": "provider_error"})
+        )
+    );
+    let event_types = ai_agent_request_event::Entity::find()
+        .filter(
+            ai_agent_request_event::Column::RequestId.eq(provider_failed.id),
+        )
+        .order_by_asc(ai_agent_request_event::Column::Sequence)
+        .all(&env.dbx)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|event| event.event_type)
+        .collect::<Vec<_>>();
+    assert_eq!(event_types, ["completion_metadata", "error"]);
+
+    let infrastructure_failed = running_request(&env, &fixture).await;
+    crate::ai_agent::worker::fail_request(
+        &env,
+        infrastructure_failed.id,
+        &runner_failed,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(metadata(infrastructure_failed.id).await, None);
+
+    let refusal = "Не можу допомогти встановити актуальне місцеперебування військовослужбовця.";
+    let refused = running_request(&env, &fixture).await;
+    crate::ai_agent::worker::complete_request(
+        &env,
+        refused.id,
+        refusal.to_string(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        metadata(refused.id).await,
+        Some(
+            serde_json::json!({"coverageLimited": false, "reason": "model_refusal"})
+        )
+    );
+
+    let limited = running_request(&env, &fixture).await;
+    crate::ai_agent::worker::complete_request(
+        &env,
+        limited.id,
+        refusal.to_string(),
+        Some(crate::ai_agent::types::AiAgentCompletionMetadata {
+            coverage_limited: true,
+            reason: "time_limit".to_string(),
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        metadata(limited.id).await,
+        Some(
+            serde_json::json!({"coverageLimited": true, "reason": "time_limit"})
+        ),
+        "runner metadata wins"
+    );
     fixture.cleanup(&env).await;
 }

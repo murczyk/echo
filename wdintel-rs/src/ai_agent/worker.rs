@@ -5,7 +5,8 @@ use super::{
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
-    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REQUEST_WORKER_COUNT,
+    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REASON_MODEL_REFUSAL,
+    AI_AGENT_REASON_PROVIDER_ERROR, AI_AGENT_REQUEST_WORKER_COUNT,
     AI_AGENT_RESPONSE_MAX_BYTES, AI_AGENT_RESPONSE_MAX_CHARS,
     AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES, AI_AGENT_USER_FAILURE_MESSAGE,
     AI_AGENT_WORKER_ERROR_SLEEP_SEC, AI_AGENT_WORKER_IDLE_SLEEP_MS,
@@ -418,7 +419,9 @@ async fn process_claimed_request(
     cancellation: &CancellationToken,
 ) {
     let request_id = request.id;
-    let result = run_request(env, &request, cancellation).await;
+    let mut model_failure = None;
+    let result =
+        run_request(env, &request, cancellation, &mut model_failure).await;
     let revoke_result = auth::revoke_request(env, request_id).await;
     if let Err(err) = revoke_result {
         error!(
@@ -433,13 +436,14 @@ async fn process_claimed_request(
                 error!(
                     "AI agent completion persistence failed for {request_id}: {err:#?}"
                 );
-                let _ = fail_request(env, request_id, &err).await;
+                let _ = fail_request(env, request_id, &err, None).await;
             }
         }
         Ok(RunOutcome::Cancelled) => {}
         Err(err) => {
             error!("AI agent request failed for {request_id}: {err:#?}");
-            if let Err(persist_err) = fail_request(env, request_id, &err).await
+            if let Err(persist_err) =
+                fail_request(env, request_id, &err, model_failure).await
             {
                 error!(
                     "AI agent failure persistence failed for {request_id}: {persist_err:#?}"
@@ -453,6 +457,7 @@ async fn run_request(
     env: &Env,
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
+    model_failure: &mut Option<&'static str>,
 ) -> Result<RunOutcome, AppError> {
     let ai_engine =
         access::allowed_engine(&env.dbx, Some(request.ai_engine_id))
@@ -476,7 +481,7 @@ async fn run_request(
         });
     match tokio::time::timeout(
         timeout,
-        run_request_inner(env, request, cancellation, ai_engine),
+        run_request_inner(env, request, cancellation, ai_engine, model_failure),
     )
     .await
     {
@@ -582,6 +587,7 @@ async fn run_request_inner(
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
     ai_engine: crate::entities::ai_engine::Model,
+    model_failure: &mut Option<&'static str>,
 ) -> Result<RunOutcome, AppError> {
     let request_started_at = request
         .started_at
@@ -852,6 +858,9 @@ async fn run_request_inner(
                     }
                     if let Some(diagnostic) = events::completion_diagnostic(&event) {
                         info!("AI agent completion request_id={} diagnostic={diagnostic}", request.id);
+                        if let Some(reason) = model_failure_reason(&diagnostic) {
+                            *model_failure = Some(reason);
+                        }
                         continue;
                     }
                     if let Some(diagnostic) = events::tool_diagnostic(&event) {
@@ -1439,12 +1448,54 @@ fn interrupted_error() -> AppError {
     }
 }
 
-async fn complete_request(
+/// Which completion reason a failed run gets from a provider diagnostic, so
+/// the chat can offer another model. Infrastructure failures produce none.
+fn model_failure_reason(diagnostic: &Value) -> Option<&'static str> {
+    if diagnostic.get("failureKind").and_then(Value::as_str)
+        == Some("authorization")
+    {
+        return None;
+    }
+    match diagnostic.get("outcome").and_then(Value::as_str)? {
+        "content_filter" => Some(AI_AGENT_REASON_MODEL_REFUSAL),
+        "provider_error" | "transient_error" => {
+            Some(AI_AGENT_REASON_PROVIDER_ERROR)
+        }
+        _ => None,
+    }
+}
+
+/// The runner's own metadata wins; otherwise a policy refusal in the answer
+/// is recorded so the chat can offer another model.
+fn completed_metadata(
+    response: &str,
+    metadata: Option<super::types::AiAgentCompletionMetadata>,
+) -> (Option<super::types::AiAgentCompletionMetadata>, bool) {
+    if metadata.is_some() || !super::refusal::is_policy_refusal(response) {
+        return (metadata, false);
+    }
+    (
+        Some(model_failure_metadata(AI_AGENT_REASON_MODEL_REFUSAL)),
+        true,
+    )
+}
+
+fn model_failure_metadata(
+    reason: &str,
+) -> super::types::AiAgentCompletionMetadata {
+    super::types::AiAgentCompletionMetadata {
+        coverage_limited: false,
+        reason: reason.to_string(),
+    }
+}
+
+pub(super) async fn complete_request(
     env: &Env,
     request_id: Uuid,
     response: String,
     metadata: Option<super::types::AiAgentCompletionMetadata>,
 ) -> Result<bool, AppError> {
+    let (metadata, detected_refusal) = completed_metadata(&response, metadata);
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
         .lock_exclusive()
@@ -1485,6 +1536,15 @@ async fn complete_request(
     super::citations::persist_referenced(&txn, request_id, &response)
         .await
         .c(h!())?;
+    if detected_refusal {
+        events::append_in_transaction(
+            &txn,
+            request_id,
+            "completion_metadata",
+            serde_json::to_value(&metadata).c(h!())?,
+        )
+        .await?;
+    }
     events::append_in_transaction(
         &txn,
         request_id,
@@ -1497,10 +1557,11 @@ async fn complete_request(
     Ok(true)
 }
 
-async fn fail_request(
+pub(super) async fn fail_request(
     env: &Env,
     request_id: Uuid,
     err: &AppError,
+    model_failure: Option<&str>,
 ) -> Result<(), AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
@@ -1519,8 +1580,14 @@ async fn fail_request(
     let message =
         access::truncate(format!("{err:#}"), AI_AGENT_ERROR_MAX_CHARS);
     let mut request = request.into_active_model();
+    let metadata = model_failure.map(model_failure_metadata);
     request.state = Set("failed".to_string());
     request.error = Set(Some(message.clone()));
+    request.completion_metadata = Set(metadata
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .c(h!())?);
     request.completed_at = Set(Some(now));
     request.updated_at = Set(now);
     request.update(&txn).await.c(h!())?;
@@ -1531,6 +1598,15 @@ async fn fail_request(
         now,
     )
     .await?;
+    if let Some(metadata) = &metadata {
+        events::append_in_transaction(
+            &txn,
+            request_id,
+            "completion_metadata",
+            serde_json::to_value(metadata).c(h!())?,
+        )
+        .await?;
+    }
     events::append_in_transaction(
         &txn,
         request_id,
@@ -1594,7 +1670,7 @@ async fn recover_interrupted_requests(env: &Env) -> Result<(), AppError> {
             msg: "AI agent request was interrupted by worker restart"
                 .to_string(),
         };
-        if let Err(err) = fail_request(env, request.id, &err).await {
+        if let Err(err) = fail_request(env, request.id, &err, None).await {
             failure_count += 1;
             error!(
                 "Could not persist interrupted AI agent request {}: {err:#?}",
@@ -1920,6 +1996,32 @@ mod tests {
             ),
             regular
         );
+    }
+
+    #[test]
+    fn issue_4112_provider_diagnostics_choose_the_chat_reason() {
+        let reason = |diagnostic: serde_json::Value| {
+            super::model_failure_reason(&diagnostic)
+        };
+        assert_eq!(
+            reason(json!({"outcome": "transient_error", "httpStatus": 500})),
+            Some("provider_error")
+        );
+        assert_eq!(
+            reason(json!({"outcome": "provider_error", "stage": "research"})),
+            Some("provider_error")
+        );
+        assert_eq!(
+            reason(json!({"outcome": "content_filter"})),
+            Some("model_refusal")
+        );
+        assert_eq!(
+            reason(
+                json!({"outcome": "transient_error", "failureKind": "authorization"})
+            ),
+            None
+        );
+        assert_eq!(reason(json!({"outcome": "continued"})), None);
     }
 
     #[test]

@@ -161,6 +161,10 @@ fn engine(url: String) -> ai_engine::Model {
         callsign_enabled: true,
         ocr_enabled: false,
         ocr_request_profile: String::new(),
+        unhealthy: false,
+        health_message: None,
+        health_updated_at: None,
+        health_updated_by_login_id: None,
     }
 }
 

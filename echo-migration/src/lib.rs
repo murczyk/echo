@@ -18,6 +18,7 @@ mod m20261104_165252_rer_report_unit_selection;
 mod m20261105_212108_iggy_group_refresh_queue;
 mod m20261107_175019_duty_selected_groups_flag;
 mod m20261109_141057_group_message_sending;
+mod m20261110_072243_ai_engine_health_and_agent_order;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1242,6 +1243,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_175132_important_only_my_organism::Migration),
             Box::new(m20261108_090102_signoz_metrics_settings::Migration),
             Box::new(m20261109_141057_group_message_sending::Migration),
+            Box::new(m20261110_072243_ai_engine_health_and_agent_order::Migration),
         ]
     }
 }

@@ -15,6 +15,7 @@ pub mod middleware;
 pub mod profile;
 pub mod provider_gateway;
 pub(crate) mod reasoning;
+mod refusal;
 mod review;
 mod route_registry;
 pub mod types;
@@ -28,7 +29,7 @@ use crate::config::{
 };
 use crate::entities::{
     ai_agent_conversation, ai_agent_request, ai_agent_request_event,
-    ai_agent_settings, ai_agent_user_link, login,
+    ai_agent_settings, ai_agent_user_link, ai_engine, login,
 };
 use crate::error::AppError;
 use crate::h;
@@ -50,7 +51,7 @@ use sea_orm::{
     ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use types::*;
 use uuid::Uuid;
@@ -188,6 +189,8 @@ pub async fn configuration(
             id: ai_engine.id.to_string(),
             name: ai_engine.name,
             model_name: ai_engine.model_name,
+            unhealthy: ai_engine.unhealthy,
+            health_message: ai_engine.health_message,
         })
         .collect();
     Ok(Json(AiAgentConfigurationRsp {
@@ -320,35 +323,28 @@ pub async fn create_request(
         .as_deref()
         .map(access::parse_uuid)
         .transpose()?;
-    let (existing_conversation, ai_engine_id) = match req
-        .conversation_id
-        .as_deref()
-    {
-        Some(conversation_id) => {
-            let conversation = owned_conversation(
-                &env.dbx,
-                human.id,
-                access::parse_uuid(conversation_id)?,
-            )
-            .await?;
-            if requested_engine
-                .is_some_and(|id| id != conversation.ai_engine_id)
-            {
-                return Err(AppError::BL {
-                    msg: "Провайдер розмови не можна змінити".to_string(),
-                });
-            }
-            access::allowed_engine(&env.dbx, Some(conversation.ai_engine_id))
+    let (existing_conversation, ai_engine_id) =
+        match req.conversation_id.as_deref() {
+            Some(conversation_id) => {
+                let conversation = owned_conversation(
+                    &env.dbx,
+                    human.id,
+                    access::parse_uuid(conversation_id)?,
+                )
                 .await?;
-            let ai_engine_id = conversation.ai_engine_id;
-            (Some(conversation), ai_engine_id)
-        }
-        None => {
-            let ai_engine =
-                access::allowed_engine(&env.dbx, requested_engine).await?;
-            (None, ai_engine.id)
-        }
-    };
+                let ai_engine = access::allowed_engine(
+                    &env.dbx,
+                    requested_engine.or(Some(conversation.ai_engine_id)),
+                )
+                .await?;
+                (Some(conversation), ai_engine.id)
+            }
+            None => {
+                let ai_engine =
+                    access::allowed_engine(&env.dbx, requested_engine).await?;
+                (None, ai_engine.id)
+            }
+        };
     let txn = env.dbx.begin().await.c(h!())?;
     lifecycle::lock_user_lifecycle(&txn, human.id).await?;
     let settings = ai_agent_settings::Entity::find_by_id(
@@ -398,7 +394,11 @@ pub async fn create_request(
         .c(h!())?;
     let conversation = match existing_conversation {
         Some(conversation) => {
-            owned_conversation_locked(&txn, human.id, conversation.id).await?
+            let conversation =
+                owned_conversation_locked(&txn, human.id, conversation.id)
+                    .await?;
+            remember_conversation_engine(&txn, conversation, ai_engine_id)
+                .await?
         }
         None => {
             let title = normalize_title(None, &prompt);
@@ -768,6 +768,21 @@ async fn insert_conversation_in_transaction(
     .map_err(Into::into)
 }
 
+/// A conversation keeps the engine of its newest request, so reopening it
+/// continues with the engine the user switched to.
+async fn remember_conversation_engine(
+    txn: &DatabaseTransaction,
+    conversation: ai_agent_conversation::Model,
+    ai_engine_id: Uuid,
+) -> Result<ai_agent_conversation::Model, AppError> {
+    if conversation.ai_engine_id == ai_engine_id {
+        return Ok(conversation);
+    }
+    let mut conversation = conversation.into_active_model();
+    conversation.ai_engine_id = Set(ai_engine_id);
+    Ok(conversation.update(txn).await.c(h!())?)
+}
+
 async fn owned_conversation_locked(
     txn: &DatabaseTransaction,
     human_login_id: Uuid,
@@ -834,8 +849,11 @@ pub(super) async fn conversation_detail(
     let mut attachments = uploads::context::by_request(dbx, &request_ids)
         .await
         .c(h!())?;
+    let engine_names = request_engine_names(dbx, &requests).await?;
     let mut messages = Vec::new();
     for request in requests {
+        let ai_engine_id = Some(request.ai_engine_id.to_string());
+        let ai_engine_name = engine_names.get(&request.ai_engine_id).cloned();
         let policy = reasoning::request_policy(&request).c(h!())?;
         let completion_metadata: Option<AiAgentCompletionMetadata> = request
             .completion_metadata
@@ -854,6 +872,8 @@ pub(super) async fn conversation_detail(
                 .map(|policy| policy.max_runtime_seconds as i32),
             started_at,
             completion_metadata: completion_metadata.clone(),
+            ai_engine_id: ai_engine_id.clone(),
+            ai_engine_name: ai_engine_name.clone(),
             request_id: request.id.to_string(),
             request_state: request_state.clone(),
             role: "user".to_string(),
@@ -885,6 +905,8 @@ pub(super) async fn conversation_detail(
                     .map(|policy| policy.max_runtime_seconds as i32),
                 started_at,
                 completion_metadata,
+                ai_engine_id,
+                ai_engine_name,
                 request_id: request.id.to_string(),
                 request_state,
                 role: "assistant".to_string(),
@@ -915,6 +937,28 @@ pub(super) async fn conversation_detail(
         updated_at: conversation.updated_at.and_utc().timestamp_millis(),
         messages,
     })
+}
+
+/// Engine names by id, including engines no longer offered in the chat.
+async fn request_engine_names(
+    dbx: &DatabaseConnection,
+    requests: &[ai_agent_request::Model],
+) -> Result<HashMap<Uuid, String>, AppError> {
+    let ai_engine_ids = requests
+        .iter()
+        .map(|request| request.ai_engine_id)
+        .collect::<HashSet<_>>();
+    if ai_engine_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(ai_engine::Entity::find()
+        .filter(ai_engine::Column::Id.is_in(ai_engine_ids))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|ai_engine| (ai_engine.id, ai_engine.name))
+        .collect())
 }
 
 fn conversation_summary(

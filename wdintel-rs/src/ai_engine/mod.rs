@@ -9,8 +9,9 @@ pub(crate) use metrics::StreamBodyTimer;
 use crate::config::{
     AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,
     AI_CHAT_TITLE_MAX_CHARS, AI_ENGINE_ERROR_BODY_MAX_CHARS,
-    AI_ENGINE_GLM_5_3_OUTPUT_TOKENS, AI_ENGINE_MODEL_NAME_MAX_CHARS,
-    AI_ENGINE_NAME_MAX_CHARS, AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES,
+    AI_ENGINE_GLM_5_3_OUTPUT_TOKENS, AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS,
+    AI_ENGINE_MODEL_NAME_MAX_CHARS, AI_ENGINE_NAME_MAX_CHARS,
+    AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES,
     AI_ENGINE_OPENAI_REASONING_NONE_MODELS, AI_ENGINE_REQUEST_TIMEOUT_SEC,
     AI_ENGINE_TOKEN_MAX_CHARS, AI_ENGINE_URL_MAX_CHARS, AI_GOV_UA_API_BASE,
 };
@@ -39,7 +40,7 @@ use types::{
     AiChatDetail, AiChatGetReq, AiChatListReq, AiChatListRsp,
     AiChatMessageItem, AiChatSummary, AiEngineIdReq, AiEngineItem,
     AiEngineListRsp, CreateAiEngineReq, SendAiChatMessageReq,
-    UpdateAiEngineReq,
+    UpdateAiEngineHealthReq, UpdateAiEngineReq,
 };
 use url::Url;
 use uuid::Uuid;
@@ -196,6 +197,10 @@ pub async fn create_ai_engine(
         callsign_enabled: Set(values.callsign_enabled),
         ocr_enabled: Set(values.ocr_enabled),
         ocr_request_profile: Set("openai_vision".to_string()),
+        unhealthy: Set(false),
+        health_message: Set(None),
+        health_updated_at: Set(None),
+        health_updated_by_login_id: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -265,6 +270,50 @@ pub async fn update_ai_engine(
     let ai_engine = ai_engine.update(&transaction).await.c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(Json(AiEngineItem::from(ai_engine)))
+}
+
+/// Marks an engine unhealthy (or healthy again) with a message for chat users.
+#[post("/api/admin/ai-engines/health/update")]
+pub async fn update_ai_engine_health(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    req: Json<UpdateAiEngineHealthReq>,
+) -> Result<Json<AiEngineItem>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login_id = login_id_from_identity(&user).c(h!())?;
+    let req = req.into_inner();
+    let ai_engine_id = parse_uuid(&req.id)?;
+    let health_message = health_message(req.unhealthy, req.message)?;
+    let ai_engine = find_ai_engine(&env.dbx, ai_engine_id).await?;
+    let mut ai_engine = ai_engine.into_active_model();
+    ai_engine.unhealthy = Set(req.unhealthy);
+    ai_engine.health_message = Set(health_message);
+    ai_engine.health_updated_at = Set(Some(Utc::now().naive_utc()));
+    ai_engine.health_updated_by_login_id = Set(Some(login_id));
+    let ai_engine = ai_engine.update(&env.dbx).await.c(h!())?;
+    Ok(Json(AiEngineItem::from(ai_engine)))
+}
+
+fn health_message(
+    unhealthy: bool,
+    message: Option<String>,
+) -> Result<Option<String>, AppError> {
+    if !unhealthy {
+        return Ok(None);
+    }
+    let message = message
+        .map(|message| message.trim().to_string())
+        .filter(|message| !message.is_empty());
+    if message.as_ref().is_some_and(|message| {
+        message.chars().count() > AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS
+    }) {
+        return Err(AppError::BL {
+            msg: format!(
+                "Повідомлення про стан провайдера має бути не довшим за {AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS} символів"
+            ),
+        });
+    }
+    Ok(message)
 }
 
 #[post("/api/admin/ai-engines/delete")]
@@ -523,6 +572,11 @@ impl From<ai_engine::Model> for AiEngineItem {
             has_token: ai_engine.token.is_some(),
             created_at: ai_engine.created_at.and_utc().timestamp_millis(),
             updated_at: ai_engine.updated_at.and_utc().timestamp_millis(),
+            unhealthy: ai_engine.unhealthy,
+            health_message: ai_engine.health_message,
+            health_updated_at: ai_engine
+                .health_updated_at
+                .map(|updated_at| updated_at.and_utc().timestamp_millis()),
         }
     }
 }
@@ -1100,7 +1154,30 @@ fn chat_title(prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{chat_completions_url, chat_title, validate_url};
+    use super::{
+        chat_completions_url, chat_title, health_message, validate_url,
+    };
+
+    #[test]
+    fn issue_4112_health_message_is_trimmed_capped_and_cleared() {
+        assert_eq!(
+            health_message(true, Some("  Шлюз недоступний  ".to_string()))
+                .unwrap(),
+            Some("Шлюз недоступний".to_string())
+        );
+        assert_eq!(
+            health_message(true, Some("   ".to_string())).unwrap(),
+            None
+        );
+        assert_eq!(
+            health_message(false, Some("Шлюз недоступний".to_string()))
+                .unwrap(),
+            None
+        );
+        let too_long =
+            "я".repeat(crate::config::AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS + 1);
+        assert!(health_message(true, Some(too_long)).is_err());
+    }
 
     #[test]
     fn appends_chat_completions_to_base_url() {

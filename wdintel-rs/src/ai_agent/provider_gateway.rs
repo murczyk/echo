@@ -1135,6 +1135,10 @@ mod tests {
             callsign_enabled: false,
             ocr_enabled: false,
             ocr_request_profile: "default".into(),
+            unhealthy: false,
+            health_message: None,
+            health_updated_at: None,
+            health_updated_by_login_id: None,
         }
     }
 

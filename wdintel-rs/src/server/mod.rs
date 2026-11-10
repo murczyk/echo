@@ -1435,6 +1435,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_engine::get_ai_engine)
             .service(crate::ai_engine::create_ai_engine)
             .service(crate::ai_engine::update_ai_engine)
+            .service(crate::ai_engine::update_ai_engine_health)
             .service(crate::ai_engine::delete_ai_engine)
             .service(crate::ai_engine::list_ai_chats)
             .service(crate::ai_engine::get_ai_chat)
