@@ -4,6 +4,7 @@ import {
   getNetworkUpsertValidationError,
   shouldIncludeNetworkCreateFrequency,
   toCreateNetworkReq,
+  toNetworkAiInstructionsReq,
 } from '../use-rer-network-details-neo-page.forms';
 import { createDefaultNetworkUpsertForm } from '../use-rer-network-details-neo-page.forms';
 describe('use-rer-network-details-neo-page.forms', () => {
@@ -24,6 +25,18 @@ describe('use-rer-network-details-neo-page.forms', () => {
     });
 
     expect(req.doNotArchive).toBe(true);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/4095
+  it('#4095 sends «Опис для ШІ» only while the field is shown', () => {
+    const form = { ...createDefaultNetworkUpsertForm(), aiInstructions: '  CC 3 ' };
+
+    expect(toCreateNetworkReq(form).aiInstructions).toBeNull();
+    expect(toCreateNetworkReq(form, { aiInstructionsVisible: true }).aiInstructions).toBe(
+      '  CC 3 ',
+    );
+    expect(toNetworkAiInstructionsReq({ aiInstructions: '' }, true)).toBe('');
+    expect(toNetworkAiInstructionsReq({ aiInstructions: 'CC 3' }, false)).toBeNull();
   });
 
   it('omits frequency when optional create frequency is blank', () => {

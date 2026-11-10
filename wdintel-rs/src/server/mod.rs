@@ -930,6 +930,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_network_match_env = env.clone();
+    let ai_network_match_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ai_network_match_worker", bg_set, async move {
+        crate::ai_network_match::worker::run_nofail(
+            ai_network_match_env,
+            ai_network_match_cancellation_token,
+        )
+        .await;
+    });
+
     let transcript_env = env.clone();
     let transcript_cancel = cancel_token.clone();
     spawn_named_worker("ai_transcript_analysis_worker", bg_set, async move {

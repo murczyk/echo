@@ -1728,6 +1728,10 @@ where
             networks.push(network);
         }
     }
+    let copied_network_ids = networks
+        .iter()
+        .map(|network| network.sigint_network_id)
+        .collect::<Vec<_>>();
     let network_models = networks
         .into_iter()
         .map(|network| {
@@ -1758,6 +1762,18 @@ where
     crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
         dbx,
         old_freq_ids.into_iter().chain(new_freq_ids),
+    )
+    .await
+    .c(h!())?;
+    crate::ai_network_match::forget_result(dbx, target_inbox_item_id)
+        .await
+        .c(h!())?;
+    crate::ai_network_match::enqueue_for_calculated(
+        dbx,
+        &std::collections::HashMap::from([(
+            target_inbox_item_id,
+            copied_network_ids,
+        )]),
     )
     .await
     .c(h!())?;
@@ -2229,6 +2245,67 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(sigint_inbox_item_network::Entity::find_by_id(history.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4095
+    #[tokio::test]
+    #[serial]
+    async fn issue_4095_copied_network_links_queue_ai_network_match() {
+        use crate::entities::{
+            ai_network_match_worker_job, sigint_inbox_item_network,
+        };
+        use crate::functest::tests::*;
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let engine =
+            crate::ai_worker::test_support::engine(&env.dbx, 200, "{}", false)
+                .await;
+        env.dbx
+            .execute_raw(crate::ai_network_match::sql(
+                "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_test_enabled, rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, false, 0, 1, 5, true, now() at time zone 'utc' + interval '1 day')",
+                vec![],
+            ))
+            .await
+            .unwrap();
+        env.dbx
+            .execute_raw(crate::ai_network_match::sql(
+                "insert into ai_callsign_settings(id,prompt,worker_enabled,worker_ai_engine_id) values(1,'',true,$1) on conflict(id) do update set worker_enabled=true,worker_ai_engine_id=$1",
+                vec![engine.engine.id.into()],
+            ))
+            .await
+            .unwrap();
+        let source = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let target = mk_sigint_inbox_item(
+            &env.dbx,
+            crate::entities::sigint_inbox_item::ActiveModel {
+                datetime: Set(Some(chrono::Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for _ in 0..2 {
+            mk_sigint_inbox_item_network(
+                &env.dbx,
+                sigint_inbox_item_network::ActiveModel {
+                    sigint_inbox_item_id: Set(source.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        copy_inbox_networks(&env.dbx, &[source.id], target.id, target.id_uuid)
+            .await
+            .unwrap();
+
+        assert!(ai_network_match_worker_job::Entity::find_by_id(target.id)
             .one(&env.dbx)
             .await
             .unwrap()

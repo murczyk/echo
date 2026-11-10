@@ -80,6 +80,7 @@ export function systemSettingsCurrentResponse({
     analysisAorFilterEnabled,
     hideNetworks,
     aiPositionHighlightsEnabled: false,
+    aiNetworkMatchEnabled: false,
     importantNotifyAllEnabled: true,
     twoFactorAuthEnabled: true,
     apiRateLimitReplenishIntervalMs: 500,

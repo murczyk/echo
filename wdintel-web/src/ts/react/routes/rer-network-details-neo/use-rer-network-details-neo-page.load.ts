@@ -1028,6 +1028,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           aors,
           encryptions,
           supportNonRerInterceptions: systemSettings.supportNonRerInterceptions,
+          aiNetworkMatchEnabled: systemSettings.aiNetworkMatchEnabled,
           referenceLoading: false,
           referenceWarning: null,
         }));
