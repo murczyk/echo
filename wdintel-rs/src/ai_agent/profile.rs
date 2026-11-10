@@ -97,6 +97,11 @@ struct ProfileEngine {
     enabled: bool,
     #[serde(default = "default_true")]
     callsign_enabled: bool,
+    /// Host-local outage warning for chat users (#4112).
+    #[serde(default)]
+    unhealthy: Option<bool>,
+    #[serde(default)]
+    health_message: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -711,6 +716,8 @@ where
     engine.model_name = Set(profile_engine.model_name.clone());
     engine.enabled = Set(profile_engine.enabled);
     engine.callsign_enabled = Set(profile_engine.callsign_enabled);
+    engine.unhealthy = Set(profile_engine.unhealthy);
+    engine.health_message = Set(profile_engine.health_message.clone());
     engine.updated_at = Set(Utc::now().naive_utc());
     Ok(engine.update(dbx).await.c(h!())?)
 }
@@ -733,8 +740,8 @@ where
         callsign_enabled: Set(profile_engine.callsign_enabled),
         ocr_enabled: Set(false),
         ocr_request_profile: Set("openai_vision".to_string()),
-        unhealthy: Set(None),
-        health_message: Set(None),
+        unhealthy: Set(profile_engine.unhealthy),
+        health_message: Set(profile_engine.health_message.clone()),
         health_updated_at: Set(None),
         health_updated_by_login_id: Set(None),
         created_at: Set(now),
@@ -848,6 +855,8 @@ impl From<ai_engine::Model> for ProfileEngine {
             model_name: engine.model_name,
             enabled: engine.enabled,
             callsign_enabled: engine.callsign_enabled,
+            unhealthy: engine.unhealthy,
+            health_message: engine.health_message,
         }
     }
 }
@@ -866,8 +875,8 @@ fn engine_record(engine: &ProfileEngine) -> ai_engine::Model {
         callsign_enabled: engine.callsign_enabled,
         ocr_enabled: false,
         ocr_request_profile: "openai_vision".to_string(),
-        unhealthy: None,
-        health_message: None,
+        unhealthy: engine.unhealthy,
+        health_message: engine.health_message.clone(),
         health_updated_at: None,
         health_updated_by_login_id: None,
     }
@@ -919,6 +928,8 @@ mod tests {
                 model_name: "local".to_string(),
                 enabled: true,
                 callsign_enabled: true,
+                unhealthy: Some(true),
+                health_message: Some("Шлюз недоступний".to_string()),
             }],
         }
     }
@@ -1024,6 +1035,16 @@ mod tests {
                 .unwrap();
         assert_eq!(template.login, AI_AGENT_TEMPLATE_LOGIN_NAME);
         assert_eq!(settings.template_login_id, Some(template_login_id));
+        let engine = ai_engine::Entity::find_by_id(profile.engines[0].id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (engine.unhealthy, engine.health_message.as_deref()),
+            (Some(true), Some("Шлюз недоступний")),
+            "#4112 the host keeps its outage warning"
+        );
         assert_eq!(
             settings.mattermost_webhook_url,
             profile.settings.mattermost_webhook_url,

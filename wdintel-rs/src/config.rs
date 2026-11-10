@@ -603,6 +603,10 @@ pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
     "Input exceeds the context window";
 pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
     "Provider output token limit reached";
+/// Kept recognizable to the runner (`content_filter`) so the chat records a
+/// model refusal rather than an outage (#4112).
+pub const AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE: &str =
+    "Provider content_filter rejected the request";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
     AI_AGENT_DISPATCHER_TIMEOUT_SEC;

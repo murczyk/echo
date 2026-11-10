@@ -4,6 +4,7 @@ use crate::ai_engine::StreamBodyTimer;
 use crate::config::{
     AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_LUNA,
     AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE,
     AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS,
     AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
@@ -672,6 +673,7 @@ async fn proxy_provider_call(
         let message = match metadata.error_kind {
             Some("context_limit") => AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE,
             Some("output_limit") => AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
+            Some("content_filter") => AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE,
             _ => "Provider request failed",
         };
         return Ok(provider_error(status, message));
@@ -854,14 +856,26 @@ fn parse_provider_error_metadata(body: &[u8]) -> ProviderErrorMetadata {
         error_type: sanitized_provider_error_field(error.get("type")),
         error_code: sanitized_provider_error_field(error.get("code")),
         error_param: sanitized_provider_error_field(error.get("param")),
-        error_kind: provider_error_kind(error.get("message")),
+        error_kind: if error.get("code").and_then(Value::as_str)
+            == Some("content_filter")
+        {
+            Some("content_filter")
+        } else {
+            provider_error_kind(error.get("message"))
+        },
         error_message: truncated_provider_error_message(error.get("message")),
     }
 }
 
 fn provider_error_kind(value: Option<&Value>) -> Option<&'static str> {
     let value = value?.as_str()?.to_ascii_lowercase();
-    if value.contains("max_tokens or model output limit")
+    if value.contains("content_filter")
+        || value.contains("responsibleaipolicyviolation")
+        || value.contains("contentpolicyviolation")
+        || value.contains("content management policy")
+    {
+        Some("content_filter")
+    } else if value.contains("max_tokens or model output limit")
         || value.contains("maximum output token limit")
         || value.contains("output token limit was reached")
     {
@@ -1498,6 +1512,23 @@ mod tests {
                 "This model's maximum context length was exceeded"
             ))),
             Some("context_limit")
+        );
+    }
+
+    #[test]
+    fn issue_4112_keeps_content_filter_rejections_recognizable() {
+        let metadata = parse_provider_error_metadata(
+            br#"{"error":{"code":"content_filter","message":"The response was filtered due to the prompt triggering Azure OpenAI's content management policy."}}"#,
+        );
+        assert_eq!(metadata.error_kind, Some("content_filter"));
+        assert_eq!(
+            provider_error_kind(Some(&json!(
+                "litellm.ContentPolicyViolationError: ResponsibleAIPolicyViolation"
+            ))),
+            Some("content_filter")
+        );
+        assert!(
+            AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE.contains("content_filter")
         );
     }
 }
