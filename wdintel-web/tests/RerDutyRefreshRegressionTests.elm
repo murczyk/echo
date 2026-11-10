@@ -275,7 +275,7 @@ suite =
         , describe "#3780 blocked automatic polls resume after request completion"
             (let
                 inboxResponse =
-                    Ok { inboxItems = [ ( 1, messageStub ) ], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 }
+                    Ok { inboxItems = [ ( 1, messageStub ) ], historySinceMs = Nothing, historyPeriodMs = Nothing, pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 }
 
                 failure =
                     Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }
@@ -292,7 +292,7 @@ suite =
              , pendingInboxPollTest "earlier messages fail" loadingMessages (Waterfall.GotInboxEarlier failure)
              , pendingInboxPollTest "newer messages succeed" loadingMessages
                 (Waterfall.InboxLoopGotMessages False
-                    (Ok { inboxItems = [], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                    (Ok { inboxItems = [], historySinceMs = Nothing, historyPeriodMs = Nothing, pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
                 )
              , pendingInboxPollTest "newer messages fail" loadingMessages (Waterfall.InboxLoopGotMessages False failure)
              , pendingInboxPollTest "digest succeeds" loadingDigest (Waterfall.GotInboxMessagesDigest (Ok { quantity = 0, firstElementTs = Nothing }))
@@ -329,7 +329,7 @@ suite =
                             ( buffered, _ ) =
                                 Waterfall.update shared anonymousUser
                                     (Waterfall.InboxLoopGotMessages False
-                                        (Ok { inboxItems = [ ( 2, messageStub ) ], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                                        (Ok { inboxItems = [ ( 2, messageStub ) ], historySinceMs = Nothing, historyPeriodMs = Nothing, pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
                                     )
                                     blocked
 
@@ -619,7 +619,7 @@ withPollingWaterfall check =
                 ( loaded, _ ) =
                     Waterfall.update shared anonymousUser
                         (Waterfall.InboxLoopGotMessages True
-                            (Ok { inboxItems = [], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                            (Ok { inboxItems = [], historySinceMs = Nothing, historyPeriodMs = Nothing, pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
                         )
                         { initialized
                             | messages = Messages.fromList [ ( 1, messageStub ) ]
@@ -665,7 +665,7 @@ expectInboxPollRetry shared waterfall effect =
         ( messagesSettled, _ ) =
             Waterfall.update shared anonymousUser
                 (Waterfall.InboxLoopGotMessages False
-                    (Ok { inboxItems = [], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                    (Ok { inboxItems = [], historySinceMs = Nothing, historyPeriodMs = Nothing, pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
                 )
                 resumed
 

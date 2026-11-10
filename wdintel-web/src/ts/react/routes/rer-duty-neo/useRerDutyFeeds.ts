@@ -177,6 +177,8 @@ export function useRerDutyFeeds(
   const callsignRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isUnmountedRef = useRef(false);
   const feedState = useRerDutyFeedState({
+    enableDutySearch: filterOpts.enableDutySearch,
+    dutySearchReady: filterOpts.serverInfoReady,
     freqs: filterOpts.freqs,
     freqsReady: filterOpts.freqsReady,
     setProfiles: filterOpts.setProfiles,
@@ -245,6 +247,9 @@ export function useRerDutyFeeds(
   useEffect(() => {
     if (dutySettings.loadError) feedState.setError(dutySettings.loadError);
   }, [dutySettings.loadError, feedState.setError]);
+  useEffect(() => {
+    if (filterOpts.serverInfoError) feedState.setError(filterOpts.serverInfoError);
+  }, [filterOpts.serverInfoError, feedState.setError]);
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
@@ -289,6 +294,7 @@ export function useRerDutyFeeds(
           }) => {
             try {
               const membershipFiltersActive =
+                Boolean(inboxReq.search?.trim()) ||
                 (inboxReq.selectedGroups?.length ?? 0) > 0 ||
                 (inboxReq.deniedGroups?.length ?? 0) > 0 ||
                 (inboxReq.selectedUnitIds?.length ?? 0) > 0 ||
@@ -609,6 +615,7 @@ export function useRerDutyFeeds(
     unitsMap: feedState.unitsMap,
     persistentUnitFilterValues,
     callsignInfoMap: feedState.callsignInfoMap,
+    enableDutySearch: filterOpts.enableDutySearch,
     featureStrictNetworks: filterOpts.featureStrictNetworks,
     watchModeByFeedId: feedState.watchModeByFeedId,
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,

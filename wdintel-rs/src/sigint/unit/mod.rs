@@ -4118,6 +4118,7 @@ mod tests {
     ) {
         let now = Utc::now().naive_utc();
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(false),
             created_at: Set(now),
@@ -4166,6 +4167,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            enable_duty_search: Set(None),
             duty_selected_groups_enabled: Set(None),
             ai_network_match_enabled: Set(None),
             important_notify_all_enabled: Set(None),

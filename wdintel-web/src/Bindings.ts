@@ -298,6 +298,7 @@ export type ServerInfo = {
   grafanaAddress: string;
   featureDelta: boolean;
   featureAnalysisMap: boolean;
+  enableDutySearch: boolean;
   featureStrictNetworks: boolean;
   featureMyAdminGroupsEdit: boolean;
   version: string;
@@ -955,6 +956,12 @@ export type GroupCreationInfo = {
   createdBy: string | null;
 };
 
+export type GroupSendingSettings = {
+  canSendMessages: boolean;
+  sendMessages: boolean;
+  senderOrganismIds: Array<number>;
+};
+
 export type OrphanSignalGroupEntry = {
   masterKey: string;
   name: string;
@@ -1402,6 +1409,8 @@ export type RerDutyQueryState = {
 };
 
 export type RerDutyQueryStateWf = {
+  search: string | null;
+  searchMode: AnalysisSearchMode | null;
   groupsSelected: Array<string> | null;
   groupsDenied: Array<string> | null;
   sendersSelected: Array<string> | null;
@@ -1502,6 +1511,8 @@ export type BatchSignalProfileReq = {
 };
 
 export type InboxMessagesRsp = {
+  historySinceMs: number | null;
+  historyPeriodMs: number | null;
   inboxItems: Array<[number, InboxMessage]>;
   pollCursorId: number | null;
   callsigns: Array<CallsignInfoRes>;
@@ -3764,6 +3775,8 @@ export type ZoneDatasourceGroupUpdateReq = {
   fetchNewMessages: boolean | null;
   isSigintUnitMandatory: boolean | null;
   isDeviceMandatory: boolean | null;
+  sendMessages: boolean | null;
+  senderOrganismIds: Array<number> | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -5890,6 +5903,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
@@ -5906,6 +5920,7 @@ export type SystemSettingsCurrentRsp = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
@@ -5938,6 +5953,7 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -5957,6 +5973,7 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
@@ -5994,6 +6011,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -6013,6 +6031,7 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   dutySelectedGroupsEnabled: boolean | null;
+  enableDutySearch: boolean | null;
   aiNetworkMatchEnabled: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
@@ -8100,6 +8119,8 @@ export type GroupUpdateReq = {
   fetchNewMessages: boolean | null;
   isSigintUnitMandatory: boolean | null;
   isDeviceMandatory: boolean | null;
+  sendMessages: boolean | null;
+  senderOrganismIds: Array<number> | null;
 };
 
 export type NativeGroupSettings = {

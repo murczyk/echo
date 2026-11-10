@@ -106,6 +106,8 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub fetch_new_messages: Option<bool>,
     pub is_sigint_unit_mandatory: Option<bool>,
     pub is_device_mandatory: Option<bool>,
+    pub send_messages: Option<bool>,
+    pub sender_organism_ids: Option<Vec<i64>>,
     pub user_logins: Vec<String>,
     #[serde(default)]
     pub organism_ids: Vec<i64>,

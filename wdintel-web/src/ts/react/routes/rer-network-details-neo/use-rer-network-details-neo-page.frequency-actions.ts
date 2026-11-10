@@ -451,84 +451,87 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
     [setState],
   );
 
-  const saveFreqCreateWizard = useCallback(async () => {
-    const network = state.network;
-    const form = state.freqCreateWizardForm;
+  const saveFreqCreateWizard = useCallback(
+    async (formArg?: NetworkFreqCreateWizardForm) => {
+      const network = state.network;
+      const form = formArg ?? state.freqCreateWizardForm;
 
-    if (!network || state.freqCreateWizardSaving) return;
-    const generation = reloadGeneration.current;
-    const targetNetworkId = network.id;
+      if (!network || state.freqCreateWizardSaving) return;
+      const generation = reloadGeneration.current;
+      const targetNetworkId = network.id;
 
-    const freqError = getFrequencyFormatError(form.freq);
-    if (freqError !== null) {
-      setState((current) => ({
-        ...current,
-        freqCreateWizardError: freqError,
-      }));
-      return;
-    }
-
-    setState((current) => ({
-      ...current,
-      freqCreateWizardSaving: true,
-      freqCreateWizardError: null,
-    }));
-
-    try {
-      const response = await addFreqToNetworkV2(toCreateNetworkFreqReq(form, network.id));
-      if (currentNetworkIdRef.current !== targetNetworkId) {
+      const freqError = getFrequencyFormatError(form.freq);
+      if (freqError !== null) {
+        setState((current) => ({
+          ...current,
+          freqCreateWizardError: freqError,
+        }));
         return;
       }
 
-      setState((current) => {
-        const updatedState = applyNetworkFreqMutationResponse(current, response.freq, 'create');
-        if (!updatedState) {
+      setState((current) => ({
+        ...current,
+        freqCreateWizardSaving: true,
+        freqCreateWizardError: null,
+      }));
+
+      try {
+        const response = await addFreqToNetworkV2(toCreateNetworkFreqReq(form, network.id));
+        if (currentNetworkIdRef.current !== targetNetworkId) {
+          return;
+        }
+
+        setState((current) => {
+          const updatedState = applyNetworkFreqMutationResponse(current, response.freq, 'create');
+          if (!updatedState) {
+            return {
+              ...current,
+              ...resetFreqCreateWizardState(current),
+              network: response.network,
+            };
+          }
+
           return {
             ...current,
             ...resetFreqCreateWizardState(current),
             network: response.network,
+            freqs: updatedState?.freqs ?? current.freqs,
+            freqActivityByFreq: updatedState?.freqActivityByFreq ?? current.freqActivityByFreq,
+            freqCallsignsById: updatedState?.freqCallsignsById ?? current.freqCallsignsById,
+            freqsLoaded: true,
           };
+        });
+
+        if (response.freq) {
+          void loadFreqCallsignsSingle(
+            targetNetworkId,
+            response.freq.networkFreqId,
+            generation,
+            state.freqCallsignsPeriod,
+          );
+        } else {
+          await loadFrequencies(targetNetworkId);
         }
-
-        return {
+      } catch (error) {
+        setState((current) => ({
           ...current,
-          ...resetFreqCreateWizardState(current),
-          network: response.network,
-          freqs: updatedState?.freqs ?? current.freqs,
-          freqActivityByFreq: updatedState?.freqActivityByFreq ?? current.freqActivityByFreq,
-          freqCallsignsById: updatedState?.freqCallsignsById ?? current.freqCallsignsById,
-          freqsLoaded: true,
-        };
-      });
-
-      if (response.freq) {
-        void loadFreqCallsignsSingle(
-          targetNetworkId,
-          response.freq.networkFreqId,
-          generation,
-          state.freqCallsignsPeriod,
-        );
-      } else {
-        await loadFrequencies(targetNetworkId);
+          freqCreateWizardSaving: false,
+          freqCreateWizardError: formatErrorMessage(error),
+        }));
       }
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        freqCreateWizardSaving: false,
-        freqCreateWizardError: formatErrorMessage(error),
-      }));
-    }
-  }, [
-    currentNetworkIdRef,
-    loadFreqCallsignsSingle,
-    loadFrequencies,
-    reloadGeneration,
-    state.freqCreateWizardSaving,
-    state.freqCreateWizardForm,
-    state.freqCallsignsPeriod,
-    state.network,
-    setState,
-  ]);
+    },
+    [
+      currentNetworkIdRef,
+      loadFreqCallsignsSingle,
+      loadFrequencies,
+      reloadGeneration,
+      state.freqCreateWizardSaving,
+      state.freqCreateWizardForm,
+      state.freqCallsignsPeriod,
+      state.network,
+      setState,
+    ],
+  );
 
   const saveFreqEditDrawer = useCallback(async () => {
     const network = state.network;

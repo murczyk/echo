@@ -226,6 +226,7 @@ pub mod sigint_callsign_changelog;
 pub mod sigint_chat_message;
 pub mod sigint_comment;
 pub mod sigint_comment_blacklist;
+pub mod sigint_group_sender_organism;
 pub mod sigint_important;
 pub mod sigint_inbox_item;
 pub mod sigint_inbox_item_callsign;

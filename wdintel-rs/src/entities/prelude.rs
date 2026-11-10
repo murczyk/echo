@@ -223,6 +223,7 @@ pub use super::sigint_callsign_changelog::Entity as SigintCallsignChangelog;
 pub use super::sigint_chat_message::Entity as SigintChatMessage;
 pub use super::sigint_comment::Entity as SigintComment;
 pub use super::sigint_comment_blacklist::Entity as SigintCommentBlacklist;
+pub use super::sigint_group_sender_organism::Entity as SigintGroupSenderOrganism;
 pub use super::sigint_important::Entity as SigintImportant;
 pub use super::sigint_inbox_item::Entity as SigintInboxItem;
 pub use super::sigint_inbox_item_callsign::Entity as SigintInboxItemCallsign;

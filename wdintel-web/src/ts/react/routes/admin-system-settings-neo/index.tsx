@@ -59,8 +59,10 @@ type SystemSettingsForm = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsItem['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   aiNetworkMatchEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
@@ -112,8 +114,10 @@ type SystemSettingsPayload = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsItem['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   aiNetworkMatchEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
@@ -165,8 +169,10 @@ const EMPTY_FORM: SystemSettingsForm = {
   showPelengDistanceToBattleline: false,
   disableBotTags: false,
   hideNetworks: false,
+  docMediaServeFromB2: false,
   dutyExcludeMenuEnabled: true,
   dutySelectedGroupsEnabled: true,
+  enableDutySearch: false,
   aiNetworkMatchEnabled: false,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
@@ -269,8 +275,10 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     disableBotTags: item?.disableBotTags ?? false,
     hideNetworks: item?.hideNetworks ?? false,
+    docMediaServeFromB2: item?.docMediaServeFromB2 ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     dutySelectedGroupsEnabled: item?.dutySelectedGroupsEnabled ?? true,
+    enableDutySearch: item?.enableDutySearch ?? false,
     aiNetworkMatchEnabled: item?.aiNetworkMatchEnabled ?? false,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
@@ -325,8 +333,10 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.disableBotTags === b.disableBotTags &&
     a.hideNetworks === b.hideNetworks &&
+    a.docMediaServeFromB2 === b.docMediaServeFromB2 &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.dutySelectedGroupsEnabled === b.dutySelectedGroupsEnabled &&
+    a.enableDutySearch === b.enableDutySearch &&
     a.aiNetworkMatchEnabled === b.aiNetworkMatchEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
@@ -438,8 +448,10 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     disableBotTags: form.disableBotTags,
     hideNetworks: form.hideNetworks,
+    docMediaServeFromB2: form.docMediaServeFromB2,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     dutySelectedGroupsEnabled: form.dutySelectedGroupsEnabled,
+    enableDutySearch: form.enableDutySearch,
     aiNetworkMatchEnabled: form.aiNetworkMatchEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
@@ -697,6 +709,14 @@ function MainSettingsSection({
         />
       </MainSettingsGroup>
 
+      <MainSettingsGroup title="Медіа документації">
+        <MainSettingsSwitchRow
+          checked={form.docMediaServeFromB2}
+          label="Завантажувати медіа документації безпосередньо з B2"
+          onChange={(checked) => patchForm({ docMediaServeFromB2: checked })}
+        />
+      </MainSettingsGroup>
+
       <MainSettingsGroup title="Безпека">
         <MainSettingsSwitchRow
           checked={form.twoFactorAuthEnabled}
@@ -855,6 +875,15 @@ function DutySettingsSection({
           />
         }
         label="Відображати обрані групи в оперативному"
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.enableDutySearch}
+            onChange={(_, checked) => patchForm({ enableDutySearch: checked })}
+          />
+        }
+        label="Пошук в оперативному"
       />
       <FormControlLabel
         control={
@@ -1516,8 +1545,10 @@ export function AdminSystemSettingsNeoPage() {
       showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
       disableBotTags: payload.disableBotTags,
       hideNetworks: payload.hideNetworks,
+      docMediaServeFromB2: payload.docMediaServeFromB2,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       dutySelectedGroupsEnabled: payload.dutySelectedGroupsEnabled,
+      enableDutySearch: payload.enableDutySearch,
       aiNetworkMatchEnabled: payload.aiNetworkMatchEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,

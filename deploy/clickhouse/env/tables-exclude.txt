@@ -196,3 +196,4 @@ public.role_message_settings
 
 # API sender attribution is resolved before messages enter analytics.
 public.api_sender
+public.sigint_group_sender_organism

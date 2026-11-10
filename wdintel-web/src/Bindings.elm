@@ -826,6 +826,7 @@ type alias ServerInfo =
     , grafanaAddress : String
     , featureDelta : Bool
     , featureAnalysisMap : Bool
+    , enableDutySearch : Bool
     , featureStrictNetworks : Bool
     , featureMyAdminGroupsEdit : Bool
     , version : String
@@ -840,6 +841,7 @@ serverInfoEncoder struct =
         , ( "grafana_address", (Json.Encode.string) struct.grafanaAddress )
         , ( "feature_delta", (Json.Encode.bool) struct.featureDelta )
         , ( "feature_analysis_map", (Json.Encode.bool) struct.featureAnalysisMap )
+        , ( "enable_duty_search", (Json.Encode.bool) struct.enableDutySearch )
         , ( "feature_strict_networks", (Json.Encode.bool) struct.featureStrictNetworks )
         , ( "feature_my_admin_groups_edit", (Json.Encode.bool) struct.featureMyAdminGroupsEdit )
         , ( "version", (Json.Encode.string) struct.version )
@@ -2484,6 +2486,22 @@ groupCreationInfoEncoder struct =
         ]
 
 
+type alias GroupSendingSettings =
+    { canSendMessages : Bool
+    , sendMessages : Bool
+    , senderOrganismIds : List (Int)
+    }
+
+
+groupSendingSettingsEncoder : GroupSendingSettings -> Json.Encode.Value
+groupSendingSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "can_send_messages", (Json.Encode.bool) struct.canSendMessages )
+        , ( "send_messages", (Json.Encode.bool) struct.sendMessages )
+        , ( "sender_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.senderOrganismIds )
+        ]
+
+
 type alias OrphanSignalGroupEntry =
     { masterKey : String
     , name : String
@@ -3608,7 +3626,9 @@ rerDutyQueryStateEncoder struct =
 
 
 type alias RerDutyQueryStateWf =
-    { groupsSelected : Maybe (List (String))
+    { search : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
+    , groupsSelected : Maybe (List (String))
     , groupsDenied : Maybe (List (String))
     , sendersSelected : Maybe (List (String))
     , deniedSenders : Maybe (List (String))
@@ -3636,7 +3656,9 @@ type alias RerDutyQueryStateWf =
 rerDutyQueryStateWfEncoder : RerDutyQueryStateWf -> Json.Encode.Value
 rerDutyQueryStateWfEncoder struct =
     Json.Encode.object
-        [ ( "groups_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.groupsSelected )
+        [ ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
+        , ( "groups_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.groupsSelected )
         , ( "groups_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.groupsDenied )
         , ( "senders_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.sendersSelected )
         , ( "denied_senders", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedSenders )
@@ -3868,7 +3890,9 @@ batchSignalProfileReqEncoder struct =
 
 
 type alias InboxMessagesRsp =
-    { inboxItems : List (( Int, InboxMessage ))
+    { historySinceMs : Maybe (Int)
+    , historyPeriodMs : Maybe (Int)
+    , inboxItems : List (( Int, InboxMessage ))
     , pollCursorId : Maybe (Int)
     , callsigns : List (CallsignInfoRes)
     , signalProfiles : Dict String (Maybe (SignalProfileEntry))
@@ -3881,7 +3905,9 @@ type alias InboxMessagesRsp =
 inboxMessagesRspEncoder : InboxMessagesRsp -> Json.Encode.Value
 inboxMessagesRspEncoder struct =
     Json.Encode.object
-        [ ( "inbox_items", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.inboxItems )
+        [ ( "history_since_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.historySinceMs )
+        , ( "history_period_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.historyPeriodMs )
+        , ( "inbox_items", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.inboxItems )
         , ( "poll_cursor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.pollCursorId )
         , ( "callsigns", (Json.Encode.list (callsignInfoResEncoder)) struct.callsigns )
         , ( "signal_profiles", (Json.Encode.dict identity (Maybe.withDefault Json.Encode.null << Maybe.map (signalProfileEntryEncoder))) struct.signalProfiles )
@@ -9706,6 +9732,8 @@ type alias ZoneDatasourceGroupUpdateReq =
     , fetchNewMessages : Maybe (Bool)
     , isSigintUnitMandatory : Maybe (Bool)
     , isDeviceMandatory : Maybe (Bool)
+    , sendMessages : Maybe (Bool)
+    , senderOrganismIds : Maybe (List (Int))
     , userLogins : List (String)
     , organismIds : List (Int)
     , adminLogins : List (String)
@@ -9729,6 +9757,8 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
         , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
         , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
+        , ( "send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.sendMessages )
+        , ( "sender_organism_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.senderOrganismIds )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "organism_ids", (Json.Encode.list (Json.Encode.int)) struct.organismIds )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -15187,6 +15217,7 @@ type alias SystemSettingsCurrentRsp =
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
     , devicesSectionEnabled : Bool
+    , docMediaServeFromB2 : Bool
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
     , goiAssociationMessageUidWorkerEnabled : Bool
@@ -15203,6 +15234,7 @@ type alias SystemSettingsCurrentRsp =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
     , dutySelectedGroupsEnabled : Bool
+    , enableDutySearch : Bool
     , aiNetworkMatchEnabled : Bool
     , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
@@ -15234,6 +15266,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
         , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
+        , ( "doc_media_serve_from_b2", (Json.Encode.bool) struct.docMediaServeFromB2 )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
         , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
@@ -15250,6 +15283,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "duty_selected_groups_enabled", (Json.Encode.bool) struct.dutySelectedGroupsEnabled )
+        , ( "enable_duty_search", (Json.Encode.bool) struct.enableDutySearch )
         , ( "ai_network_match_enabled", (Json.Encode.bool) struct.aiNetworkMatchEnabled )
         , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
@@ -15283,6 +15317,7 @@ type alias SystemSettingsItem =
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
     , devicesSectionEnabled : Bool
+    , docMediaServeFromB2 : Bool
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
@@ -15302,6 +15337,7 @@ type alias SystemSettingsItem =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
     , dutySelectedGroupsEnabled : Bool
+    , enableDutySearch : Bool
     , aiNetworkMatchEnabled : Bool
     , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
@@ -15343,6 +15379,7 @@ systemSettingsItemEncoder struct =
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
         , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
+        , ( "doc_media_serve_from_b2", (Json.Encode.bool) struct.docMediaServeFromB2 )
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
@@ -15362,6 +15399,7 @@ systemSettingsItemEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "duty_selected_groups_enabled", (Json.Encode.bool) struct.dutySelectedGroupsEnabled )
+        , ( "enable_duty_search", (Json.Encode.bool) struct.enableDutySearch )
         , ( "ai_network_match_enabled", (Json.Encode.bool) struct.aiNetworkMatchEnabled )
         , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
@@ -15408,6 +15446,7 @@ type alias CreateSystemSettingsReq =
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
     , devicesSectionEnabled : Bool
+    , docMediaServeFromB2 : Bool
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
@@ -15427,6 +15466,7 @@ type alias CreateSystemSettingsReq =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Maybe (Bool)
     , dutySelectedGroupsEnabled : Maybe (Bool)
+    , enableDutySearch : Maybe (Bool)
     , aiNetworkMatchEnabled : Maybe (Bool)
     , importantNotifyAllEnabled : Maybe (Bool)
     , twoFactorAuthEnabled : Bool
@@ -15463,6 +15503,7 @@ createSystemSettingsReqEncoder struct =
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
         , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
+        , ( "doc_media_serve_from_b2", (Json.Encode.bool) struct.docMediaServeFromB2 )
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
@@ -15482,6 +15523,7 @@ createSystemSettingsReqEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiPositionHighlightsEnabled )
         , ( "duty_selected_groups_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.dutySelectedGroupsEnabled )
+        , ( "enable_duty_search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.enableDutySearch )
         , ( "ai_network_match_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiNetworkMatchEnabled )
         , ( "important_notify_all_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
@@ -20757,6 +20799,8 @@ type alias GroupUpdateReq =
     , fetchNewMessages : Maybe (Bool)
     , isSigintUnitMandatory : Maybe (Bool)
     , isDeviceMandatory : Maybe (Bool)
+    , sendMessages : Maybe (Bool)
+    , senderOrganismIds : Maybe (List (Int))
     }
 
 
@@ -20776,6 +20820,8 @@ groupUpdateReqEncoder struct =
         , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
         , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
         , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
+        , ( "send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.sendMessages )
+        , ( "sender_organism_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.senderOrganismIds )
         ]
 
 
@@ -21520,6 +21566,7 @@ serverInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grafana_address" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_delta" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_analysis_map" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "enable_duty_search" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_strict_networks" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_my_admin_groups_edit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
@@ -22914,6 +22961,36 @@ rerDutyQueryStateDecoder =
 rerDutyQueryStateWfDecoder : Json.Decode.Decoder RerDutyQueryStateWf
 rerDutyQueryStateWfDecoder =
     Json.Decode.succeed RerDutyQueryStateWf
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "search" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.string)) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "search_mode" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (analysisSearchModeDecoder)) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senders_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -23161,6 +23238,8 @@ messageCommentsReqDecoder =
 inboxMessagesRspDecoder : Json.Decode.Decoder InboxMessagesRsp
 inboxMessagesRspDecoder =
     Json.Decode.succeed InboxMessagesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "history_since_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "history_period_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_items" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.int)) (Json.Decode.index 1 (inboxMessageDecoder))))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "poll_cursor_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (callsignInfoResDecoder))))
@@ -27316,6 +27395,8 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "send_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_organism_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -30878,6 +30959,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "doc_media_serve_from_b2" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
@@ -30894,6 +30976,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "enable_duty_search" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_network_match_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
@@ -30928,6 +31011,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "doc_media_serve_from_b2" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
@@ -30947,6 +31031,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "enable_duty_search" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_network_match_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
@@ -30988,6 +31073,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "doc_media_serve_from_b2" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
@@ -31007,6 +31093,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_duty_search" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_network_match_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
@@ -33920,6 +34007,8 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "send_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_organism_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
 
 
 nativeGroupSettingsDecoder : Json.Decode.Decoder NativeGroupSettings

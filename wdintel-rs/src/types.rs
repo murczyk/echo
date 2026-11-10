@@ -108,6 +108,7 @@ pub struct Env {
     pub mode: Mode,
     pub config: crate::config::Config,
     pub s3: Option<opendal::Operator>,
+    pub doc_media: Arc<crate::doc_media::DocMedia>,
     pub s3_config: Option<crate::storage::S3Config>,
     pub dbx: sea_orm::DatabaseConnection,
     pub(crate) unit_merge_guard_slots: Arc<tokio::sync::Semaphore>,

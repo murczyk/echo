@@ -25,8 +25,7 @@ type Props = {
   canManageKeys: boolean;
   encryptions: EncryptionRec[];
   onClose: () => void;
-  onChange: (next: NetworkFreqCreateWizardForm) => void;
-  onSave: () => void;
+  onSave: (form: NetworkFreqCreateWizardForm) => void;
   disableRestoreFocus?: boolean;
 };
 
@@ -54,17 +53,20 @@ function buildSelectedKeys(keys: EncryptionKeyData[], selectedIds: number[]): En
 
 function NetworkFreqCreateDrawerComponent({
   open,
-  form,
+  form: initialForm,
   saving,
   error,
   networkId,
   canManageKeys,
   encryptions,
   onClose,
-  onChange,
   onSave,
   disableRestoreFocus = false,
 }: Props) {
+  const [form, onChange] = useState(initialForm);
+  useEffect(() => {
+    if (open) onChange(initialForm);
+  }, [open, initialForm]);
   const titleId = 'network-freq-create-drawer-title';
   const [keys, setKeys] = useState<EncryptionKeyData[]>([]);
   const [keysLoading, setKeysLoading] = useState(false);
@@ -119,7 +121,7 @@ function NetworkFreqCreateDrawerComponent({
     setFreqTouched(false);
     setActiveFromTouched(false);
     setActiveToTouched(false);
-    onSave();
+    onSave(form);
   };
 
   const restoreAddNewKeyFocus = () => {

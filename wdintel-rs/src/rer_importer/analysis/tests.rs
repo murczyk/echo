@@ -690,6 +690,8 @@ fn short_state_filter(
     groups_selected: Option<Vec<String>>,
 ) -> RerDutyQueryStateWf {
     RerDutyQueryStateWf {
+        search: None,
+        search_mode: None,
         groups_selected,
         groups_denied: None,
         senders_selected: None,

@@ -286,6 +286,8 @@ async fn test_bl_szd_group_update_01() {
     .await
     .unwrap();
     let req = ZoneDatasourceGroupUpdateReq {
+        send_messages: None,
+        sender_organism_ids: None,
         is_sigint_unit_mandatory: Some(true),
         is_device_mandatory: Some(true),
         id: szd.id,
@@ -440,6 +442,8 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
     .unwrap();
 
     let req = ZoneDatasourceGroupUpdateReq {
+        send_messages: None,
+        sender_organism_ids: None,
         is_sigint_unit_mandatory: None,
         is_device_mandatory: None,
         id: szd.id,

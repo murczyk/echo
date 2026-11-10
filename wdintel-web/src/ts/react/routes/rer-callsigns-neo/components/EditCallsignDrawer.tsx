@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Drawer, Stack, Typography } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
@@ -17,37 +17,37 @@ type Props = {
   submitting: boolean;
   error: string | null;
   onClose: () => void;
-  onChange: (next: CallsignEditForm) => void;
-  onSave: () => void;
+  onSave: (form: CallsignEditForm | null) => void;
   disableRestoreFocus?: boolean;
 };
 
 export function EditCallsignDrawer({
   open,
-  form,
+  form: initialForm,
   units,
   sources,
   submitting,
   error,
   onClose,
-  onChange,
   onSave,
   disableRestoreFocus = false,
 }: Props) {
   const titleId = 'callsigns-edit-drawer-title';
+  const [form, setForm] = useState(initialForm);
+
+  useEffect(() => {
+    setForm(initialForm);
+  }, [initialForm]);
   const latestFormRef = useRef<CallsignEditForm | null>(form);
 
   useEffect(() => {
     latestFormRef.current = form;
   }, [form]);
 
-  const handleFormChange = useCallback(
-    (next: CallsignEditForm) => {
-      latestFormRef.current = next;
-      onChange(next);
-    },
-    [onChange],
-  );
+  const handleFormChange = useCallback((next: CallsignEditForm) => {
+    latestFormRef.current = next;
+    setForm(next);
+  }, []);
 
   const handleCallsignAdditionalSourceIdsChange = useCallback(
     (callsignAdditionalSourceIds: number[]) => {
@@ -55,9 +55,9 @@ export function EditCallsignDrawer({
       if (!current) return;
       const next = { ...current, callsignAdditionalSourceIds };
       latestFormRef.current = next;
-      onChange(next);
+      setForm(next);
     },
-    [onChange],
+    [],
   );
 
   return (
@@ -131,7 +131,7 @@ export function EditCallsignDrawer({
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>
-        <Button onClick={onSave} variant="contained" disabled={submitting || !form}>
+        <Button onClick={() => onSave(form)} variant="contained" disabled={submitting || !form}>
           {submitting ? `Збереження${ELLIPSIS}` : 'Зберегти'}
         </Button>
       </Box>

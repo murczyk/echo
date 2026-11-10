@@ -23,6 +23,8 @@ const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "re
 const RER_DUTY_GROUP_SCOPES_STRICT_DECODER: &str = r#"Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string)))))"#;
 const RER_DUTY_GROUP_SCOPES_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))), Json.Decode.succeed Nothing ]"#;
 const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
+    ("search", "Json.Decode.string"),
+    ("search_mode", "analysisSearchModeDecoder"),
     ("units_selected", "Json.Decode.list (Json.Decode.string)"),
     ("units_denied", "Json.Decode.list (Json.Decode.string)"),
     ("units_include_children", "Json.Decode.bool"),
@@ -157,6 +159,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::SignalProfilesRsp,
             crate::messenger::group::types::SignalGroupEntry,
             crate::messenger::group::types::GroupCreationInfo,
+            crate::messenger::group::sending::GroupSendingSettings,
             crate::messenger::group::types::OrphanSignalGroupEntry,
             crate::rer_importer::types::SignalProfileEntry,
             crate::rer_importer::types::BatchSignalGroupReq,
@@ -2338,6 +2341,18 @@ fn patch_backward_compatible_decoders(
 ) -> Result<String, AppError> {
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
+        .replace(
+            r#"Json.Decode.field "enable_duty_search" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "enable_duty_search" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "history_since_ms" (Json.Decode.nullable (Json.Decode.int))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "history_since_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "history_period_ms" (Json.Decode.nullable (Json.Decode.int))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "history_period_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]"#,
+        )
         .replace(
             r#"Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionCreateReport ]"#,

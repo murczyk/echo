@@ -496,6 +496,8 @@ async fn inbox_window_bl(
     Ok(Some(InboxWindowRsp {
         target_message_id,
         inbox: InboxMessagesRsp {
+            history_since_ms: None,
+            history_period_ms: None,
             inbox_items,
             poll_cursor_id: None,
             callsigns,
@@ -844,6 +846,8 @@ async fn messages_by_id_with_metadata(
     .c(h!())?;
 
     Ok(Json(InboxMessagesRsp {
+        history_since_ms: None,
+        history_period_ms: None,
         inbox_items: messages,
         poll_cursor_id: None,
         callsigns,
@@ -1277,6 +1281,24 @@ async fn inbox_messages(
     } else {
         None
     };
+    let mut req = req;
+    let history_since_ms =
+        if crate::system_settings::duty_search_enabled(&env.dbx)
+            .await
+            .c(h!())?
+        {
+            rer_duty_neo_adaptive_lower_bound(&login, &env, &req)
+                .await
+                .map(|since| since.and_utc().timestamp_millis())
+        } else {
+            None
+        };
+    let history_period_ms = history_since_ms.map(|_| {
+        Duration::days(RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS).num_milliseconds()
+    });
+    if let Some(since) = history_since_ms {
+        req.since_date_inclusive_ms = Some(since);
+    }
     let inbox_items = get_inbox_messages_with_analytics_candidates(
         &login, &logins, &env, &req,
     )
@@ -1313,6 +1335,8 @@ async fn inbox_messages(
     };
 
     Ok(Json(InboxMessagesApiRsp::regular(InboxMessagesRsp {
+        history_since_ms,
+        history_period_ms,
         inbox_items,
         poll_cursor_id,
         callsigns,
@@ -1329,6 +1353,8 @@ fn around_message_ref(req: &InboxMessagesReq) -> Option<String> {
 
 fn empty_inbox_messages_rsp(page_limit: Option<i64>) -> InboxMessagesRsp {
     InboxMessagesRsp {
+        history_since_ms: None,
+        history_period_ms: None,
         inbox_items: vec![],
         poll_cursor_id: None,
         callsigns: vec![],
@@ -8587,6 +8613,27 @@ mod tests {
     #[serial]
     #[tokio::test]
     async fn hybrid_latest_inbox_reconciles_replica_lag_3780() {
+        assert_hybrid_latest_inbox_reconciles_replica_lag(
+            InboxMessagesSortBy::IMSTimestamp,
+            false,
+        )
+        .await;
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn bounded_duty_history_reconciles_replica_lag_3571() {
+        assert_hybrid_latest_inbox_reconciles_replica_lag(
+            InboxMessagesSortBy::IMSCreatedAt,
+            true,
+        )
+        .await;
+    }
+
+    async fn assert_hybrid_latest_inbox_reconciles_replica_lag(
+        sort_by: InboxMessagesSortBy,
+        bounded: bool,
+    ) {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let group = find_test_datasource_group(&env.dbx).await.unwrap();
@@ -8595,7 +8642,10 @@ mod tests {
         let analytics = snapshot_latest_inbox_replica_3780(&env).await;
         let req = InboxMessagesReq {
             load_latest: Some(true),
-            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            sort_by: Some(sort_by),
+            since_date_inclusive_ms: bounded.then_some(
+                (now - Duration::days(14)).and_utc().timestamp_millis(),
+            ),
             ..Default::default()
         };
         let candidates = load_analytics_inbox_candidates(
@@ -8693,6 +8743,147 @@ mod tests {
             .execute_unprepared(r#"DROP SCHEMA inbox_replica_3780 CASCADE"#)
             .await
             .unwrap();
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn duty_search_returns_and_pages_effective_history_3571() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        system_settings::ActiveModel {
+            enable_duty_search: Set(Some(true)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let recent = seed_message_with_media(
+            &env,
+            &group,
+            None,
+            "duty3571needle-recent",
+        )
+        .await
+        .unwrap();
+        let older =
+            seed_message_with_media(&env, &group, None, "duty3571needle-older")
+                .await
+                .unwrap();
+        for message in [&recent, &older] {
+            let body = crate::rer_importer::body_noheader::extract_text(
+                message.body.as_deref().unwrap(),
+            )
+            .unwrap();
+            sigint_inbox_item::Entity::update_many()
+                .col_expr(
+                    sigint_inbox_item::Column::BodyNoheader,
+                    Expr::value(serde_json::to_value(body).unwrap()),
+                )
+                .filter(sigint_inbox_item::Column::Id.eq(message.id))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+            crate::sigint::worker::incoming_message_after_insert(
+                &env.dbx, message.id,
+            )
+            .await
+            .unwrap();
+        }
+        seed_message_with_media(&env, &group, None, "unrelated")
+            .await
+            .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::CreatedAt,
+                Expr::value(Utc::now().naive_utc() - Duration::days(20)),
+            )
+            .filter(signal_message::Column::Id.eq(older.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(store, Key::generate()))
+                .route(
+                    "/test/duty-login/{login}",
+                    web::post().to(echo_3461_login),
+                )
+                .service(inbox_messages),
+        )
+        .await;
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/duty-login/{}", login.id))
+                .to_request(),
+        )
+        .await;
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+        let req = InboxMessagesReq {
+            sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+            search: Some("duty3571needle".to_string()),
+            search_mode: Some(AnalysisSearchMode::Substring),
+            selected_groups: Some(vec![group.group_master_key]),
+            denied_units: Some(vec!["missing3571unit".to_string()]),
+            ..rer_duty_neo_latest_req()
+        };
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/get-inbox")
+                .cookie(cookie.clone())
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response: InboxMessagesRsp =
+            actix_test::read_body_json(response).await;
+        assert_eq!(
+            response
+                .inbox_items
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            vec![recent.id]
+        );
+        let since = response.history_since_ms.unwrap();
+        let period = response.history_period_ms.unwrap();
+        assert_eq!(period, Duration::days(14).num_milliseconds());
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(since - period),
+            till_date_inclusive_ms: Some(since),
+            before_id_noninclusive: Some(recent.id),
+            ..req
+        };
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/get-inbox")
+                .cookie(cookie)
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response: InboxMessagesRsp =
+            actix_test::read_body_json(response).await;
+        assert_eq!(
+            response
+                .inbox_items
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            vec![older.id]
+        );
     }
 
     async fn seed_latest_inbox_messages_3780(

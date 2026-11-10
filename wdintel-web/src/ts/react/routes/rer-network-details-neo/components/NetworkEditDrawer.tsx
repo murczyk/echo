@@ -58,8 +58,7 @@ type Props = {
   postOptions: LookupOption[];
   encryptionOptions: LookupOption[];
   onClose: () => void;
-  onChange: (next: NetworkUpsertForm | null) => void;
-  onSave: (form?: NetworkUpsertForm | null) => void;
+  onSave: (form: NetworkUpsertForm) => void;
   disableRestoreFocus?: boolean;
   frequencyOptional?: boolean;
   unitMaskVisible?: boolean;
@@ -121,7 +120,7 @@ function DrawerSection({
 function NetworkEditDrawerComponent({
   open,
   mode,
-  form,
+  form: initialForm,
   saving,
   error,
   referenceLoading,
@@ -130,7 +129,6 @@ function NetworkEditDrawerComponent({
   postOptions,
   encryptionOptions,
   onClose,
-  onChange,
   onSave,
   disableRestoreFocus = false,
   frequencyOptional = false,
@@ -138,6 +136,10 @@ function NetworkEditDrawerComponent({
   aiInstructionsVisible = false,
 }: Props) {
   const radioFeaturesAllowed = useRadioFeatures();
+  const [form, onChange] = useState(initialForm);
+  useEffect(() => {
+    if (open) onChange(initialForm);
+  }, [open, initialForm]);
   const titleId = 'network-edit-drawer-title';
   const includeFrequency =
     radioFeaturesAllowed && form !== null && mode === 'create'

@@ -175,13 +175,14 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
     }
   }
 
-  async function saveNetworkCreate() {
-    if (!args.createDialog) return;
+  async function saveNetworkCreate(formArg?: NetworkUpsertForm | null) {
+    const createDialog = formArg ?? args.createDialog;
+    if (!createDialog) return;
 
     const includeFrequency =
       args.radioFeaturesAllowed &&
-      shouldIncludeNetworkCreateFrequency(args.createDialog, args.supportNonRerInterceptions);
-    const validationError = getNetworkUpsertValidationError(args.createDialog, {
+      shouldIncludeNetworkCreateFrequency(createDialog, args.supportNonRerInterceptions);
+    const validationError = getNetworkUpsertValidationError(createDialog, {
       includeFrequency,
     });
     if (validationError !== null) {
@@ -201,7 +202,7 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
 
     try {
       const network = await createNetwork(
-        toCreateNetworkReq(args.createDialog, {
+        toCreateNetworkReq(createDialog, {
           includeFrequency,
           aiInstructionsVisible: args.aiNetworkMatchEnabled,
         }),

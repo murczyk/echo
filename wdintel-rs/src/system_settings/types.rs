@@ -24,6 +24,8 @@ pub struct SystemSettingsCurrentRsp {
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub devices_section_enabled: bool,
+    #[serde(default)]
+    pub doc_media_serve_from_b2: bool,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
     pub goi_association_message_uid_worker_enabled: bool,
@@ -45,6 +47,7 @@ pub struct SystemSettingsCurrentRsp {
     #[serde(default = "default_duty_selected_groups_enabled")]
     pub duty_selected_groups_enabled: bool,
     #[serde(default)]
+    pub enable_duty_search: bool,
     pub ai_network_match_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
@@ -85,6 +88,8 @@ pub struct SystemSettingsItem {
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub devices_section_enabled: bool,
+    #[serde(default)]
+    pub doc_media_serve_from_b2: bool,
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
@@ -108,6 +113,7 @@ pub struct SystemSettingsItem {
     #[serde(default = "default_duty_selected_groups_enabled")]
     pub duty_selected_groups_enabled: bool,
     #[serde(default)]
+    pub enable_duty_search: bool,
     pub ai_network_match_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
@@ -170,6 +176,8 @@ pub struct CreateSystemSettingsReq {
     #[serde(default)]
     pub devices_section_enabled: bool,
     #[serde(default)]
+    pub doc_media_serve_from_b2: bool,
+    #[serde(default)]
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     #[serde(default = "default_sigint_comment_parsing_enabled")]
     pub sigint_comment_parsing_enabled: bool,
@@ -208,6 +216,7 @@ pub struct CreateSystemSettingsReq {
     #[serde(default)]
     pub duty_selected_groups_enabled: Option<bool>,
     #[serde(default)]
+    pub enable_duty_search: Option<bool>,
     pub ai_network_match_enabled: Option<bool>,
     #[serde(default)]
     pub important_notify_all_enabled: Option<bool>,

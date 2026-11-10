@@ -314,6 +314,8 @@ type ZoneDatasourceGroupUpdateReqBody = {
   fetch_new_messages: boolean | null;
   is_sigint_unit_mandatory: boolean | null;
   is_device_mandatory: boolean | null;
+  send_messages: boolean | null;
+  sender_organism_ids: number[] | null;
   user_logins: string[];
   organism_ids: number[];
   admin_logins: string[];
@@ -610,6 +612,8 @@ function toZoneDatasourceGroupUpdateReqBody(
     fetch_new_messages: req.fetchNewMessages ?? null,
     is_sigint_unit_mandatory: req.isSigintUnitMandatory ?? null,
     is_device_mandatory: req.isDeviceMandatory ?? null,
+    send_messages: req.sendMessages ?? null,
+    sender_organism_ids: req.senderOrganismIds ?? null,
     user_logins: req.userLogins,
     organism_ids: req.organismIds,
     admin_logins: req.adminLogins,

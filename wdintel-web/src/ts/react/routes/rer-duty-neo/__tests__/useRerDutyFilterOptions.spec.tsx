@@ -90,6 +90,24 @@ describe('useRerDutyFilterOptions', () => {
     expect(current?.groupInfos.A?.name).toBe('Alpha');
   });
 
+  it('#3571 makes search available while unrelated filter requests are pending', async () => {
+    api.senders.mockReturnValue(new Promise(() => {}));
+    api.saved.mockReturnValue(new Promise(() => {}));
+    api.server.mockResolvedValue({ enableDutySearch: true, featureStrictNetworks: false });
+    mount();
+    await act(async () => {});
+    expect(current?.enableDutySearch).toBe(true);
+    expect(current?.serverInfoReady).toBe(true);
+  });
+
+  it('#3571 keeps restored searches blocked and exposes server-info failures', async () => {
+    api.server.mockRejectedValueOnce(new Error('server unavailable'));
+    mount();
+    await act(async () => {});
+    expect(current?.serverInfoReady).toBe(false);
+    expect(current?.serverInfoError).toContain('server unavailable');
+  });
+
   it('keeps keys and existing details when details fail', async () => {
     api.groups.mockResolvedValue(['A', 'B']);
     api.details.mockRejectedValue(new Error('details failed'));

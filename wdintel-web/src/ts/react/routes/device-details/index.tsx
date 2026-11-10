@@ -523,7 +523,6 @@ export function DeviceDetailsPage({
         hasChanges={page.editHasChanges}
         nameRequired={page.device?.name !== null}
         onClose={page.closeEditDrawer}
-        onChange={page.setEditForm}
         onSave={(form) => void page.saveEditDevice(form)}
       />
       <ConfirmDangerDialog

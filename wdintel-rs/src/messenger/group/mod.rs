@@ -14,6 +14,7 @@ pub mod handlers;
 pub mod native;
 pub mod oneoff;
 pub mod requirements;
+pub mod sending;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
@@ -601,6 +602,7 @@ where
 
     let saved = match signal_group {
         None => signal_group::ActiveModel {
+            send_messages: sea_orm::NotSet,
             is_sigint_unit_mandatory: sea_orm::NotSet,
             is_device_mandatory: sea_orm::NotSet,
             master_key: Set(master_key),

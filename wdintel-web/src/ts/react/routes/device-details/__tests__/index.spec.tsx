@@ -122,12 +122,11 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     editError: null,
     editServerFieldErrors: {},
     editSubmitting: false,
-    editHasChanges: false,
+    editHasChanges: () => false,
     initialLoadFailed: false,
     reload: vi.fn(),
     openEditDrawer: vi.fn(),
     closeEditDrawer: vi.fn(),
-    setEditForm: vi.fn(),
     saveEditDevice: vi.fn(),
     ...overrides,
   };

@@ -861,6 +861,9 @@ pub const MESSENGER_TYPE_TELEGRAM: &str = "Telegram";
 pub const MESSENGER_TYPE_MAX: &str = "Max";
 pub const MESSENGER_INGEST_MESSENGER_TYPES: &[&str] =
     &[MESSENGER_TYPE_TELEGRAM, MESSENGER_TYPE_MAX];
+pub const MESSENGER_GROUP_SEND_ATTACHMENT_MAX_BYTES: u64 = 25 * 1024 * 1024;
+pub const MESSENGER_GROUP_SEND_ATTACHMENTS_TOTAL_MAX_BYTES: u64 =
+    100 * 1024 * 1024;
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend
@@ -1456,6 +1459,17 @@ pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
 pub const S3_MEDIA_ROOT_PREFIX: &str = "message-media";
+
+pub const DOC_MEDIA_STORAGE_PREFIX: &str = "doc-media";
+pub const DOC_MEDIA_DEFAULT_DIR: &str = "/usr/share/echo-docs";
+pub const DOC_MEDIA_CACHE_CONTROL: &str = "private, no-cache";
+pub const DOC_MEDIA_DOWNLOAD_TIMEOUT_SECS: u64 = 300;
+pub const DOC_MEDIA_RETRY_AFTER_SECS: u64 = 5;
+pub const DOC_MEDIA_LOCK_SLOTS: usize = 64;
+pub const DOC_MEDIA_MAX_CONCURRENT_DOWNLOADS: usize = 8;
+pub const DOC_MEDIA_EXTENSIONS: &[&str] = &[
+    "mp4", "webm", "jpg", "jpeg", "png", "mp3", "gif", "svg", "ico",
+];
 pub const SIGINT_UNIT_ATTACHMENT_MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const SIGINT_UNIT_ATTACHMENT_MAX_ENCRYPTED_BYTES: u64 = 51 * 1024 * 1024;
 pub const SIGINT_UNIT_ATTACHMENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
@@ -2186,6 +2200,7 @@ pub struct Config {
     #[serde(default)]
     pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
+    pub doc_media_dir: Option<String>,
     #[serde(skip)]
     pub(crate) messenger_media_cache: Option<MessengerMediaCacheConfig>,
     pub signal_api_phone: String,
@@ -2205,6 +2220,8 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
+    /// Imported into system settings at startup for backwards compatibility.
+    pub enable_duty_search: Option<bool>,
     pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,
     secret_config: Option<SecretConfig>,
