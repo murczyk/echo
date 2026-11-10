@@ -207,6 +207,21 @@ async fn enqueue_follows_flag_worker_and_age_4095() {
     );
     clear_job(dbx, item.id).await;
 
+    dbx.execute_raw(sql(
+        "update sigint_inbox_item set datetime = null where id = $1",
+        vec![item.id.into()],
+    ))
+    .await
+    .unwrap();
+    enqueue_for_calculated(dbx, &pair).await.unwrap();
+    assert!(job(dbx, item.id).await.is_none(), "no intercept time");
+    dbx.execute_raw(sql(
+        "update sigint_inbox_item set datetime = now() at time zone 'utc' where id = $1",
+        vec![item.id.into()],
+    ))
+    .await
+    .unwrap();
+
     forget_result(dbx, item.id).await.unwrap();
     dbx.execute_raw(sql(
         "update signal_message set created_at = now() at time zone 'utc' - interval '3 days' where id = $1",

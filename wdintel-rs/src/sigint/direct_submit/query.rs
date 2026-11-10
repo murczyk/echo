@@ -2280,9 +2280,15 @@ mod tests {
         let source = mk_sigint_inbox_item(&env.dbx, Default::default())
             .await
             .unwrap();
-        let target = mk_sigint_inbox_item(&env.dbx, Default::default())
-            .await
-            .unwrap();
+        let target = mk_sigint_inbox_item(
+            &env.dbx,
+            crate::entities::sigint_inbox_item::ActiveModel {
+                datetime: Set(Some(chrono::Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         for _ in 0..2 {
             mk_sigint_inbox_item_network(
                 &env.dbx,

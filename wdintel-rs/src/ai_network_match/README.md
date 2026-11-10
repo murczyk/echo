@@ -28,7 +28,9 @@ a source message's links (`copy_inbox_networks`). A message is queued in
 `ai_network_match_worker_job` when it has 2–12 distinct networks and both its
 receive time and intercept time are within the last 48 hours. The age limit
 stops network edits, which recalculate old messages in bulk, and historical
-imports from flooding the engine.
+imports from flooding the engine. Messages without an intercept time are not
+scored and keep the full network list: network invalidation skips them, so a
+network edit could not rescore them.
 
 A recalculation queues the message even when it already has scores, because a
 frequency, unit or post edit can change a candidate network without changing
