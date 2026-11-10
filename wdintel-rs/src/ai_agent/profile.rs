@@ -97,6 +97,11 @@ struct ProfileEngine {
     enabled: bool,
     #[serde(default = "default_true")]
     callsign_enabled: bool,
+    /// Host-local outage warning for chat users (#4112).
+    #[serde(default)]
+    unhealthy: Option<bool>,
+    #[serde(default)]
+    health_message: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -183,12 +188,11 @@ async fn load_profile(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let allowed_ai_engine_ids = ai_agent_allowed_engine::Entity::find()
-        .all(dbx)
+    let allowed_ai_engine_ids = access::ordered_allowed_engines(dbx)
         .await
-        .c(h!())?
+        .context(h!())?
         .into_iter()
-        .map(|allowed| allowed.ai_engine_id)
+        .map(|ai_engine| ai_engine.id)
         .collect::<Vec<_>>();
     let engine_ids = profile_engine_ids(&settings, &allowed_ai_engine_ids);
     let engines = ai_engine::Entity::find()
@@ -712,6 +716,8 @@ where
     engine.model_name = Set(profile_engine.model_name.clone());
     engine.enabled = Set(profile_engine.enabled);
     engine.callsign_enabled = Set(profile_engine.callsign_enabled);
+    engine.unhealthy = Set(profile_engine.unhealthy);
+    engine.health_message = Set(profile_engine.health_message.clone());
     engine.updated_at = Set(Utc::now().naive_utc());
     Ok(engine.update(dbx).await.c(h!())?)
 }
@@ -734,6 +740,10 @@ where
         callsign_enabled: Set(profile_engine.callsign_enabled),
         ocr_enabled: Set(false),
         ocr_request_profile: Set("openai_vision".to_string()),
+        unhealthy: Set(profile_engine.unhealthy),
+        health_message: Set(profile_engine.health_message.clone()),
+        health_updated_at: Set(None),
+        health_updated_by_login_id: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -776,13 +786,16 @@ where
         .exec(dbx)
         .await
         .c(h!())?;
-    for profile_engine_id in &profile.allowed_ai_engine_ids {
+    for (position, profile_engine_id) in
+        (0..).zip(&profile.allowed_ai_engine_ids)
+    {
         ai_agent_allowed_engine::ActiveModel {
             ai_engine_id: Set(remap_required_engine_id(
                 *profile_engine_id,
                 engine_ids,
             )?),
             created_at: Set(Utc::now().naive_utc()),
+            position: Set(Some(position)),
         }
         .insert(dbx)
         .await
@@ -842,6 +855,8 @@ impl From<ai_engine::Model> for ProfileEngine {
             model_name: engine.model_name,
             enabled: engine.enabled,
             callsign_enabled: engine.callsign_enabled,
+            unhealthy: engine.unhealthy,
+            health_message: engine.health_message,
         }
     }
 }
@@ -860,6 +875,10 @@ fn engine_record(engine: &ProfileEngine) -> ai_engine::Model {
         callsign_enabled: engine.callsign_enabled,
         ocr_enabled: false,
         ocr_request_profile: "openai_vision".to_string(),
+        unhealthy: engine.unhealthy,
+        health_message: engine.health_message.clone(),
+        health_updated_at: None,
+        health_updated_by_login_id: None,
     }
 }
 
@@ -909,6 +928,8 @@ mod tests {
                 model_name: "local".to_string(),
                 enabled: true,
                 callsign_enabled: true,
+                unhealthy: Some(true),
+                health_message: Some("Шлюз недоступний".to_string()),
             }],
         }
     }
@@ -1014,6 +1035,16 @@ mod tests {
                 .unwrap();
         assert_eq!(template.login, AI_AGENT_TEMPLATE_LOGIN_NAME);
         assert_eq!(settings.template_login_id, Some(template_login_id));
+        let engine = ai_engine::Entity::find_by_id(profile.engines[0].id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (engine.unhealthy, engine.health_message.as_deref()),
+            (Some(true), Some("Шлюз недоступний")),
+            "#4112 the host keeps its outage warning"
+        );
         assert_eq!(
             settings.mattermost_webhook_url,
             profile.settings.mattermost_webhook_url,
