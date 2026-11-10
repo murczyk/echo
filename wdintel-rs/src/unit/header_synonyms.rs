@@ -53,16 +53,24 @@ impl UnitHeaderSynonyms {
         let Some(unit) = self.resolve_cached(db, &header).await.c(h!())? else {
             return Ok(None);
         };
-        Ok(sigint_unit::Entity::find_by_id(unit.id)
+        Ok(sigint_unit_label::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_unit_label::Relation::SigintUnit.def(),
+            )
+            .filter(sigint_unit_label::Column::SigintUnitId.eq(unit.id))
             .filter(sigint_unit::Column::Deleted.eq(false))
             .select_only()
             .column(sigint_unit::Column::Id)
             .column(sigint_unit::Column::Name)
-            .into_tuple::<(i64, String)>()
-            .one(db)
+            .column(sigint_unit_label::Column::Label)
+            .into_tuple::<(i64, String, String)>()
+            .all(db)
             .await
             .c(h!())?
-            .map(|(id, name)| HeaderSynonymUnit { id, name }))
+            .into_iter()
+            .find(|(_, _, label)| normalize_unit_label(label) == header)
+            .map(|(id, name, _)| HeaderSynonymUnit { id, name }))
     }
 
     async fn resolve_cached<C>(

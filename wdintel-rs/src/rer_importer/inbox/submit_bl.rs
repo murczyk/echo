@@ -756,6 +756,63 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_4022_header_synonym_revalidates_cached_label_mapping() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit = seed_submit_unit(
+            &env,
+            "Перший підрозділ 4022",
+            "",
+            "Інший синонім 4022",
+        )
+        .await;
+        let label = crate::sigint::unit::labels::insert_label(
+            &env.dbx,
+            unit.id,
+            "Власний синонім 4022",
+        )
+        .await
+        .unwrap();
+        let body =
+            "\n ВЛАСНИЙ  СИНОНІМ\t4022 \n10.11.2026, 10:23 (МСК)\n- Принял.";
+        assert_eq!(
+            env.unit_header_synonyms
+                .resolve(&env.dbx, body)
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            unit.id
+        );
+        label.delete(&env.dbx).await.unwrap();
+        for reassigned in [false, true] {
+            if reassigned {
+                seed_submit_unit(
+                    &env,
+                    "Другий підрозділ 4022",
+                    "",
+                    "власний синонім 4022",
+                )
+                .await;
+            }
+            let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+                &login.id,
+                &env,
+                crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                    full_body: body.to_string(),
+                    signal_group_master_key: None,
+                    include_ai_callsigns: false,
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(parsed.unit_id, None);
+            assert_eq!(parsed.unit_v2, None);
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn issue_4022_header_synonym_refresh_uses_submit_transaction() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
