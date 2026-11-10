@@ -10,6 +10,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
 use actix_identity::Identity;
+use anyhow::Context;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
@@ -159,7 +160,8 @@ pub async fn allowed_engines(
     dbx: &DatabaseConnection,
 ) -> Result<Vec<ai_engine::Model>, AppError> {
     Ok(ordered_allowed_engines(dbx)
-        .await?
+        .await
+        .context(h!())?
         .into_iter()
         .filter(|ai_engine| ai_engine.enabled)
         .filter(is_agent_engine)
@@ -183,9 +185,10 @@ where
             ai_engine.map(|ai_engine| (allowed.position, ai_engine))
         })
         .collect::<Vec<_>>();
+    // Engines the admin has not ordered yet follow the ordered ones.
     allowed.sort_by(|(left_position, left), (right_position, right)| {
-        left_position
-            .cmp(right_position)
+        (left_position.is_none(), left_position)
+            .cmp(&(right_position.is_none(), right_position))
             .then_with(|| left.name.cmp(&right.name))
     });
     Ok(allowed
@@ -413,7 +416,7 @@ mod tests {
             callsign_enabled: true,
             ocr_enabled: false,
             ocr_request_profile: "openai_vision".to_string(),
-            unhealthy: false,
+            unhealthy: None,
             health_message: None,
             health_updated_at: None,
             health_updated_by_login_id: None,

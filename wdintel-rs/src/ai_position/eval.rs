@@ -170,7 +170,7 @@ pub async fn evaluate(
         callsign_enabled: true,
         ocr_enabled: false,
         ocr_request_profile: String::new(),
-        unhealthy: false,
+        unhealthy: None,
         health_message: None,
         health_updated_at: None,
         health_updated_by_login_id: None,

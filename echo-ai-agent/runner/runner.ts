@@ -15,6 +15,7 @@ import {
   type BudgetEvidence,
   type ResearchLimitReason,
   providerFailureKind,
+  terminalProviderFailure,
 } from "./execution-policy.ts";
 import {
   DEVICE_ROUTES,
@@ -114,7 +115,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.08.1";
+const HARNESS_RELEASE = "2026.11.10.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -4477,9 +4478,12 @@ if (
     const diagnostic =
       error instanceof Error ? (error.stack ?? error.message) : String(error);
     process.stderr.write(`${diagnostic}\n`);
-    const message = process.argv.includes("--test-connection")
+    const testConnection = process.argv.includes("--test-connection");
+    const message = testConnection
       ? "Echo connection test failed."
       : "AI agent request failed.";
+    const providerFailure = testConnection ? null : terminalProviderFailure(error);
+    if (providerFailure) emit(providerFailure);
     emit({ type: "error", message });
     process.exitCode = 1;
   });

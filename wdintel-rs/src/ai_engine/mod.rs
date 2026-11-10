@@ -197,7 +197,7 @@ pub async fn create_ai_engine(
         callsign_enabled: Set(values.callsign_enabled),
         ocr_enabled: Set(values.ocr_enabled),
         ocr_request_profile: Set("openai_vision".to_string()),
-        unhealthy: Set(false),
+        unhealthy: Set(None),
         health_message: Set(None),
         health_updated_at: Set(None),
         health_updated_by_login_id: Set(None),
@@ -282,11 +282,13 @@ pub async fn update_ai_engine_health(
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let login_id = login_id_from_identity(&user).c(h!())?;
     let req = req.into_inner();
-    let ai_engine_id = parse_uuid(&req.id)?;
-    let health_message = health_message(req.unhealthy, req.message)?;
-    let ai_engine = find_ai_engine(&env.dbx, ai_engine_id).await?;
+    let ai_engine_id = parse_uuid(&req.id).context(h!())?;
+    let health_message =
+        health_message(req.unhealthy, req.message).context(h!())?;
+    let ai_engine =
+        find_ai_engine(&env.dbx, ai_engine_id).await.context(h!())?;
     let mut ai_engine = ai_engine.into_active_model();
-    ai_engine.unhealthy = Set(req.unhealthy);
+    ai_engine.unhealthy = Set(Some(req.unhealthy));
     ai_engine.health_message = Set(health_message);
     ai_engine.health_updated_at = Set(Some(Utc::now().naive_utc()));
     ai_engine.health_updated_by_login_id = Set(Some(login_id));
@@ -572,7 +574,7 @@ impl From<ai_engine::Model> for AiEngineItem {
             has_token: ai_engine.token.is_some(),
             created_at: ai_engine.created_at.and_utc().timestamp_millis(),
             updated_at: ai_engine.updated_at.and_utc().timestamp_millis(),
-            unhealthy: ai_engine.unhealthy,
+            unhealthy: ai_engine.unhealthy.unwrap_or(false),
             health_message: ai_engine.health_message,
             health_updated_at: ai_engine
                 .health_updated_at

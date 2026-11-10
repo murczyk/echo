@@ -42,6 +42,7 @@ use actix_web::{
     web::{Json, Path, Query},
     HttpRequest, HttpResponse, HttpResponseBuilder,
 };
+use anyhow::Context;
 use bytes::Bytes;
 use chrono::Utc;
 use futures_util::stream;
@@ -189,7 +190,7 @@ pub async fn configuration(
             id: ai_engine.id.to_string(),
             name: ai_engine.name,
             model_name: ai_engine.model_name,
-            unhealthy: ai_engine.unhealthy,
+            unhealthy: ai_engine.unhealthy.unwrap_or(false),
             health_message: ai_engine.health_message,
         })
         .collect();
@@ -336,7 +337,8 @@ pub async fn create_request(
                     &env.dbx,
                     requested_engine.or(Some(conversation.ai_engine_id)),
                 )
-                .await?;
+                .await
+                .context(h!())?;
                 (Some(conversation), ai_engine.id)
             }
             None => {
@@ -398,7 +400,8 @@ pub async fn create_request(
                 owned_conversation_locked(&txn, human.id, conversation.id)
                     .await?;
             remember_conversation_engine(&txn, conversation, ai_engine_id)
-                .await?
+                .await
+                .context(h!())?
         }
         None => {
             let title = normalize_title(None, &prompt);
@@ -849,7 +852,8 @@ pub(super) async fn conversation_detail(
     let mut attachments = uploads::context::by_request(dbx, &request_ids)
         .await
         .c(h!())?;
-    let engine_names = request_engine_names(dbx, &requests).await?;
+    let engine_names =
+        request_engine_names(dbx, &requests).await.context(h!())?;
     let mut messages = Vec::new();
     for request in requests {
         let ai_engine_id = Some(request.ai_engine_id.to_string());

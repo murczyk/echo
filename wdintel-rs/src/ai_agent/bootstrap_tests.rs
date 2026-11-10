@@ -2173,13 +2173,13 @@ async fn issue_4112_conversation_switches_engine_in_admin_order() {
     };
     let glm = engine("a-glm").insert(&env.dbx).await.unwrap();
     let mut flash = engine("b-flash");
-    flash.unhealthy = Set(true);
+    flash.unhealthy = Set(Some(true));
     flash.health_message = Set(Some("Шлюз недоступний".to_string()));
     let flash = flash.insert(&env.dbx).await.unwrap();
     for (position, ai_engine_id) in [(1, glm.id), (0, flash.id)] {
         ai_agent_allowed_engine::ActiveModel {
             ai_engine_id: Set(ai_engine_id),
-            position: Set(position),
+            position: Set(Some(position)),
             ..Default::default()
         }
         .insert(&env.dbx)

@@ -19,6 +19,7 @@ use crate::mattermost;
 use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::{get, post, web::Json};
+use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
@@ -216,7 +217,7 @@ pub async fn update_settings(
         ai_agent_allowed_engine::ActiveModel {
             ai_engine_id: Set(ai_engine_id),
             created_at: Set(Utc::now().naive_utc()),
-            position: Set(position),
+            position: Set(Some(position)),
         }
         .insert(&txn)
         .await
@@ -288,7 +289,8 @@ async fn settings_item(
     let settings = access::settings(&env.dbx).await?;
     let template_login_id = access::template_login_id(&settings)?;
     let allowed_ai_engine_ids = access::ordered_allowed_engines(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .into_iter()
         .map(|ai_engine| ai_engine.id.to_string())
         .collect::<Vec<_>>();

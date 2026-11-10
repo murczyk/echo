@@ -804,7 +804,7 @@ mod tests {
             callsign_enabled: Set(true),
             ocr_enabled: Set(false),
             ocr_request_profile: Set("openai_vision".to_string()),
-            unhealthy: Set(false),
+            unhealthy: Set(None),
             health_message: Set(None),
             health_updated_at: Set(None),
             health_updated_by_login_id: Set(None),

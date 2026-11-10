@@ -304,6 +304,34 @@ function providerFailureFacts(
   };
 }
 
+/**
+ * A provider failure or filter that ended the run, reported so Echo can offer another
+ * model (#4112). Authorization and infrastructure failures report nothing.
+ */
+export function terminalProviderFailure(
+  error: unknown,
+): ({ type: "completion_diagnostic" } & CompletionDiagnostic) | null {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (isProviderAuthorizationError(message)) return null;
+  if (
+    error instanceof SynthesisContentFilterError ||
+    /content_filter|ResponsibleAIPolicyViolation/i.test(message)
+  )
+    return { type: "completion_diagnostic", stage: "answer", outcome: "content_filter" };
+  if (
+    /\b(429|50[0234])\b|rate.?limit|too many requests|no deployments available|provider (connection|request) failed/i.test(
+      message,
+    )
+  )
+    return {
+      type: "completion_diagnostic",
+      stage: "answer",
+      outcome: "transient_error",
+      ...providerFailureFacts(message),
+    };
+  return null;
+}
+
 export function completionFailure(error: unknown): CompletionStatus {
   if (isProviderAuthorizationError(error)) return "authorization";
   const message = String(error ?? "");

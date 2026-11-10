@@ -1543,7 +1543,8 @@ pub(super) async fn complete_request(
             "completion_metadata",
             serde_json::to_value(&metadata).c(h!())?,
         )
-        .await?;
+        .await
+        .context(h!())?;
     }
     events::append_in_transaction(
         &txn,
@@ -1605,7 +1606,8 @@ pub(super) async fn fail_request(
             "completion_metadata",
             serde_json::to_value(metadata).c(h!())?,
         )
-        .await?;
+        .await
+        .context(h!())?;
     }
     events::append_in_transaction(
         &txn,

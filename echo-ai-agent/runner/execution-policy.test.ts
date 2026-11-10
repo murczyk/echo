@@ -5,11 +5,13 @@ import { Type } from "typebox";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
+  SynthesisContentFilterError,
   BUDGET_INABILITY,
   budgetFallback,
   chooseBudgetAnswer,
   synthesizeBudgetEvidence,
   toolCallLimit,
+  terminalProviderFailure,
   validateExecutionPolicy,
   type ExecutionPolicy,
 } from "./execution-policy.ts";
@@ -423,4 +425,30 @@ test("#3985 document requests in short modes and Deep runs get their own budgets
     [toolCallLimit(undefined), toolCallLimit(balanced), toolCallLimit(document), toolCallLimit(queued), toolCallLimit(deep)],
     [128, 128, 128, 128, 1024],
   );
+});
+
+test("#4112 reports provider failures that end a run so Echo can offer another model", () => {
+  assert.deepEqual(terminalProviderFailure(new Error("500 Provider request failed")), {
+    type: "completion_diagnostic",
+    stage: "answer",
+    outcome: "transient_error",
+    failureKind: "provider_error",
+    httpStatus: 500,
+  });
+  assert.equal(
+    terminalProviderFailure(new Error("429 No deployments available for selected model"))
+      ?.failureKind,
+    "rate_limit",
+  );
+  assert.deepEqual(terminalProviderFailure(new SynthesisContentFilterError("filtered")), {
+    type: "completion_diagnostic",
+    stage: "answer",
+    outcome: "content_filter",
+  });
+  assert.equal(
+    terminalProviderFailure(new Error("ResponsibleAIPolicyViolation"))?.outcome,
+    "content_filter",
+  );
+  assert.equal(terminalProviderFailure(new Error("401 Unauthorized")), null);
+  assert.equal(terminalProviderFailure(new Error("work journal append failed")), null);
 });

@@ -34,7 +34,7 @@ async fn engine(env: &Env) -> ai_engine::Model {
         callsign_enabled: Set(false),
         ocr_enabled: Set(false),
         ocr_request_profile: Set("openai_vision".into()),
-        unhealthy: Set(false),
+        unhealthy: Set(None),
         health_message: Set(None),
         health_updated_at: Set(None),
         health_updated_by_login_id: Set(None),

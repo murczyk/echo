@@ -25,7 +25,7 @@ pub struct Model {
     pub ocr_enabled: bool,
     #[sea_orm(column_type = "Text")]
     pub ocr_request_profile: String,
-    pub unhealthy: bool,
+    pub unhealthy: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
     pub health_message: Option<String>,
     pub health_updated_at: Option<DateTime>,

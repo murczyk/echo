@@ -184,7 +184,8 @@ async fn load_profile(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let allowed_ai_engine_ids = access::ordered_allowed_engines(dbx)
-        .await?
+        .await
+        .context(h!())?
         .into_iter()
         .map(|ai_engine| ai_engine.id)
         .collect::<Vec<_>>();
@@ -732,7 +733,7 @@ where
         callsign_enabled: Set(profile_engine.callsign_enabled),
         ocr_enabled: Set(false),
         ocr_request_profile: Set("openai_vision".to_string()),
-        unhealthy: Set(false),
+        unhealthy: Set(None),
         health_message: Set(None),
         health_updated_at: Set(None),
         health_updated_by_login_id: Set(None),
@@ -787,7 +788,7 @@ where
                 engine_ids,
             )?),
             created_at: Set(Utc::now().naive_utc()),
-            position: Set(position),
+            position: Set(Some(position)),
         }
         .insert(dbx)
         .await
@@ -865,7 +866,7 @@ fn engine_record(engine: &ProfileEngine) -> ai_engine::Model {
         callsign_enabled: engine.callsign_enabled,
         ocr_enabled: false,
         ocr_request_profile: "openai_vision".to_string(),
-        unhealthy: false,
+        unhealthy: None,
         health_message: None,
         health_updated_at: None,
         health_updated_by_login_id: None,
