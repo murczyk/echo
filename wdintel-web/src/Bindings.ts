@@ -298,6 +298,7 @@ export type ServerInfo = {
   grafanaAddress: string;
   featureDelta: boolean;
   featureAnalysisMap: boolean;
+  enableDutySearch: boolean;
   featureStrictNetworks: boolean;
   featureMyAdminGroupsEdit: boolean;
   version: string;
@@ -1396,6 +1397,8 @@ export type RerDutyQueryState = {
 };
 
 export type RerDutyQueryStateWf = {
+  search: string | null;
+  searchMode: AnalysisSearchMode | null;
   groupsSelected: Array<string> | null;
   groupsDenied: Array<string> | null;
   sendersSelected: Array<string> | null;
@@ -1496,6 +1499,8 @@ export type BatchSignalProfileReq = {
 };
 
 export type InboxMessagesRsp = {
+  historySinceMs: number | null;
+  historyPeriodMs: number | null;
   inboxItems: Array<[number, InboxMessage]>;
   pollCursorId: number | null;
   callsigns: Array<CallsignInfoRes>;
@@ -5883,6 +5888,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
@@ -5899,6 +5905,7 @@ export type SystemSettingsCurrentRsp = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5930,6 +5937,7 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -5949,6 +5957,7 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5985,6 +5994,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -6004,6 +6014,7 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   dutySelectedGroupsEnabled: boolean | null;
+  enableDutySearch: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number | null;

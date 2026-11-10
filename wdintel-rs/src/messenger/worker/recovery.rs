@@ -3082,6 +3082,7 @@ mod tests {
         autofix_echoim_missing_messages: bool,
     ) -> system_settings::Model {
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(true),
             created_at: Set(Utc::now().naive_utc()),
@@ -3132,6 +3133,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            enable_duty_search: Set(None),
             duty_selected_groups_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),

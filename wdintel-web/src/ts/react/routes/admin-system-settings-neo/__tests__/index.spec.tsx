@@ -255,6 +255,24 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(saveButton?.disabled).toBe(true);
     await act(async () => root.unmount());
   });
+  it('#3938 defaults documentation B2-only delivery off and persists the administrator choice', async () => {
+    const first = await renderPage();
+    const checkbox = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) =>
+          label.textContent?.includes('Завантажувати медіа документації безпосередньо з B2'),
+        )
+        ?.querySelector<HTMLInputElement>('input');
+    expect(checkbox(first.container)?.checked).toBe(false);
+    await act(async () => checkbox(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ docMediaServeFromB2: true }));
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, docMediaServeFromB2: true }]);
+    const reloaded = await renderPage();
+    expect(checkbox(reloaded.container)?.checked).toBe(true);
+    await act(async () => reloaded.root.unmount());
+  });
   it('saves the bot tag toggle', async () => {
     const { container, root } = await renderPage();
     const checkbox = botTagsSwitch(container);
@@ -348,6 +366,24 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.list.mockResolvedValue([{ id: 2, deleted: false, dutyExcludeMenuEnabled: false }]);
     const reloaded = await renderPage();
     expect(menuToggle(reloaded.container)?.checked).toBe(false);
+    await act(async () => reloaded.root.unmount());
+  });
+
+  it('#3571 saves Duty search in system settings and reloads the choice', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const first = await renderPage();
+    const searchToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Пошук в оперативному'))
+        ?.querySelector<HTMLInputElement>('input');
+    expect(searchToggle(first.container)?.checked).toBe(false);
+    await act(async () => searchToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ enableDutySearch: true }));
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, enableDutySearch: true }]);
+    const reloaded = await renderPage();
+    expect(searchToggle(reloaded.container)?.checked).toBe(true);
     await act(async () => reloaded.root.unmount());
   });
 

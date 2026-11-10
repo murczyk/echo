@@ -83,6 +83,8 @@ export function inboxRsp(
   pollCursorId: number | null = items.at(-1)?.[0] ?? 1,
 ): InboxMessagesRsp {
   return {
+    historySinceMs: null,
+    historyPeriodMs: null,
     inboxItems: items,
     pollCursorId,
     callsigns: [],
@@ -111,8 +113,10 @@ export function DutyFeedStateHarness(props: {
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
   setGroupInfos?: Parameters<typeof useRerDutyFeedState>[0]['setGroupInfos'];
   deviceAccess?: DeviceAccess;
+  enableDutySearch?: boolean;
 }) {
   const api = useRerDutyFeedState({
+    enableDutySearch: props.enableDutySearch,
     freqs: props.freqs ?? [],
     freqsReady: props.freqsReady ?? true,
     setProfiles: props.setProfiles ?? vi.fn(),

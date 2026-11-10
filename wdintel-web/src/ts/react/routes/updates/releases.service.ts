@@ -47,7 +47,21 @@ export async function fetchReleaseMarkdown(releaseId: string): Promise<string> {
 }
 
 export function resolveReleaseMediaUrl(releaseId: string, href: string): string {
-  if (isAbsoluteUrl(href)) return href;
-  const cleaned = href.replace(/^\.\//, '').replace(/^\/+/, '');
-  return `${releasesRoot}/${encodeURIComponent(releaseId)}/${cleaned}`;
+  if (isAbsoluteUrl(href) || href.startsWith('/doc-media/')) return href;
+  const suffixIndex = href.search(/[?#]/);
+  const path = suffixIndex < 0 ? href : href.slice(0, suffixIndex);
+  const suffix = suffixIndex < 0 ? '' : href.slice(suffixIndex);
+  if (!/\.(?:mp4|webm|jpe?g|png|mp3|gif|svg|ico)$/i.test(path)) return href;
+  const cleaned = path.replace(/^\.\//, '').replace(/^\/+/, '');
+  const encoded = `docs/releases/${releaseId}/${cleaned}`
+    .split('/')
+    .map((segment) => {
+      try {
+        return encodeURIComponent(decodeURIComponent(segment));
+      } catch {
+        return encodeURIComponent(segment);
+      }
+    })
+    .join('/');
+  return `/doc-media/${encoded}${suffix}`;
 }

@@ -25,9 +25,9 @@ use actix_web::{post, web::Json};
 use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseBackend, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    QueryFilter, QueryOrder, Statement, TransactionTrait,
+    sea_query::Expr, ActiveModelTrait, ActiveValue::Set, ColumnTrait,
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,6 +152,9 @@ fn map_system_settings_item(
         peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
         peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
         devices_section_enabled: settings.devices_section_enabled,
+        doc_media_serve_from_b2: settings
+            .doc_media_serve_from_b2
+            .unwrap_or(false),
         echo_restapi_error_discord_webhook_url: settings
             .echo_restapi_error_discord_webhook_url,
         sigint_comment_parsing_enabled: settings.sigint_comment_parsing_enabled,
@@ -211,6 +214,7 @@ fn map_system_settings_item(
         ai_position_highlights_enabled: settings
             .ai_position_highlights_enabled
             .unwrap_or(false),
+        enable_duty_search: settings.enable_duty_search.unwrap_or(false),
         duty_selected_groups_enabled: settings
             .duty_selected_groups_enabled
             .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
@@ -246,6 +250,43 @@ where
         .one(dbx)
         .await
         .c(h!())?)
+}
+
+pub async fn duty_search_enabled<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.enable_duty_search)
+        .unwrap_or(false))
+}
+
+pub async fn import_legacy_duty_search_config<C>(
+    dbx: &C,
+    config: &crate::config::Config,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let Some(enabled) = config.enable_duty_search else {
+        return Ok(());
+    };
+    system_settings::Entity::update_many()
+        .col_expr(
+            system_settings::Column::EnableDutySearch,
+            Expr::value(enabled),
+        )
+        .filter(system_settings::Column::Deleted.eq(false))
+        .filter(system_settings::Column::EnableDutySearch.is_null())
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    log::info!(
+        "Duty search is controlled by system settings; imported enable_duty_search from config.toml if unset; remove the legacy key from config.toml"
+    );
+    Ok(())
 }
 
 pub async fn two_factor_auth_enabled<C>(dbx: &C) -> anyhow::Result<bool>
@@ -790,6 +831,7 @@ fn system_settings_active_model(
         peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
         peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
         devices_section_enabled: Set(req.devices_section_enabled),
+        doc_media_serve_from_b2: Set(Some(req.doc_media_serve_from_b2)),
         echo_restapi_error_discord_webhook_url: Set(
             normalize_optional_setting(
                 req.echo_restapi_error_discord_webhook_url.as_deref(),
@@ -829,6 +871,7 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
+        enable_duty_search: Set(req.enable_duty_search),
         duty_selected_groups_enabled: Set(req.duty_selected_groups_enabled),
         important_notify_all_enabled: Set(req.important_notify_all_enabled),
         api_rate_limit_replenish_interval_ms: Set(Some(
@@ -937,6 +980,15 @@ async fn create_system_settings_for_login(
             })
             .unwrap_or(false),
     );
+    req.enable_duty_search = Some(
+        req.enable_duty_search
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .and_then(|settings| settings.enable_duty_search)
+            })
+            .unwrap_or(false),
+    );
     req.duty_selected_groups_enabled = Some(
         req.duty_selected_groups_enabled
             .or_else(|| {
@@ -1002,6 +1054,14 @@ async fn activate_system_settings_for_login(
         &mut settings,
         active.as_ref(),
     );
+    if target.enable_duty_search.is_none() {
+        settings.enable_duty_search = Set(Some(
+            active
+                .as_ref()
+                .and_then(|settings| settings.enable_duty_search)
+                .unwrap_or(false),
+        ));
+    }
     settings.deleted = Set(false);
     settings.updated_by_login_id = Set(Some(*login));
     settings.updated_at = Set(now_utc());
@@ -1085,6 +1145,9 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
             devices_section_enabled: settings.devices_section_enabled,
+            doc_media_serve_from_b2: settings
+                .doc_media_serve_from_b2
+                .unwrap_or(false),
             sigint_comment_parsing_enabled: settings
                 .sigint_comment_parsing_enabled,
             do_not_store_duplicate_echoim_failures: settings
@@ -1123,6 +1186,7 @@ pub async fn current_system_settings(
             ai_position_highlights_enabled: settings
                 .ai_position_highlights_enabled
                 .unwrap_or(false),
+            enable_duty_search: settings.enable_duty_search.unwrap_or(false),
             duty_selected_groups_enabled: settings
                 .duty_selected_groups_enabled
                 .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
@@ -1154,6 +1218,7 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
             devices_section_enabled: false,
+            doc_media_serve_from_b2: false,
             sigint_comment_parsing_enabled: false,
             do_not_store_duplicate_echoim_failures: false,
             goi_association_message_uid_worker_enabled: false,
@@ -1170,6 +1235,7 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
+            enable_duty_search: false,
             duty_selected_groups_enabled: DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
             important_notify_all_enabled: IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
             api_rate_limit_replenish_interval_ms:
@@ -1350,6 +1416,53 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3571_duty_search_import_preserves_admin_settings() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let historical =
+            insert_settings(&env.dbx, Utc::now().naive_utc(), true).await;
+        insert_settings(&env.dbx, Utc::now().naive_utc(), false).await;
+        assert!(!duty_search_enabled(&env.dbx).await.unwrap());
+
+        let mut config = env.config.clone();
+        config.enable_duty_search = Some(true);
+        import_legacy_duty_search_config(&env.dbx, &config)
+            .await
+            .unwrap();
+        assert!(duty_search_enabled(&env.dbx).await.unwrap());
+
+        let mut req = settings_req(false);
+        let saved = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(map_system_settings_item(saved).unwrap().enable_duty_search);
+        activate_system_settings_for_login(&env.dbx, &login, historical.id)
+            .await
+            .unwrap();
+        assert!(duty_search_enabled(&env.dbx).await.unwrap());
+
+        req.enable_duty_search = Some(false);
+        let disabled = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        import_legacy_duty_search_config(&env.dbx, &config)
+            .await
+            .unwrap();
+        assert!(!duty_search_enabled(&env.dbx).await.unwrap());
+
+        req.enable_duty_search = Some(true);
+        create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        activate_system_settings_for_login(&env.dbx, &login, disabled.id)
+            .await
+            .unwrap();
+        assert!(!duty_search_enabled(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]
@@ -2367,6 +2480,50 @@ mod tests {
             - chrono::TimeDelta::hours(2)
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn issue_3938_doc_media_setting_preserves_defaults_and_historical_activation(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut req = settings_req(false);
+        let initial = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(
+            !map_system_settings_item(initial.clone())
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        let mut legacy: system_settings::ActiveModel = initial.clone().into();
+        legacy.doc_media_serve_from_b2 = Set(None);
+        let legacy = legacy.update(&env.dbx).await.unwrap();
+        assert!(
+            !map_system_settings_item(legacy)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        req.doc_media_serve_from_b2 = true;
+        let enabled = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(
+            map_system_settings_item(enabled)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        let restored =
+            activate_system_settings_for_login(&env.dbx, &login, initial.id)
+                .await
+                .unwrap();
+        assert!(
+            !map_system_settings_item(restored)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+    }
+
     fn settings_req(short_url_enabled: bool) -> CreateSystemSettingsReq {
         CreateSystemSettingsReq {
             rer_analysis_units_exact_match_only_default: true,
@@ -2382,6 +2539,7 @@ mod tests {
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
             devices_section_enabled: false,
+            doc_media_serve_from_b2: false,
             peleng_bounds_enabled: false,
             peleng_bounds_top_left_lat: None,
             peleng_bounds_top_left_lng: None,
@@ -2406,6 +2564,7 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
+            enable_duty_search: None,
             duty_selected_groups_enabled: Some(true),
             important_notify_all_enabled: Some(true),
             api_rate_limit_replenish_interval_ms: Some(
@@ -2450,6 +2609,7 @@ mod tests {
         deleted: bool,
     ) -> system_settings::Model {
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(true),
             created_at: Set(Utc::now().naive_utc()),
@@ -2498,6 +2658,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            enable_duty_search: Set(None),
             duty_selected_groups_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             api_rate_limit_replenish_interval_ms: Set(None),

@@ -26,10 +26,12 @@ type SystemSettingsItemRaw = {
   show_peleng_distance_to_battleline?: boolean;
   disable_bot_tags?: boolean | null;
   hide_networks?: boolean | null;
+  doc_media_serve_from_b2?: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search?: SystemSettingsCurrentRsp['enableDutySearch'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -79,10 +81,12 @@ type SystemSettingsCurrentRspRaw = {
   hide_orbit_data?: boolean;
   disable_bot_tags?: boolean | null;
   hide_networks?: boolean | null;
+  doc_media_serve_from_b2?: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search?: SystemSettingsCurrentRsp['enableDutySearch'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -124,10 +128,12 @@ type CreateSystemSettingsReqRaw = {
   show_peleng_distance_to_battleline: boolean;
   disable_bot_tags: boolean;
   hide_networks: boolean;
+  doc_media_serve_from_b2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   duty_selected_groups_enabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search: SystemSettingsCurrentRsp['enableDutySearch'] | null;
   important_notify_all_enabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -184,10 +190,12 @@ export type SystemSettingsItem = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch: SystemSettingsCurrentRsp['enableDutySearch'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -237,10 +245,12 @@ export type SystemSettingsCurrent = {
   hideOrbitData: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch: SystemSettingsCurrentRsp['enableDutySearch'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -278,10 +288,12 @@ export type CreateSystemSettingsInput = {
   showPelengDistanceToBattleline?: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch?: SystemSettingsCurrentRsp['enableDutySearch'];
   importantNotifyAllEnabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -335,10 +347,12 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     showPelengDistanceToBattleline: raw.show_peleng_distance_to_battleline ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
     hideNetworks: raw.hide_networks ?? false,
+    docMediaServeFromB2: raw.doc_media_serve_from_b2 ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
+    enableDutySearch: raw.enable_duty_search ?? false,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -390,10 +404,12 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     hideOrbitData: raw.hide_orbit_data ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
     hideNetworks: raw.hide_networks ?? false,
+    docMediaServeFromB2: raw.doc_media_serve_from_b2 ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
+    enableDutySearch: raw.enable_duty_search ?? false,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -440,10 +456,12 @@ export async function createSystemSettings(
     show_peleng_distance_to_battleline: input.showPelengDistanceToBattleline ?? false,
     disable_bot_tags: input.disableBotTags,
     hide_networks: input.hideNetworks,
+    doc_media_serve_from_b2: input.docMediaServeFromB2 ?? false,
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
     duty_selected_groups_enabled: input.dutySelectedGroupsEnabled ?? null,
+    enable_duty_search: input.enableDutySearch ?? null,
     important_notify_all_enabled: input.importantNotifyAllEnabled ?? null,
     api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs,
     api_rate_limit_burst_size: input.apiRateLimitBurstSize,

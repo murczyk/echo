@@ -36,6 +36,7 @@ pub mod config;
 pub mod datasource;
 pub mod delta;
 pub mod devices;
+mod doc_media;
 pub mod elm;
 pub mod entities;
 pub mod error;

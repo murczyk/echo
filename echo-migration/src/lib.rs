@@ -16,6 +16,7 @@ mod m20261031_155820_api_sender;
 mod m20261101_151245_ai_agent_uploads;
 mod m20261104_165252_rer_report_unit_selection;
 mod m20261105_212108_iggy_group_refresh_queue;
+mod m20261107_150035_doc_media_settings;
 mod m20261107_175019_duty_selected_groups_flag;
 mod m20261109_141057_group_message_sending;
 mod m20261110_072243_ai_engine_health_and_agent_order;
@@ -543,6 +544,7 @@ mod m20261010_110158_ai_settlement_worker_groups;
 mod m20261104_083000_group_message_requirements;
 mod m20261107_175132_important_only_my_organism;
 mod m20261108_090102_signoz_metrics_settings;
+mod m20261109_104328_duty_search_settings;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1243,6 +1245,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_175132_important_only_my_organism::Migration),
             Box::new(m20261108_090102_signoz_metrics_settings::Migration),
             Box::new(m20261109_141057_group_message_sending::Migration),
+            Box::new(m20261107_150035_doc_media_settings::Migration),
+            Box::new(m20261109_104328_duty_search_settings::Migration),
             Box::new(m20261110_072243_ai_engine_health_and_agent_order::Migration),
         ]
     }

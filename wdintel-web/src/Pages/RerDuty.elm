@@ -477,7 +477,9 @@ subscriptions model =
 
 emptyWaterfallQueryStateWf : B.RerDutyQueryStateWf
 emptyWaterfallQueryStateWf =
-    { groupsSelected = Nothing
+    { search = Nothing
+    , searchMode = Nothing
+    , groupsSelected = Nothing
     , groupsDenied = Nothing
     , sendersSelected = Nothing
     , deniedSenders = Nothing
@@ -504,7 +506,9 @@ emptyWaterfallQueryStateWf =
 
 waterfallQueryState : Pages_.RerDuty.Waterfall.Model -> B.RerDutyQueryStateWf
 waterfallQueryState wf =
-    { groupsSelected = Just wf.groupsSelected
+    { search = Nothing
+    , searchMode = Nothing
+    , groupsSelected = Just wf.groupsSelected
     , groupsDenied = Nothing
     , sendersSelected = Just wf.sendersSelect.selected
     , deniedSenders = Just wf.sendersDeniedSelect.selected

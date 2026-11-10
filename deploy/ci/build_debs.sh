@@ -120,6 +120,8 @@ if [ -f "docs/echo-docs/Cargo.toml" ]; then
     (cd docs && zola build)
   fi
 
+  python3 deploy/doc_media.py prepare --docs-public docs/public
+
   if [ -n "$doc_version_epoch" ]; then
     find docs/public -exec touch -d "@$doc_version_epoch" {} +
   fi

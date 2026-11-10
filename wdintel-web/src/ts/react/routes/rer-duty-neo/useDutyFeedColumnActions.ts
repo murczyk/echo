@@ -84,6 +84,8 @@ export function useDutyFeedColumnActions(
     // Refresh the latest closures (capturing current feed/state) every render.
     implsRef.current[feedId] = {
       onLoadOlder: () => loadFeedOlderMessages(feedId),
+      onLoadHistory: () =>
+        deps.feeds.enableDutySearch ? loadFeedOlderMessages(feedId, true) : undefined,
       onLoadNewer: () =>
         loadFeedNewerMessages(feedId, { skipIfNewestExhausted: true, showLoading: false }),
       onFlushPendingNewer: ({ physicallyAtBottom, visibleAnchorIds }) =>
@@ -212,6 +214,7 @@ export function useDutyFeedColumnActions(
     const latest = () => implsRef.current[feedId];
     const stable: FeedColumnModel['actions'] = {
       onLoadOlder: () => latest().onLoadOlder(),
+      onLoadHistory: () => latest().onLoadHistory?.(),
       onLoadNewer: () => latest().onLoadNewer?.(),
       onFlushPendingNewer: (context) => latest().onFlushPendingNewer?.(context),
       onRemoveColumn: () => latest().onRemoveColumn(),

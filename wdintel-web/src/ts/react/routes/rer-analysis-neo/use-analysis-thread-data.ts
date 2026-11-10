@@ -21,6 +21,8 @@ import { toErrorMessage } from './use-analysis-data.shared';
 const THREAD_BATCH_SIZE = 100;
 const THREAD_REFRESH_INTERVAL_MS = 30_000;
 const emptyInbox = (): InboxMessagesRsp => ({
+  historySinceMs: null,
+  historyPeriodMs: null,
   inboxItems: [],
   signalGroups: [],
   signalProfiles: {},
