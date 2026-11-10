@@ -548,7 +548,12 @@ export function useAnalysisData({
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
-  const referenceState = useAnalysisReferenceState({ shouldLoadNewCallsigns, onError });
+  const messagesRef = useRef<Array<[number, InboxMessage]>>([]);
+  const referenceState = useAnalysisReferenceState({
+    messagesRef,
+    shouldLoadNewCallsigns,
+    onError,
+  });
   const thread = useAnalysisThreadData({
     messageId: threadMessageId,
     enabled: !deferInitialLoad && currentUser != null && authUserName != null,
@@ -642,6 +647,7 @@ export function useAnalysisData({
     setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
+  messagesRef.current = messageList.messages;
   useEffect(() => {
     if (!threadActive) return;
     messageList.setMessages(thread.messages);
@@ -668,24 +674,23 @@ export function useAnalysisData({
     );
     referenceState.setTagsMap(thread.tags.tagsMap);
     referenceState.setTagsOrder(thread.tags.tagsOrder);
-    referenceState.setUnitsMap(thread.units);
     referenceState.setSummaryCallsignsInfo(
       Object.fromEntries(thread.inbox.callsigns.map((callsign) => [callsign.callsign, callsign])),
     );
-    void loadMissingNetworksForMessages(thread.messages);
   }, [
     threadActive,
     thread.messages,
     thread.options,
     thread.inbox,
     thread.tags,
-    thread.units,
     thread.loading,
     messageList.setMessages,
     messageList.setHasLoadedInitialMessages,
     messageList.setNoMoreToLoad,
-    loadMissingNetworksForMessages,
   ]);
+  useEffect(() => {
+    if (threadActive) void loadMissingNetworksForMessages(thread.messages);
+  }, [threadActive, thread.messages, loadMissingNetworksForMessages]);
   const realtimeMessageWindowRef = useRef({
     messages: messageList.messages,
     firstLoadedMessageIndex: messageList.firstLoadedMessageIndex,

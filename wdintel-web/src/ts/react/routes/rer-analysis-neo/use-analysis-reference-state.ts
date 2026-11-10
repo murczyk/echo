@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 
 import type {
   CallsignInfoRes,
+  InboxMessage,
   Network,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -20,12 +21,18 @@ import {
 import { toErrorMessage } from './use-analysis-data.shared';
 
 type Params = {
+  messagesRef: MutableRefObject<Array<[number, InboxMessage]>>;
   shouldLoadNewCallsigns: boolean;
   onError: (message: string) => void;
 };
 
-export function useAnalysisReferenceState({ shouldLoadNewCallsigns, onError }: Params) {
+export function useAnalysisReferenceState({
+  messagesRef,
+  shouldLoadNewCallsigns,
+  onError,
+}: Params) {
   const [loadUnitsByIds] = useState(createUnitLookupCache);
+  const [catalogRevision, setCatalogRevision] = useState(unitCatalogRevision);
   const [options, setOptions] = useState<AnalysisFilterOptions>(emptyOptions);
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
   const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
@@ -48,9 +55,15 @@ export function useAnalysisReferenceState({ shouldLoadNewCallsigns, onError }: P
   useEffect(() => {
     const controller = new AbortController();
     const revision = unitCatalogRevision();
-    const ids = Object.values(summaryCallsignsInfo).flatMap(({ res }) =>
-      res.flatMap(({ unitId }) => (unitId == null ? [] : [unitId])),
-    );
+    const ids = [
+      ...new Set([
+        ...messagesRef.current.flatMap(([, message]) => message.unitIds ?? []),
+        ...networks.flatMap((network) => network.unitIds ?? []),
+        ...Object.values(summaryCallsignsInfo).flatMap(({ res }) =>
+          res.flatMap(({ unitId }) => (unitId == null ? [] : [unitId])),
+        ),
+      ]),
+    ];
     if (ids.length === 0) return;
     void loadUnitsByIds(ids, { signal: controller.signal })
       .then((units) => {
@@ -70,10 +83,13 @@ export function useAnalysisReferenceState({ shouldLoadNewCallsigns, onError }: P
         }
       });
     return () => controller.abort();
-  }, [loadUnitsByIds, summaryCallsignsInfo]);
+  }, [catalogRevision, loadUnitsByIds, messagesRef, networks, summaryCallsignsInfo]);
 
   useEffect(() => {
-    const changed = () => setUnitsMap({});
+    const changed = () => {
+      setUnitsMap({});
+      setCatalogRevision(unitCatalogRevision());
+    };
     window.addEventListener(UNIT_CATALOG_CHANGED_EVENT, changed);
     return () => window.removeEventListener(UNIT_CATALOG_CHANGED_EVENT, changed);
   }, []);

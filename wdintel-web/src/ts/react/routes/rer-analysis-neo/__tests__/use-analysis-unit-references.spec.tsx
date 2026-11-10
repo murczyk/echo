@@ -1,13 +1,13 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement, useRef, useState } from 'react';
+import { act, createElement, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallsignInfoRes, InboxMessage, Network, Unit } from '../../../../../Bindings';
 import { getUnitsByIds } from '../../../services/api/units';
 import { fetchNetworksByIds } from '../../../services/api/analysis';
-import { invalidateUnitCatalog } from '../../../services/unit-catalog-events';
+import { invalidateUnitCatalog, reconcileUnitCatalog } from '../../../services/unit-catalog-events';
 import { useAnalysisReferenceState } from '../use-analysis-reference-state';
 import { useLoadMissingNetworksForMessages } from '../use-analysis-data.support';
 
@@ -22,21 +22,26 @@ describe('Analysis unit reference regression #3571', () => {
   let loadedNetworks: Network[];
   const onError = vi.fn();
 
-  function Harness({ scopeKey = 'original' }: { scopeKey?: string }) {
-    references = useAnalysisReferenceState({ shouldLoadNewCallsigns: false, onError });
-    const [networks, setNetworks] = useState<Network[]>([]);
-    const networksRef = useRef(networks);
-    networksRef.current = networks;
-    loadedNetworks = networks;
+  function Harness({
+    scopeKey = 'original',
+    messages = [],
+  }: {
+    scopeKey?: string;
+    messages?: Array<[number, InboxMessage]>;
+  }) {
+    const messagesRef = useRef(messages);
+    messagesRef.current = messages;
+    references = useAnalysisReferenceState({ messagesRef, shouldLoadNewCallsigns: false, onError });
+    loadedNetworks = references.networks;
     hydrate = useLoadMissingNetworksForMessages({
       scopeKey,
       hideNetworks: false,
       loadUnitsByIds: references.loadUnitsByIds,
       setUnitsMap: references.setUnitsMap,
       unitsMap: references.unitsMap,
-      networksRef,
-      setNetworks,
-      setNetworkDisplayMap: vi.fn(),
+      networksRef: references.networksRef,
+      setNetworks: references.setNetworks,
+      setNetworkDisplayMap: references.setNetworkDisplayMap,
       onError,
       onUnauthorized: () => false,
     });
@@ -66,9 +71,10 @@ describe('Analysis unit reference regression #3571', () => {
     );
     expect(references.unitsMap[7]?.name).toBe('Callsign unit');
     expect(getUnitsByIds).toHaveBeenCalledTimes(1);
+    vi.mocked(getUnitsByIds).mockResolvedValue([]);
     await act(async () => invalidateUnitCatalog());
     expect(references.unitsMap[7]).toBeUndefined();
-    vi.mocked(getUnitsByIds).mockResolvedValue([]);
+    expect(getUnitsByIds).toHaveBeenCalledTimes(2);
     await act(async () =>
       references.setSummaryCallsignsInfo({
         alpha: { res: [{ unitId: 7 }] } as CallsignInfoRes,
@@ -76,6 +82,41 @@ describe('Analysis unit reference regression #3571', () => {
     );
     expect(references.unitsMap[7]).toBeUndefined();
   });
+
+  it.each(['original', ''])(
+    'rehydrates current message, network and callsign units after window-only reconciliation with nonce "%s"',
+    async (nonce) => {
+      await act(async () => reconcileUnitCatalog(`1:${nonce}`, false));
+      const oldUnits = [3, 5, 7, 9].map((id) => ({ id, name: `Old unit ${id}` }) as Unit);
+      vi.mocked(getUnitsByIds).mockResolvedValue(oldUnits);
+      await act(async () => {
+        root.render(
+          createElement(Harness, {
+            messages: [[1, { unitIds: [3, 9] } as InboxMessage]],
+          }),
+        );
+        references.setNetworks([{ id: 11, name: 'Network', unitIds: [5] } as Network]);
+        references.setSummaryCallsignsInfo({
+          alpha: { res: [{ unitId: 7 }] } as CallsignInfoRes,
+        });
+      });
+      expect(references.networkDisplayMap[11]).toContain('Old unit 5');
+      const refreshedUnits = [3, 5, 7].map((id) => ({ id, name: `Fresh unit ${id}` }) as Unit);
+      vi.mocked(getUnitsByIds).mockClear().mockResolvedValue(refreshedUnits);
+
+      await act(async () => reconcileUnitCatalog(`2:${nonce}`, false));
+
+      expect(getUnitsByIds).toHaveBeenCalledExactlyOnceWith(
+        expect.arrayContaining([3, 5, 7, 9]),
+        expect.objectContaining({ signal: expect.anything() }),
+      );
+      expect(references.unitsMap).toEqual(
+        Object.fromEntries(refreshedUnits.map((unit) => [unit.id, unit])),
+      );
+      expect(references.networkDisplayMap[11]).toContain('Fresh unit 5');
+      expect(onError).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['scope', 'scope-return', 'catalog', 'unmount'])(
     'discards network hydration after %s changes',
