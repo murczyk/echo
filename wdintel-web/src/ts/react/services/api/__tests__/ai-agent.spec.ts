@@ -25,6 +25,7 @@ import {
   testAiAgentDispatcher,
   updateAiAgentConversation,
   normalizeAiAgentEvent,
+  getAiAgentConfiguration,
   getAiAgentMap,
   downloadAiAgentMap,
 } from '../ai-agent';
@@ -37,6 +38,39 @@ afterEach(() => {
 });
 
 describe('AI agent API mapping', () => {
+  it('#4112 keeps engine health and model-failure reasons', async () => {
+    mocks.getJson.mockResolvedValue({
+      featureEnabled: true,
+      reasoningPresetsEnabled: false,
+      defaultAiEngineId: 'glm',
+      providers: [
+        {
+          id: 'glm',
+          name: 'GLM-5.3',
+          modelName: 'glm-5.3',
+          unhealthy: true,
+          healthMessage: 'Шлюз',
+        },
+        { id: 'flash', name: 'Flash', modelName: 'flash' },
+      ],
+    });
+    const configuration = await getAiAgentConfiguration();
+    expect(configuration.providers.map((item) => [item.unhealthy, item.healthMessage])).toEqual([
+      [true, 'Шлюз'],
+      [false, null],
+    ]);
+    const event = normalizeAiAgentEvent(
+      {
+        sequence: 2,
+        eventType: 'completion_metadata',
+        createdAt: 1,
+        payloadJson: JSON.stringify({ coverageLimited: false, reason: 'model_refusal' }),
+      },
+      'request-1',
+    );
+    expect(event.completionMetadata).toEqual({ coverageLimited: false, reason: 'model_refusal' });
+  });
+
   it('#3064 exposes map summaries in replay and retrieves/downloads with the request identity', async () => {
     const summary = {
       id: '11111111-1111-4111-8111-111111111111',

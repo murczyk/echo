@@ -78,8 +78,15 @@ when queued, including actual effort, transport, runtime, and finalization
 reserve. They survive later host configuration changes. Completion metadata
 records limited coverage and its cause: `time_limit`, `tool_limit`,
 `context_limit`, `provider_error`, or `incomplete_research` when Fast or Balanced
-research ended with remaining gaps or a fallback answer without reaching a limit. Conversation
-reload restores the selected preset, worker start time, and completion metadata.
+research ended with remaining gaps or a fallback answer without reaching a limit.
+Echo also records `model_refusal` with `coverageLimited: false` (#4112): on a finished
+answer whose opening declines an operational request (`wdintel-rs/src/ai_agent/refusal.rs`,
+patterns in `config.rs` under `AI_AGENT_REFUSAL_`), and on a run that failed after the
+runner reported a content filter. A run that failed after a provider error or rate limit
+records `provider_error` the same way, and so does research that only fell back to a saved
+draft (`incomplete_research`) because the provider kept failing without a later reply.
+The chat offers another model for both reasons.
+Conversation reload restores the selected preset, worker start time, and completion metadata.
 
 The new modes use the selected provider for checkpoints. Luna's vision role,
 the document extractor, engine token profiles, and the configured default

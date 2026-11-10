@@ -59,6 +59,8 @@ pub enum Relation {
     AiCallsignReparseRun,
     #[sea_orm(has_many = "super::ai_chat::Entity")]
     AiChat,
+    #[sea_orm(has_many = "super::ai_engine::Entity")]
+    AiEngine,
     #[sea_orm(has_many = "super::ai_intel_report_attempt::Entity")]
     AiIntelReportAttempt,
     #[sea_orm(has_many = "super::ai_position_feedback::Entity")]
@@ -280,6 +282,12 @@ impl Related<super::ai_callsign_reparse_run::Entity> for Entity {
 impl Related<super::ai_chat::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiChat.def()
+    }
+}
+
+impl Related<super::ai_engine::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiEngine.def()
     }
 }
 

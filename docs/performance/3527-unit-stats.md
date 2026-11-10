@@ -60,9 +60,10 @@ UNION ALL. Filtering links by membership avoids multiplying joined rows and
 keeps the linked-count hash state below the gateway's per-query memory limit.
 This preserves distinct-message counts across multiple link kinds and includes
 messages whose only unit links target deleted units in the undefined bucket.
-Both aggregates and their union must remain pushed into ClickHouse. An outer
-aggregate over a DISTINCT-message subquery joined to a unit-link subquery can
-instead transfer millions of rows to PostgreSQL for a local hash join and sort.
+Each aggregate must remain pushed into ClickHouse. An outer aggregate over a
+DISTINCT-message subquery joined to a unit-link subquery can instead transfer
+millions of rows to PostgreSQL for a local hash join and sort. The UNION itself
+must not be pushed down; see below.
 
 Read-only EXPLAIN on Skhid's gateway showed a single Foreign Scan for the new
 union, with both aggregates remote; the former shape had two Foreign Scans
@@ -73,28 +74,22 @@ seconds including SSH overhead, under the existing 2.2-GiB query memory limit.
 A flat multi-table inner-join alternative still exceeded that memory limit;
 the membership query is necessary as well as aggregate pushdown. This is one
 measurement under incident load, not a latency guarantee. Keep representative
-gateway plan checks alongside source checks when changing this query.
+gateway plan checks alongside source checks when changing this query. The
+deployed query does not produce that single scan: its two aggregates run as
+separate Foreign Scans, as described below.
 
-The undefined arm must emit `bigint` and `text` constants to match the linked
-arm. An untyped `0` or string literal makes PostgreSQL wrap that arm in a
-coercing Subquery Scan, which pg_clickhouse cannot push down: the gateway then
-plans an Append of two Foreign Scans and runs the arms one after the other. On
-Pivnich in November 2026 the sequential arms took 8 to 18 seconds each and
-reached the gateway's 25-second statement timeout under load (`pg_clickhouse:
-query was canceled`). With typed constants the same broad query ran as one
-Foreign Scan in 15.2 seconds, peaking at 2.01 GiB, 91.5% of the per-query
-memory limit. Larger scopes may reach that limit; such failures fall back to
-PostgreSQL quickly instead of waiting for the timeout.
-
-The rewritten recent-tail query was also checked locally with 1,000,000
-messages, 2,000,000 unit links and 1,000 units. A creation-time index scan
-selected 1,001 candidates; the linked aggregate sought the unit-link primary
-key for 11 accessible messages instead of scanning all links. The undefined
-aggregate used bounded indexed lookups. The combined query took 12.3 ms in
-that synthetic projection; this checks the access path rather than deployed
-latency.
-
-Unbounded source fallback counts use Duty's existing adaptive cutoff policy,
-including concrete unit-ID selections. They retain ordinary source admission;
-the bypass for the disjoint recent analytics tail is not used for a 14-day
-fallback. Explicit date bounds retain their original meaning.
+The two aggregates must stay separate gateway queries. The undefined arm emits
+an untyped `0` and name literal, so PostgreSQL wraps it in a coercing Subquery
+Scan that pg_clickhouse does not push down: the gateway plans an Append of two
+Foreign Scans and runs the arms one after the other, each with its own 2.2-GiB
+query memory limit. In November 2026 these constants were cast to `bigint` and
+`text` so the whole UNION became one Foreign Scan (#4086). That merged both
+hash states into one query: on Pivnich it peaked at 2.01 GiB, and on Skhid a
+23-group scope exceeded the limit on every execution while its sequential arms
+had used at most 1.14 and 1.75 GiB. The failures fell back to an already busy
+PostgreSQL source, and the change was reverted. Latency gained little: one
+query took 15.2 seconds against about 16 seconds sequential on Pivnich, and
+about 8 seconds either way on Skhid. A test pins the untyped constants. Do not
+merge the arms until the undefined arm's anti-join is narrowed to the scoped
+messages and per-scope peak memory is measured on every analytics host; see
+[the incident notes](../../archive/2026-11-09-3527-unit-stats-union-pushdown/README.md).

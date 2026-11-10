@@ -15746,6 +15746,9 @@ type alias AiEngineItem =
     , hasToken : Bool
     , createdAt : Int
     , updatedAt : Int
+    , unhealthy : Bool
+    , healthMessage : Maybe (String)
+    , healthUpdatedAt : Maybe (Int)
     }
 
 
@@ -15762,6 +15765,9 @@ aiEngineItemEncoder struct =
         , ( "hasToken", (Json.Encode.bool) struct.hasToken )
         , ( "createdAt", (Json.Encode.int) struct.createdAt )
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "unhealthy", (Json.Encode.bool) struct.unhealthy )
+        , ( "healthMessage", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.healthMessage )
+        , ( "healthUpdatedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.healthUpdatedAt )
         ]
 
 
@@ -15838,6 +15844,22 @@ updateAiEngineReqEncoder struct =
         , ( "enabled", (Json.Encode.bool) struct.enabled )
         , ( "callsignEnabled", (Json.Encode.bool) struct.callsignEnabled )
         , ( "ocrEnabled", (Json.Encode.bool) struct.ocrEnabled )
+        ]
+
+
+type alias UpdateAiEngineHealthReq =
+    { id : String
+    , unhealthy : Bool
+    , message : Maybe (String)
+    }
+
+
+updateAiEngineHealthReqEncoder : UpdateAiEngineHealthReq -> Json.Encode.Value
+updateAiEngineHealthReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "unhealthy", (Json.Encode.bool) struct.unhealthy )
+        , ( "message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.message )
         ]
 
 
@@ -16131,6 +16153,8 @@ type alias AiAgentProviderItem =
     , id : String
     , name : String
     , modelName : String
+    , unhealthy : Bool
+    , healthMessage : Maybe (String)
     }
 
 
@@ -16142,6 +16166,8 @@ aiAgentProviderItemEncoder struct =
         , ( "id", (Json.Encode.string) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "modelName", (Json.Encode.string) struct.modelName )
+        , ( "unhealthy", (Json.Encode.bool) struct.unhealthy )
+        , ( "healthMessage", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.healthMessage )
         ]
 
 
@@ -17016,6 +17042,8 @@ type alias AiAgentMessageItem =
     , maxRuntimeSeconds : Maybe (Int)
     , startedAt : Maybe (Int)
     , completionMetadata : Maybe (AiAgentCompletionMetadata)
+    , aiEngineId : Maybe (String)
+    , aiEngineName : Maybe (String)
     , requestId : String
     , requestState : String
     , role : String
@@ -17036,6 +17064,8 @@ aiAgentMessageItemEncoder struct =
         , ( "maxRuntimeSeconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.maxRuntimeSeconds )
         , ( "startedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.startedAt )
         , ( "completionMetadata", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentCompletionMetadataEncoder)) struct.completionMetadata )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "aiEngineName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineName )
         , ( "requestId", (Json.Encode.string) struct.requestId )
         , ( "requestState", (Json.Encode.string) struct.requestState )
         , ( "role", (Json.Encode.string) struct.role )
@@ -31219,6 +31249,9 @@ aiEngineItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasToken" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unhealthy" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "healthMessage" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "healthUpdatedAt" (Json.Decode.nullable (Json.Decode.int))))
 
 
 aiEngineListRspDecoder : Json.Decode.Decoder AiEngineListRsp
@@ -31257,6 +31290,14 @@ updateAiEngineReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsignEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocrEnabled" (Json.Decode.bool)))
+
+
+updateAiEngineHealthReqDecoder : Json.Decode.Decoder UpdateAiEngineHealthReq
+updateAiEngineHealthReqDecoder =
+    Json.Decode.succeed UpdateAiEngineHealthReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unhealthy" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiChatSummaryDecoder : Json.Decode.Decoder AiChatSummary
@@ -31409,6 +31450,8 @@ aiAgentProviderItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unhealthy" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "healthMessage" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentReasoningPresetDecoder : Json.Decode.Decoder AiAgentReasoningPreset
@@ -31875,6 +31918,8 @@ aiAgentMessageItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxRuntimeSeconds" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "startedAt" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completionMetadata" (Json.Decode.nullable (aiAgentCompletionMetadataDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestState" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))

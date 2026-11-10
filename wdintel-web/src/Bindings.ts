@@ -6131,6 +6131,9 @@ export type AiEngineItem = {
   hasToken: boolean;
   createdAt: number;
   updatedAt: number;
+  unhealthy: boolean;
+  healthMessage: string | null;
+  healthUpdatedAt: number | null;
 };
 
 export type AiEngineListRsp = {
@@ -6161,6 +6164,12 @@ export type UpdateAiEngineReq = {
   enabled: boolean;
   callsignEnabled: boolean;
   ocrEnabled: boolean;
+};
+
+export type UpdateAiEngineHealthReq = {
+  id: string;
+  unhealthy: boolean;
+  message: string | null;
 };
 
 export type AiChatSummary = {
@@ -6279,6 +6288,8 @@ export type AiAgentProviderItem = {
   id: string;
   name: string;
   modelName: string;
+  unhealthy: boolean;
+  healthMessage: string | null;
 };
 
 export type AiAgentReasoningPreset =
@@ -6627,6 +6638,8 @@ export type AiAgentMessageItem = {
   maxRuntimeSeconds: number | null;
   startedAt: number | null;
   completionMetadata: AiAgentCompletionMetadata | null;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
   requestId: string;
   requestState: string;
   role: string;

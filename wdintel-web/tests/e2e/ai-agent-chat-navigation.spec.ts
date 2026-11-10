@@ -1013,4 +1013,78 @@ for (const width of [1280, 320]) {
       'Збалансований',
     );
   });
+
+  test(`@regression #4112 offers another engine after a provider failure at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await installChat(page, true);
+    await page.route('**/api/ai-agent/configuration', (route) =>
+      route.fulfill({
+        json: {
+          featureEnabled: true,
+          defaultAiEngineId: 'engine',
+          providers: [
+            {
+              id: 'engine',
+              name: 'GLM-5.3',
+              modelName: 'glm-5.3',
+              unhealthy: true,
+              healthMessage: 'Державний шлюз не відповідає',
+            },
+            { id: 'flash', name: 'GLM-5.3 Flash', modelName: 'glm-5.3-flash-uncensored' },
+          ],
+        },
+      }),
+    );
+    await page.route('**/api/ai-agent/conversations/get', (route) =>
+      route.fulfill({
+        json: {
+          ...conversation,
+          messages: ['user', 'assistant'].map((role) => ({
+            requestId: 'request-failed',
+            requestState: 'completed',
+            role,
+            content: role === 'user' ? 'Де зараз позиції?' : 'Не вдалося підготувати відповідь.',
+            reasoningPreset: 'balanced',
+            aiEngineId: 'engine',
+            aiEngineName: 'GLM-5.3',
+            completionMetadata: { coverageLimited: true, reason: 'provider_error' },
+            createdAt: 1,
+          })),
+        },
+      }),
+    );
+    const submitted: { aiEngineId: string; prompt: string; conversationId: string }[] = [];
+    await page.route('**/api/ai-agent/requests/create', (route) => {
+      const { aiEngineId, prompt, conversationId: id } = route.request().postDataJSON();
+      submitted.push({ aiEngineId, prompt, conversationId: id });
+      return route.fulfill({
+        json: { requestId: 'request-flash', conversationId, state: 'queued' },
+      });
+    });
+    await page.goto(`/?conversation=${conversationId}`);
+    await expect(page.getByText('Провайдер не відповів')).toBeVisible();
+    await expect(
+      page.getByText('GLM-5.3 тимчасово недоступний: Державний шлюз не відповідає.'),
+    ).toBeVisible();
+    const fallback = page.getByRole('button', { name: 'Спробувати з GLM-5.3 Flash', exact: true });
+    await expect(fallback).toBeEnabled();
+    const box = await fallback.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    const preview = test.info().outputPath(`provider-fallback-${width}.png`);
+    await page.screenshot({ path: preview });
+    await test.info().attach(`Fixture preview: provider fallback at ${width}px`, {
+      path: preview,
+      contentType: 'image/png',
+    });
+
+    await fallback.click();
+    await expect
+      .poll(() => submitted)
+      .toEqual([{ aiEngineId: 'flash', prompt: 'Де зараз позиції?', conversationId }]);
+    await expect(page.getByRole('combobox', { name: 'Провайдер ШІ' })).toContainText(
+      'GLM-5.3 Flash',
+    );
+  });
 }
