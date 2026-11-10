@@ -136,6 +136,13 @@ and hidden reasoning are excluded. This also records successful requests that
 returned a fallback draft instead of a completed synthesis, and `research_text`
 answers that research wrote without tools.
 
+When a provider failure or content filter ends a run on any path, including
+OpenAI models outside bounded research, the runner reports it with stage
+`answer` and outcome `transient_error` or `content_filter` just before its
+error frame (`terminalProviderFailure`). The worker keeps the last such outcome
+and stores the failed request's completion reason as `provider_error` or
+`model_refusal`, so the chat can offer another model (#4112).
+
 Tool failures also emit private `tool_diagnostic` frames with an allowlisted
 reason code, a recognized tool name and an optional HTTP status. Failed argument
 validation adds `fields`: paths and a fixed kind such as

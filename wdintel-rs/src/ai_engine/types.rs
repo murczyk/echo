@@ -20,6 +20,12 @@ pub struct AiEngineItem {
     pub has_token: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub unhealthy: bool,
+    #[serde(default)]
+    pub health_message: Option<String>,
+    #[serde(default)]
+    pub health_updated_at: Option<i64>,
 }
 
 #[derive(
@@ -52,6 +58,16 @@ pub struct CreateAiEngineReq {
     pub callsign_enabled: bool,
     #[serde(default)]
     pub ocr_enabled: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAiEngineHealthReq {
+    pub id: String,
+    pub unhealthy: bool,
+    pub message: Option<String>,
 }
 
 #[derive(

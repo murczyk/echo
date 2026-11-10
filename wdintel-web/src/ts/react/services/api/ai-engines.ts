@@ -11,6 +11,7 @@ import type {
   AiEngineListRsp,
   CreateAiEngineReq,
   SendAiChatMessageReq,
+  UpdateAiEngineHealthReq,
   UpdateAiEngineReq,
 } from '../../../../Bindings';
 import { postJson, postVoid } from './client';
@@ -31,6 +32,11 @@ export async function createAiEngine(req: CreateAiEngineReq): Promise<AiEngineIt
 
 export async function updateAiEngine(req: UpdateAiEngineReq): Promise<AiEngineItem> {
   return postJson<AiEngineItem>('/api/admin/ai-engines/update', req);
+}
+
+/** Marks an engine unhealthy (with a message for chat users) or healthy again. */
+export async function updateAiEngineHealth(req: UpdateAiEngineHealthReq): Promise<AiEngineItem> {
+  return postJson<AiEngineItem>('/api/admin/ai-engines/health/update', req);
 }
 
 export async function deleteAiEngine(id: string): Promise<void> {

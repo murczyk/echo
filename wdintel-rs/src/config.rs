@@ -169,6 +169,7 @@ pub const AI_ENGINE_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
+pub const AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS: usize = 500;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
 pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
     &["gpt-5", "gpt-6", "o1", "o3", "o4"];
@@ -602,6 +603,10 @@ pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
     "Input exceeds the context window";
 pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
     "Provider output token limit reached";
+/// Kept recognizable to the runner (`content_filter`) so the chat records a
+/// model refusal rather than an outage (#4112).
+pub const AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE: &str =
+    "Provider content_filter rejected the request";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
     AI_AGENT_DISPATCHER_TIMEOUT_SEC;
@@ -649,6 +654,21 @@ pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS: usize = 200;
 pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
+/// Completion reasons that tell the chat to offer another model.
+pub const AI_AGENT_REASON_PROVIDER_ERROR: &str = "provider_error";
+pub const AI_AGENT_REASON_MODEL_REFUSAL: &str = "model_refusal";
+/// Policy-refusal detection for finished answers, tuned on 60 days of
+/// production turns (#4112): about 14% of GPT-6.1 Sol answers and 0.5% of
+/// GLM-5.3 answers match. Only the opening of an answer is checked.
+pub const AI_AGENT_REFUSAL_OPENING_MAX_CHARS: usize = 700;
+pub const AI_AGENT_REFUSAL_OPENING_MAX_SENTENCES: usize = 4;
+pub const AI_AGENT_REFUSAL_PHRASE_PATTERN: &str = r"(не можу|не буду|не допомагатиму|не надаватиму|не надам|не складатиму|відмовля\w*|can'?t help|cannot help|can'?t assist|cannot assist|can'?t provide|cannot provide|won'?t help|unable to (help|assist|provide))";
+pub const AI_AGENT_REFUSAL_TOPIC_PATTERN: &str = r"(актуальн|поточн|сьогодн|свіж|недавн|оперативн|бойов|противник|збройн|чинн|діюч|дислокац|місцеперебуван|місцезнаходжен|розташуванн|координат|радіомереж|розвідувальн|втрат|удар|цілей|військ|military|combat|troop|target)";
+/// Statements about missing evidence or tool limits, not policy refusals.
+pub const AI_AGENT_REFUSAL_LIMITATION_PATTERN: &str = r"(достовірно|впевнено|не знайш|не вдалося|немає|відсутн|не бачу|інтерфейс|відкрити|прочитати|розпізна|обробляється|шрифт|згенерувати|інтернет|налаштувати|не маю доступу|підтвердити|зв'язатися|не викону|не було викон|не виконано)";
+/// A justification such as "це допомогло б визначити …" marks a refusal even
+/// when the refusing sentence itself names no operational topic.
+pub const AI_AGENT_REFUSAL_JUSTIFICATION_PATTERN: &str = r"(може|могло б|могли б|допомогло б|допоможе|сприяло б|сприяти)\s+(б\s+)?(допомогти\s+|сприяти\s+)?(визнач|ідентифік|встанов|розкри|відстеж|виявити|наведенн|ураженн|планув)";
 pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;
 pub const AI_AGENT_MATTERMOST_CHAT_MAX_ATTEMPTS: i32 = 8;
 pub const AI_AGENT_MATTERMOST_CHAT_RETRY_BASE_SEC: i64 = 10;

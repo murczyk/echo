@@ -16,6 +16,7 @@ import {
   type BudgetEvidence,
   type ResearchLimitReason,
   providerFailureKind,
+  terminalProviderFailure,
 } from "./execution-policy.ts";
 import {
   DEVICE_ROUTES,
@@ -3729,6 +3730,9 @@ export function validateFinalAssistantMessage(
     if (/context window|context length|input exceeds/i.test(errorMessage)) {
       throw new Error("provider context window exceeded");
     }
+    if (/content_filter|ResponsibleAIPolicyViolation/i.test(errorMessage)) {
+      throw new Error("provider request failed: content_filter: provider content filter");
+    }
     throw new Error(
       `provider request failed: ${providerFailureDetail(errorMessage)}`,
     );
@@ -4495,9 +4499,12 @@ if (
     const diagnostic =
       error instanceof Error ? (error.stack ?? error.message) : String(error);
     process.stderr.write(`${diagnostic}\n`);
-    const message = process.argv.includes("--test-connection")
+    const testConnection = process.argv.includes("--test-connection");
+    const message = testConnection
       ? "Echo connection test failed."
       : "AI agent request failed.";
+    const providerFailure = testConnection ? null : terminalProviderFailure(error);
+    if (providerFailure) emit(providerFailure);
     emit({ type: "error", message });
     process.exitCode = 1;
   });

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
   listEngines: vi.fn(),
+  updateEngineHealth: vi.fn(),
   listContainers: vi.fn(),
   startContainer: vi.fn(),
   stopContainer: vi.fn(),
@@ -20,7 +21,10 @@ vi.mock('../../../services/api/ai-agent', () => ({
   startAiAgentContainer: mocks.startContainer,
   stopAiAgentContainer: mocks.stopContainer,
 }));
-vi.mock('../../../services/api/ai-engines', () => ({ listAiEngines: mocks.listEngines }));
+vi.mock('../../../services/api/ai-engines', () => ({
+  listAiEngines: mocks.listEngines,
+  updateAiEngineHealth: mocks.updateEngineHealth,
+}));
 vi.mock('../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
 }));
@@ -309,5 +313,76 @@ describe('AdminAiAgentPage settings', () => {
     await flush();
 
     expect(mocks.saveSettings).toHaveBeenCalledWith(incompatibleSettings);
+  });
+});
+
+describe('#4112 provider order and health', () => {
+  const FLASH = { ...ENGINE, id: 'engine-flash', name: 'Flash', modelName: 'flash' };
+
+  async function remount(settings: object, engines: object[]) {
+    mocks.getSettings.mockResolvedValue(settings);
+    mocks.saveSettings.mockResolvedValue(settings);
+    mocks.listEngines.mockResolvedValue(engines);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AdminAiAgentPage section="settings" />));
+    await flush();
+  }
+
+  it('saves the chat order chosen with the arrows', async () => {
+    await remount(
+      {
+        ...SETTINGS,
+        allowedProviderIds: [ENGINE.id, FLASH.id],
+        providerRuntimeProfiles: [
+          SETTINGS.providerRuntimeProfiles[0],
+          { ...SETTINGS.providerRuntimeProfiles[0], aiEngineId: FLASH.id },
+        ],
+      },
+      [ENGINE, FLASH],
+    );
+    const up = container.querySelector(
+      'button[aria-label="Перемістити Flash вище"]',
+    ) as HTMLButtonElement;
+    await act(async () => up.click());
+    await act(async () => clickSave());
+    await flush();
+    expect(mocks.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedProviderIds: [FLASH.id, ENGINE.id] }),
+    );
+  });
+
+  it('marks an engine unhealthy with a message right away', async () => {
+    mocks.updateEngineHealth.mockResolvedValue({
+      ...ENGINE,
+      unhealthy: true,
+      healthMessage: 'Шлюз не відповідає',
+      healthUpdatedAt: 1_700_000_000_000,
+    });
+    await act(async () => controlLabel('Несправний').click());
+    await flush();
+    const message = Array.from(container.querySelectorAll('textarea')).find(
+      (candidate) => !candidate.getAttribute('aria-hidden'),
+    ) as HTMLTextAreaElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    await act(async () => {
+      setter?.call(message, 'Шлюз не відповідає');
+      message.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const save = Array.from(container.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === 'Зберегти стан',
+    ) as HTMLButtonElement;
+    await act(async () => save.click());
+    await flush();
+    expect(mocks.updateEngineHealth).toHaveBeenCalledWith({
+      id: ENGINE.id,
+      unhealthy: true,
+      message: 'Шлюз не відповідає',
+    });
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Gemma позначено як несправний',
+    });
   });
 });
