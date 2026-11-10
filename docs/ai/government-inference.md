@@ -23,6 +23,12 @@ Government `glm-5.3` position extraction and summaries use at least 16,384 outpu
 
 After a GLM HTTP 429 response, callers sharing that process's AI client wait until the provider's `Retry-After` deadline; absent or invalid headers use 60 seconds. Concurrent responses can extend that cooldown. The wait counts toward the caller's request deadline, including the shorter interactive callsign deadline. Deploy the backend and restart its application workers to activate these changes. Existing failed jobs require a separately approved reprocessing operation. Persistent backend timeouts or unavailable deployments still require the gateway operator to check GLM capacity and deployment health.
 
+### When a gateway model is down
+
+The AI providers dashboard in [SigNoz](../MONITORING.md) shows the outage: the model has no `ok` calls, only `server_error` (LiteLLM `Cannot connect to host …`) and `rate_limited` (`No deployments available … cooldown_list`), which is LiteLLM pausing its unreachable servers rather than real rate limiting. Echo cannot fix it; report the model and start time to the gateway operators.
+
+To warn chat users meanwhile, open **Admin → AI → ШІ-агент → Налаштування**, switch **Несправний** on for that engine's card, enter a short message and press **Зберегти стан**. It takes effect at once on that host only, so repeat it on every affected host. The chat shows the engine in the warning colour with the message, starts new conversations on the next healthy engine in the card order, and offers the next engine after a failed turn. Switch it off when the model recovers.
+
 Agent containers receive an Echo capability, never Azure secrets or bearer tokens. Semantic OCR uses the same client through `/internal/ocr/infer`. Document extraction continues to use the existing extractor, Paddle and NuExtract3.
 
 ## echo-tsur rollout
