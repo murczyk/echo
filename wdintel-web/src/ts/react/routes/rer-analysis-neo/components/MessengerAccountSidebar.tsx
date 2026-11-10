@@ -53,6 +53,10 @@ const RAIL_ICON_LOOK =
   'hover:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_8%,transparent)] data-[selected=true]:bg-[color-mix(in_srgb,var(--echo-color-primary,var(--color-action,#3b82f6))_16%,transparent)] data-[selected=true]:text-[var(--echo-color-primary,var(--color-action,#3b82f6))]';
 const ACCOUNT_OPEN_LOOK =
   'data-[selected=true]:bg-[color-mix(in_srgb,var(--echo-color-primary,var(--color-action,#3b82f6))_16%,transparent)]';
+// On a phone the rail is narrower (so its line meets the right edge of the page's panel button), and its things shrink:
+// the buttons to 2 rem, the avatars to 2 rem (`!`: the avatar size is set in a plain stylesheet, outside the layers).
+const RAIL_AVATAR_SIZE =
+  'group-data-[mobile=true]/sidebar:!size-8 group-data-[mobile=true]/sidebar:!text-sm';
 // A kind of chat that is folded and holds the open chat is lit green over its whole area between the lines, as the
 // account info is lit blue.
 const SECTION_FILL =
@@ -371,7 +375,9 @@ function RailButton({
             // Every button is a slightly rounded square that goes grey on hover: the pages are lit in the primary color when
             // open, a chat is lit green; an avatar button sits in a small frame round its avatar.
             className={`flex cursor-pointer items-center justify-center !rounded-lg disabled:cursor-default disabled:opacity-40 ${
-              avatar ? `p-0.5 ${RAIL_CHAT_LOOK}` : `size-10 ${RAIL_ICON_LOOK}`
+              avatar
+                ? `p-0.5 ${RAIL_CHAT_LOOK}`
+                : `size-10 group-data-[mobile=true]/sidebar:size-8 ${RAIL_ICON_LOOK}`
             }`}
             onClick={onClick}
             {...dataAttributes}
@@ -440,7 +446,7 @@ function CollapsedSidebar({
           data-messenger-rail-account
           onClick={onOpenAccount}
         >
-          <MessengerAccountAvatar account={account} />
+          <MessengerAccountAvatar account={account} className={RAIL_AVATAR_SIZE} />
         </button>
       </Tooltip>
       <Separator name="account-pages" />
@@ -482,7 +488,7 @@ function CollapsedSidebar({
                 <Tooltip placement="right" title={`${title} (${sectionChats.length})`}>
                   <button
                     type="button"
-                    className={`flex w-full cursor-pointer items-center justify-center gap-0.5 px-1 text-xs whitespace-nowrap ${
+                    className={`flex w-full cursor-pointer items-center justify-center gap-0.5 px-1 text-xs group-data-[mobile=true]/sidebar:!px-0.5 whitespace-nowrap ${
                       lit
                         ? // Fills the whole area between the lines: the margins take back the gaps of the column (`!`: the global
                           // reset gives buttons margin 0), and 3.5 pads the button to the height of the area (8 + 32 + 8 px).
@@ -521,7 +527,12 @@ function CollapsedSidebar({
                         data-messenger-rail-chat={chat.id}
                       >
                         <MessengerAccountAvatar
-                          account={{ id: chat.id, name: chatLabel(chat), phone: '' }}
+                          account={{
+                            id: chat.id,
+                            name: chatLabel(chat),
+                            phone: '',
+                          }}
+                          className={RAIL_AVATAR_SIZE}
                         />
                       </RailButton>
                     ))}
@@ -541,28 +552,58 @@ function CollapsedSidebar({
 // between their widths while they cross-fade, so the full sidebar keeps its search text and does not reflow. The
 // panel toggle is one button over both: it floats over the top right corner of the account info and slides along
 // with the box to the top of the rail.
-export function MessengerAccountSidebar(props: SidebarProps) {
-  const [open, setOpen] = useAccountSidebarOpen();
-  const fullWidth = 'w-72';
-  const railWidth = 'w-16';
+//
+// On a phone (below the `sm` breakpoint, like the rest of the page) the open sidebar takes the whole width and hides the
+// page beside it, and whatever leads somewhere (a chat, the contacts, the account cards) closes it to show the place.
+// That state is not remembered: it starts closed and does not touch the choice made on a wide screen.
+export function MessengerAccountSidebar({ mobile, ...props }: SidebarProps & { mobile: boolean }) {
+  const [desktopOpen, setDesktopOpen] = useAccountSidebarOpen();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const open = mobile ? mobileOpen : desktopOpen;
+  const setOpen = mobile ? setMobileOpen : setDesktopOpen;
+  const closeOnPhone = () => {
+    if (mobile) setMobileOpen(false);
+  };
+  const sidebarProps: SidebarProps = {
+    ...props,
+    onSelectChat: (chatId) => {
+      props.onSelectChat(chatId);
+      closeOnPhone();
+    },
+    onOpenContacts: () => {
+      props.onOpenContacts();
+      closeOnPhone();
+    },
+    onOpenAccount: () => {
+      props.onOpenAccount();
+      closeOnPhone();
+    },
+  };
+  const fullWidth = mobile ? 'w-full' : 'w-72';
+  const railWidth = mobile ? 'w-[calc(3.25rem_+_2px)]' : 'w-16';
   const layer = (active: boolean, width: string, top = 'top-0') =>
     `absolute ${top} bottom-0 left-0 ${width} transition-opacity duration-200 motion-reduce:transition-none ${
       active ? 'opacity-100' : 'pointer-events-none opacity-0'
     }`;
   return (
     <div
-      className={`relative shrink-0 overflow-hidden border-r border-solid ${DIVIDER} transition-[width] duration-200 ease-in-out motion-reduce:transition-none ${
+      className={`group/sidebar relative shrink-0 overflow-hidden border-r border-solid ${DIVIDER} transition-[width] duration-200 ease-in-out motion-reduce:transition-none ${
         open ? fullWidth : railWidth
       }`}
       data-messenger-sidebar
       data-open={open ? 'true' : 'false'}
+      data-mobile={mobile ? 'true' : 'false'}
     >
       {/* First in the document, so it is the first stop of the keyboard, and above both layers. It hangs on the
           right edge of the box, which moves with the box, and is centered over the rail when closed. The offsets
           are in rem like the widths of the box, so they hold at any root font size. */}
       <div
         className={`absolute top-2 z-10 transition-[right] duration-200 ease-in-out motion-reduce:transition-none ${
-          open ? 'right-2' : 'right-[calc((4rem_-_32px)_/_2)]'
+          open
+            ? 'right-2'
+            : mobile
+              ? 'right-[calc((3.25rem_+_2px_-_32px)_/_2)]'
+              : 'right-[calc((4rem_-_32px)_/_2)]'
         }`}
         data-messenger-sidebar-toggle
       >
@@ -574,9 +615,9 @@ export function MessengerAccountSidebar(props: SidebarProps) {
           onClick={() => setOpen(!open)}
         />
       </div>
-      <ExpandedSidebar {...props} className={layer(open, fullWidth)} hidden={!open} />
+      <ExpandedSidebar {...sidebarProps} className={layer(open, fullWidth)} hidden={!open} />
       <CollapsedSidebar
-        {...props}
+        {...sidebarProps}
         // The rail starts below the toggle, so its buttons scroll under the edge of the box, not under the toggle.
         className={layer(!open, railWidth, 'top-12')}
         hidden={open}

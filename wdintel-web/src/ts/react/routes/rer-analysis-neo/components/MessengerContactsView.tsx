@@ -483,9 +483,14 @@ function MessengerContactsViewBody({ account, refreshToken = 0, onBusyChange, on
     >
       <header className="flex flex-wrap items-center gap-2 border-b border-solid border-black/12 px-2 py-1 dark:border-white/12">
         <IconButton size="small" aria-label="Назад до акаунта" onClick={onBack}>
-          <ArrowBackIcon fontSize="small" />
+          <ArrowBackIcon
+            fontSize="small"
+            className="group-data-[mobile=true]/messenger:!size-[18px]"
+          />
         </IconButton>
-        <h2 className="m-0 text-base font-medium">{title}</h2>
+        <h2 className="m-0 text-base font-medium group-data-[mobile=true]/messenger:!text-[18px] group-data-[mobile=true]/messenger:!font-medium">
+          {title}
+        </h2>
         <div className="ml-auto flex items-center gap-1">
           {/* The same search field as the other searches of the messenger, bound to the table's global filter. */}
           <div className="w-64 max-w-full [&_.MuiTextField-root]:w-full">

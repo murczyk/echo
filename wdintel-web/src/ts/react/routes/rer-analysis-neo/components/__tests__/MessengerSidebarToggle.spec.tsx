@@ -127,6 +127,117 @@ describe('the account sidebar of the messenger workspace', () => {
     expect(wrapper().dataset.open).toBe('false');
   });
 
+  describe('on a phone', () => {
+    beforeEach(() => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: true,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      }));
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('starts as the rail, opens over the whole width and closes on a chat, without being remembered', async () => {
+      await mount();
+      expect(wrapper().dataset.mobile).toBe('true');
+      // The chat takes the same answer from the workspace, for its tighter paddings.
+      expect(
+        container.querySelector<HTMLElement>('[data-messenger-workspace]')!.dataset.mobile,
+      ).toBe('true');
+      expect(wrapper().dataset.open).toBe('false');
+      await expand();
+      expect(wrapper().dataset.open).toBe('true');
+      expect(wrapper().className).toContain('w-full');
+      expect(wrapper().className).not.toContain('w-72');
+      await click('[data-messenger-chat]');
+      expect(wrapper().dataset.open).toBe('false');
+      expect(window.localStorage.getItem('messenger-account-sidebar-open')).toBeNull();
+    });
+
+    it('has a narrower rail whose line meets the right edge of the panel button of the page header', async () => {
+      await mount();
+      // 0.75 rem of the header's padding and the 40 px button, and 2 px more that the divider needs to meet the button edge.
+      expect(wrapper().className).toContain('w-[calc(3.25rem_+_2px)]');
+      expect(wrapper().className).not.toContain('w-16');
+      expect(wrapper().className).toContain('group/sidebar');
+    });
+
+    it('keeps the titles of a chat and of the contacts below the page title', async () => {
+      await mount();
+      await expand();
+      await click('[data-messenger-chat]');
+      const title = () => container.querySelector<HTMLElement>('[data-messenger-chat-view] h2')!;
+      expect(title().className).toContain('group-data-[mobile=true]/messenger:!text-[18px]');
+      expect(title().parentElement!.querySelector('svg')!.getAttribute('class')).toContain(
+        '!size-[18px]',
+      );
+      await expand();
+      await click('[data-messenger-nav="contacts"]');
+      const contacts = container.querySelector<HTMLElement>('[data-messenger-contacts-view] h2')!;
+      expect(contacts.className).toContain('group-data-[mobile=true]/messenger:!text-[18px]');
+      // The back arrow is as big as the title text.
+      expect(contacts.parentElement!.querySelector('svg')!.getAttribute('class')).toContain(
+        '!size-[18px]',
+      );
+    });
+
+    it('tightens the account cards: the page, the cards and the label column', async () => {
+      await mount();
+      const main = container.querySelector<HTMLElement>('[data-messenger-workspace] main')!;
+      expect(main.className).toContain('!pt-2');
+      expect(main.className).toContain('group-data-[mobile=true]/messenger:!px-1.5');
+      const row = container.querySelector<HTMLElement>('[data-messenger-card] .grid')!;
+      expect(row.className).toContain('grid-cols-[7rem_minmax(0,1fr)]');
+    });
+
+    it('closes on the contacts and on the account cards too', async () => {
+      await mount();
+      await expand();
+      await click('[data-messenger-nav="contacts"]');
+      expect(wrapper().dataset.open).toBe('false');
+      await expand();
+      await click('[data-messenger-account-avatar]');
+      expect(wrapper().dataset.open).toBe('false');
+    });
+  });
+
+  it('remembers that it is collapsed', async () => {
+    await mount();
+    await collapse();
+    act(() => root.unmount());
+    root = createRoot(container);
+    await mount();
+    expect(wrapper().dataset.open).toBe('false');
+
+    await expand();
+    act(() => root.unmount());
+    root = createRoot(container);
+    await mount();
+    expect(wrapper().dataset.open).toBe('true');
+  });
+
+  it('keeps the open chat and the search text of the full sidebar through hiding and showing', async () => {
+    await mount();
+    await click('[data-messenger-chat]');
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>('input[aria-label="Пошук чату"]')!;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'olen');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await collapse();
+    expect(container.querySelector('[data-messenger-chat-view]')).not.toBeNull();
+    await expand();
+    expect(container.querySelector('[data-messenger-chat-view]')).not.toBeNull();
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Пошук чату"]')?.value).toBe(
+      'olen',
+    );
+  });
+
   describe('the rail', () => {
     const section = (key: string) =>
       container.querySelector<HTMLElement>(`[data-messenger-rail-section="${key}"]`)!;

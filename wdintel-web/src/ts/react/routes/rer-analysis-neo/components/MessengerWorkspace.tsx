@@ -1,3 +1,5 @@
+import { useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -76,6 +78,8 @@ function MessengerAccountWorkspace({
   onBusyChange?: (busy: boolean) => void;
   onSaveInternalNotes?: Props['onSaveInternalNotes'];
 }) {
+  // The page's own phone check. The sidebar and the chat take it from here (the chat through `group-data-[mobile=true]/messenger`).
+  const mobile = useMediaQuery(useTheme().breakpoints.down('sm'));
   const chatsState = useMessengerChats(account.id, refreshToken);
   const [chatBusy, setChatBusy] = useState(false);
   const [viewBusy, setViewBusy] = useState(false);
@@ -119,8 +123,14 @@ function MessengerAccountWorkspace({
   }, [chatMissing]);
 
   return (
-    <div className="flex h-full min-h-0" data-messenger-workspace>
+    // On a phone the open sidebar takes the whole width, so the page beside it is hidden (kept mounted, with its scroll).
+    <div
+      className="group/messenger flex h-full min-h-0 [&:has([data-messenger-sidebar][data-mobile=true][data-open=true])>:not([data-messenger-sidebar])]:hidden"
+      data-messenger-workspace
+      data-mobile={mobile ? 'true' : 'false'}
+    >
       <MessengerAccountSidebar
+        mobile={mobile}
         account={account}
         chatsState={chatsState}
         selectedChatId={selected.chatId}
@@ -142,6 +152,7 @@ function MessengerAccountWorkspace({
           refreshToken={refreshToken}
           onBusyChange={setChatBusy}
           onBack={() => selectChat(null)}
+          mobile={mobile}
         />
       ) : selected.chatId != null && chatsState.loading ? (
         <p className="p-4 opacity-60" role="status">
@@ -155,9 +166,9 @@ function MessengerAccountWorkspace({
           onBack={() => openView(null)}
         />
       ) : (
-        // The first card starts level with the top of the panel toggle of the sidebar (0.5 rem). `!`: Bootstrap's `.p-4`
-        // is `!important`.
-        <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 !pt-2">
+        // The first card starts level with the top of the panel toggle of the sidebar (0.5 rem), on any screen. On a phone
+        // the cards also sit as close to the sides as the bubbles of a chat. `!`: Bootstrap's `.p-4` and `.gap-4` are `!important`.
+        <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 !pt-2 group-data-[mobile=true]/messenger:!gap-1.5 group-data-[mobile=true]/messenger:!px-1.5 group-data-[mobile=true]/messenger:!pb-1.5">
           <MessengerNoteCard
             key={`internal-${account.id}`}
             title="Внутрішній опис"

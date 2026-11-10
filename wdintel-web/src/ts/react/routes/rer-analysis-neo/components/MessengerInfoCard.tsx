@@ -11,7 +11,9 @@ type Props = {
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[10rem_minmax(0,1fr)] gap-2">
+    // On a phone the label column is narrower, so the values keep more of the width. `!` on the gap: Bootstrap's `.gap-2`
+    // is `!important` and beats a plain variant.
+    <div className="grid grid-cols-[10rem_minmax(0,1fr)] gap-2 group-data-[mobile=true]/messenger:grid-cols-[7rem_minmax(0,1fr)] group-data-[mobile=true]/messenger:!gap-1">
       <Typography variant="body2" color="text.secondary">
         {label}
       </Typography>

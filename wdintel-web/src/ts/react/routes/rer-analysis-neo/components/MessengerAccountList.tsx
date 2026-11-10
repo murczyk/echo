@@ -48,10 +48,16 @@ function matchesQuery(account: MessengerAccountItem, query: string): boolean {
   );
 }
 
-export function MessengerAccountAvatar({ account }: { account: MessengerAccountItem }) {
+export function MessengerAccountAvatar({
+  account,
+  className = '',
+}: {
+  account: MessengerAccountItem;
+  className?: string;
+}) {
   return (
     <span
-      className="group-navigation-avatar overflow-hidden"
+      className={`group-navigation-avatar overflow-hidden ${className}`}
       data-messenger-account-avatar
       aria-hidden="true"
       style={

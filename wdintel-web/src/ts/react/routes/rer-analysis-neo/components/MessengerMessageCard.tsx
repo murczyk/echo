@@ -59,13 +59,13 @@ function MessengerMessageCardBase({
   return (
     <MessageFeedItem id={message.id} data-message-id={message.id}>
       <div
-        className={`flex px-4 py-1 ${outgoing ? 'justify-end' : 'justify-start'}`}
+        className={`flex px-4 py-1 group-data-[mobile=true]/messenger:!px-1.5 group-data-[mobile=true]/messenger:!py-0.5 ${outgoing ? 'justify-end' : 'justify-start'}`}
         data-message-card-root
         data-messenger-message
         data-messenger-outgoing={outgoing ? 'true' : undefined}
       >
         <div
-          className={`max-w-[80%] flow-root min-w-0 rounded-lg px-3 py-2 ${
+          className={`max-w-[80%] flow-root min-w-0 rounded-lg px-3 py-2 group-data-[mobile=true]/messenger:max-w-[92%] group-data-[mobile=true]/messenger:!px-2 group-data-[mobile=true]/messenger:!py-1 ${
             outgoing ? BUBBLE_COLORS.outgoing : BUBBLE_COLORS.incoming
           }`}
         >

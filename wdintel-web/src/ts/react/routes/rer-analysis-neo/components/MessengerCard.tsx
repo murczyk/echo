@@ -14,7 +14,8 @@ export function MessengerCard({ title, action, children }: Props) {
         direction="row"
         alignItems="center"
         justifyContent="space-between"
-        sx={{ px: 2, py: 1 }}
+        // `xs` is the phone (below `sm`), where the chat room is tight too.
+        sx={{ px: { xs: 1, sm: 2 }, py: { xs: 0.5, sm: 1 } }}
       >
         <Typography variant="overline" color="text.secondary">
           {title}
@@ -22,7 +23,7 @@ export function MessengerCard({ title, action, children }: Props) {
         {action}
       </Stack>
       <Divider />
-      <Stack spacing={1.5} sx={{ p: 2 }}>
+      <Stack spacing={{ xs: 1, sm: 1.5 }} sx={{ p: { xs: 1, sm: 2 } }}>
         {children}
       </Stack>
     </Paper>

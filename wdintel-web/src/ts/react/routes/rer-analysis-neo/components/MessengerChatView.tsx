@@ -32,6 +32,8 @@ type Props = {
   // Reports whether this chat is loading or refreshing, for the header refresh button.
   onBusyChange?: (busy: boolean) => void;
   onBack: () => void;
+  // The phone layout: no jump-to-start arrow, only the jump to the end while the reader is away from it.
+  mobile?: boolean;
 };
 
 const FEED_POLICY: MessageFeedPolicy = {
@@ -64,6 +66,7 @@ export function MessengerChatView({
   refreshToken = 0,
   onBusyChange,
   onBack,
+  mobile = false,
 }: Props) {
   const feedRef = useRef<MessageFeedHandle<string>>(null);
   const chatState = useMessengerChat({
@@ -211,11 +214,19 @@ export function MessengerChatView({
       aria-label={title}
       data-messenger-chat-view
     >
-      <header className="flex items-center gap-2 border-b border-solid border-black/12 px-2 py-1 dark:border-white/12">
+      <header className="flex items-center gap-2 border-b border-solid border-black/12 px-2 py-1 group-data-[mobile=true]/messenger:!gap-1 group-data-[mobile=true]/messenger:!px-1 dark:border-white/12">
         <IconButton size="small" aria-label="Назад до акаунта" onClick={onBack}>
-          <ArrowBackIcon fontSize="small" />
+          <ArrowBackIcon
+            fontSize="small"
+            className="group-data-[mobile=true]/messenger:!size-[18px]"
+          />
         </IconButton>
-        <h2 className="m-0 min-w-0 flex-1 truncate text-base font-medium" title={title}>
+        {/* `!` on the phone: the global h2 style is outside the layers and wins over a plain size, so the title came out bigger
+            than the page title. */}
+        <h2
+          className="m-0 min-w-0 flex-1 truncate text-base font-medium group-data-[mobile=true]/messenger:!text-[18px] group-data-[mobile=true]/messenger:!font-medium"
+          title={title}
+        >
           {title}
         </h2>
         {copied ? (
@@ -300,20 +311,27 @@ export function MessengerChatView({
               onLoadNewer: chatState.loadNewer,
               onFirstVisibleMessage,
             }}
-            oldestNavigation={{
-              onClick: () => void goToStart(),
-              oldestLoaded: !hasMoreAbove,
-              loading: chatState.jumpingToStart,
-              label: 'На початок чату',
-            }}
+            oldestNavigation={
+              mobile
+                ? undefined
+                : {
+                    onClick: () => void goToStart(),
+                    oldestLoaded: !hasMoreAbove,
+                    loading: chatState.jumpingToStart,
+                    label: 'На початок чату',
+                  }
+            }
             newestNavigation={{
               edge: 'bottom',
               newestLoaded: !hasMoreBelow,
               onClick: () => void goToEnd(),
               loading: chatState.jumpingToEnd,
               label: 'В кінець чату',
-              // Leaves room for the scrollbar and the bubbles' right edge.
-              className: '[--message-feed-fab-right:32px] [--message-feed-fab-bottom:24px]',
+              // Leaves room for the scrollbar and the bubbles' right edge. On a phone it sits as close to the corner as the
+              // bubbles do to the edge, the same on both sides.
+              className: mobile
+                ? '[--message-feed-fab-right:8px] [--message-feed-fab-bottom:8px]'
+                : '[--message-feed-fab-right:32px] [--message-feed-fab-bottom:24px]',
             }}
           />
         </div>

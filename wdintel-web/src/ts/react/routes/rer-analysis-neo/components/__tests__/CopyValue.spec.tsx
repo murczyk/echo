@@ -7,6 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const clipboardMock = vi.hoisted(() => ({ copyTextToClipboard: vi.fn() }));
 vi.mock('../../../../../copy-to-clipboard', () => clipboardMock);
+const snackbarMock = vi.hoisted(() => ({ notify: vi.fn() }));
+vi.mock('../../../../components/PowerSnackbar', () => ({
+  useOptionalPowerSnackbar: () => snackbarMock,
+}));
 
 import { CopyValue } from '../CopyValue';
 
@@ -30,6 +34,7 @@ describe('CopyValue', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     clipboardMock.copyTextToClipboard.mockReset();
+    snackbarMock.notify.mockReset();
     onParentClick.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -58,6 +63,45 @@ describe('CopyValue', () => {
     await mount();
     await click();
     expect(tooltip()).toBe('Не вдалося скопіювати');
+  });
+
+  describe('the snackbar', () => {
+    const phone = (matches: boolean) =>
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      }));
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('is raised on a phone, which has no hover, also when the clipboard refuses', async () => {
+      phone(true);
+      clipboardMock.copyTextToClipboard.mockResolvedValue(undefined);
+      await mount();
+      await click();
+      expect(snackbarMock.notify).toHaveBeenCalledWith({
+        severity: 'success',
+        message: 'Скопійовано.',
+      });
+      clipboardMock.copyTextToClipboard.mockRejectedValue(new Error('denied'));
+      await click();
+      expect(snackbarMock.notify).toHaveBeenLastCalledWith({
+        severity: 'error',
+        message: 'Не вдалося скопіювати.',
+      });
+    });
+
+    it('is not raised on a wide screen, where the tooltip says it', async () => {
+      phone(false);
+      clipboardMock.copyTextToClipboard.mockResolvedValue(undefined);
+      await mount();
+      await click();
+      expect(tooltip()).toBe('Скопійовано');
+      expect(snackbarMock.notify).not.toHaveBeenCalled();
+    });
   });
 
   it('does not pass the click on to the row it sits in', async () => {
