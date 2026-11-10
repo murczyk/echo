@@ -72,7 +72,11 @@ under `network_match` and published in `POST /api/monitoring` as
 `InboxMessage.network_match` is filled only when the stored candidate set
 equals the message's current networks. `confident_network_id` is set when the
 best certainty is at least 80 and leads the runner-up by at least 20
-(`AI_NETWORK_MATCH_CONFIDENT_*` in `config.rs`). The React card behaviour is
+(`AI_NETWORK_MATCH_CONFIDENT_*` in `config.rs`). Scores are a point-in-time
+assessment: a network edit rescores only messages from the last 48 hours, and
+only while scoring runs (the setting on and the callsign worker enabled).
+Older scores, and scores whose network changed while scoring was paused, stay
+as they were until the message is recalculated and scored again. The React card behaviour is
 described in the
 [message card contract](../../../docs/frontend/react-behavior-contracts/message-card.md#ai-network-match).
 Classic Elm views ignore the scores and list every network.
