@@ -50,10 +50,33 @@ impl UnitHeaderSynonyms {
             return Ok(None);
         };
         let header = normalize_unit_label(header);
+        let Some(unit) = self.resolve_cached(db, &header).await.c(h!())? else {
+            return Ok(None);
+        };
+        Ok(sigint_unit::Entity::find_by_id(unit.id)
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .select_only()
+            .column(sigint_unit::Column::Id)
+            .column(sigint_unit::Column::Name)
+            .into_tuple::<(i64, String)>()
+            .one(db)
+            .await
+            .c(h!())?
+            .map(|(id, name)| HeaderSynonymUnit { id, name }))
+    }
+
+    async fn resolve_cached<C>(
+        &self,
+        db: &C,
+        header: &str,
+    ) -> anyhow::Result<Option<HeaderSynonymUnit>>
+    where
+        C: ConnectionTrait,
+    {
         let snapshot = self.snapshot.read().await;
         if let Some(snapshot) = snapshot.as_ref() {
             if !snapshot.is_expired() {
-                return Ok(snapshot.names.get(&header).cloned());
+                return Ok(snapshot.names.get(header).cloned());
             }
         }
         drop(snapshot);
@@ -68,7 +91,7 @@ impl UnitHeaderSynonyms {
         }
         Ok(snapshot
             .as_ref()
-            .and_then(|snapshot| snapshot.names.get(&header).cloned()))
+            .and_then(|snapshot| snapshot.names.get(header).cloned()))
     }
 }
 

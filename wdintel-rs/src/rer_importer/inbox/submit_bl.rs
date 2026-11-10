@@ -732,6 +732,26 @@ mod tests {
             assert_eq!(parsed.unit_v2.as_deref(), Some(name));
             assert_eq!(parsed.unit_id, Some(unit_id));
         }
+        crate::sigint::unit::merge_units(
+            login.id, &env.dbx, second.id, first.id,
+        )
+        .await
+        .unwrap();
+        let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+            &login.id,
+            &env,
+            crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                full_body:
+                    "Другий синонім 4022\n10.11.2026, 10:23 (МСК)\n- Принял."
+                        .to_string(),
+                signal_group_master_key: None,
+                include_ai_callsigns: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed.unit_id, None);
+        assert_eq!(parsed.unit_v2, None);
     }
 
     #[tokio::test]
@@ -751,6 +771,7 @@ mod tests {
         env.dbx = Database::connect(options).await.unwrap();
         let env = Data::new(env);
         for elapsed in [
+            0,
             0,
             crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS + 1,
         ] {
@@ -843,7 +864,7 @@ mod tests {
             .await;
             assert_eq!(
                 env.unit_header_synonyms
-                    .resolve(&disconnected, label)
+                    .resolve(&env.dbx, label)
                     .await
                     .unwrap(),
                 Some(crate::unit::header_synonyms::HeaderSynonymUnit {
@@ -860,10 +881,19 @@ mod tests {
         .update(&env.dbx)
         .await
         .unwrap();
-        advance_synonym_cache_time(
-            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS,
+        let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+            &login.id,
+            &env,
+            crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                full_body: request["full_body"].as_str().unwrap().to_string(),
+                signal_group_master_key: None,
+                include_ai_callsigns: false,
+            },
         )
-        .await;
+        .await
+        .unwrap();
+        assert_eq!(parsed.unit_id, None);
+        assert_eq!(parsed.unit_v2, None);
         assert_submitted_unit(
             &env_data,
             &datasource,
