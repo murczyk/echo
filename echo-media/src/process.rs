@@ -6,6 +6,7 @@ use crate::constants::*;
 use crate::error::{MediaError, Result};
 use crate::sandbox::{Policy, SandboxMode};
 use anyhow::Context;
+use rustix::process::{kill_process_group, Pid, Signal};
 use std::ffi::OsString;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
@@ -97,7 +98,7 @@ pub fn spawn(spec: Spec) -> Result<Running> {
     let mut child = command
         .spawn()
         .with_context(|| format!("spawn {}", spec.program.display()))?;
-    let group = Group(child.id().map(|pid| pid as libc::pid_t));
+    let group = Group(child.id().and_then(|pid| Pid::from_raw(pid as i32)));
     let stderr = child.stderr.take().map(|pipe| tokio::spawn(read_all(pipe)));
     Ok(Running {
         group,
@@ -211,15 +212,13 @@ fn classify(status: ExitStatus, stderr: String) -> Result<Output> {
 }
 
 #[derive(Debug)]
-struct Group(Option<libc::pid_t>);
+struct Group(Option<Pid>);
 
 impl Group {
     fn kill(&mut self) {
         if let Some(pid) = self.0.take() {
-            // SAFETY: kill(2) on our own child's process group.
-            unsafe {
-                libc::kill(-pid, libc::SIGKILL);
-            }
+            // ESRCH: the group is already gone.
+            let _ = kill_process_group(pid, Signal::KILL);
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Process sandbox applied in the forked child before `exec`.
 //!
 //! The parent prepares a Landlock ruleset and the resource limits; the child
-//! only makes raw syscalls (see `child.rs`). Nothing here is ffmpeg-specific.
+//! only makes direct syscalls (see `child.rs`). Nothing here is ffmpeg-specific.
 //!
 //! Isolation (Landlock, capabilities, namespaces) is Linux-only. On other
 //! platforms, such as macOS developer machines, processes still get the
@@ -136,7 +136,7 @@ impl Policy {
         mode: SandboxMode,
         command: &mut tokio::process::Command,
     ) -> Result<()> {
-        let prepared = self.prepare(mode)?;
+        let mut prepared = self.prepare(mode)?;
         command.env_clear();
         for (name, value) in ECHO_MEDIA_CHILD_ENV {
             command.env(name, value);
@@ -175,12 +175,13 @@ impl Policy {
     }
 }
 
-/// The Landlock ABI version of the running kernel, `None` when Landlock is
-/// missing or disabled. For diagnostics and tests; the sandbox itself
-/// negotiates rights through the `landlock` crate.
+/// The Landlock ABI version of the running kernel, capped at the newest ABI
+/// this crate requests (6), `None` when Landlock is missing or disabled.
+/// For diagnostics and tests; the sandbox itself negotiates rights through
+/// the `landlock` crate.
 pub fn kernel_landlock_abi() -> Option<u32> {
     #[cfg(target_os = "linux")]
-    return linux::landlock_abi();
+    return landlock::kernel_abi();
     #[cfg(not(target_os = "linux"))]
     None
 }

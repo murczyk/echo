@@ -34,8 +34,7 @@ pub fn ffmpeg_bin() -> PathBuf {
 }
 
 pub fn is_root() -> bool {
-    // SAFETY: geteuid has no preconditions.
-    unsafe { libc::geteuid() == 0 }
+    rustix::process::geteuid().is_root()
 }
 
 /// The system ffmpeg, unsandboxed, detached from the terminal. Without

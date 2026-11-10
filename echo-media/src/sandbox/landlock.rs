@@ -1,5 +1,5 @@
 //! Builds the Landlock ruleset in the parent. The child only calls
-//! `landlock_restrict_self` on the returned file descriptor.
+//! `RulesetCreated::restrict_self` on it.
 
 use super::{unavailable, Network, Policy, SandboxMode};
 use crate::error::{MediaError, Result};
@@ -8,7 +8,6 @@ use landlock::{
     Compatible, NetPort, PathBeneath, PathFd, Ruleset, RulesetAttr,
     RulesetCreated, RulesetCreatedAttr, Scope, ABI,
 };
-use std::os::fd::OwnedFd;
 use std::path::Path;
 
 /// The newest ABI whose rights this crate requests. Raising it changes what
@@ -27,16 +26,40 @@ const WRITE_DIR: BitFlags<AccessFs> = make_bitflags!(AccessFs::{
 pub(super) fn build(
     policy: &Policy,
     mode: SandboxMode,
-) -> Result<Option<OwnedFd>> {
+) -> Result<RulesetCreated> {
+    // `Enforce` already fails in `handled` when ABI 1 is missing.
+    if !supports(ABI::V1) {
+        unavailable(mode, "Landlock is not supported by this kernel")?;
+    }
     let ruleset = handled(mode).map_err(sandbox_error)?;
     let ruleset = ruleset.create().map_err(sandbox_error)?;
     let ruleset = add_fs_rules(ruleset, policy)?;
-    let ruleset = add_net_rules(ruleset, &policy.network)?;
-    let fd = Option::<OwnedFd>::from(ruleset);
-    if fd.is_none() {
-        unavailable(mode, "Landlock is not supported by this kernel")?;
-    }
-    Ok(fd)
+    add_net_rules(ruleset, &policy.network)
+}
+
+/// The newest Landlock ABI the kernel supports, up to [`BEST_EFFORT_ABI`].
+/// The `landlock` crate keeps its own version query private, so each ABI
+/// is probed by requiring a right it introduced.
+pub(super) fn kernel_abi() -> Option<u32> {
+    [ABI::V6, ABI::V5, ABI::V4, ABI::V3, ABI::V2, ABI::V1]
+        .into_iter()
+        .find(|abi| supports(*abi))
+        .map(|abi| abi as u32)
+}
+
+fn supports(abi: ABI) -> bool {
+    let ruleset =
+        Ruleset::default().set_compatibility(CompatLevel::HardRequirement);
+    let probed = match abi {
+        ABI::V1 => ruleset.handle_access(AccessFs::from_all(ABI::V1)),
+        ABI::V2 => ruleset.handle_access(AccessFs::Refer),
+        ABI::V3 => ruleset.handle_access(AccessFs::Truncate),
+        ABI::V4 => ruleset.handle_access(AccessNet::ConnectTcp),
+        ABI::V5 => ruleset.handle_access(AccessFs::IoctlDev),
+        ABI::V6 => ruleset.scope(Scope::Signal),
+        _ => return false,
+    };
+    probed.is_ok()
 }
 
 /// ABI 1 filesystem rights are mandatory in `Enforce` mode (Ubuntu 22.04's
