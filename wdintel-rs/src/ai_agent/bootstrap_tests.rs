@@ -2375,7 +2375,16 @@ async fn issue_4112_model_failures_are_recorded_for_the_chat() {
         )
     );
 
-    let limited = running_request(&env, &fixture).await;
+    let with_policy = |request: ai_agent_request::Model| {
+        let env = env.clone();
+        async move {
+            let mut request = request.into_active_model();
+            request.execution_policy =
+                Set(Some(serde_json::json!({ "preset": "balanced" })));
+            request.update(&env.dbx).await.unwrap()
+        }
+    };
+    let limited = with_policy(running_request(&env, &fixture).await).await;
     crate::ai_agent::worker::complete_request(
         &env,
         limited.id,
@@ -2397,6 +2406,10 @@ async fn issue_4112_model_failures_are_recorded_for_the_chat() {
     );
 
     let draft = running_request(&env, &fixture).await;
+    assert!(
+        draft.execution_policy.is_none(),
+        "legacy run without presets"
+    );
     crate::ai_agent::worker::complete_request(
         &env,
         draft.id,
@@ -2425,5 +2438,24 @@ async fn issue_4112_model_failures_are_recorded_for_the_chat() {
         .unwrap()
         .expect("#4112 the live chat receives the corrected reason");
     assert_eq!(published.payload["reason"], "provider_error");
+
+    let legacy = running_request(&env, &fixture).await;
+    crate::ai_agent::worker::complete_request(
+        &env,
+        legacy.id,
+        "Зведення готове.".to_string(),
+        Some(crate::ai_agent::types::AiAgentCompletionMetadata {
+            coverage_limited: true,
+            reason: "time_limit".to_string(),
+        }),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        metadata(legacy.id).await,
+        None,
+        "runs without presets show no coverage notices"
+    );
     fixture.cleanup(&env).await;
 }

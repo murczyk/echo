@@ -875,8 +875,10 @@ async fn run_request_inner(
                         if event_type == "completion_metadata" {
                             let metadata: super::types::AiAgentCompletionMetadata =
                                 serde_json::from_value(payload.clone()).c(h!())?;
-                            if !keeps_runner_metadata(execution_policy.is_some(), &metadata) { continue; }
+                            let publish = keeps_runner_metadata(execution_policy.is_some(), &metadata);
+                            // Kept even when hidden: completion may still turn it into a provider failure.
                             completion_metadata = Some(metadata);
+                            if !publish { continue; }
                         }
                         let update = events::assistant_text_update(&event_type, &payload);
                         let (response_bytes, next_chars) = match &update {
@@ -1541,11 +1543,6 @@ pub(super) async fn complete_request(
     runner_metadata: Option<super::types::AiAgentCompletionMetadata>,
     model_failure: Option<&str>,
 ) -> Result<bool, AppError> {
-    let limited =
-        provider_limited_metadata(runner_metadata.clone(), model_failure);
-    let (metadata, detected_refusal) = completed_metadata(&response, limited);
-    // The browser already holds the runner's metadata; send what Echo changed.
-    let publish_metadata = detected_refusal || metadata != runner_metadata;
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
         .lock_exclusive()
@@ -1553,6 +1550,20 @@ pub(super) async fn complete_request(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    let has_policy = request.execution_policy.is_some();
+    let visible = |metadata: Option<
+        super::types::AiAgentCompletionMetadata,
+    >| {
+        metadata.filter(|metadata| keeps_runner_metadata(has_policy, metadata))
+    };
+    let limited = visible(provider_limited_metadata(
+        runner_metadata.clone(),
+        model_failure,
+    ));
+    let (metadata, detected_refusal) = completed_metadata(&response, limited);
+    // The browser already holds what the runner published; send what Echo changed.
+    let publish_metadata =
+        detected_refusal || metadata != visible(runner_metadata);
     if request.state == "cancelled" || request.cancellation_requested {
         txn.commit().await.c(h!())?;
         return Ok(false);
