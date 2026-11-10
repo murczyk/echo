@@ -18,6 +18,7 @@ import { MessengerChatView } from './MessengerChatView';
 import { MessengerContactsView } from './MessengerContactsView';
 import { MessengerInfoCard } from './MessengerInfoCard';
 import { MessengerNoteCard } from './MessengerNoteCard';
+import type { MessengerOpenChat } from './MessengerRightPanel';
 
 type Props = {
   account: MessengerAccountItem | null;
@@ -25,6 +26,8 @@ type Props = {
   refreshToken?: number;
   // Reports whether any messenger request of the workspace is running, for the header refresh button.
   onBusyChange?: (busy: boolean) => void;
+  // Reports the open chat (null when none), for the right panel of the page.
+  onOpenChatChange?: (chat: MessengerOpenChat | null) => void;
   onSaveInternalNotes?: (accountId: string, internalNotes: string) => Promise<void>;
   // shortcut: the external id will open another app, wire the target when it exists.
 };
@@ -37,6 +40,7 @@ export function MessengerWorkspace({
   loading = false,
   refreshToken = 0,
   onBusyChange,
+  onOpenChatChange,
   onSaveInternalNotes,
 }: Props) {
   if (account == null && loading) {
@@ -61,6 +65,7 @@ export function MessengerWorkspace({
       account={account}
       refreshToken={refreshToken}
       onBusyChange={onBusyChange}
+      onOpenChatChange={onOpenChatChange}
       onSaveInternalNotes={onSaveInternalNotes}
     />
   );
@@ -71,11 +76,13 @@ function MessengerAccountWorkspace({
   account,
   refreshToken,
   onBusyChange,
+  onOpenChatChange,
   onSaveInternalNotes,
 }: {
   account: MessengerAccountItem;
   refreshToken: number;
   onBusyChange?: (busy: boolean) => void;
+  onOpenChatChange?: Props['onOpenChatChange'];
   onSaveInternalNotes?: Props['onSaveInternalNotes'];
 }) {
   // The page's own phone check. The sidebar and the chat take it from here (the chat through `group-data-[mobile=true]/messenger`).
@@ -94,6 +101,13 @@ function MessengerAccountWorkspace({
   // A failed chat list proves nothing, so a shared link survives it and opens after a retry.
   const chatMissing =
     selected.chatId != null && !chatsState.loading && chatsState.error == null && chat == null;
+
+  const openChatId = chat?.id ?? null;
+  useEffect(() => {
+    if (openChatId == null) return;
+    onOpenChatChange?.({ accountId: account.id, chatId: openChatId });
+    return () => onOpenChatChange?.(null);
+  }, [account.id, openChatId, onOpenChatChange]);
 
   // A view of the account (the contacts) instead of the account cards; a chat takes its place and the other way round.
   const [view, setView] = useState<MessengerView | null>(() =>

@@ -395,7 +395,7 @@ describe('MessengerContactsView', () => {
       await mount();
       await exportWith(/CSV: усі/);
       await vi.waitFor(() =>
-        expect(text()).toContain('Не вдалося отримати повний список контактів для експорту.'),
+        expect(text()).toContain('Не вдалося отримати повний список для експорту.'),
       );
       expect(downloadMock.downloadBlob).not.toHaveBeenCalled();
     });

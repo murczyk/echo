@@ -148,6 +148,20 @@ describe('messenger chat in the workspace', () => {
     expect(cards[1].querySelector('[data-messenger-sender]')?.textContent).toBe('Olena');
   });
 
+  it('reports the open chat to the page, and none once it is closed', async () => {
+    const onOpenChatChange = vi.fn();
+    await act(async () =>
+      root.render(<MessengerWorkspace account={account} onOpenChatChange={onOpenChatChange} />),
+    );
+    expect(onOpenChatChange).not.toHaveBeenCalled();
+
+    await openGroupChat();
+    expect(onOpenChatChange).toHaveBeenLastCalledWith({ accountId: 'a1', chatId: 'c1' });
+
+    await click('button[aria-label="Назад до акаунта"]');
+    expect(onOpenChatChange).toHaveBeenLastCalledWith(null);
+  });
+
   it('hides sender names in a private chat', async () => {
     await mount();
     await click('[data-messenger-chat]', 0);

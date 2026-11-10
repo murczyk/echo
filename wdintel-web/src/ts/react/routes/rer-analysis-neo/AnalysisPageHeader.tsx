@@ -28,6 +28,8 @@ type Props = {
   isNarrowLayout: boolean;
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
+  // False while the right panel has nothing to show (messenger mode without an open chat): no toggle then.
+  rightPanelAvailable?: boolean;
   onOpenReport?: (focusTarget: HTMLElement) => void;
 };
 
@@ -151,6 +153,7 @@ export function AnalysisPageHeader({
   isNarrowLayout,
   leftPanelVisible,
   rightPanelVisible,
+  rightPanelAvailable = true,
   onOpenReport,
 }: Props) {
   const openReport = (focusTarget: HTMLElement) => {
@@ -208,12 +211,14 @@ export function AnalysisPageHeader({
         isNarrowLayout ? (
           <Stack direction="row" spacing={0.5} alignItems="center">
             <AnalysisSettingsMenu page={page} loading={loading} onOpenReport={onOpenReport} />
-            <SidePanelToggleButton
-              side="right"
-              active={rightPanelVisible}
-              label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
-              onClick={() => page.toggleRightPanel()}
-            />
+            {rightPanelAvailable ? (
+              <SidePanelToggleButton
+                side="right"
+                active={rightPanelVisible}
+                label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
+                onClick={() => page.toggleRightPanel()}
+              />
+            ) : null}
           </Stack>
         ) : undefined
       }
@@ -297,12 +302,14 @@ export function AnalysisPageHeader({
                   Звіти
                 </Button>
               ) : null}
-              <SidePanelToggleButton
-                side="right"
-                active={rightPanelVisible}
-                label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
-                onClick={() => page.toggleRightPanel()}
-              />
+              {rightPanelAvailable ? (
+                <SidePanelToggleButton
+                  side="right"
+                  active={rightPanelVisible}
+                  label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
+                  onClick={() => page.toggleRightPanel()}
+                />
+              ) : null}
             </Stack>
           </Stack>
         ) : undefined

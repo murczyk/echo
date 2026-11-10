@@ -262,6 +262,34 @@ describe('AnalysisPageHeader', () => {
     expect(view.container.querySelector('[aria-label="Згорнути праву панель"]')).not.toBeNull();
   });
 
+  it('has no right panel toggle while the right panel is not available', () => {
+    const wide = renderHeader(buildPage(), false, false);
+    rendered.push(wide);
+    expect(wide.container.querySelector('[data-side="right"]')).not.toBeNull();
+
+    for (const isNarrowLayout of [false, true]) {
+      useMediaQueryMock.mockReturnValue(isNarrowLayout);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      rendered.push({ container, root });
+      act(() =>
+        root.render(
+          <AnalysisPageHeader
+            page={buildPage()}
+            centerTab="messages"
+            isNarrowLayout={isNarrowLayout}
+            leftPanelVisible
+            rightPanelVisible={false}
+            rightPanelAvailable={false}
+          />,
+        ),
+      );
+      expect(container.querySelector('[data-side="left"]')).not.toBeNull();
+      expect(container.querySelector('[data-side="right"]')).toBeNull();
+    }
+  });
+
   it('moves actions into the settings menu as soon as the layout is narrow', () => {
     const page = buildPage();
     const view = renderHeader(page, false, false, 'messages', true);

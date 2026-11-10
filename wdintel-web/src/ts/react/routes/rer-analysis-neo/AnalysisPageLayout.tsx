@@ -23,6 +23,7 @@ import { AnalysisLeftPanel } from './AnalysisLeftPanel';
 import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
 import { MessengerWorkspace } from './components/MessengerWorkspace';
+import { MessengerRightPanel, type MessengerOpenChat } from './components/MessengerRightPanel';
 import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
@@ -113,6 +114,8 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const theme = useTheme();
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  // The chat open in the messenger workspace; its right panel (media, members) takes the place of the echo analytics.
+  const [messengerChat, setMessengerChat] = useState<MessengerOpenChat | null>(null);
   const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
     null,
   );
@@ -189,7 +192,10 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
       page.editorMessage?.id ??
       (page.editTargetLoadState.status !== 'idle' ? page.editTargetLoadState.reportId : null))
     : null;
-  const rightPanelVisible = requestedRightPanelVisible && !editorOpen;
+  const messengerMode = page.leftPanelTab === LeftPanelTab.Messenger;
+  // In messenger mode the panel belongs to an open chat, so it does not exist without one.
+  const rightPanelAvailable = !messengerMode || messengerChat != null;
+  const rightPanelVisible = requestedRightPanelVisible && !editorOpen && rightPanelAvailable;
   const modalEditorOpen = editorOpen && editorPresentation === 'modal';
   const toggleFilterPanel = useCallback(() => {
     filterPanelTouchedRef.current = true;
@@ -477,6 +483,29 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
     previousCanWriteRef.current = canWrite;
   }, [closeMessageEditor, editorOpen, notify, page.currentUser?.roles]);
 
+  // The right panel of an open messenger chat, or the echo analytics; in a drawer the drawer has the close button.
+  const rightPanelContent = (inDrawer: boolean) =>
+    messengerMode ? (
+      messengerChat && (
+        <MessengerRightPanel
+          chat={messengerChat}
+          refreshToken={page.messengerRefreshToken}
+          showNarrowCloseButton={!inDrawer}
+          divider={!inDrawer}
+          onClose={page.toggleRightPanel}
+        />
+      )
+    ) : showLoadingSkeletons ? (
+      <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
+    ) : (
+      <AnalysisRightPanel
+        page={page}
+        rightPanelVisible
+        isCompactLayout={isAnalysisCompactLayout}
+        showNarrowCloseButton={!inDrawer}
+      />
+    );
+
   const content = (
     <RadioFeaturesProvider allowed={page.radioFeaturesAllowed}>
       <Box
@@ -509,6 +538,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
             isNarrowLayout={isNarrowLayout}
             leftPanelVisible={leftPanelVisible}
             rightPanelVisible={rightPanelVisible}
+            rightPanelAvailable={rightPanelAvailable}
             onOpenReport={openReport}
           />
         </Box>
@@ -569,6 +599,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
                       loading={page.messengerAccountsLoading}
                       refreshToken={page.messengerRefreshToken}
                       onBusyChange={page.setMessengerWorkspaceBusy}
+                      onOpenChatChange={setMessengerChat}
                       onSaveInternalNotes={page.saveMessengerInternalNotes}
                       account={
                         page.messengerAccounts.find(
@@ -671,32 +702,15 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
                 }
                 analytics={
                   inlineRightDockVisible ? (
-                    showLoadingSkeletons ? (
-                      <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
-                    ) : (
-                      <AnalysisRightPanel
-                        page={page}
-                        rightPanelVisible
-                        isCompactLayout={isAnalysisCompactLayout}
-                      />
-                    )
+                    rightPanelContent(false)
                   ) : (
                     <AnalysisFullscreenPanelDrawer
                       anchor="right"
-                      title="Аналітична панель"
+                      title={messengerMode ? 'Панель чату' : 'Аналітична панель'}
                       open={rightPanelVisible && !modalEditorOpen}
                       onClose={page.toggleRightPanel}
                     >
-                      {showLoadingSkeletons ? (
-                        <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
-                      ) : (
-                        <AnalysisRightPanel
-                          page={page}
-                          rightPanelVisible
-                          isCompactLayout={isAnalysisCompactLayout}
-                          showNarrowCloseButton={false}
-                        />
-                      )}
+                      {rightPanelContent(true)}
                     </AnalysisFullscreenPanelDrawer>
                   )
                 }

@@ -1,9 +1,9 @@
 import { strToU8, zipSync } from 'fflate';
 
-import type { MessengersContactItem } from '../../../../Bindings';
+import type { MessengersChatMemberItem, MessengersContactItem } from '../../../../Bindings';
 import type { MessengerAccountItem } from './components/MessengerAccountList';
 
-// A person of the contacts table: a contact of the account, or the account itself.
+// A person of the contacts table: a contact of the account, the account itself, or a chat member.
 export type ContactRow = {
   id: string;
   userId: string | null;
@@ -11,6 +11,8 @@ export type ContactRow = {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  // A chat member that left the chat but is still referenced by old messages.
+  deleted?: boolean;
 };
 
 export function toContactRow(contact: MessengersContactItem): ContactRow {
@@ -21,6 +23,18 @@ export function toContactRow(contact: MessengersContactItem): ContactRow {
     firstName: contact.firstName,
     lastName: contact.lastName,
     phone: contact.phone,
+  };
+}
+
+export function toMemberRow(member: MessengersChatMemberItem): ContactRow {
+  return {
+    id: member.id,
+    userId: member.telegram?.userId ?? member.externalId,
+    username: member.username,
+    firstName: member.firstName,
+    lastName: member.lastName,
+    phone: member.phone,
+    deleted: member.deleted,
   };
 }
 
@@ -147,3 +161,6 @@ export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsh
 
 export const contactsFileName = (accountId: string, extension: 'csv' | 'xlsx') =>
   `contacts_account_${accountId}.${extension}`;
+
+export const membersFileName = (chatId: string, extension: 'csv' | 'xlsx') =>
+  `members_chat_${chatId}.${extension}`;
