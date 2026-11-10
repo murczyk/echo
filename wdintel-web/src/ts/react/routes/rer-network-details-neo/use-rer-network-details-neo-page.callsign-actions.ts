@@ -242,105 +242,102 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     });
   }, [setState]);
 
-  const saveCallsignDrawer = useCallback(
-    async (form: NetworkCallsignDrawerForm) => {
-      const network = state.network;
+  const saveCallsignDrawer = useCallback(async (form: NetworkCallsignDrawerForm) => {
+    const network = state.network;
 
-      if (!canManageCallsignActions || !network || state.callsignDrawerSaving) return;
+    if (!canManageCallsignActions || !network || state.callsignDrawerSaving) return;
 
-      const validationError = getNetworkCallsignDrawerSaveError(
-        form,
-        canUseRadioFeatures(state.currentUser?.roles),
-      );
-      if (validationError) {
-        setState((current) => ({ ...current, callsignDrawerError: validationError }));
-        return;
+    const validationError = getNetworkCallsignDrawerSaveError(
+      form,
+      canUseRadioFeatures(state.currentUser?.roles),
+    );
+    if (validationError) {
+      setState((current) => ({ ...current, callsignDrawerError: validationError }));
+      return;
+    }
+
+    const callsign = normalizeCallsignDisplay(form.callsign);
+    // Enforce exclusive marker state before sending payload: derive canonical mode
+    // from the form and pass explicit overrides to the payload builder.
+    const markerMode = getNetworkCallsignMarkerMode(form);
+    const markerState = getNetworkCallsignMarkerState(markerMode);
+    const payload = buildNetworkCallsignWritePayload(
+      {
+        networkId: network.id,
+        callsign,
+        fullName: form.fullName,
+        position: form.position,
+        comment: form.comment,
+        sourceId: form.sourceId,
+        radioFreq: form.radioFreq,
+        unitId: form.unitId,
+        unitDeveloping: form.unitDeveloping,
+        developing: form.developing,
+        mainRadioStation: form.mainRadioStation,
+        commandControl: form.commandControl,
+      },
+      {
+        mainRadioStation: markerState.mainRadioStation,
+        commandControl: markerState.commandControl,
+      },
+    );
+    const updateCallsignId =
+      state.callsignDrawerMode === 'edit' && form.id !== null ? form.id : null;
+
+    setState((current) => ({
+      ...current,
+      callsignDrawerSaving: true,
+      callsignDrawerError: null,
+      callsignUpdateInFlightIds:
+        updateCallsignId === null
+          ? current.callsignUpdateInFlightIds
+          : [...current.callsignUpdateInFlightIds, updateCallsignId],
+    }));
+
+    try {
+      if (state.callsignDrawerMode === 'create') {
+        await createNetworkCallsign(payload);
+      } else if (form.id !== null) {
+        await updateNetworkCallsign({
+          id: form.id,
+          ...payload,
+        });
       }
-
-      const callsign = normalizeCallsignDisplay(form.callsign);
-      // Enforce exclusive marker state before sending payload: derive canonical mode
-      // from the form and pass explicit overrides to the payload builder.
-      const markerMode = getNetworkCallsignMarkerMode(form);
-      const markerState = getNetworkCallsignMarkerState(markerMode);
-      const payload = buildNetworkCallsignWritePayload(
-        {
-          networkId: network.id,
-          callsign,
-          fullName: form.fullName,
-          position: form.position,
-          comment: form.comment,
-          sourceId: form.sourceId,
-          radioFreq: form.radioFreq,
-          unitId: form.unitId,
-          unitDeveloping: form.unitDeveloping,
-          developing: form.developing,
-          mainRadioStation: form.mainRadioStation,
-          commandControl: form.commandControl,
-        },
-        {
-          mainRadioStation: markerState.mainRadioStation,
-          commandControl: markerState.commandControl,
-        },
-      );
-      const updateCallsignId =
-        state.callsignDrawerMode === 'edit' && form.id !== null ? form.id : null;
-
+      blurActiveElement();
       setState((current) => ({
         ...current,
-        callsignDrawerSaving: true,
+        callsignDrawerOpen: false,
+        callsignDrawerMode: 'create',
+        callsignDrawerForm: null,
+        callsignDrawerSaving: false,
         callsignDrawerError: null,
+        callsignWarning: null,
         callsignUpdateInFlightIds:
           updateCallsignId === null
             ? current.callsignUpdateInFlightIds
-            : [...current.callsignUpdateInFlightIds, updateCallsignId],
+            : current.callsignUpdateInFlightIds.filter((item) => item !== updateCallsignId),
       }));
-
-      try {
-        if (state.callsignDrawerMode === 'create') {
-          await createNetworkCallsign(payload);
-        } else if (form.id !== null) {
-          await updateNetworkCallsign({
-            id: form.id,
-            ...payload,
-          });
-        }
-        blurActiveElement();
-        setState((current) => ({
-          ...current,
-          callsignDrawerOpen: false,
-          callsignDrawerMode: 'create',
-          callsignDrawerForm: null,
-          callsignDrawerSaving: false,
-          callsignDrawerError: null,
-          callsignWarning: null,
-          callsignUpdateInFlightIds:
-            updateCallsignId === null
-              ? current.callsignUpdateInFlightIds
-              : current.callsignUpdateInFlightIds.filter((item) => item !== updateCallsignId),
-        }));
-        await reloadCallsignsData();
-      } catch (error) {
-        setState((current) => ({
-          ...current,
-          callsignDrawerSaving: false,
-          callsignDrawerError: formatErrorMessage(error),
-          callsignUpdateInFlightIds:
-            updateCallsignId === null
-              ? current.callsignUpdateInFlightIds
-              : current.callsignUpdateInFlightIds.filter((item) => item !== updateCallsignId),
-        }));
-      }
-    },
-    [
-      canManageCallsignActions,
-      reloadCallsignsData,
-      setState,
-      state.callsignDrawerMode,
-      state.callsignDrawerSaving,
-      state.currentUser,
-      state.network,
-    ],
-  );
+      await reloadCallsignsData();
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        callsignDrawerSaving: false,
+        callsignDrawerError: formatErrorMessage(error),
+        callsignUpdateInFlightIds:
+          updateCallsignId === null
+            ? current.callsignUpdateInFlightIds
+            : current.callsignUpdateInFlightIds.filter((item) => item !== updateCallsignId),
+      }));
+    }
+  }, [
+    canManageCallsignActions,
+    reloadCallsignsData,
+    setState,
+    state.callsignDrawerMode,
+    state.callsignDrawerSaving,
+    state.currentUser,
+    state.network,
+  ]);
 
   const deleteCallsign = useCallback(async () => {
     const target = state.callsignDeleteTarget;
