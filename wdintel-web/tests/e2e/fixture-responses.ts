@@ -62,6 +62,7 @@ export function systemSettingsCurrentResponse({
     pelengBoundsBottomRightLat: null,
     pelengBoundsBottomRightLng: null,
     devicesSectionEnabled: false,
+    docMediaServeFromB2: false,
     sigintCommentParsingEnabled: false,
     doNotStoreDuplicateEchoimFailures: false,
     goiAssociationMessageUidWorkerEnabled: false,

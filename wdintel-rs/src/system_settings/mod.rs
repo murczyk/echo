@@ -152,6 +152,9 @@ fn map_system_settings_item(
         peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
         peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
         devices_section_enabled: settings.devices_section_enabled,
+        doc_media_serve_from_b2: settings
+            .doc_media_serve_from_b2
+            .unwrap_or(false),
         echo_restapi_error_discord_webhook_url: settings
             .echo_restapi_error_discord_webhook_url,
         sigint_comment_parsing_enabled: settings.sigint_comment_parsing_enabled,
@@ -790,6 +793,7 @@ fn system_settings_active_model(
         peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
         peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
         devices_section_enabled: Set(req.devices_section_enabled),
+        doc_media_serve_from_b2: Set(Some(req.doc_media_serve_from_b2)),
         echo_restapi_error_discord_webhook_url: Set(
             normalize_optional_setting(
                 req.echo_restapi_error_discord_webhook_url.as_deref(),
@@ -1085,6 +1089,9 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
             devices_section_enabled: settings.devices_section_enabled,
+            doc_media_serve_from_b2: settings
+                .doc_media_serve_from_b2
+                .unwrap_or(false),
             sigint_comment_parsing_enabled: settings
                 .sigint_comment_parsing_enabled,
             do_not_store_duplicate_echoim_failures: settings
@@ -1154,6 +1161,7 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
             devices_section_enabled: false,
+            doc_media_serve_from_b2: false,
             sigint_comment_parsing_enabled: false,
             do_not_store_duplicate_echoim_failures: false,
             goi_association_message_uid_worker_enabled: false,
@@ -2367,6 +2375,50 @@ mod tests {
             - chrono::TimeDelta::hours(2)
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn issue_3938_doc_media_setting_preserves_defaults_and_historical_activation(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut req = settings_req(false);
+        let initial = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(
+            !map_system_settings_item(initial.clone())
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        let mut legacy: system_settings::ActiveModel = initial.clone().into();
+        legacy.doc_media_serve_from_b2 = Set(None);
+        let legacy = legacy.update(&env.dbx).await.unwrap();
+        assert!(
+            !map_system_settings_item(legacy)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        req.doc_media_serve_from_b2 = true;
+        let enabled = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(
+            map_system_settings_item(enabled)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        let restored =
+            activate_system_settings_for_login(&env.dbx, &login, initial.id)
+                .await
+                .unwrap();
+        assert!(
+            !map_system_settings_item(restored)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+    }
+
     fn settings_req(short_url_enabled: bool) -> CreateSystemSettingsReq {
         CreateSystemSettingsReq {
             rer_analysis_units_exact_match_only_default: true,
@@ -2382,6 +2434,7 @@ mod tests {
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
             devices_section_enabled: false,
+            doc_media_serve_from_b2: false,
             peleng_bounds_enabled: false,
             peleng_bounds_top_left_lat: None,
             peleng_bounds_top_left_lng: None,
@@ -2450,6 +2503,7 @@ mod tests {
         deleted: bool,
     ) -> system_settings::Model {
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(true),
             created_at: Set(Utc::now().naive_utc()),

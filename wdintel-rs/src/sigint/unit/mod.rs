@@ -4117,6 +4117,7 @@ mod tests {
     ) {
         let now = Utc::now().naive_utc();
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(false),
             created_at: Set(now),

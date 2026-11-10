@@ -5883,6 +5883,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
@@ -5930,6 +5931,7 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -5985,6 +5987,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;

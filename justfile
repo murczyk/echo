@@ -147,6 +147,17 @@ dev-front:
 dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
+# Publish documentation media separately to every active server's existing S3 destination.
+[arg('force', long='force', value='true')]
+[arg('only', long='only')]
+release-doc-media force="false" only="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(release --servers "{{ active_servers }}" --extensions "mp4 webm jpg jpeg png mp3 gif svg ico")
+    if [[ "$1" == "true" ]]; then args+=(--force); fi
+    if [[ -n "$2" ]]; then args+=(--only "$2"); fi
+    python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
+
 build-front:
     #!/bin/bash
     set -euxo pipefail

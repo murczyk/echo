@@ -15169,6 +15169,7 @@ type alias SystemSettingsCurrentRsp =
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
     , devicesSectionEnabled : Bool
+    , docMediaServeFromB2 : Bool
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
     , goiAssociationMessageUidWorkerEnabled : Bool
@@ -15215,6 +15216,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
         , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
+        , ( "doc_media_serve_from_b2", (Json.Encode.bool) struct.docMediaServeFromB2 )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
         , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
@@ -15263,6 +15265,7 @@ type alias SystemSettingsItem =
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
     , devicesSectionEnabled : Bool
+    , docMediaServeFromB2 : Bool
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
@@ -15322,6 +15325,7 @@ systemSettingsItemEncoder struct =
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
         , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
+        , ( "doc_media_serve_from_b2", (Json.Encode.bool) struct.docMediaServeFromB2 )
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
@@ -15386,6 +15390,7 @@ type alias CreateSystemSettingsReq =
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
     , devicesSectionEnabled : Bool
+    , docMediaServeFromB2 : Bool
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
@@ -15440,6 +15445,7 @@ createSystemSettingsReqEncoder struct =
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
         , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
+        , ( "doc_media_serve_from_b2", (Json.Encode.bool) struct.docMediaServeFromB2 )
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
@@ -30841,6 +30847,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "doc_media_serve_from_b2" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
@@ -30890,6 +30897,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "doc_media_serve_from_b2" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
@@ -30949,6 +30957,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "doc_media_serve_from_b2" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))

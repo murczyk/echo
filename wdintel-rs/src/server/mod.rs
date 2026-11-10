@@ -306,6 +306,7 @@ async fn new_env_from_config(
         redisb: redisb.clone(),
         s3,
         s3_config,
+        doc_media: Arc::new(crate::doc_media::DocMedia::new(&config, mode)),
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         unit_merge_guard_slots: Arc::new(tokio::sync::Semaphore::new(
@@ -1229,7 +1230,8 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
 }
 
 fn configure_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(self::monitoring::ping)
+    cfg.service(crate::doc_media::serve)
+            .service(self::monitoring::ping)
             .service(self::monitoring::public_ping)
             .service(self::monitoring::server_info)
             .service(self::monitoring::monitoring)

@@ -1,4 +1,4 @@
 <div {% if class %}class="{{class}}" {% endif %} xmlns:max-width="http://www.w3.org/1999/xhtml">
-  <img src="{{ get_url(path=id) }}" onclick="this.requestFullscreen()" {% if alt %}alt="{{alt}}"{% endif %}>
+  <img src="{% if id is starting_with("https://") or id is starting_with("http://") or id is starting_with("//") %}{{ id }}{% else %}/doc-media/docs/static/{{ id | urlencode_strict | replace(from="%2F", to="/") }}{% endif %}" onclick="this.requestFullscreen()" {% if alt %}alt="{{alt}}"{% endif %}>
   {% if caption %}<div class="caption">{{caption}}</div>{% endif %}
 </div>
