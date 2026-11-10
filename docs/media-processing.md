@@ -141,7 +141,7 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | Playback normalisation | H.264 yuv420p MP4 (+AAC) | `ffprobe`, `ffmpeg -c copy +faststart` | `messenger/media_local_cache/playback.rs` | `-protocol_whitelist file,pipe`; 5 min timeout |
 | HLS preview | plaintext MP4 ≥ 8 MiB, > 8 Mbps | `ffprobe`, `ffmpeg` libx264/aac, `hls.js` in browser | `messenger/media_preview/{source,mod}.rs` | input is a local file or a pre-signed S3 URL (10 min TTL); `-protocol_whitelist file,http,https,tcp,tls -format_whitelist mov`; 5 s probe, 30 s segment, 8 MiB per segment, 2 jobs |
 | Waveform, spectrogram | encrypted messenger audio | `milgeo-audio-wave` → `ffmpeg` | `messenger/media_wave.rs` | temp file plus PNG in `/tmp`; **no protocol whitelist** |
-| Transcription probe | message and device audio | `ffprobe` | `transcription/worker.rs` | 100 MiB plaintext cap; **no protocol whitelist** |
+| Transcription probe | message and device audio | `ffprobe` through `echo-media` | `transcription/worker.rs` `ensure_audio` | 100 MiB plaintext cap; `-protocol_whitelist file`, `ECHO_MEDIA_FORMATS_AUDIO` demuxers (includes `mpegts`); sandboxed child; 30 s timeout |
 | Transcription | audio | `echo-gpu-client` → GPU host queue | `transcription/`, [transcription.md](transcription.md) | native queue in `wd` |
 | Device audio rendition, wave | WAV/MP3 | `ffmpeg` libmp3lame | `devices/audio/content.rs` `media_command` | `-protocol_whitelist file,pipe`, `-xerror` |
 | OCR | PDF, JPEG, PNG attachments | `echo-document-extractor` (PaddleOCR, pypdfium2, Pillow, NuExtract3/Gemma via router) | `ocr/worker.rs`, `ocr/package.rs` | source ≤ 250 MiB; result ZIP ≤ 1,000 entries and ≤ 250 MiB declared; HTML sanitized with `ammonia` |
@@ -152,7 +152,7 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | KML/KMZ, XLSX import | map and report files | `quick-xml`, `zip`, `calamine`, `geoconvert` | `kml/`, `rer_importer/`, `palitra/` | — |
 | AI-agent uploads | PNG, JPEG, WebP, PDF | `image` crate (jpeg/png/webp), `infer` | `ai_agent/uploads/` | own limits |
 
-Thumbnail ffmpeg processes run through `echo-media`. Each gets a cleared
+Thumbnail and transcription-probe processes run through `echo-media`. Each gets a cleared
 environment and no capabilities. Landlock limits it to reading system libraries
 and its input, and writing only a private job directory. Offline jobs run in
 their own network namespace when the service is root. The other ffmpeg rows
@@ -246,7 +246,7 @@ The only `add_header Content-Security-Policy` in `deploy/nginx/*` is on the
 
 | Component | Used for | Runs as |
 | --- | --- | --- |
-| FFmpeg / ffprobe (distro package, found on `PATH`) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker`; thumbnails run sandboxed through `echo-media` (no capabilities, Landlock) |
+| FFmpeg / ffprobe (distro package, found on `PATH`) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker`; thumbnails and the transcription probe run sandboxed through `echo-media` (no capabilities, Landlock) |
 | libx264, libmp3lame, AAC encoder | HLS preview, device audio rendition | same |
 | signal-cli-rest-api / signal-cli | Signal ingest and attachment download | `root` (`echo-signal-bot@`) |
 | whatsapp-cli | WhatsApp ingest | `root` (`echo-whatsapp-bot@`) |
@@ -275,7 +275,7 @@ options.
 | `calamine`, `docx-rs`, `rust_xlsxwriter`, `csv` | spreadsheet and report import/export |
 | `geoconvert`, `milgeo-rs` | coordinates, map formats |
 | `milgeo-audio-wave` | waveform/spectrogram (spawns `ffmpeg`) |
-| `echo-media` (workspace crate; `landlock` on Linux) | sandboxed ffmpeg/ffprobe jobs; used for thumbnails |
+| `echo-media` (workspace crate; `landlock` on Linux) | sandboxed ffmpeg/ffprobe jobs; used for thumbnails and the transcription probe |
 | `actix-web`, `actix-files`, `actix-multipart` | HTTP serving and uploads |
 | `content_disposition` | header encoding |
 | `opencv` (optional feature) | image processing in `terminal` |

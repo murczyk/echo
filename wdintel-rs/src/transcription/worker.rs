@@ -7,6 +7,8 @@ use echo_gpu_client::{
     MaterializedAudio, QueueEvent, TranscriptionAdapter, WorkError,
     WorkerPolicy,
 };
+use echo_media::ffmpeg::ProbeOptions;
+use echo_media::{Ffmpeg, Formats, Input};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -138,39 +140,7 @@ impl TranscriptionAdapter for EchoTranscriptionAdapter {
             .await
             .map_err(retryable_preparation)
             .context(h!())?;
-        let mut probe = tokio::process::Command::new("ffprobe");
-        probe.kill_on_drop(true);
-        let probe = tokio::time::timeout(
-            Duration::from_secs(ECHO_AUDIO_TRANSCRIPTION_PROBE_TIMEOUT_SECS),
-            probe
-                .args([
-                    "-v",
-                    "error",
-                    "-select_streams",
-                    "a:0",
-                    "-show_entries",
-                    "stream=codec_type",
-                    "-of",
-                    "csv=p=0",
-                ])
-                .arg(&path)
-                .output(),
-        )
-        .await
-        .map_err(|_| WorkError::retryable("audio probe timed out"))
-        .context(h!())?
-        .map_err(retryable_preparation)
-        .context(h!())?;
-        if !probe.status.success()
-            || !probe
-                .stdout
-                .split(|byte| *byte == b'\n')
-                .any(|line| line == b"audio")
-        {
-            return Err(
-                WorkError::terminal("source is not decodable audio").into()
-            );
-        }
+        ensure_audio(&path).await.context(h!())?;
 
         Ok(MaterializedAudio {
             path,
@@ -217,6 +187,39 @@ impl TranscriptionAdapter for EchoTranscriptionAdapter {
             event.message,
         );
         Ok(())
+    }
+}
+
+/// Sandboxed ffprobe: the source must contain an audio stream. Input that can
+/// never decode is terminal; timeouts and environment failures retry.
+async fn ensure_audio(path: &Path) -> Result<()> {
+    let input = Input::file(path)
+        .map_err(retryable_preparation)
+        .context(h!())?;
+    let options = ProbeOptions {
+        formats: Formats::AUDIO,
+        timeout: Duration::from_secs(
+            ECHO_AUDIO_TRANSCRIPTION_PROBE_TIMEOUT_SECS,
+        ),
+    };
+    let probed = Ffmpeg::shared()
+        .map_err(retryable_preparation)
+        .context(h!())?
+        .probe(&input, &options)
+        .await;
+    match probed {
+        Ok(probe) if probe.first("audio").is_some() => Ok(()),
+        Ok(_) => {
+            Err(WorkError::terminal("source is not decodable audio").into())
+        }
+        Err(error) if error.is_terminal() => {
+            log::debug!("audio probe rejected {}: {error:#?}", path.display());
+            Err(WorkError::terminal("source is not decodable audio").into())
+        }
+        Err(echo_media::MediaError::Timeout(_)) => {
+            Err(WorkError::retryable("audio probe timed out").into())
+        }
+        Err(error) => Err(retryable_preparation(error)).context(h!()),
     }
 }
 

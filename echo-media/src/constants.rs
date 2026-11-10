@@ -77,8 +77,9 @@ pub const ECHO_MEDIA_FORMATS_IMAGE: &str =
     "image2,jpeg_pipe,png_pipe,webp_pipe,bmp_pipe,tiff_pipe,gif,apng,ico";
 pub const ECHO_MEDIA_FORMATS_VIDEO: &str =
     "mov,matroska,webm,avi,asf,flv,mpeg,mpegvideo,mpegts,ogg,hevc,h264";
+/// Includes `mpegts` for audio-only transport streams (legacy recordings).
 pub const ECHO_MEDIA_FORMATS_AUDIO: &str =
-    "mp3,wav,ogg,flac,aac,mov,matroska,webm,amr";
+    "mp3,wav,ogg,flac,aac,mov,matroska,webm,amr,mpegts";
 pub const ECHO_MEDIA_FORMATS_MOV: &str = "mov";
 pub const ECHO_MEDIA_FORMATS_WAV_MP3: &str = "wav,mp3";
 /// Demuxers that read other files or URLs named inside the input.

@@ -5,8 +5,9 @@ Sandboxed ffmpeg and ffprobe jobs for Echo. It addresses G1, I2 and I3 in
 and limits the damage of G2 (services running as root) for the processes it
 starts.
 
-Messenger and Device thumbnails use it (through `wdintel-rs/src/thumbnail.rs`).
-The other ffmpeg call sites are not wired yet; see [Wiring](#wiring).
+Messenger and Device thumbnails (through `wdintel-rs/src/thumbnail.rs`) and the
+transcription audio probe use it. The other ffmpeg call sites are not wired
+yet; see [Wiring](#wiring).
 
 ## Threat model
 
@@ -147,7 +148,8 @@ media
 | Method | Call sites in wdintel-rs | Status |
 | --- | --- | --- |
 | `thumbnail` | `thumbnail.rs` `generate`, called by `messenger/media_thumbnail.rs` and `devices/files/content/thumbnail/source.rs` | Wired |
-| `probe` | `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata`, `transcription/worker.rs` audio probe | Not wired |
+| `probe` | `transcription/worker.rs` `ensure_audio` | Wired |
+| `probe` | `media_local_cache/playback.rs` `supported_source`, `media_preview/source.rs` `info`, `devices/audio/probe.rs` `media_metadata` | Not wired |
 | `remux_mp4_faststart` | `media_local_cache/playback.rs` `normalization_command`, `run_normalizer` | Not wired |
 | `hls_segments` | `media_preview/mod.rs` `segment_command` | Not wired |
 | `decode_verify` | `devices/audio/probe.rs` `decoder_command`, `run_media_process`, `read_output` | Not wired |
@@ -174,6 +176,11 @@ Thumbnails are done:
 - On Linux the default is `Enforce`: a host without Landlock, or a root service
   without `CAP_SYS_ADMIN`, now fails thumbnail jobs as transient errors instead
   of running them unsandboxed. Check every host's kernel before deploying.
+
+The transcription probe (`transcription/worker.rs` `ensure_audio`) uses
+`Formats::AUDIO`, which now includes `mpegts` for audio-only transport
+streams. Input that cannot decode is a terminal `WorkError`; timeouts and
+environment failures are retryable, as before.
 
 Remaining:
 

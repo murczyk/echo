@@ -51,6 +51,51 @@ async fn probe_reports_audio_parameters() {
     assert_eq!(audio.channels, Some(1));
 }
 
+/// The transcription worker's cases: WAV and AAC in MPEG-TS (legacy
+/// transport) are audio; random and truncated bytes fail terminally.
+#[tokio::test]
+async fn audio_probe_accepts_transport_streams_and_rejects_non_audio() {
+    let dir = tempfile::tempdir().unwrap();
+    let transport = generate(
+        dir.path(),
+        "transport.audio",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-c:a",
+            "aac",
+            "-f",
+            "mpegts",
+        ],
+    );
+    for path in [wav(dir.path(), "native.audio"), transport] {
+        let probe = ffmpeg()
+            .probe(
+                &Input::file(&path).unwrap(),
+                &ProbeOptions::new(Formats::AUDIO),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{}: {error:?}", path.display()));
+        assert!(probe.first("audio").is_some(), "{}", path.display());
+    }
+    for (name, bytes) in [
+        ("not-audio.audio", &b"random data"[..]),
+        ("corrupt.audio", &[0xb1, 0xb8, 0xf5, 0][..]),
+    ] {
+        let path = write(dir.path(), name, bytes);
+        let error = ffmpeg()
+            .probe(
+                &Input::file(&path).unwrap(),
+                &ProbeOptions::new(Formats::AUDIO),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.is_terminal(), "{name}: {error:?}");
+    }
+}
+
 #[tokio::test]
 async fn video_thumbnail_is_a_private_jpeg() {
     let dir = tempfile::tempdir().unwrap();
