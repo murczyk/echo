@@ -25,20 +25,27 @@ pub(crate) fn extract_first_line_unit_with_aor(
     let lines = body
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .take(2)
+        .take(5)
         .map(|line| line.trim().to_string())
         .collect_vec();
     let mut lines = lines.iter();
     let unit = lines.next().cloned();
-    let (locality, locality_v2) = try_lookup_next_line_loc_with_prefix(
-        settlements,
-        &mut lines,
-        None,
-        None,
-        &callsigns,
-        aor_id,
-    )
-    .c(h!())?;
+    let mut locality = None;
+    let mut locality_v2 = None;
+    while !lines.as_slice().is_empty() {
+        (locality, locality_v2) = try_lookup_next_line_loc_with_prefix(
+            settlements.clone(),
+            &mut lines,
+            locality,
+            locality_v2,
+            &callsigns,
+            aor_id,
+        )
+        .c(h!())?;
+        if locality.is_some() {
+            break;
+        }
+    }
     Ok(UnitAndLoc {
         unit,
         locality,
@@ -1155,17 +1162,28 @@ mod tests {
 
     #[test]
     fn known_unit_header_preserves_following_locality() {
-        let body = "24 обБпС рБпЛА вБпЛА КТ\nрайон ВАСИЛІВКА\n-примерно метров 700 от нас";
-        let parsed = extract_first_line_unit_with_aor(
-            test_settlements(),
-            body,
-            vec![],
-            None,
-        )
-        .unwrap();
+        let settlements = test_settlements();
+        for intervening_lines in [
+            "",
+            "10.11.2026, 10:23 (МСК)\n",
+            "\n10.11.2026, 10:23 (МСК)\n\n",
+            "10.11.2026, 10:23 (МСК)\nF=455.4875\nНВ\n",
+        ] {
+            let body = format!(
+                "24 обБпС рБпЛА вБпЛА КТ\n{intervening_lines}район ВАСИЛІВКА\n-примерно метров 700 от нас"
+            );
+            let parsed = extract_first_line_unit_with_aor(
+                settlements.clone(),
+                &body,
+                vec![],
+                None,
+            )
+            .unwrap();
 
-        assert_eq!(parsed.unit.as_deref(), Some("24 обБпС рБпЛА вБпЛА КТ"));
-        assert_eq!(parsed.locality.as_deref(), Some("район ВАСИЛІВКА"));
+            assert_eq!(parsed.unit.as_deref(), Some("24 обБпС рБпЛА вБпЛА КТ"));
+            assert_eq!(parsed.locality.as_deref(), Some("район ВАСИЛІВКА"));
+            assert!(!parsed.locality_v2.unwrap_or_default().is_empty());
+        }
     }
 
     #[test]
