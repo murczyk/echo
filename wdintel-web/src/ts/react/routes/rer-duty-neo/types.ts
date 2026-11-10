@@ -28,6 +28,7 @@ export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' 
 export type FeedColumnModel = {
   feed: MessageFeedState;
   view: {
+    enableDutySearch?: boolean;
     /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible feed min-height. */
     narrowScreen?: boolean;
     /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */
@@ -102,6 +103,7 @@ export type FeedColumnModel = {
   };
   actions: {
     onLoadOlder: () => void | Promise<unknown>;
+    onLoadHistory?: () => void | Promise<unknown>;
     onLoadNewer?: () => void | Promise<unknown>;
     /** Push buffered newer pages into the visible window (scroll-idle / follow). */
     onFlushPendingNewer?: (context: {

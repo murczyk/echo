@@ -52,6 +52,8 @@ const deepPolicy: ExecutionPolicy = {
 const STOP = { name: "", args: {} };
 // A model turn that ends with neither text nor a tool call, as GLM-5.3 does.
 const EMPTY = { name: "", args: {} };
+// A model turn that answers the request with text and no tool call.
+const ANSWER = { name: "", args: {} };
 // Models that end the request without any evidence to cite.
 const NO_EVIDENCE = ["deep-stalled", "deep-promise-only"];
 const initial = {
@@ -216,6 +218,7 @@ for (const [scenario, modelName] of [
     });
     if (["user-text", "user-text-history", "user-map"].includes(scenario)) {
       calls.length = 0;
+      if (scenario.startsWith("user-text")) calls.push(ANSWER);
     } else if (scenario === "no-initial-plan") {
       calls.length = 0;
       read();
@@ -645,6 +648,7 @@ for (const [scenario, modelName] of [
         }
         const call = calls.shift();
         if (call === EMPTY) return stream("");
+        if (call === ANSWER) return stream("The botanical survey is ready.");
         return stream(
           "PRIVATE_RESEARCH_NARRATION",
           call === STOP ? undefined : call,
@@ -865,6 +869,13 @@ for (const [scenario, modelName] of [
       (event) => event.type === "completion_diagnostic",
     );
     assert.ok(diagnostics.some((event) => event.stage === "answer"));
+    // Incident 01a1c4a5: research that ran no tool answered from the whole conversation,
+    // and a synthesis that saw only the last turns rewrote the answer.
+    if (scenario.startsWith("user-text")) {
+      assert.equal(synthesisCalls, 0);
+      assert.equal(diagnostics.at(-1).outcome, "research_text");
+      assert.ok(!events.some((event) => event.summary === "Підсумовую зібрані джерела"));
+    }
     if (
       [
         "retry-length",
@@ -1633,6 +1644,7 @@ async function researchWithProviderScript(
   t: any,
   script: (() => Response)[],
   policyForRun: ExecutionPolicy = policy,
+  overrides: Record<string, unknown> = {},
 ) {
   const events: any[] = [];
   const reads: unknown[] = [];
@@ -1708,6 +1720,7 @@ async function researchWithProviderScript(
               requestKind: "inboxMessages",
             },
           ],
+          ...overrides,
         },
         false,
       ),
@@ -1720,19 +1733,22 @@ async function researchWithProviderScript(
   }
   const metadata = events.find((event) => event.type === "completion_metadata");
   const reason = metadata?.reason;
-  return { events, metadata, reads, reason, researchCalls, synthesisBodies };
+  const answer = events.findLast((event) => event.type === "assistant_snapshot")?.text?.trim();
+  return { answer, events, metadata, reads, reason, researchCalls, synthesisBodies };
 }
 
 const readArchive = () =>
   stream("", { name: "echo_inbox_messages", args: { period } });
 
 test("incident 01a1b210: a model failure before any tool gets one more attempt", async (t) => {
-  const { events, reads, reason, researchCalls } =
+  const { answer, events, reads, reason, researchCalls } =
     await researchWithProviderScript(t, [
       () => providerRejection(400, "unexpected model state"),
       readArchive,
       () => stream("Готово."),
     ]);
+  // Once a tool ran, synthesis writes the answer, not research's closing note.
+  assert.equal(answer, "Підсумок.");
   assert.equal(reads.length, 1);
   assert.equal(researchCalls, 3);
   assert.notEqual(reason, "provider_error");
@@ -1840,4 +1856,117 @@ test("#4053 a failed-start message never logs the provider's text", () => {
     providerCompletion({ stopReason: "stop", content: [] }).failureKind,
     undefined,
   );
+});
+
+// Incident 01a1c4a5: a ticket-processing chat on GLM-5.3 Balanced. Research saw the opening
+// rules and answered in CSV without tools; synthesis saw only the last two turns, whose
+// answers were inability notices, and rewrote the CSV into a summary.
+const balancedPolicy: ExecutionPolicy = {
+  ...policy,
+  preset: "balanced",
+  maxRuntimeSeconds: 600,
+  finalizationSeconds: 120,
+};
+const OPENING_RULES = "OPENING_RULES: process every ticket into CSV with columns sidc,name,x,y.";
+const CSV =
+  '"sidc","name","x","y"\n"10062000001209020000","4 дшб 108 дшп","5277115","6671288"\n\n**Кількість обʼєктів: 1**';
+const ticketHistory = [
+  { role: "user", content: OPENING_RULES },
+  { role: "assistant", content: "Правила запамʼятав." },
+  { role: "user", content: "Доставочки: 108 дшп 4 дшб X-5277115 Y-6671288" },
+  { role: "assistant", content: CSV },
+  { role: "user", content: "Наступні доставочки: 108 дшп 4 дшб X-5288220 Y-6667351" },
+  { role: "assistant", content: FLASH_INABILITY },
+  { role: "user", content: "Інструкція по обробці тікетів в тебе є." },
+  { role: "assistant", content: FLASH_INABILITY },
+];
+const ticketFollowUp = {
+  prompt: "Оброби тікет мінування 1445 x-5280658 y-6671740",
+  history: ticketHistory,
+};
+
+test("incident 01a1c4a5: research that ran no tool delivers its own answer", async (t) => {
+  const { answer, events, metadata, researchCalls, synthesisBodies } =
+    await researchWithProviderScript(t, [() => stream(CSV)], balancedPolicy, ticketFollowUp);
+  assert.equal(answer, CSV);
+  assert.equal(researchCalls, 1);
+  assert.equal(synthesisBodies.length, 0);
+  assert.equal(metadata, undefined);
+  assert.ok(
+    events.some(
+      (event) =>
+        event.type === "completion_diagnostic" &&
+        event.stage === "answer" &&
+        event.outcome === "research_text",
+    ),
+  );
+  assert.ok(!events.some((event) => event.summary === "Підсумовую зібрані джерела"));
+});
+
+test("incident 01a1c4a5: Deep delivers the reply, not the note confirming no search was needed", async (t) => {
+  const { answer, researchCalls, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream(CSV), () => stream("Готово.")],
+    deepPolicy,
+    ticketFollowUp,
+  );
+  assert.equal(researchCalls, 2);
+  assert.equal(synthesisBodies.length, 0);
+  assert.equal(answer, CSV);
+});
+
+test("incident 01a1c4a5: after a failed start the retry's reply is the answer", async (t) => {
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => providerRejection(400, "unexpected model state"), () => stream(CSV)],
+    balancedPolicy,
+    ticketFollowUp,
+  );
+  assert.equal(synthesisBodies.length, 0);
+  assert.equal(answer, CSV);
+});
+
+test("incident 01a1c4a5: synthesis sees the opening rules and the newest turns", async (t) => {
+  const filler = (index: number) => `${index} ${"x".repeat(10_000)}`;
+  const history = [
+    { role: "user", content: OPENING_RULES },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      role: index % 2 ? "assistant" : "user",
+      content: filler(index),
+    })),
+  ];
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream("")],
+    balancedPolicy,
+    { ...ticketFollowUp, history },
+  );
+  assert.equal(answer, "Підсумок.");
+  assert.equal(synthesisBodies.length, 1);
+  const { conversation } = synthesisRequest(JSON.parse(synthesisBodies[0]));
+  assert.equal(conversation[0].content, OPENING_RULES);
+  assert.equal(conversation.at(-1).content, history.at(-1)!.content);
+  assert.ok(conversation.length > 4);
+  assert.ok(conversation.length < history.length);
+});
+
+test("incident 01a1c4a5: a reply with an invented link still goes to synthesis", async (t) => {
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream(`${CSV} [джерело](/rer-analysis-neo?m=missing)`)],
+    balancedPolicy,
+    ticketFollowUp,
+  );
+  assert.equal(synthesisBodies.length, 1);
+  assert.equal(answer, "Підсумок.");
+});
+
+test("incident 01a1c4a5: a document request still goes to synthesis", async (t) => {
+  const { synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream(CSV)],
+    { ...balancedPolicy, documentTask: true, maxRuntimeSeconds: 1800, finalizationSeconds: 240 },
+    ticketFollowUp,
+  );
+  assert.equal(synthesisBodies.length, 1);
 });

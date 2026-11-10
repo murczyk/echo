@@ -47,7 +47,7 @@
 - **User role or permission:** users viewing a duty feed
 - **Preconditions:** a feed has mounted messages and may be following its live tail
 - **User action or external event:** messages append, old rows trim, layout settles, the user scrolls upward, or a programmatic follow scroll changes the viewport
-- **Expected observable result:** new messages follow smoothly only while the reader remains at the tail; an upward user scroll cancels following; trimming preserves the visible position; programmatic scrolling refreshes the mounted viewport without waking all offloaded cards.
+- **Expected observable result:** new messages follow smoothly only while the reader remains at the tail; an upward user scroll cancels following; trimming preserves the visible position; programmatic scrolling refreshes the mounted viewport without waking all offloaded cards; a feed width change (the embedded report editor opening or closing, a window resize) wakes an offloaded feed at once, so placeholders measured at the old width cannot shift the reader on the next wheel tick ([#4117](https://github.com/echoua/echo/issues/4117)).
 - **Loading/empty/error/success behavior:** reduced-motion users remain pinned to the tail without a smooth animation; throttled frames still complete the follow.
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** none.

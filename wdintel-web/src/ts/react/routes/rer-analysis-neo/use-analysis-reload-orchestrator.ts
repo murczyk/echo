@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { loadUnitHierarchyForSelections } from '../shared/use-unit-children-filter';
+import { isAbortError } from '../../services/api/client';
+import { toErrorMessage } from './use-analysis-data.shared';
 
 import type {
   InboxMessage,
@@ -29,6 +32,7 @@ type FetchAnalysisNetworks = typeof import('../../services/api/analysis').fetchA
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
 type Params = {
+  loadUnitsByIds?: typeof import('../../services/api/units').getUnitsByIds;
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
   hideNetworks: boolean;
@@ -117,6 +121,7 @@ export type UseAnalysisReloadOrchestratorResult = {
 
 export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReloadOrchestratorResult {
   const {
+    loadUnitsByIds,
     centerTab,
     clearAnalysisResults,
     deferInitialLoad,
@@ -224,7 +229,16 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
       try {
+        const resolvedQueryState =
+          queryState.unitsSelected.length > 0
+            ? {
+                ...queryState,
+                unitHierarchy: await loadUnitHierarchyForSelections(queryState.unitsSelected),
+              }
+            : queryState;
+        if (abortController.signal.aborted) return;
         await reloadAnalysisData({
+          loadUnitsByIds,
           clearAnalysisResults,
           hideNetworks,
           focusedWindow,
@@ -247,7 +261,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
             onError(message, critical && !hasLoadedMessagesRef.current),
           onUnauthorized,
           optionsFreqsRef: optionsFreqValuesRef,
-          queryState,
+          queryState: resolvedQueryState,
           reloadRequestRef,
           newCallsignsRequestRef,
           newCallsignsLoadedKeyRef,
@@ -296,6 +310,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           rightSidebarTab,
           signal: abortController.signal,
         });
+      } catch (error) {
+        if (!abortController.signal.aborted && !isAbortError(error) && !onUnauthorized(error)) {
+          onError(toErrorMessage(error));
+        }
       } finally {
         if (
           reloadAbortControllerRef.current === abortController &&
@@ -306,6 +324,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       }
     },
     [
+      loadUnitsByIds,
       centerTab,
       clearAnalysisResults,
       focusedWindow,

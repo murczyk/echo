@@ -96,6 +96,7 @@ pub struct Network {
     pub do_not_archive: bool,
     pub unit_mask: Vec<String>,
     pub status: NetworkStatus,
+    pub ai_instructions: Option<String>,
 }
 
 #[derive(
@@ -125,6 +126,8 @@ pub struct CreateNetworkReq {
     pub do_not_archive: bool,
     #[serde(default)]
     pub unit_mask: Vec<String>,
+    #[serde(default)]
+    pub ai_instructions: Option<String>,
 }
 
 #[derive(
@@ -165,6 +168,9 @@ pub struct UpdateNetworkReq {
     #[serde(default)]
     pub unit_mask: Option<Vec<String>>,
     pub status: NetworkStatus,
+    /// `None` keeps the stored text; a blank string clears it.
+    #[serde(default)]
+    pub ai_instructions: Option<String>,
 }
 
 #[derive(

@@ -298,6 +298,7 @@ export type ServerInfo = {
   grafanaAddress: string;
   featureDelta: boolean;
   featureAnalysisMap: boolean;
+  enableDutySearch: boolean;
   featureStrictNetworks: boolean;
   featureMyAdminGroupsEdit: boolean;
   version: string;
@@ -479,6 +480,17 @@ export type GeoCoordinates = {
   lon: number;
 };
 
+export type NetworkMatchCandidate = {
+  networkId: number;
+  certainty: number;
+  reason: string;
+};
+
+export type InboxNetworkMatch = {
+  confidentNetworkId: number | null;
+  candidates: Array<NetworkMatchCandidate>;
+};
+
 export type InboxMessage = {
   messageUuid: string | null;
   messageUid: string | null;
@@ -524,6 +536,7 @@ export type InboxMessage = {
   location: string | null;
   tags: Array<number> | null;
   networkIds: Array<number> | null;
+  networkMatch: InboxNetworkMatch | null;
   networkName: string | null;
   deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
@@ -1396,6 +1409,8 @@ export type RerDutyQueryState = {
 };
 
 export type RerDutyQueryStateWf = {
+  search: string | null;
+  searchMode: AnalysisSearchMode | null;
   groupsSelected: Array<string> | null;
   groupsDenied: Array<string> | null;
   sendersSelected: Array<string> | null;
@@ -1496,6 +1511,8 @@ export type BatchSignalProfileReq = {
 };
 
 export type InboxMessagesRsp = {
+  historySinceMs: number | null;
+  historyPeriodMs: number | null;
   inboxItems: Array<[number, InboxMessage]>;
   pollCursorId: number | null;
   callsigns: Array<CallsignInfoRes>;
@@ -4090,14 +4107,24 @@ export type UnitHierarchyUnit = {
   groupIndex: number | null;
 };
 
+export type UnitHierarchySelection = {
+  value: string;
+  label: string;
+  unitIds: Array<number>;
+  exactUnitIds: Array<number>;
+};
+
 export type UnitHierarchyRsp = {
   revision: string;
   groups: Array<UnitHierarchyGroup>;
   units: Array<UnitHierarchyUnit>;
+  selections: Array<UnitHierarchySelection>;
 };
 
 export type UnitHierarchyReq = {
   knownRevision: string | null;
+  unitIds: Array<number> | null;
+  selectionValues: Array<string> | null;
 };
 
 export type UnitCombatType = {
@@ -5157,6 +5184,7 @@ export type Network = {
   doNotArchive: boolean;
   unitMask: Array<string>;
   status: NetworkStatus;
+  aiInstructions: string | null;
 };
 
 export type NetworkStatus =
@@ -5210,6 +5238,7 @@ export type CreateNetworkReq = {
   descriptions: Array<AddNetworkDescription>;
   doNotArchive: boolean;
   unitMask: Array<string>;
+  aiInstructions: string | null;
 };
 
 export type DeleteNetworkReq = {
@@ -5231,6 +5260,7 @@ export type UpdateNetworkReq = {
   doNotArchive: boolean;
   unitMask: Array<string> | null;
   status: NetworkStatus;
+  aiInstructions: string | null;
 };
 
 export type NetworkCallsignsReq = {
@@ -5883,6 +5913,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
@@ -5899,6 +5930,8 @@ export type SystemSettingsCurrentRsp = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
+  aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5930,6 +5963,7 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -5949,6 +5983,8 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
+  aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5985,6 +6021,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -6004,6 +6041,8 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   dutySelectedGroupsEnabled: boolean | null;
+  enableDutySearch: boolean | null;
+  aiNetworkMatchEnabled: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number | null;
@@ -6102,6 +6141,9 @@ export type AiEngineItem = {
   hasToken: boolean;
   createdAt: number;
   updatedAt: number;
+  unhealthy: boolean;
+  healthMessage: string | null;
+  healthUpdatedAt: number | null;
 };
 
 export type AiEngineListRsp = {
@@ -6132,6 +6174,12 @@ export type UpdateAiEngineReq = {
   enabled: boolean;
   callsignEnabled: boolean;
   ocrEnabled: boolean;
+};
+
+export type UpdateAiEngineHealthReq = {
+  id: string;
+  unhealthy: boolean;
+  message: string | null;
 };
 
 export type AiChatSummary = {
@@ -6250,6 +6298,8 @@ export type AiAgentProviderItem = {
   id: string;
   name: string;
   modelName: string;
+  unhealthy: boolean;
+  healthMessage: string | null;
 };
 
 export type AiAgentReasoningPreset =
@@ -6598,6 +6648,8 @@ export type AiAgentMessageItem = {
   maxRuntimeSeconds: number | null;
   startedAt: number | null;
   completionMetadata: AiAgentCompletionMetadata | null;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
   requestId: string;
   requestState: string;
   role: string;
@@ -6750,6 +6802,7 @@ export type AiAgentAdminRequestListReq = {
   state: string | null;
   suspicious: boolean | null;
   pageStartId: string | null;
+  searchId: string | null;
 };
 
 export type AiAgentSecurityReviewItem = {
@@ -7967,6 +8020,7 @@ export type LongPollRsp = {
   events: Array<EventMsg>;
   lastEventId: string | null;
   deploymentMaintenance: DeploymentMaintenance | null;
+  unitCatalogRevision: string | null;
 };
 
 export type EchoAccountF1 = {

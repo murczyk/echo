@@ -62,7 +62,7 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). A physical bottom in a linked historical window is only a chunk boundary, not the live tail: it must not enable watch or drain later chunks automatically. Watch + physical bottom at the true newest edge still mark-all-read and drain the live tail.
 - **Pending newer buffer** (Elm `notRenderedMessagesYet`): background results that could evict visible rows remain pending. Native scrolling commits the longest safe ordered prefix while preserving the visible anchor; the down-arrow may then navigate and land on the current tail. Pending tails detached by an older-window trim are discarded and re-fetched from the retained boundary.
 - **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab. Editor resizing and tab remounts preserve each feed’s reading anchor; delayed scroll and idle callbacks wait for pending layout restoration. Regression coverage: `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx` and `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`.
-- **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. All columns stay visible.
+- **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. A feed width change (embedded editor open/close, window resize) also remounts it, because placeholder heights are only valid at the width they were measured at. All columns stay visible.
 - **Collapsed media (Duty, [#3161](https://github.com/echoua/echo/issues/3161)):** optional setting (default of) hides audio / photo·video / coordinates behind a reveal banner until clicked. Toggle in Settings → Оперативний.
 - Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. The button stays visible at a chunk boundary until the newest message is confirmed and rendered. Only an explicit jump shows a spinner in the button; ordinary chunk paging uses the feed skeleton.
 - **Underfilled window fallback ([#3615](https://github.com/echoua/echo/issues/3615)):** when the mounted window does not overflow, a deliberate upward wheel or focused Up/PageUp requests older history; a downward wheel or focused Down/PageDown flushes buffered newer items or requests a newer page. It never runs on mount, never drains history automatically, ignores nested controls and modified/zoom input, and coalesces input until the directional attempt settles. Native scrolling remains the owner once the window overflows. Regression: `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts` and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx`.
@@ -113,6 +113,42 @@ scroll-to-latest reloads do not start another
 polling loop. Classic Duty receives inbox changes through Shared's event
 transport, including updates to buffered messages. Browser regressions are in
 `wdintel-web/tests/e2e/rer-duty-polling.spec.ts`.
+
+## Search and older periods
+
+The «Пошук в оперативному» toggle in admin system settings enables the Analysis
+search control below saved filters in every Duty Neo column without a server
+restart. The default is false; both search and the older-period button are
+hidden when disabled. Reload Duty after changing the setting. Existing
+`enable_duty_search` values in `config.toml` are imported at startup only when
+the database setting is unset; the legacy key can then be removed.
+Search text and mode belong to the column filter and saved/linked filters.
+Search, counts, and all pages use the column filters and creation time.
+Inbox events recheck search membership for displayed, buffered, and off-window
+unread messages. Messages that stop matching are removed from all three.
+If server settings fail to load, a toast reports the error and restored searches
+remain blocked until the page is successfully reloaded.
+
+The initial request keeps the adaptive limit: traffic above 100,000 messages
+in the preceding three days, unit filters, or unavailable statistics restrict
+history to 14 days. The effective boundary is applied before choosing the
+PostgreSQL/analytics search route and returned with the response. Subsequent
+pages keep that boundary. After exhausting it (including an empty result),
+«Завантажити ще» searches the preceding period of the same length. Empty periods
+advance the boundary too; failures leave it available for retry. Each click
+queries only the next period and retains already loaded results within the
+40-message window. Adjacent periods share their inclusive boundary to preserve
+creation times between milliseconds; cursors and deduplication prevent repeats.
+Changing filters resets the history boundary. When the
+adaptive limit is unnecessary, the initial search covers all history and there
+is no earlier period to load.
+Reconciliation that changes the oldest result discards an in-flight older page
+without advancing the period or blocking retry. Counts from a previous history
+boundary are discarded as well.
+
+Regression coverage:
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.search.spec.tsx`
+and `wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
 
 ## Code map
 

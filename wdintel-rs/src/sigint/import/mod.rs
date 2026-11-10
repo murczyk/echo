@@ -1175,6 +1175,8 @@ async fn import_sigint_network_data(
             last_active_at: NotSet,
             do_not_archive: Set(rec.do_not_archive),
             unit_mask: Set(rec.unit_mask),
+            // Analyst text stays local to each server.
+            ai_instructions: NotSet,
         };
         let new_rec = if new_record {
             num_created += 1;

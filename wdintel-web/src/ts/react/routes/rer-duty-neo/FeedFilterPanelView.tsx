@@ -1,3 +1,5 @@
+import type { FeedFilterPanelModel } from './FeedFilterPanel';
+import { AnalysisSearchControls } from '../rer-analysis-neo/components/AnalysisSearchControls';
 import { useRadioFeatures } from '../shared/RadioFeatures';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
@@ -81,6 +83,7 @@ type FeedFilterSavedFiltersConfig = {
 };
 
 export type FeedFilterPanelViewProps = {
+  search?: FeedFilterPanelModel['search'];
   isDarkMode: boolean;
   hasActiveFilter: boolean;
   hideGroupSelection?: boolean;
@@ -129,6 +132,7 @@ export function FeedFilterPanelView({
   devices,
   advanced,
   savedFilters,
+  search,
 }: FeedFilterPanelViewProps) {
   const radioFeaturesAllowed = useRadioFeatures();
   return (
@@ -400,6 +404,9 @@ export function FeedFilterPanelView({
           onRenameExisting={savedFilters.onRenameExisting}
           onDeleteExisting={savedFilters.onDeleteExisting}
         />
+        {search ? (
+          <AnalysisSearchControls {...search} isCompactLayout={false} onClose={() => {}} />
+        ) : null}
       </Box>
     </Box>
   );

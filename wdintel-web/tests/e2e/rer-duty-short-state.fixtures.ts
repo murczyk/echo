@@ -9,6 +9,7 @@ import {
 } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
+  enableDutySearch?: boolean;
   userRoles?: string[];
   enableAudioTranscription?: boolean;
   dutyExcludeMenuEnabled?: boolean;
@@ -196,6 +197,11 @@ export async function installRerDutyShortStateMocks(
       return;
     }
 
+    if (pathname === '/api/sigint/units/hierarchy') {
+      await fulfillJson(route, { revision: 'duty-fixture', groups: [], units: [] });
+      return;
+    }
+
     if (pathname === '/api/1.1/submit-direct/settings') {
       await route.fulfill({
         json: { unitRequired: false, deviceRequired: false, allowUnitCreation: true },
@@ -253,7 +259,10 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api-public/server-info') {
-      await fulfillJson(route, serverInfoResponse());
+      await fulfillJson(route, {
+        ...serverInfoResponse(),
+        enable_duty_search: options.enableDutySearch,
+      });
       return;
     }
 

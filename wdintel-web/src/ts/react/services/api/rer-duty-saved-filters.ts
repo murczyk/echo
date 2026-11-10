@@ -31,10 +31,12 @@ function partitionUnitValues(
 
 function rerDutyQueryStateWfToSnake(
   w: RerDutyFeedFilterState,
-): Record<string, string[] | number[] | number | boolean | null> {
+): Record<string, string | string[] | number[] | number | boolean | null> {
   const selectedUnits = partitionUnitValues(w.unitsSelected, w.selectedUnitIds);
   const deniedUnits = partitionUnitValues(w.unitsDenied, w.deniedUnitIds);
   return {
+    search: w.search,
+    search_mode: w.searchMode,
     groups_selected: w.groupsSelected,
     groups_denied: w.groupsDenied,
     senders_selected: w.sendersSelected,

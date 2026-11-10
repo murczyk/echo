@@ -30,10 +30,33 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
   const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
+  const [enableDutySearch, setEnableDutySearch] = useState(false);
+  const [serverInfoReady, setServerInfoReady] = useState(false);
+  const [serverInfoError, setServerInfoError] = useState<string | null>(null);
   const [locationsList, setLocationsList] = useState<string[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const mountedRef = useRef(true);
   const locationsRequestGenerationRef = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    void fetchServerInfo()
+      .then((serverInfo) => {
+        if (!active) return;
+        setFeatureStrictNetworks(serverInfo.featureStrictNetworks);
+        setEnableDutySearch(serverInfo.enableDutySearch);
+        setServerInfoReady(true);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setServerInfoError(
+          `Не вдалося завантажити налаштування пошуку: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -85,12 +108,6 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
       if (mountedRef.current) setSavedFilters(saved);
     } catch (e) {
       console.warn('loadFilterOptions: savedFiltersList failed', e);
-    }
-    try {
-      const serverInfo = await fetchServerInfo();
-      if (mountedRef.current) setFeatureStrictNetworks(serverInfo.featureStrictNetworks);
-    } catch (e) {
-      console.warn('loadFilterOptions: fetchServerInfo failed', e);
     }
   }, [radioFeaturesAllowed]);
 
@@ -150,6 +167,9 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     locationsList,
     locationsLoading,
     reloadLocations,
+    enableDutySearch,
+    serverInfoReady,
+    serverInfoError,
     featureStrictNetworks,
   };
 }

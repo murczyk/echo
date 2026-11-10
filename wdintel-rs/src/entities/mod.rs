@@ -41,6 +41,8 @@ pub mod ai_gov_ua_settings;
 pub mod ai_intel_report_attempt;
 pub mod ai_intel_report_engine_budget;
 pub mod ai_intel_report_settings;
+pub mod ai_network_match_result;
+pub mod ai_network_match_worker_job;
 pub mod ai_position_coordinate;
 pub mod ai_position_feedback;
 pub mod ai_position_knowledge;

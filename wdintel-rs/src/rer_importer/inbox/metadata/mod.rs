@@ -14,6 +14,7 @@ pub mod types;
 
 pub(crate) use parser::{
     is_metadata_line, normalize_metadata_digits, normalize_metadata_value,
+    parse_metadata,
 };
 
 pub(crate) fn parse_metadata_text_callsigns(body: &str) -> Vec<String> {

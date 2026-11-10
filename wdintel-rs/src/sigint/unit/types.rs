@@ -49,10 +49,22 @@ pub struct UnitHierarchyUnit {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnitHierarchySelection {
+    pub value: String,
+    pub label: String,
+    pub unit_ids: Vec<i64>,
+    pub exact_unit_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct UnitHierarchyRsp {
     pub revision: String,
     pub groups: Vec<UnitHierarchyGroup>,
     pub units: Vec<UnitHierarchyUnit>,
+    #[serde(default)]
+    pub selections: Vec<UnitHierarchySelection>,
 }
 
 #[derive(
@@ -60,6 +72,8 @@ pub struct UnitHierarchyRsp {
 )]
 pub struct UnitHierarchyReq {
     pub known_revision: Option<String>,
+    pub unit_ids: Option<Vec<i64>>,
+    pub selection_values: Option<Vec<String>>,
 }
 
 #[derive(

@@ -23,6 +23,8 @@ const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "re
 const RER_DUTY_GROUP_SCOPES_STRICT_DECODER: &str = r#"Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string)))))"#;
 const RER_DUTY_GROUP_SCOPES_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))), Json.Decode.succeed Nothing ]"#;
 const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
+    ("search", "Json.Decode.string"),
+    ("search_mode", "analysisSearchModeDecoder"),
     ("units_selected", "Json.Decode.list (Json.Decode.string)"),
     ("units_denied", "Json.Decode.list (Json.Decode.string)"),
     ("units_include_children", "Json.Decode.bool"),
@@ -56,6 +58,8 @@ const EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER: &str = r#"|> Json.Decode.and
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "intelligence_report" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder))))"#;
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))"#;
+const LONG_POLL_UNIT_CATALOG_REVISION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_catalog_revision" (Json.Decode.nullable (Json.Decode.string))))"#;
+const LONG_POLL_UNIT_CATALOG_REVISION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "unit_catalog_revision" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))"#;
 
 const MESSAGE_IS_TIME_NULL_STRICT_DECODER: &str = r#"Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool))"#;
 const MESSAGE_IS_TIME_NULL_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]"#;
@@ -101,6 +105,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::AreaOfResponsibilityEntry,
             crate::rer_importer::types::AreaOfResponsibilityStatsRsp,
             crate::rer_importer::types::GeoCoordinates,
+            crate::ai_network_match::types::NetworkMatchCandidate,
+            crate::ai_network_match::types::InboxNetworkMatch,
             crate::rer_importer::types::InboxMessage,
             crate::notifications::NotificationListReq,
             crate::notifications::NotificationQuote,
@@ -582,6 +588,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::Unit,
             crate::sigint::unit::types::UnitHierarchyGroup,
             crate::sigint::unit::types::UnitHierarchyUnit,
+            crate::sigint::unit::types::UnitHierarchySelection,
             crate::sigint::unit::types::UnitHierarchyRsp,
             crate::sigint::unit::types::UnitHierarchyReq,
             crate::sigint::unit::types::UnitCombatType,
@@ -859,6 +866,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_engine::types::AiEngineIdReq,
             crate::ai_engine::types::CreateAiEngineReq,
             crate::ai_engine::types::UpdateAiEngineReq,
+            crate::ai_engine::types::UpdateAiEngineHealthReq,
             crate::ai_engine::types::AiChatSummary,
             crate::ai_engine::types::AiChatListReq,
             crate::ai_engine::types::AiChatListRsp,
@@ -1169,6 +1177,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::AreaOfResponsibilityEntry,
             crate::rer_importer::types::AreaOfResponsibilityStatsRsp,
             crate::rer_importer::types::GeoCoordinates,
+            crate::ai_network_match::types::NetworkMatchCandidate,
+            crate::ai_network_match::types::InboxNetworkMatch,
             crate::rer_importer::types::InboxMessage,
             crate::rer_importer::types::InboxMessageSummary,
             crate::rer_importer::types::InboxMessageMetadata,
@@ -1612,6 +1622,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::Unit,
             crate::sigint::unit::types::UnitHierarchyGroup,
             crate::sigint::unit::types::UnitHierarchyUnit,
+            crate::sigint::unit::types::UnitHierarchySelection,
             crate::sigint::unit::types::UnitHierarchyRsp,
             crate::sigint::unit::types::UnitHierarchyReq,
             crate::sigint::unit::types::UnitCombatType,
@@ -1875,6 +1886,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_engine::types::AiEngineIdReq,
             crate::ai_engine::types::CreateAiEngineReq,
             crate::ai_engine::types::UpdateAiEngineReq,
+            crate::ai_engine::types::UpdateAiEngineHealthReq,
             crate::ai_engine::types::AiChatSummary,
             crate::ai_engine::types::AiChatListReq,
             crate::ai_engine::types::AiChatListRsp,
@@ -2336,6 +2348,18 @@ fn patch_backward_compatible_decoders(
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
         .replace(
+            r#"Json.Decode.field "enable_duty_search" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "enable_duty_search" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "history_since_ms" (Json.Decode.nullable (Json.Decode.int))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "history_since_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "history_period_ms" (Json.Decode.nullable (Json.Decode.int))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "history_period_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionCreateReport ]"#,
         )
@@ -2431,6 +2455,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
             LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER,
+        )
+        .replace(
+            LONG_POLL_UNIT_CATALOG_REVISION_STRICT_DECODER,
+            LONG_POLL_UNIT_CATALOG_REVISION_COMPAT_DECODER,
         ))
 }
 

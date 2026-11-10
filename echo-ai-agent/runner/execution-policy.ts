@@ -258,7 +258,8 @@ export interface CompletionDiagnostic {
     | "time_limit"
     | "tool_limit"
     | "continued"
-    | "draft_refresh";
+    | "draft_refresh"
+    | "research_text";
   stopReason?: string;
   rawStopReason?: string;
   inputTokens?: number;
@@ -302,6 +303,35 @@ function providerFailureFacts(
     failureKind: message.trim() ? providerFailureKind(message) : "empty",
     ...(status ? { httpStatus: Number(status) } : {}),
   };
+}
+
+/**
+ * A provider failure or filter that ended the run, reported so Echo can offer another
+ * model (#4112). Only provider-origin errors count: the typed content-filter error, the
+ * `provider request failed: <kind>: …` errors the runner raises for a failed model reply,
+ * and `context checkpoint failed: … (reason: <kind>)` from context compaction.
+ * Authorization, Echo-side and infrastructure failures report nothing.
+ */
+export function terminalProviderFailure(
+  error: unknown,
+): ({ type: "completion_diagnostic" } & CompletionDiagnostic) | null {
+  if (error instanceof SynthesisContentFilterError)
+    return { type: "completion_diagnostic", stage: "answer", outcome: "content_filter" };
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const match = message.match(
+    /provider request failed: ([a-z_]+)|context checkpoint failed: [a-z_]+ \(reason: ([a-z_]+)\)/,
+  );
+  const kind = match?.[1] ?? match?.[2];
+  if (kind === "content_filter")
+    return { type: "completion_diagnostic", stage: "answer", outcome: "content_filter" };
+  if (kind === "rate_limit" || kind === "interrupted_stream" || kind === "provider_error")
+    return {
+      type: "completion_diagnostic",
+      stage: "answer",
+      outcome: "transient_error",
+      failureKind: kind,
+    };
+  return null;
 }
 
 export function completionFailure(error: unknown): CompletionStatus {
@@ -389,6 +419,32 @@ type SynthesisOptions = {
   images?: { type: "image"; data: string; mimeType: string }[];
   onOutcome?: (outcome: CompletionDiagnostic) => void;
 };
+
+/**
+ * History for final synthesis, oldest first: the newest entries that fit the budget, plus
+ * the opening user message, which often sets rules the whole conversation follows.
+ */
+export function synthesisConversation(
+  history: readonly { role: string; content: string }[],
+  budgetTokens: number,
+): { role: string; content: string }[] {
+  const cost = (entry: { content: string }) => Math.ceil(entry.content.length / 3);
+  const kept = new Set<number>();
+  let remaining = budgetTokens;
+  const opening = history.findIndex((entry) => entry.role === "user");
+  if (opening >= 0 && cost(history[opening]) <= budgetTokens / 2) {
+    kept.add(opening);
+    remaining -= cost(history[opening]);
+  }
+  for (let index = history.length - 1; index >= 0 && !kept.has(index); index--) {
+    if (cost(history[index]) > remaining) break;
+    kept.add(index);
+    remaining -= cost(history[index]);
+  }
+  return history
+    .filter((_, index) => kept.has(index))
+    .map(({ role, content }) => ({ role, content }));
+}
 
 function synthesisContext(options: SynthesisOptions): Context | null {
   const records = evidenceRecords(options.evidence);

@@ -18,6 +18,7 @@ import {
   formatErrorMessage,
   getNetworkUpsertValidationError,
   normalizeNetworkUnitMask,
+  toNetworkAiInstructionsReq,
   toNetworkEditForm,
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
@@ -229,6 +230,7 @@ export function useRerNetworkDetailsNeoPageActions({
           : null,
         descriptions: null,
         status: editForm.status,
+        aiInstructions: toNetworkAiInstructionsReq(editForm, state.aiNetworkMatchEnabled),
       });
 
       await syncNetworkRelations(editForm);
@@ -267,6 +269,7 @@ export function useRerNetworkDetailsNeoPageActions({
       }));
     }
   }, [
+    state.aiNetworkMatchEnabled,
     state.editForm,
     state.editInProgress,
     state.network,

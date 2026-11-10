@@ -732,6 +732,11 @@ update req msg model =
                       else
                         E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedEvents
                     , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents generation) (Process.sleep (eventServicePollDelay req.path))
+                    , E.sendCmd <|
+                        Ports.shared_dispatchUnitChanged
+                            { revision = response.unitCatalogRevision
+                            , changed = List.any (\event -> event.eventType == B.EtUnitChanged) response.events
+                            }
                     ]
                 )
 

@@ -57,6 +57,8 @@ export type InboxMessagesRspRaw = {
     [key: string]: unknown;
   }>;
   freq_pelengs_summary: InboxMessagesRsp['freqPelengsSummary'];
+  history_since_ms?: number | null;
+  history_period_ms?: number | null;
   page_limit?: number | null;
   around_message_messages_before?: number | null;
   around_message_messages_after?: number | null;
@@ -321,6 +323,7 @@ function normalizeInboxMessage(
     groupMasterKey,
     groupMasterKeys,
     networkIds,
+    networkMatch: m.networkMatch ?? null,
     networkName,
     deviceName,
     location,
@@ -405,6 +408,8 @@ function mapRsp(raw: InboxMessagesRspRaw): InboxMessagesRsp {
     signalGroups,
     freqPelengsSummary: raw.freq_pelengs_summary,
     pageLimit: raw.page_limit ?? null,
+    historySinceMs: raw.history_since_ms ?? null,
+    historyPeriodMs: raw.history_period_ms ?? null,
   };
 }
 

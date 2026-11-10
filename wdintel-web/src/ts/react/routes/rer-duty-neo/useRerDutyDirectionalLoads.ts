@@ -220,12 +220,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
   }, [params.loadingNewerFeedIds, params.messageFeeds, params.messageFeedsRef]);
 
   const loadFeedOlderMessages = useCallback(
-    (feedId: string) => {
+    (feedId: string, extendHistory = false) => {
       const currentParams = paramsRef.current;
       const feed = currentParams.messageFeedsRef.current.find(
         (candidate) => candidate.id === feedId,
       );
-      if (!feed || feed.items.length === 0 || feed.hasReachedStart) return Promise.resolve();
+      if (!feed || feed.loading) return Promise.resolve();
+      if (extendHistory) {
+        if (!feed.hasReachedStart || feed.historySinceMs == null || !feed.historyPeriodMs)
+          return Promise.resolve();
+      } else if (feed.items.length === 0 || feed.hasReachedStart) return Promise.resolve();
       const lane = getLane(feedId);
       if (lane.active?.direction === 'older') return lane.active.promise;
       const queuedOlder = lane.queued.find((operation) => operation.direction === 'older');
@@ -236,14 +240,24 @@ export function useRerDutyDirectionalLoads(params: Params) {
         const currentFeed = runParams.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
-        if (!currentFeed || currentFeed.items.length === 0 || currentFeed.hasReachedStart) {
+        if (
+          !currentFeed ||
+          (!extendHistory && (currentFeed.items.length === 0 || currentFeed.hasReachedStart)) ||
+          (extendHistory &&
+            (!currentFeed.hasReachedStart ||
+              currentFeed.historySinceMs == null ||
+              !currentFeed.historyPeriodMs))
+        ) {
           lane.active = null;
           operation.resolve();
           startOperationRef.current(feedId);
           return;
         }
         const requestGeneration = runParams.getFeedLoadGeneration(feedId);
-        const beforeIdNoninclusive = currentFeed.items[0][0];
+        const beforeIdNoninclusive = currentFeed.items[0]?.[0];
+        const historySinceMs = extendHistory
+          ? currentFeed.historySinceMs! - currentFeed.historyPeriodMs!
+          : currentFeed.historySinceMs;
         runParams.setMessageFeeds((previous) =>
           previous.map((feed) => (feed.id === feedId ? { ...feed, loadingOlder: true } : feed)),
         );
@@ -254,7 +268,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
           `before=${beforeIdNoninclusive}; generation=${requestGeneration}`,
         );
         try {
-          const req = runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive });
+          const req = runParams.buildReqForFeed(
+            { ...currentFeed, historySinceMs },
+            { beforeIdNoninclusive },
+          );
+          if (extendHistory) {
+            req.tillDateInclusiveMs = currentFeed.historySinceMs!;
+            req.loadLatest = true;
+          }
           const response = await withDutyFeedRequestDeadline(
             searchRequestDeadlineMs(req.search, DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS),
             (signal) =>
@@ -297,9 +318,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
             const droppedNewerEnd = acceptedWindow.removedItems.some(([id]) =>
               latestFeed.items.some(([existingId]) => existingId === id),
             );
+            operation.commitExpected = true;
             commitFeedWindowUpdate(runParams.setMessageFeeds, (previous) =>
               previous.map((feed) => {
-                if (feed.id !== feedId) return feed;
+                if (
+                  feed.id !== feedId ||
+                  runParams.getFeedLoadGeneration(feedId) !== requestGeneration
+                )
+                  return feed;
+                if (feed.items[0]?.[0] !== beforeIdNoninclusive)
+                  return { ...feed, loadingOlder: false };
                 const windowed = prependWindowedMessageItems(feed.items, response.inboxItems);
                 // Prepending can evict the newer end of the bounded window. A pending
                 // tail then no longer connects to that window; discard it so the next
@@ -320,7 +348,10 @@ export function useRerDutyDirectionalLoads(params: Params) {
                   ]),
                   windowedUnreadItems: reconcileWindowedUnreadIds(feed, windowed, true),
                   loadingOlder: false,
-                  hasReachedStart: windowed.addedItems.length === 0,
+                  hasReachedStart:
+                    windowed.addedItems.length === 0 ||
+                    (extendHistory && response.inboxItems.length < (response.pageLimit ?? 20)),
+                  historySinceMs,
                   pendingNewerItems: droppedNewerEnd ? [] : feed.pendingNewerItems,
                 };
               }),
@@ -338,21 +369,30 @@ export function useRerDutyDirectionalLoads(params: Params) {
             (candidate) => candidate.id === feedId,
           );
           const stillCurrent = Boolean(
-            latestFeed &&
-            runParams.getFeedLoadGeneration(feedId) === requestGeneration &&
-            latestFeed.items[0]?.[0] === beforeIdNoninclusive,
+            latestFeed && runParams.getFeedLoadGeneration(feedId) === requestGeneration,
           );
           if (stillCurrent) {
             runParams.setError(error instanceof Error ? error.message : String(error));
-            runParams.setMessageFeeds((previous) =>
-              previous.map((feed) =>
-                feed.id === feedId ? { ...feed, loadingOlder: false } : feed,
-              ),
-            );
           }
+        } finally {
+          if (lanesRef.current[feedId]?.active === operation) {
+            if (operation.commitExpected) {
+              operation.phase = 'awaitingCommit';
+            } else {
+              runParams.setMessageFeeds((previous) =>
+                previous.map((feed) =>
+                  feed.id === feedId &&
+                  runParams.getFeedLoadGeneration(feedId) === requestGeneration
+                    ? { ...feed, loadingOlder: false }
+                    : feed,
+                ),
+              );
+              lane.active = null;
+              startOperationRef.current(feedId);
+            }
+          }
+          operation.resolve();
         }
-        operation.phase = 'awaitingCommit';
-        operation.resolve();
       };
       if (lane.active) lane.queued.push(operation);
       else {

@@ -205,6 +205,7 @@ assets = [
 	[ "../wdintel-web/dist/data/*", "usr/share/echo/data/", "755", ],
 	[ "../wdintel-web/dist/fonts/*", "usr/share/echo/fonts/", "644", ],
 	[ "../wdintel-web/dist/releases/**/*", "usr/share/echo/releases/", "755", ],
+	[ "../wdintel-web/dist/doc-media/**/*", "usr/share/echo-docs/", "644", ],
 	[ "../wdintel-web/dist/*", "usr/share/echo/dist/", "755", ],
 	[ "../wdintel-web/dist/img/*", "usr/share/echo/img/", "755", ],
 	[ "../wdintel-web/dist/img/google_earth_icons/*", "usr/share/echo/img/google_earth_icons/", "755", ],

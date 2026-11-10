@@ -169,6 +169,7 @@ pub const AI_ENGINE_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
+pub const AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS: usize = 500;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
 pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
     &["gpt-5", "gpt-6", "o1", "o3", "o4"];
@@ -216,6 +217,33 @@ pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
+pub const AI_NETWORK_MATCH_ENABLED_DEFAULT: bool = false;
+pub const AI_NETWORK_MATCH_WORKER_NAME: &str = "network_match";
+pub const AI_NETWORK_MATCH_WORKER_LOCK: i64 = 316_700_002;
+pub const AI_NETWORK_MATCH_WORKER_LEASE_SECS: u64 = 5;
+pub const AI_NETWORK_MATCH_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_NETWORK_MATCH_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_NETWORK_MATCH_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_NETWORK_MATCH_WORKER_MAX_ATTEMPTS: i32 = 8;
+/// Only messages received and intercepted this recently are scored, so
+/// network edits that recalculate old messages do not flood the AI engine.
+pub const AI_NETWORK_MATCH_ENQUEUE_MAX_AGE_HOURS: i64 = 48;
+/// Messages with more candidate networks are not scored.
+pub const AI_NETWORK_MATCH_MAX_CANDIDATES: usize = 12;
+pub const AI_NETWORK_MATCH_MAX_CALLSIGNS_PER_NETWORK: usize = 150;
+pub const AI_NETWORK_MATCH_MAX_LIST_ITEMS_PER_NETWORK: usize = 20;
+pub const AI_NETWORK_MATCH_MESSAGE_MAX_CHARS: usize = 8_000;
+pub const AI_NETWORK_MATCH_INSTRUCTIONS_MAX_CHARS: usize = 2_000;
+pub const AI_NETWORK_MATCH_REASON_MAX_CHARS: usize = 300;
+pub const AI_NETWORK_MATCH_OUTPUT_MAX_TOKENS: u32 = 2_048;
+/// The card folds the other networks only when the best one reaches this
+/// certainty and leads the runner-up by at least the lead below.
+pub const AI_NETWORK_MATCH_CONFIDENT_MIN_CERTAINTY: i32 = 80;
+pub const AI_NETWORK_MATCH_CONFIDENT_MIN_LEAD: i32 = 20;
+/// Sent once when the model's reply is not valid JSON.
+pub const AI_NETWORK_MATCH_REPAIR_PROMPT: &str = "Попередня відповідь не є валідним JSON за схемою. Поверни ту саму оцінку як валідний JSON-об'єкт за схемою запиту.";
+pub const AI_NETWORK_MATCH_PROMPT: &str =
+    include_str!("../../ai-eval/2026-11-09-network-match-prompt/prompt.txt");
 pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
 pub const LOCATION_REGION_MAX_DISTANCE: usize = 2;
 pub const LOCATION_MESSAGE_FUZZY_MAX_LINES: usize = 5;
@@ -602,6 +630,10 @@ pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
     "Input exceeds the context window";
 pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
     "Provider output token limit reached";
+/// Kept recognizable to the runner (`content_filter`) so the chat records a
+/// model refusal rather than an outage (#4112).
+pub const AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE: &str =
+    "Provider content_filter rejected the request";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
     AI_AGENT_DISPATCHER_TIMEOUT_SEC;
@@ -636,7 +668,7 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.08.1";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.10.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -649,6 +681,21 @@ pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS: usize = 200;
 pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
+/// Completion reasons that tell the chat to offer another model.
+pub const AI_AGENT_REASON_PROVIDER_ERROR: &str = "provider_error";
+pub const AI_AGENT_REASON_MODEL_REFUSAL: &str = "model_refusal";
+/// Policy-refusal detection for finished answers, tuned on 60 days of
+/// production turns (#4112): about 14% of GPT-6.1 Sol answers and 0.5% of
+/// GLM-5.3 answers match. Only the opening of an answer is checked.
+pub const AI_AGENT_REFUSAL_OPENING_MAX_CHARS: usize = 700;
+pub const AI_AGENT_REFUSAL_OPENING_MAX_SENTENCES: usize = 4;
+pub const AI_AGENT_REFUSAL_PHRASE_PATTERN: &str = r"(не можу|не буду|не допомагатиму|не надаватиму|не надам|не складатиму|відмовля\w*|can'?t help|cannot help|can'?t assist|cannot assist|can'?t provide|cannot provide|won'?t help|unable to (help|assist|provide))";
+pub const AI_AGENT_REFUSAL_TOPIC_PATTERN: &str = r"(актуальн|поточн|сьогодн|свіж|недавн|оперативн|бойов|противник|збройн|чинн|діюч|дислокац|місцеперебуван|місцезнаходжен|розташуванн|координат|радіомереж|розвідувальн|втрат|удар|цілей|військ|military|combat|troop|target)";
+/// Statements about missing evidence or tool limits, not policy refusals.
+pub const AI_AGENT_REFUSAL_LIMITATION_PATTERN: &str = r"(достовірно|впевнено|не знайш|не вдалося|немає|відсутн|не бачу|інтерфейс|відкрити|прочитати|розпізна|обробляється|шрифт|згенерувати|інтернет|налаштувати|не маю доступу|підтвердити|зв'язатися|не викону|не було викон|не виконано)";
+/// A justification such as "це допомогло б визначити …" marks a refusal even
+/// when the refusing sentence itself names no operational topic.
+pub const AI_AGENT_REFUSAL_JUSTIFICATION_PATTERN: &str = r"(може|могло б|могли б|допомогло б|допоможе|сприяло б|сприяти)\s+(б\s+)?(допомогти\s+|сприяти\s+)?(визнач|ідентифік|встанов|розкри|відстеж|виявити|наведенн|ураженн|планув)";
 pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;
 pub const AI_AGENT_MATTERMOST_CHAT_MAX_ATTEMPTS: i32 = 8;
 pub const AI_AGENT_MATTERMOST_CHAT_RETRY_BASE_SEC: i64 = 10;
@@ -1000,6 +1047,8 @@ pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_TREE_REDIS_KEY: &str = "sigint:unit-tree:v1";
 pub const SIGINT_UNIT_TREE_DIRTY_REDIS_KEY: &str = "sigint:unit-tree:v1:dirty";
+pub const SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY: &str =
+    "sigint:unit-catalog:revision";
 pub const SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY: i64 = 3527_1104;
 pub const SIGINT_UNIT_TREE_RECONCILE_SECS: u64 = 300;
 pub const SIGINT_UNIT_SEARCH_DEFAULT_LIMIT: u64 = 50;
@@ -1428,6 +1477,17 @@ pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
 pub const S3_MEDIA_ROOT_PREFIX: &str = "message-media";
+
+pub const DOC_MEDIA_STORAGE_PREFIX: &str = "doc-media";
+pub const DOC_MEDIA_DEFAULT_DIR: &str = "/usr/share/echo-docs";
+pub const DOC_MEDIA_CACHE_CONTROL: &str = "private, no-cache";
+pub const DOC_MEDIA_DOWNLOAD_TIMEOUT_SECS: u64 = 300;
+pub const DOC_MEDIA_RETRY_AFTER_SECS: u64 = 5;
+pub const DOC_MEDIA_LOCK_SLOTS: usize = 64;
+pub const DOC_MEDIA_MAX_CONCURRENT_DOWNLOADS: usize = 8;
+pub const DOC_MEDIA_EXTENSIONS: &[&str] = &[
+    "mp4", "webm", "jpg", "jpeg", "png", "mp3", "gif", "svg", "ico",
+];
 pub const SIGINT_UNIT_ATTACHMENT_MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const SIGINT_UNIT_ATTACHMENT_MAX_ENCRYPTED_BYTES: u64 = 51 * 1024 * 1024;
 pub const SIGINT_UNIT_ATTACHMENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
@@ -2158,6 +2218,7 @@ pub struct Config {
     #[serde(default)]
     pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
+    pub doc_media_dir: Option<String>,
     #[serde(skip)]
     pub(crate) messenger_media_cache: Option<MessengerMediaCacheConfig>,
     pub signal_api_phone: String,
@@ -2177,6 +2238,8 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
+    /// Imported into system settings at startup for backwards compatibility.
+    pub enable_duty_search: Option<bool>,
     pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,
     secret_config: Option<SecretConfig>,

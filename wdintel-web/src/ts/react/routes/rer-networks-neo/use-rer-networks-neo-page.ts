@@ -116,6 +116,7 @@ export function useRerNetworksNeoPage({
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
+  const [aiNetworkMatchEnabled, setAiNetworkMatchEnabled] = useState(false);
 
   const requestSeqRef = useRef(0);
   const activityQueryGenerationRef = useRef(0);
@@ -394,6 +395,7 @@ export function useRerNetworksNeoPage({
         createDialog,
         radioFeaturesAllowed,
         supportNonRerInterceptions,
+        aiNetworkMatchEnabled,
         deleteDialogNetwork,
         editSubmitting,
         createSubmitting,
@@ -427,6 +429,7 @@ export function useRerNetworksNeoPage({
       networks,
       querySnapshot,
       supportNonRerInterceptions,
+      aiNetworkMatchEnabled,
       unitId,
     ],
   );
@@ -443,6 +446,7 @@ export function useRerNetworksNeoPage({
       .then((settings) => {
         if (cancelled) return;
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
+        setAiNetworkMatchEnabled(settings.aiNetworkMatchEnabled);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -574,6 +578,7 @@ export function useRerNetworksNeoPage({
     setRowMenuNetworkId,
     downloadInFlight,
     supportNonRerInterceptions,
+    aiNetworkMatchEnabled,
     runDownload: reportActions.runDownload,
     loadMoreNetworks,
     encryptions,

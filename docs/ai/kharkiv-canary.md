@@ -90,8 +90,9 @@ compaction reserve of 32,768 and recent history of 16,384, matching
 Only government engines are allowed for agent conversations;
 the old Gemma engine registration is retained for rollback.
 
-Existing conversations retain their provider. Start a new conversation to use
-the changed default. Change the default through the AI agent admin settings,
+Existing conversations keep the engine they used last, and users can switch
+engines mid-conversation (#4112); new conversations start on the changed default.
+Change the default through the AI agent admin settings,
 keeping GLM and Luna allowed and preserving their runtime profiles and webhook
 settings. Without [reasoning presets](reasoning-presets.md), Sol uses the Chat Completions tool transport with
 `reasoning_effort: none`. The government catalogue also lists `gpt-6.1-sol`,
