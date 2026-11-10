@@ -14,6 +14,11 @@ Automatic parsing checks the first nonempty message line against unit synonyms
 before abbreviation parsing. The shared reader loads a synchronized snapshot on
 first use and refreshes it on the first read after fifteen minutes. Matching
 ignores case and repeated whitespace; deleted units are excluded when loading.
+Cached matches are checked against the current label mapping and unit name before
+use. Background parsing and unit-name reprocessing look up the current first-line
+synonym through the normalized-label index and retain it as source text. Unit-link
+reconciliation and bounded backfills preserve that header match even if another
+unit has the same canonical name; valid manual selections take precedence.
 
 Unit activation, parent activity reconciliation, creation audit entries, and
 message persistence share the same database transaction. Existing units are

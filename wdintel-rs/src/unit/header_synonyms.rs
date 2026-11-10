@@ -3,6 +3,7 @@ use crate::entities::{sigint_unit, sigint_unit_label};
 use crate::h;
 use crate::inbox::unit_resolution::normalize_unit_label;
 use crate::types::ShortContext;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, JoinType, QueryFilter,
     QuerySelect, RelationTrait,
@@ -53,24 +54,10 @@ impl UnitHeaderSynonyms {
         let Some(unit) = self.resolve_cached(db, &header).await.c(h!())? else {
             return Ok(None);
         };
-        Ok(sigint_unit_label::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_unit_label::Relation::SigintUnit.def(),
-            )
-            .filter(sigint_unit_label::Column::SigintUnitId.eq(unit.id))
-            .filter(sigint_unit::Column::Deleted.eq(false))
-            .select_only()
-            .column(sigint_unit::Column::Id)
-            .column(sigint_unit::Column::Name)
-            .column(sigint_unit_label::Column::Label)
-            .into_tuple::<(i64, String, String)>()
-            .all(db)
+        Ok(resolve_header(db, &header)
             .await
             .c(h!())?
-            .into_iter()
-            .find(|(_, _, label)| normalize_unit_label(label) == header)
-            .map(|(id, name, _)| HeaderSynonymUnit { id, name }))
+            .filter(|current| current.id == unit.id))
     }
 
     async fn resolve_cached<C>(
@@ -101,6 +88,50 @@ impl UnitHeaderSynonyms {
             .as_ref()
             .and_then(|snapshot| snapshot.names.get(header).cloned()))
     }
+}
+
+pub(crate) async fn resolve_current<C>(
+    db: &C,
+    body: &str,
+) -> anyhow::Result<Option<HeaderSynonymUnit>>
+where
+    C: ConnectionTrait,
+{
+    let Some(header) =
+        body.lines().map(str::trim).find(|line| !line.is_empty())
+    else {
+        return Ok(None);
+    };
+    resolve_header(db, &normalize_unit_label(header))
+        .await
+        .c(h!())
+}
+
+async fn resolve_header<C>(
+    db: &C,
+    header: &str,
+) -> anyhow::Result<Option<HeaderSynonymUnit>>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_unit_label::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit_label::Relation::SigintUnit.def(),
+        )
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(sigint_unit_label.label), '[[:space:]]+', ' ', 'g')) = $1",
+            [header],
+        ))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_unit::Column::Id)
+        .column(sigint_unit::Column::Name)
+        .into_tuple::<(i64, String)>()
+        .one(db)
+        .await
+        .c(h!())?
+        .map(|(id, name)| HeaderSynonymUnit { id, name }))
 }
 
 async fn load_names<C>(

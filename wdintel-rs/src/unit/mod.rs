@@ -172,6 +172,35 @@ pub(crate) struct ParsedMessageUnit {
     pub(crate) synonym: Option<String>,
 }
 
+pub(crate) async fn extract_message_unit_with_aor<C>(
+    db: &C,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    body: &str,
+    callsigns: Vec<String>,
+    aor_id: Option<i64>,
+) -> anyhow::Result<(crate::rer_importer::types::UnitAndLoc, bool)>
+where
+    C: ConnectionTrait,
+{
+    let is_synonym = header_synonyms::resolve_current(db, body)
+        .await
+        .c(h!())?
+        .is_some();
+    let unit_and_location = if is_synonym {
+        parser::extract_first_line_unit_with_aor(
+            settlements,
+            body,
+            callsigns,
+            aor_id,
+        )
+        .c(h!())?
+    } else {
+        parser::extract_unit_with_aor(settlements, body, callsigns, aor_id)
+            .c(h!())?
+    };
+    Ok((unit_and_location, is_synonym))
+}
+
 pub(crate) async fn parse_message_unit<C>(
     db: &C,
     env: &Env,

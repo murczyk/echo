@@ -269,6 +269,10 @@ export function reconcileParserSnapshot(
     const desired = candidatePresent ? candidate : scalarEmptyValue(field);
     next.parsedScalars[field] = candidate;
 
+    if (field === 'unit' && currentForm.unitNetworkSelection) {
+      next.scalarOrigins.unit = 'manual';
+    }
+
     if (next.scalarOrigins[field] === 'manual') {
       if (!candidatePresent) return;
       if (

@@ -169,6 +169,27 @@ describe('useMessageParser ownership', () => {
     expect(latest.methods.getValues('unitSelection')).toEqual({ id: 42, name });
   });
 
+  it('#4022 preserves pending network units when a synonym parse arrives', async () => {
+    const name = 'Підрозділ 4022';
+    apiMocks.parseDirectSubmit.mockResolvedValue(response({ unit_v2: name, unit_id: 42 }));
+    await mount();
+    await setSource('Синонім 4022');
+    await parse();
+    const assignment = { networkId: 12, unitIds: [41], units: [] };
+    await act(async () => {
+      latest.methods.setValue('unitSelection', undefined);
+      latest.methods.setValue('unitNetworkSelection', assignment);
+    });
+    await setSource('Оновлений синонім 4022');
+    await parse();
+    expect(latest.methods.getValues('unitNetworkSelection')).toEqual(assignment);
+    expect(latest.methods.getValues('unitSelection')).toBeUndefined();
+    expect(latest.parser.parserFeedback?.conflictFields).toContain('unit');
+    await act(async () => latest.parser.acceptParsedField('unit'));
+    expect(latest.methods.getValues('unitNetworkSelection')).toBeUndefined();
+    expect(latest.methods.getValues('unitSelection')).toEqual({ id: 42, name });
+  });
+
   it('#3620 keeps ordinary results usable and warns when AI enrichment fails', async () => {
     apiMocks.parseDirectSubmit.mockResolvedValue(
       response({

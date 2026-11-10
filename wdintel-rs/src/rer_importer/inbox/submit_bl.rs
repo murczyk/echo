@@ -756,6 +756,152 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_4022_header_synonym_survives_reprocessing_and_backfill() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        seed_submit_unit(&env, label, "", "Інший синонім 4022").await;
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        let manual = seed_submit_unit(
+            &env,
+            "Ручний підрозділ 4022",
+            "",
+            "Ручний синонім 4022",
+        )
+        .await;
+        let body = format!("\r\n {label}\t\r\n10.11.2026, 11:08 (МСК)\r\n-уточни где они имущество скинули?\r\n-примерно метров 700 от нас, в ложбину спуститься");
+        let item = serde_json::from_value(json!({
+            "full_body": body,
+            "timestamp": "2026-11-10T08:08:00Z",
+            "freq": "145.5000",
+            "locations": ["Невідома локація 3920"],
+            "group_names": ["SC1"],
+        }))
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let submitted = submit_generic_inbox_item(
+            &Data::from(env.clone()),
+            &txn,
+            &datasource,
+            &login.id,
+            &vec![login.id],
+            item,
+        )
+        .await
+        .unwrap();
+        crate::inbox::construct_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            &env.rq,
+            &env.config,
+            submitted.inbox_id,
+            &mut TopKCache::new(10),
+            None,
+        )
+        .await
+        .unwrap();
+        let mut stored =
+            sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(stored.unit.as_deref(), Some(label));
+        assert_eq!(stored.unit_v2.as_deref(), Some(label));
+        txn.commit().await.unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        for selected in [&unit, &manual] {
+            if selected.id == manual.id {
+                let txn = env.dbx.begin().await.unwrap();
+                stored = sigint_inbox_item::ActiveModel {
+                    id: Set(stored.id),
+                    unit: Set(Some(manual.name.clone())),
+                    unit_v2: Set(Some(manual.name.clone())),
+                    ..Default::default()
+                }
+                .update(&txn)
+                .await
+                .unwrap();
+                crate::inbox::unit_selection::store_selection(
+                    &txn, &stored, manual.id,
+                )
+                .await
+                .unwrap();
+                txn.commit().await.unwrap();
+            }
+            crate::rer_importer::oneoff_reprocess_unit_names(
+                Mode::Test,
+                &crate::OneoffReprocessUnitNamesPs {
+                    since_ts: Some("2026-11-10T00:00:00Z".to_string()),
+                    only_group_master_key: None,
+                },
+            )
+            .await
+            .unwrap();
+            crate::inbox::unit_resolution::backfill_inbox_unit_links(
+                &env.dbx,
+                now - chrono::Duration::minutes(1),
+                now + chrono::Duration::minutes(1),
+                0,
+                None,
+            )
+            .await
+            .unwrap();
+            stored = sigint_inbox_item::Entity::find_by_id(stored.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected = if selected.id == unit.id {
+                label
+            } else {
+                &manual.name
+            };
+            assert_eq!(stored.unit.as_deref(), Some(expected));
+            assert_eq!(stored.unit_v2.as_deref(), Some(expected));
+            let links = sigint_inbox_item_unit::Entity::find()
+                .filter(sigint_inbox_item_unit::Column::ItemId.eq(stored.id))
+                .filter(
+                    sigint_inbox_item_unit::Column::Kind
+                        .eq(SigintInboxItemUnitKind::Parsed),
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].unit_id, selected.id);
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_takes_priority_over_another_unit_name() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        seed_submit_unit(&env, label, "", "Інший синонім 4022").await;
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        assert_submitted_unit(
+            &Data::from(env.clone()),
+            &datasource,
+            &login.id,
+            json!({
+                "full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял."),
+                "timestamp": "2026-11-10T07:23:00Z",
+                "freq": "145.5000",
+                "locations": ["Невідома локація 3920"],
+                "group_names": ["SC1"],
+            }),
+            Some(label),
+            Some(unit.id),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn issue_4022_header_synonym_revalidates_cached_label_mapping() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
