@@ -1082,7 +1082,9 @@ updateFilters msg model =
             let
                 reqParams : Filter a -> B.RerDutyQueryStateWf
                 reqParams m =
-                    { groupsSelected = Just m.groupsSelected
+                    { search = Nothing
+                    , searchMode = Nothing
+                    , groupsSelected = Just m.groupsSelected
                     , groupsDenied = Nothing
                     , sendersSelected = Just m.sendersSelect.selected
                     , deniedSenders = Just m.sendersDeniedSelect.selected

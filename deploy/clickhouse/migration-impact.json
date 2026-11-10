@@ -7,6 +7,11 @@
       ]
     },
     "echo:m20261107_150035_doc_media_settings": { "changes": [{ "table": "public.system_settings", "strategy": "cdc_additive" }] },
+    "echo:m20261109_104328_duty_search_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261108_090102_signoz_metrics_settings": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }

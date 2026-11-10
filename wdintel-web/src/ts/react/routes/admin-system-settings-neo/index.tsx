@@ -62,6 +62,7 @@ type SystemSettingsForm = {
   docMediaServeFromB2: SystemSettingsItem['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
@@ -115,6 +116,7 @@ type SystemSettingsPayload = {
   docMediaServeFromB2: SystemSettingsItem['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
@@ -168,6 +170,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   docMediaServeFromB2: false,
   dutyExcludeMenuEnabled: true,
   dutySelectedGroupsEnabled: true,
+  enableDutySearch: false,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
   importantNotifyAllEnabled: true,
@@ -272,6 +275,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     docMediaServeFromB2: item?.docMediaServeFromB2 ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     dutySelectedGroupsEnabled: item?.dutySelectedGroupsEnabled ?? true,
+    enableDutySearch: item?.enableDutySearch ?? false,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
     importantNotifyAllEnabled: item?.importantNotifyAllEnabled ?? true,
@@ -328,6 +332,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.docMediaServeFromB2 === b.docMediaServeFromB2 &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.dutySelectedGroupsEnabled === b.dutySelectedGroupsEnabled &&
+    a.enableDutySearch === b.enableDutySearch &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
     a.importantNotifyAllEnabled === b.importantNotifyAllEnabled &&
@@ -441,6 +446,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     docMediaServeFromB2: form.docMediaServeFromB2,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     dutySelectedGroupsEnabled: form.dutySelectedGroupsEnabled,
+    enableDutySearch: form.enableDutySearch,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
     importantNotifyAllEnabled: form.importantNotifyAllEnabled,
@@ -853,6 +859,15 @@ function DutySettingsSection({
           />
         }
         label="Відображати обрані групи в оперативному"
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.enableDutySearch}
+            onChange={(_, checked) => patchForm({ enableDutySearch: checked })}
+          />
+        }
+        label="Пошук в оперативному"
       />
       <FormControlLabel
         control={
@@ -1517,6 +1532,7 @@ export function AdminSystemSettingsNeoPage() {
       docMediaServeFromB2: payload.docMediaServeFromB2,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       dutySelectedGroupsEnabled: payload.dutySelectedGroupsEnabled,
+      enableDutySearch: payload.enableDutySearch,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
       importantNotifyAllEnabled: payload.importantNotifyAllEnabled,

@@ -3133,6 +3133,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            enable_duty_search: Set(None),
             duty_selected_groups_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),

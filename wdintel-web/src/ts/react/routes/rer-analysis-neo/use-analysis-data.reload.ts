@@ -667,6 +667,8 @@ function buildFocusedInboxResponse(
 ): InboxMessagesRsp {
   return (
     focusedWindow?.inbox ?? {
+      historySinceMs: null,
+      historyPeriodMs: null,
       inboxItems: [],
       pollCursorId: null,
       callsigns: [],

@@ -1,5 +1,6 @@
 import type {
   InboxMessagesReq,
+  RerDutyQueryStateWf,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -12,10 +13,18 @@ import { FeedFilterPanelView } from './FeedFilterPanelView';
 import { useFeedFilterPanelViewModel } from './useFeedFilterPanelViewModel';
 
 export type FeedFilterPanelModel = {
+  search?: {
+    queryState: Pick<RerDutyQueryStateWf, 'searchMode'> & { search: string };
+    updateQueryState: (
+      updates: Partial<Pick<RerDutyQueryStateWf, 'search' | 'searchMode'>>,
+    ) => void;
+  };
   feedId: string;
   hasActiveFilter: boolean;
   hideGroupSelection?: boolean;
   filterState: {
+    search?: RerDutyQueryStateWf['search'];
+    searchMode?: RerDutyQueryStateWf['searchMode'];
     groupsSelected: string[];
     deniedGroups: string[];
     sendersSelected: string[];
@@ -111,5 +120,5 @@ export type FeedFilterPanelProps = {
 
 export function FeedFilterPanel({ panel }: FeedFilterPanelProps) {
   const viewModel = useFeedFilterPanelViewModel(panel);
-  return <FeedFilterPanelView {...viewModel} />;
+  return <FeedFilterPanelView {...viewModel} search={panel.search} />;
 }

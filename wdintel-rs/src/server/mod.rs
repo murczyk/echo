@@ -167,6 +167,9 @@ async fn new_env_from_config(
             .c(h!())?;
     }
     if initialize {
+        crate::system_settings::import_legacy_duty_search_config(&dbx, &config)
+            .await
+            .c(h!())?;
         crate::ai_agent::dispatcher::import_legacy_config(
             &dbx,
             config.ai_agent_dispatcher.as_ref(),
