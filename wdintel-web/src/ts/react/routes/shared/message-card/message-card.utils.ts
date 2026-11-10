@@ -1,4 +1,9 @@
-import type { InboxMessage, Network, NoHeadersBody } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  InboxNetworkMatch,
+  Network,
+  NoHeadersBody,
+} from '../../../../../Bindings';
 import { NO_DATA_LABEL, isPresent } from '../../../utils/misc';
 import { buildRerNetworkDetailsHref } from '../../rer-network-details-neo/network-details-preference';
 
@@ -11,6 +16,9 @@ export type MessageCardRenderedNetwork = {
   networkId: number;
   label: string;
   badge: boolean;
+  /** AI certainty, 0–100, when the message has network match scores. */
+  certainty?: number | null;
+  certaintyReason?: string | null;
 };
 
 export type MessageCardNavigationMenuItem = {
@@ -28,6 +36,8 @@ export type MessageCardEtalonDisplayModel = {
   copyEtalonValue: string | null;
   copyLocationValue: string | null;
   renderedNetworks: MessageCardRenderedNetwork[];
+  /** Shown alone while the other networks stay folded under «і ще N». */
+  confidentNetworkId?: number | null;
   showInlineLocationTooltip: boolean;
   locationDisplayValue: string | null;
 };
@@ -109,6 +119,38 @@ export function resolveMessageCardRenderedNetworks(
   return renderedNetworks.filter(
     (item, index, all) => index === all.findIndex((other) => other.networkId === item.networkId),
   );
+}
+
+/**
+ * Adds AI certainty and orders networks by it, highest first. The confident
+ * network folds the others only when it is one of several rendered networks.
+ */
+export function applyMessageCardNetworkMatch(
+  renderedNetworks: MessageCardRenderedNetwork[],
+  networkMatch: InboxNetworkMatch | null | undefined,
+): { renderedNetworks: MessageCardRenderedNetwork[]; confidentNetworkId: number | null } {
+  if (networkMatch == null || renderedNetworks.length < 2) {
+    return { renderedNetworks, confidentNetworkId: null };
+  }
+  const byNetworkId = new Map(
+    networkMatch.candidates.map((candidate) => [candidate.networkId, candidate]),
+  );
+  const scored = renderedNetworks
+    .map((network) => {
+      const candidate = byNetworkId.get(network.networkId);
+      return {
+        ...network,
+        certainty: candidate?.certainty ?? null,
+        certaintyReason: candidate?.reason || null,
+      };
+    })
+    .sort((a, b) => (b.certainty ?? -1) - (a.certainty ?? -1));
+  const confidentNetworkId = scored.some(
+    (network) => network.networkId === networkMatch.confidentNetworkId,
+  )
+    ? (networkMatch.confidentNetworkId ?? null)
+    : null;
+  return { renderedNetworks: scored, confidentNetworkId };
 }
 
 export function buildMessageCardNavigationMenuItems(
@@ -386,7 +428,10 @@ export function resolveMessageCardEtalonDisplayModel(
   msg: InboxMessage,
   options: ResolveEtalonBindingDisplayValueOptions = {},
 ): MessageCardEtalonDisplayModel {
-  const renderedNetworks = resolveMessageCardRenderedNetworks(msg.networkIds, options);
+  const { renderedNetworks, confidentNetworkId } = applyMessageCardNetworkMatch(
+    resolveMessageCardRenderedNetworks(msg.networkIds, options),
+    msg.networkMatch,
+  );
   const locationDisplayValue = normalizeLocationDisplayValue(msg.location);
   const etalonBindingValue = resolveEtalonBindingDisplayValue(msg, options);
   const headerUnit = normalizeLabel(msg.unitDisplay ?? msg.unit) || null;
@@ -400,6 +445,7 @@ export function resolveMessageCardEtalonDisplayModel(
       copyEtalonValue: displayValue,
       copyLocationValue: null,
       renderedNetworks,
+      confidentNetworkId,
       showInlineLocationTooltip: locationDisplayValue != null,
       locationDisplayValue,
     };
@@ -461,6 +507,7 @@ export function hideMessageCardNetworks(
       copyEtalonValue: unit,
       copyLocationValue: locationDisplayValue,
       renderedNetworks: [],
+      confidentNetworkId: null,
       showInlineLocationTooltip: false,
     };
   }
@@ -474,6 +521,7 @@ export function hideMessageCardNetworks(
       copyEtalonValue: null,
       copyLocationValue: locationDisplayValue,
       renderedNetworks: [],
+      confidentNetworkId: null,
       showInlineLocationTooltip: false,
     };
   }
@@ -486,6 +534,7 @@ export function hideMessageCardNetworks(
     copyEtalonValue: null,
     copyLocationValue: null,
     renderedNetworks: [],
+    confidentNetworkId: null,
     showInlineLocationTooltip: false,
     locationDisplayValue: null,
   };

@@ -37,6 +37,8 @@ pub struct Model {
     #[sea_orm(column_type = "JsonBinary")]
     pub unit_mask: Json,
     pub last_active_at: Option<DateTime>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub ai_instructions: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -150,6 +150,7 @@ where
             } else {
                 NetworkStatus::NetworkActive
             },
+            ai_instructions: network.ai_instructions.clone(),
         });
     }
     trace!(

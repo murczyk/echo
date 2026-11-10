@@ -323,6 +323,7 @@ function normalizeInboxMessage(
     groupMasterKey,
     groupMasterKeys,
     networkIds,
+    networkMatch: m.networkMatch ?? null,
     networkName,
     deviceName,
     location,

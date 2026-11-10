@@ -56,6 +56,7 @@ pub struct AiMonitoring {
     pub callsign: AiQueueMonitoring,
     pub settlement: AiQueueMonitoring,
     pub position: AiQueueMonitoring,
+    pub network_match: AiQueueMonitoring,
 }
 
 pub(crate) async fn load<C: ConnectionTrait>(
@@ -71,13 +72,26 @@ pub(crate) async fn load<C: ConnectionTrait>(
         callsign: queue(db, "callsign").await.c(h!())?,
         settlement,
         position: queue(db, "position").await.c(h!())?,
+        network_match: queue(db, crate::config::AI_NETWORK_MATCH_WORKER_NAME)
+            .await
+            .c(h!())?,
     })
+}
+
+/// Network match has no settings table: the system setting enables it, and
+/// it runs on the callsign worker's engines.
+fn enabled_sql(worker: &str) -> String {
+    if worker == crate::config::AI_NETWORK_MATCH_WORKER_NAME {
+        return "coalesce((select ai_network_match_enabled from system_settings where not deleted order by updated_at desc limit 1),false) and coalesce((select worker_enabled and worker_ai_engine_id is not null from ai_callsign_settings where id=1),false)".to_string();
+    }
+    format!("coalesce((select worker_enabled from ai_{worker}_settings where id=1),false)")
 }
 
 async fn queue<C: ConnectionTrait>(
     db: &C,
     worker: &str,
 ) -> anyhow::Result<AiQueueMonitoring> {
+    let enabled = enabled_sql(worker);
     let oldest = if worker == "settlement" {
         "select null::timestamp as created_at".to_string()
     } else {
@@ -85,14 +99,13 @@ async fn queue<C: ConnectionTrait>(
     };
     let query = format!(
         r#"
-select coalesce(settings.worker_enabled,false) as enabled,
+select {enabled} as enabled,
     (extract(epoch from progress.last_completed_at)*1000)::bigint as last_completed_at_ms,
     (extract(epoch from progress.latest_processed_entry_created_at)*1000)::bigint as latest_processed_entry_created_at_ms,
     (extract(epoch from oldest.created_at)*1000)::bigint as oldest_pending_created_at_ms,
     coalesce(stats.n_live_tup,0)::bigint as pending_jobs_estimate,
     (extract(epoch from progress.last_error_at)*1000)::bigint as last_error_at_ms
 from (values(1)) singleton(id)
-left join ai_{worker}_settings settings on settings.id=singleton.id
 left join ai_worker_progress progress on progress.worker=$1
 left join lateral ({oldest}) oldest on true
 left join pg_stat_user_tables stats on stats.relid='public.ai_{worker}_worker_job'::regclass

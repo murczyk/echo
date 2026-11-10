@@ -545,6 +545,8 @@ mod m20261104_083000_group_message_requirements;
 mod m20261107_175132_important_only_my_organism;
 mod m20261108_090102_signoz_metrics_settings;
 mod m20261109_104328_duty_search_settings;
+mod m20261109_104428_ai_network_match;
+mod m20261110_100819_ai_network_match_job_generation;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1248,6 +1250,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_150035_doc_media_settings::Migration),
             Box::new(m20261109_104328_duty_search_settings::Migration),
             Box::new(m20261110_072243_ai_engine_health_and_agent_order::Migration),
+            Box::new(m20261109_104428_ai_network_match::Migration),
+            Box::new(m20261110_100819_ai_network_match_job_generation::Migration),
         ]
     }
 }

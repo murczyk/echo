@@ -1,5 +1,22 @@
 {
   "migrations": {
+    "echo:m20261110_100819_ai_network_match_job_generation": {
+      "changes": [
+        { "table": "public.ai_network_match_worker_job", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261109_104428_ai_network_match": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" },
+        {
+          "table": "public.sigint_network",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        },
+        { "table": "public.ai_network_match_worker_job", "strategy": "excluded" },
+        { "table": "public.ai_network_match_result", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261110_072243_ai_engine_health_and_agent_order": {
       "changes": [
         { "table": "public.ai_engine", "strategy": "excluded" },

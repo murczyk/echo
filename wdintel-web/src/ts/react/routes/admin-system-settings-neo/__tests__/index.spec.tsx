@@ -300,6 +300,25 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(mocks.save).toHaveBeenLastCalledWith(expect.objectContaining({ hideNetworks: false }));
     await act(async () => root.unmount());
   });
+  // Regression: https://github.com/echoua/echo/issues/4095
+  it('#4095 saves the AI network match flag, off by default, and reloads it', async () => {
+    const networkMatchToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('ШІ: головна мережа повідомлення'))
+        ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const first = await renderPage();
+    expect(networkMatchToggle(first.container)?.checked).toBe(false);
+    await act(async () => networkMatchToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ aiNetworkMatchEnabled: true }),
+    );
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, aiNetworkMatchEnabled: true }]);
+    const reloaded = await renderPage();
+    expect(networkMatchToggle(reloaded.container)?.checked).toBe(true);
+    await act(async () => reloaded.root.unmount());
+  });
   it('persists disabling test message replay immediately', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
     mocks.list.mockResolvedValue([{ id: 1, deleted: false, rerDutyTestEnabled: true }]);
