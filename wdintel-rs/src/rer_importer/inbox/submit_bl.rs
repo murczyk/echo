@@ -730,6 +730,7 @@ mod tests {
             .unwrap();
             assert_eq!(parsed.unit.as_deref(), Some(label));
             assert_eq!(parsed.unit_v2.as_deref(), Some(name));
+            assert_eq!(parsed.unit_id, Some(unit_id));
         }
     }
 
@@ -845,7 +846,10 @@ mod tests {
                     .resolve(&disconnected, label)
                     .await
                     .unwrap(),
-                Some(unit.name.clone())
+                Some(crate::unit::header_synonyms::HeaderSynonymUnit {
+                    id: unit.id,
+                    name: unit.name.clone(),
+                })
             );
         }
         crate::entities::sigint_unit::ActiveModel {

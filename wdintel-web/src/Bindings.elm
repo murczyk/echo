@@ -12069,6 +12069,7 @@ type alias DirectSubmitParseRsp =
     , post : Maybe (String)
     , unit : Maybe (String)
     , unitV2 : Maybe (String)
+    , unitId : Maybe (Int)
     , locations : List (String)
     }
 
@@ -12087,6 +12088,7 @@ directSubmitParseRspEncoder struct =
         , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.post )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unit )
         , ( "unit_v2", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitV2 )
+        , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
         ]
 
@@ -29079,6 +29081,7 @@ directSubmitParseRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_v2" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 

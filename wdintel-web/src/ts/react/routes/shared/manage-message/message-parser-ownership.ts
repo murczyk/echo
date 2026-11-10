@@ -29,6 +29,7 @@ export type ParserListItem = { key: string; value: string };
 
 export type ParserSnapshot = {
   scalars: Partial<Record<ParserScalarFieldName, unknown>>;
+  unitSelection?: MessageFormData['unitSelection'];
   lists: Record<ParserListFieldName, ParserListItem[]>;
 };
 
@@ -41,6 +42,7 @@ type ParserListOwnership = {
 export type ParserOwnershipState = {
   scalarOrigins: Partial<Record<ParserScalarFieldName, 'parsed' | 'manual'>>;
   parsedScalars: Partial<Record<ParserScalarFieldName, unknown>>;
+  parsedUnitSelection?: MessageFormData['unitSelection'];
   lists: Record<ParserListFieldName, ParserListOwnership>;
 };
 
@@ -119,6 +121,7 @@ function cloneState(state: ParserOwnershipState): ParserOwnershipState {
   return {
     scalarOrigins: { ...state.scalarOrigins },
     parsedScalars: { ...state.parsedScalars },
+    parsedUnitSelection: state.parsedUnitSelection,
     lists: {
       coords: cloneListState(state.lists.coords),
       callsigns: cloneListState(state.lists.callsigns),
@@ -158,6 +161,10 @@ export function toParserSnapshot(response: DirectSubmitParseResponse): ParserSna
   );
 
   return {
+    unitSelection:
+      response.unit_id != null && response.unit_v2
+        ? { id: response.unit_id, name: response.unit_v2 }
+        : undefined,
     scalars: {
       text: response.text || undefined,
       freq: response.freq || undefined,
@@ -254,6 +261,7 @@ export function reconcileParserSnapshot(
   const patch: Partial<MessageFormData> = {};
   const changedFields: ParserFieldName[] = [];
   const conflictFields: ParserFieldName[] = [];
+  next.parsedUnitSelection = snapshot.unitSelection;
 
   PARSER_SCALAR_FIELDS.forEach((field) => {
     const candidate = snapshot.scalars[field];
@@ -263,7 +271,12 @@ export function reconcileParserSnapshot(
 
     if (next.scalarOrigins[field] === 'manual') {
       if (!candidatePresent) return;
-      if (!scalarValuesEqual(currentForm[field], desired)) {
+      if (
+        !scalarValuesEqual(currentForm[field], desired) ||
+        (field === 'unit' &&
+          snapshot.unitSelection != null &&
+          snapshot.unitSelection.id !== currentForm.unitSelection?.id)
+      ) {
         conflictFields.push(field);
       }
       return;
@@ -277,6 +290,13 @@ export function reconcileParserSnapshot(
       changedFields.push(field);
     }
   });
+
+  if (
+    next.scalarOrigins.unit === 'parsed' &&
+    (snapshot.unitSelection || state.parsedUnitSelection || changedFields.includes('unit'))
+  ) {
+    patchParsedUnitSelection(next, currentForm, patch, changedFields);
+  }
 
   PARSER_LIST_FIELDS.forEach((field) => {
     const adapter = listAdapters[field];
@@ -302,6 +322,22 @@ export function reconcileParserSnapshot(
   return { state: next, patch, changedFields, conflictFields };
 }
 
+function patchParsedUnitSelection(
+  state: ParserOwnershipState,
+  currentForm: MessageFormData,
+  patch: Partial<MessageFormData>,
+  changedFields: ParserFieldName[],
+): void {
+  patch.unitSelection = state.parsedUnitSelection;
+  patch.unitNetworkSelection = undefined;
+  if (
+    currentForm.unitSelection?.id !== state.parsedUnitSelection?.id &&
+    !changedFields.includes('unit')
+  ) {
+    changedFields.push('unit');
+  }
+}
+
 export function acceptParsedCandidate(
   state: ParserOwnershipState,
   currentForm: MessageFormData,
@@ -319,6 +355,7 @@ export function acceptParsedCandidate(
       Object.assign(patch, { [field]: desired });
       changedFields.push(field);
     }
+    if (field === 'unit') patchParsedUnitSelection(next, currentForm, patch, changedFields);
     return { state: next, patch, changedFields, conflictFields: [] };
   }
 

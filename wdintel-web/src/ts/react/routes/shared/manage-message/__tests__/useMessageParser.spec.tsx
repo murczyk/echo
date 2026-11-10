@@ -136,6 +136,39 @@ describe('useMessageParser ownership', () => {
     vi.useRealTimers();
   });
 
+  it('#4022 updates synonym selections when canonical unit names stay the same', async () => {
+    const name = 'Підрозділ 4022';
+    apiMocks.parseDirectSubmit
+      .mockResolvedValueOnce(response({ unit_v2: name, unit_id: 41 }))
+      .mockResolvedValueOnce(response({ unit_v2: name, unit_id: 42 }))
+      .mockResolvedValueOnce(response({ unit_v2: name }));
+    await mount();
+    for (const id of [41, 42, undefined]) {
+      await setSource(`Синонім ${id}`);
+      await parse();
+      expect(latest.methods.getValues('unit')).toBe(name);
+      expect(latest.methods.getValues('unitSelection')).toEqual(
+        id == null ? undefined : { id, name },
+      );
+    }
+  });
+
+  it('#4022 preserves a manually selected duplicate until the parsed unit is accepted', async () => {
+    const name = 'Підрозділ 4022';
+    apiMocks.parseDirectSubmit.mockResolvedValue(response({ unit_v2: name, unit_id: 42 }));
+    await mount();
+    await act(async () => {
+      latest.methods.setValue('unit', name);
+      latest.methods.setValue('unitSelection', { id: 41, name });
+    });
+    await setSource('Другий синонім 4022');
+    await parse();
+    expect(latest.methods.getValues('unitSelection')).toEqual({ id: 41, name });
+    expect(latest.parser.parserFeedback?.conflictFields).toContain('unit');
+    await act(async () => latest.parser.acceptParsedField('unit'));
+    expect(latest.methods.getValues('unitSelection')).toEqual({ id: 42, name });
+  });
+
   it('#3620 keeps ordinary results usable and warns when AI enrichment fails', async () => {
     apiMocks.parseDirectSubmit.mockResolvedValue(
       response({

@@ -340,6 +340,7 @@ where
     let crate::unit::ParsedMessageUnit {
         unit_and_location,
         unit_v2,
+        unit_id,
         ..
     } = crate::unit::parse_message_unit(
         dbx,
@@ -404,6 +405,7 @@ where
         post: crate::rer_importer::post::extract_post(body)?,
         unit,
         unit_v2,
+        unit_id,
         locations: unit_and_location
             .locality
             .map(|l| {

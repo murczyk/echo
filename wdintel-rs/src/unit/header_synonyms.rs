@@ -19,7 +19,13 @@ pub(crate) struct UnitHeaderSynonyms {
 
 struct SynonymSnapshot {
     loaded_at: Instant,
-    names: HashMap<String, String>,
+    names: HashMap<String, HeaderSynonymUnit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HeaderSynonymUnit {
+    pub(crate) id: i64,
+    pub(crate) name: String,
 }
 
 impl SynonymSnapshot {
@@ -34,7 +40,7 @@ impl UnitHeaderSynonyms {
         &self,
         db: &C,
         body: &str,
-    ) -> anyhow::Result<Option<String>>
+    ) -> anyhow::Result<Option<HeaderSynonymUnit>>
     where
         C: ConnectionTrait,
     {
@@ -66,7 +72,9 @@ impl UnitHeaderSynonyms {
     }
 }
 
-async fn load_names<C>(db: &C) -> anyhow::Result<HashMap<String, String>>
+async fn load_names<C>(
+    db: &C,
+) -> anyhow::Result<HashMap<String, HeaderSynonymUnit>>
 where
     C: ConnectionTrait,
 {
@@ -78,13 +86,16 @@ where
         .filter(sigint_unit::Column::Deleted.eq(false))
         .select_only()
         .column(sigint_unit_label::Column::Label)
+        .column(sigint_unit::Column::Id)
         .column(sigint_unit::Column::Name)
-        .into_tuple::<(String, String)>()
+        .into_tuple::<(String, i64, String)>()
         .all(db)
         .await
         .c(h!())?;
     Ok(names
         .into_iter()
-        .map(|(label, name)| (normalize_unit_label(&label), name))
+        .map(|(label, id, name)| {
+            (normalize_unit_label(&label), HeaderSynonymUnit { id, name })
+        })
         .collect())
 }

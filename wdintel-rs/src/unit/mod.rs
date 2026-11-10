@@ -168,6 +168,7 @@ pub fn to_unit_txt(units_list: Vec<String>) -> Option<String> {
 pub(crate) struct ParsedMessageUnit {
     pub(crate) unit_and_location: crate::rer_importer::types::UnitAndLoc,
     pub(crate) unit_v2: Option<String>,
+    pub(crate) unit_id: Option<i64>,
     pub(crate) synonym: Option<String>,
 }
 
@@ -181,7 +182,7 @@ pub(crate) async fn parse_message_unit<C>(
 where
     C: ConnectionTrait,
 {
-    if let Some(unit_name) =
+    if let Some(unit) =
         env.unit_header_synonyms.resolve(db, body).await.c(h!())?
     {
         let unit_and_location = parser::extract_first_line_unit_with_aor(
@@ -194,7 +195,8 @@ where
         return Ok(ParsedMessageUnit {
             synonym: unit_and_location.unit.clone(),
             unit_and_location,
-            unit_v2: Some(unit_name),
+            unit_v2: Some(unit.name),
+            unit_id: Some(unit.id),
         });
     }
     let unit_and_location = parser::extract_unit_with_aor(
@@ -208,18 +210,19 @@ where
         return Ok(ParsedMessageUnit {
             unit_and_location,
             unit_v2: None,
+            unit_id: None,
             synonym: None,
         });
     };
     let unit_v2 = crate::inbox::parse_unit_v2(db, unit).await.c(h!())?;
-    let unit_v2 = match crate::inbox::unit_resolution::resolve_sigint_unit_id(
+    let unit_id = crate::inbox::unit_resolution::resolve_sigint_unit_id(
         db,
         None,
         Some(unit),
     )
     .await
-    .c(h!())?
-    {
+    .c(h!())?;
+    let unit_v2 = match unit_id {
         Some(unit_id) => sigint_unit::Entity::find_by_id(unit_id)
             .one(db)
             .await
@@ -231,6 +234,7 @@ where
     Ok(ParsedMessageUnit {
         unit_and_location,
         unit_v2,
+        unit_id,
         synonym: None,
     })
 }
