@@ -430,9 +430,14 @@ async fn process_claimed_request(
     }
     match result {
         Ok(RunOutcome::Completed(response, metadata)) => {
-            let metadata = provider_limited_metadata(metadata, model_failure);
-            if let Err(err) =
-                complete_request(env, request_id, response, metadata).await
+            if let Err(err) = complete_request(
+                env,
+                request_id,
+                response,
+                metadata,
+                model_failure,
+            )
+            .await
             {
                 error!(
                     "AI agent completion persistence failed for {request_id}: {err:#?}"
@@ -1480,7 +1485,7 @@ fn next_model_failure(
 /// offers another model instead of a Deep continuation on the same one.
 fn provider_limited_metadata(
     metadata: Option<super::types::AiAgentCompletionMetadata>,
-    model_failure: Option<&'static str>,
+    model_failure: Option<&str>,
 ) -> Option<super::types::AiAgentCompletionMetadata> {
     match metadata {
         Some(mut metadata)
@@ -1522,9 +1527,14 @@ pub(super) async fn complete_request(
     env: &Env,
     request_id: Uuid,
     response: String,
-    metadata: Option<super::types::AiAgentCompletionMetadata>,
+    runner_metadata: Option<super::types::AiAgentCompletionMetadata>,
+    model_failure: Option<&str>,
 ) -> Result<bool, AppError> {
-    let (metadata, detected_refusal) = completed_metadata(&response, metadata);
+    let limited =
+        provider_limited_metadata(runner_metadata.clone(), model_failure);
+    let (metadata, detected_refusal) = completed_metadata(&response, limited);
+    // The browser already holds the runner's metadata; send what Echo changed.
+    let publish_metadata = detected_refusal || metadata != runner_metadata;
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
         .lock_exclusive()
@@ -1565,7 +1575,7 @@ pub(super) async fn complete_request(
     super::citations::persist_referenced(&txn, request_id, &response)
         .await
         .c(h!())?;
-    if detected_refusal {
+    if publish_metadata {
         events::append_in_transaction(
             &txn,
             request_id,

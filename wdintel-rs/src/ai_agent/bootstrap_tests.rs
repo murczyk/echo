@@ -2364,6 +2364,7 @@ async fn issue_4112_model_failures_are_recorded_for_the_chat() {
         refused.id,
         refusal.to_string(),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -2383,6 +2384,7 @@ async fn issue_4112_model_failures_are_recorded_for_the_chat() {
             coverage_limited: true,
             reason: "time_limit".to_string(),
         }),
+        Some("provider_error"),
     )
     .await
     .unwrap();
@@ -2393,5 +2395,35 @@ async fn issue_4112_model_failures_are_recorded_for_the_chat() {
         ),
         "runner metadata wins"
     );
+
+    let draft = running_request(&env, &fixture).await;
+    crate::ai_agent::worker::complete_request(
+        &env,
+        draft.id,
+        "Збережена чернетка".to_string(),
+        Some(crate::ai_agent::types::AiAgentCompletionMetadata {
+            coverage_limited: true,
+            reason: "incomplete_research".to_string(),
+        }),
+        Some("provider_error"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        metadata(draft.id).await,
+        Some(
+            serde_json::json!({"coverageLimited": true, "reason": "provider_error"})
+        )
+    );
+    let published = ai_agent_request_event::Entity::find()
+        .filter(ai_agent_request_event::Column::RequestId.eq(draft.id))
+        .filter(
+            ai_agent_request_event::Column::EventType.eq("completion_metadata"),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .expect("#4112 the live chat receives the corrected reason");
+    assert_eq!(published.payload["reason"], "provider_error");
     fixture.cleanup(&env).await;
 }

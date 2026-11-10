@@ -1743,6 +1743,25 @@ describe('#4112 switching engines after a provider failure or refusal', () => {
     expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
   });
 
+  it('opens another conversation on its own engine after a manual choice', async () => {
+    await openConversation(turn('request-ok', PROVIDER.id, null));
+    await chooseOption('Провайдер ШІ', SOL.name);
+    expect(selector('Провайдер ШІ').textContent).toContain(SOL.name);
+
+    const otherId = '33333333-3333-4333-8333-333333333333';
+    mocks.conversation.mockResolvedValue({
+      ...CONVERSATION,
+      id: otherId,
+      providerId: FLASH.id,
+      messages: turn('request-other', FLASH.id, null),
+    });
+    window.history.pushState({}, '', `?conversation=${otherId}`);
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flush();
+    expect(mocks.conversation).toHaveBeenLastCalledWith(otherId);
+    expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
+  });
+
   it('switches the engine mid-conversation', async () => {
     await openConversation(turn('request-ok', PROVIDER.id, null));
     await chooseOption('Провайдер ШІ', SOL.name);
