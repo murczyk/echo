@@ -74,14 +74,23 @@ A provider failure before the first tool call also gets one re-prompt, in every
 preset, because nothing is lost by trying again. Authorization and content-filter
 failures are not retried, and a repeated failure ends research as before.
 Research may also end without any text, as GLM-5.3 does: synthesis writes the
-answer, so an empty final turn is not a provider failure. A last draft refresh
+answer, so an empty final turn is not a provider failure. When research called no
+tool at all, not even a rejected or private one, its reply already answers from the
+whole conversation and is delivered as written, after the same link validation and
+map, file and document link safeguards; synthesis could only rewrite it from a
+narrower view (incident 01a1c4a5, where it turned CSV processing rules set in the
+first message into a summary). An empty or invalid reply, any tool call, and document
+requests still go to synthesis. On Deep the reply to the request is used, not the
+completion note the search reminder asks for. A last draft refresh
 runs only after four or more retrievals, because it is a fallback that costs
 research-effort turns.
 
 Synthesis has no tools and sees only delivered evidence, so its request also carries
 `completedActions`: the harness's record of each public tool's calls, failures and
 result counts. Without it, a search that found nothing or a published map looks like
-work that never ran. Synthesis uses the same context-aware evidence packing as other engines and at
+work that never ran. Its conversation is the opening user message, which often sets
+rules for the whole chat, plus the newest history entries that fit a quarter of the
+engine's input allowance; the rest stays for evidence. Synthesis uses the same context-aware evidence packing as other engines and at
 most 16,384 output tokens (the whole configured output cap on Deep), bounded by
 that cap. Hidden thinking counts against it. It preserves
 full records when they fit rather than cutting each source to a fixed prefix.
@@ -124,7 +133,8 @@ stage/outcome/finish-reason values and numeric usage, duration and remaining
 budget fields, correlated with the request ID. These frames are never stored as
 chat events or sent to the frontend. Source text, tool arguments, credentials
 and hidden reasoning are excluded. This also records successful requests that
-returned a fallback draft instead of a completed synthesis.
+returned a fallback draft instead of a completed synthesis, and `research_text`
+answers that research wrote without tools.
 
 Tool failures also emit private `tool_diagnostic` frames with an allowlisted
 reason code, a recognized tool name and an optional HTTP status. Failed argument

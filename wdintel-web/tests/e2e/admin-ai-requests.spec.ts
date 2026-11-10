@@ -7,11 +7,13 @@ import type {
 } from '../../src/Bindings';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
+const SEARCHED_CONVERSATION = '01a1c13a-52bb-7600-ab06-1049abed5a12';
+
 async function installRequests(page: Page) {
   await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
   const requests: AiAgentAdminRequestItem[] = Array.from({ length: 65 }, (_, index) => ({
     id: `request-${index + 1}`,
-    conversationId: 'conversation',
+    conversationId: index % 20 === 3 ? SEARCHED_CONVERSATION : 'conversation',
     humanLoginId: 'human',
     humanLogin: 'admin',
     aiEngineId: 'engine',
@@ -25,12 +27,26 @@ async function installRequests(page: Page) {
     completedAt: null,
     review: null,
   }));
-  const state = { fail: false, starts: [] as (string | null)[] };
+  const state = {
+    fail: false,
+    starts: [] as (string | null)[],
+    searches: [] as (string | null)[],
+  };
   await page.route('**/api/admin/ai-agent/requests/list', async (route) => {
-    const { pageStartId } = route.request().postDataJSON();
+    const { pageStartId, searchId } = route.request().postDataJSON();
     state.starts.push(pageStartId);
+    state.searches.push(searchId ?? null);
     if (state.fail) {
       await route.fulfill({ status: 500, body: 'Pagination unavailable' });
+      return;
+    }
+    if (searchId) {
+      const items = requests.filter(
+        (request) => request.id === searchId || request.conversationId === searchId,
+      );
+      await route.fulfill({
+        json: { items, pageSize: 20, total: items.length, pageStartIds: [] },
+      });
       return;
     }
     const start = pageStartId ? requests.findIndex((request) => request.id === pageStartId) : 0;
@@ -117,6 +133,35 @@ test('AI request pagination failures preserve the current entries and allow retr
   await showMore.click({ delay: 450 });
   await expect(rows).toHaveCount(40);
   expect(state.starts).toEqual([null, 'request-21', 'request-21']);
+});
+
+test('AI requests are found by a conversation ID pasted from the chat URL', async ({ page }) => {
+  const state = await installRequests(page);
+  await page.goto('/admin/ai/requests');
+  const rows = page.locator('tbody tr');
+  await expect(rows).toHaveCount(20);
+  const search = page.getByRole('textbox', { name: 'ID запиту або розмови' });
+  await search.fill('not an id');
+  await search.press('Enter');
+  await expect(page.getByText('Вставте ID запиту, розмови або посилання на чат')).toBeVisible();
+  expect(state.searches).toEqual([null]);
+  await search.fill(
+    `https://echo.example.test/?conversation=${SEARCHED_CONVERSATION.toUpperCase()}`,
+  );
+  await search.press('Enter');
+  await expect(rows).toHaveCount(4);
+  await expect(search).toHaveValue(SEARCHED_CONVERSATION);
+  await expect(page).toHaveURL(new RegExp(`[?&]id=${SEARCHED_CONVERSATION}`));
+  await expect(page.getByText('Усього: 4')).toBeVisible();
+  expect(state.searches.at(-1)).toBe(SEARCHED_CONVERSATION);
+  await page.goBack();
+  await expect(rows).toHaveCount(20);
+  await expect(search).toHaveValue('');
+  await page.goto(`/admin/ai/requests?id=${SEARCHED_CONVERSATION}`);
+  await expect(rows).toHaveCount(4);
+  await page.getByRole('button', { name: 'Очистити ID' }).click();
+  await expect(rows).toHaveCount(20);
+  await expect(page).not.toHaveURL(/[?&]id=/);
 });
 
 const DETAIL_TURNS = 12;

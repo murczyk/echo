@@ -6761,6 +6761,7 @@ export type AiAgentAdminRequestListReq = {
   state: string | null;
   suspicious: boolean | null;
   pageStartId: string | null;
+  searchId: string | null;
 };
 
 export type AiAgentSecurityReviewItem = {
