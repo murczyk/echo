@@ -174,6 +174,37 @@ pub struct MessengersAttachment {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct MessengersAttachmentsListReq {
+    pub account_id: String,
+    pub chat_id: Option<String>,
+    pub cursor: Option<String>,
+    pub limit: Option<i64>,
+    pub direction: Option<MessengersMessagesDirection>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersAttachmentsListRsp {
+    pub items: Vec<MessengersAttachmentItem>,
+    pub older_cursor: Option<String>,
+    pub newer_cursor: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersAttachmentItem {
+    pub chat_id: String,
+    pub message_id: String,
+    pub sent_at: i64,
+    pub sender_chat_member_id: Option<String>,
+    pub attachment: MessengersAttachment,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct MessengersChatMembersListReq {
     pub account_id: String,
     pub chat_id: String,

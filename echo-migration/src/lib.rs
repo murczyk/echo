@@ -542,6 +542,7 @@ mod m20261104_083000_group_message_requirements;
 mod m20261105_142754_messenger_account_internal_notes;
 mod m20261107_175132_important_only_my_organism;
 mod m20261108_090102_signoz_metrics_settings;
+mod m20261110_122635_messenger_media_meta_timeline;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1242,6 +1243,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261107_175019_duty_selected_groups_flag::Migration),
             Box::new(m20261107_175132_important_only_my_organism::Migration),
             Box::new(m20261108_090102_signoz_metrics_settings::Migration),
+            Box::new(m20261110_122635_messenger_media_meta_timeline::Migration),
         ]
     }
 }

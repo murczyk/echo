@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
 -- Written by Echo users, unlike notes, which ingest overwrites on every sync.
-alter table messenger_account add column internal_notes text;
+alter table messenger_account add column if not exists internal_notes text;
                 "#,
             )
             .await
@@ -30,7 +30,7 @@ alter table messenger_account add column internal_notes text;
             .get_connection()
             .execute_unprepared(
                 r#"
-alter table messenger_account drop column internal_notes;
+alter table messenger_account drop column if exists internal_notes;
                 "#,
             )
             .await

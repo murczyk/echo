@@ -58,6 +58,8 @@ pub enum Relation {
     MessengerAvatar,
     #[sea_orm(has_many = "super::messenger_chat_member::Entity")]
     MessengerChatMember,
+    #[sea_orm(has_many = "super::messenger_media_meta::Entity")]
+    MessengerMediaMeta,
     #[sea_orm(has_many = "super::sigint_chat_message::Entity")]
     SigintChatMessage,
 }
@@ -77,6 +79,12 @@ impl Related<super::messenger_avatar::Entity> for Entity {
 impl Related<super::messenger_chat_member::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::MessengerChatMember.def()
+    }
+}
+
+impl Related<super::messenger_media_meta::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerMediaMeta.def()
     }
 }
 

@@ -1946,6 +1946,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messengers::chat_members_list)
             .service(crate::messengers::contacts_list)
             .service(crate::messengers::messages_list)
+            .service(crate::messengers::attachments_list)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::highlight_blacklist::resolve_palitra_names)
             .service(crate::palitra::list_all_palitras_v2)

@@ -1,23 +1,18 @@
 use crate::config::{
     MESSENGERS_MESSAGES_DEFAULT_LIMIT, MESSENGERS_MESSAGES_MAX_LIMIT,
 };
-use crate::entities::{
-    messenger_media_meta, sigint_chat_message, signal_message,
-    signal_message_media,
-};
+use crate::entities::{sigint_chat_message, signal_message};
 use crate::error::AppError;
 use crate::h;
 use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
+use crate::messengers::attachments::{build_attachments, load_media_metadata};
 use crate::messengers::chats::resolve_chat;
+use crate::messengers::paging::{page_limit, parse_cursor_page, CursorPage};
 use crate::messengers::types::{
-    MessengersAttachment, MessengersMessageItem, MessengersMessagesDirection,
-    MessengersMessagesListReq, MessengersMessagesListRsp,
-    MessengersTelegramMedia, MessengersTelegramMessageId,
-};
-use crate::rer_importer::inbox::bl::{
-    load_message_media_details, message_media_info,
+    MessengersAttachment, MessengersMessageItem, MessengersMessagesListReq,
+    MessengersMessagesListRsp, MessengersTelegramMessageId,
 };
 use crate::types::{Env, ShortContext};
 use chrono::{DateTime, NaiveDateTime};
@@ -58,10 +53,7 @@ impl TimelinePosition {
 }
 
 enum PageRequest {
-    Latest,
-    Oldest,
-    Older(TimelinePosition),
-    Newer(TimelinePosition),
+    Cursor(CursorPage<TimelinePosition>),
     Around(Uuid),
 }
 
@@ -123,20 +115,6 @@ pub(crate) async fn list_messages(
     })
 }
 
-pub(crate) fn page_limit(
-    limit: Option<i64>,
-    default: i64,
-    max: i64,
-) -> Result<u64, AppError> {
-    let limit = limit.unwrap_or(default);
-    if !(1..=max).contains(&limit) {
-        return Err(AppError::BL {
-            msg: format!("invalid limit: {limit}, max {max}"),
-        });
-    }
-    Ok(limit as u64)
-}
-
 fn page_request(
     req: &MessengersMessagesListReq,
 ) -> Result<PageRequest, AppError> {
@@ -149,26 +127,13 @@ fn page_request(
         }
         return Ok(PageRequest::Around(parse_echo_uuid(message_id).c(h!())?));
     }
-    let oldest = req.direction == Some(MessengersMessagesDirection::Oldest);
-    let Some(cursor) = &req.cursor else {
-        return Ok(if oldest {
-            PageRequest::Oldest
-        } else {
-            PageRequest::Latest
-        });
-    };
-    if oldest {
-        return Err(AppError::BL {
-            msg: "direction Oldest excludes cursor".to_string(),
-        });
-    }
-    let position = TimelinePosition::decode(cursor).c(h!())?;
-    Ok(match req.direction {
-        Some(MessengersMessagesDirection::Newer) => {
-            PageRequest::Newer(position)
-        }
-        _ => PageRequest::Older(position),
-    })
+    let page = parse_cursor_page(
+        req.cursor.as_deref(),
+        req.direction,
+        TimelinePosition::decode,
+    )
+    .c(h!())?;
+    Ok(PageRequest::Cursor(page))
 }
 
 async fn load_page(
@@ -178,12 +143,16 @@ async fn load_page(
     limit: u64,
 ) -> Result<MessagePage, AppError> {
     match page_request {
-        PageRequest::Latest => load_older_page(dbx, chat_id, None, limit).await,
-        PageRequest::Oldest => load_oldest_page(dbx, chat_id, limit).await,
-        PageRequest::Older(position) => {
+        PageRequest::Cursor(CursorPage::Latest) => {
+            load_older_page(dbx, chat_id, None, limit).await
+        }
+        PageRequest::Cursor(CursorPage::Oldest) => {
+            load_oldest_page(dbx, chat_id, limit).await
+        }
+        PageRequest::Cursor(CursorPage::Older(position)) => {
             load_older_page(dbx, chat_id, Some(position), limit).await
         }
-        PageRequest::Newer(position) => {
+        PageRequest::Cursor(CursorPage::Newer(position)) => {
             load_newer_page(dbx, chat_id, position, limit).await
         }
         PageRequest::Around(message_id) => {
@@ -407,81 +376,20 @@ async fn load_attachments(
             .await
             .c(h!())?;
     let media_ids = media_entries.iter().map(|media| media.id).collect();
-    let details = load_message_media_details(env, &media_entries)
+    let metadata = load_media_metadata(&env.dbx, media_ids).await.c(h!())?;
+    let mut built = build_attachments(env, scope, &media_entries, &metadata)
         .await
         .c(h!())?;
-    let mut positions =
-        load_media_positions(env, scope, &media_ids).await.c(h!())?;
-    let metadata = load_media_metadata(&env.dbx, media_ids).await.c(h!())?;
     let mut attachments: HashMap<i64, Vec<MessengersAttachment>> =
         HashMap::new();
     for media in &media_entries {
-        // Every attachment of an ingested message has its metadata row.
-        let Some(meta) = metadata.get(&media.id) else {
+        let Some(attachment) = built.remove(&media.id) else {
             continue;
         };
-        let positions = positions.remove(&media.id).unwrap_or_default();
         attachments
             .entry(media.signal_message_id)
             .or_default()
-            .push(attachment(media, meta, &details, positions));
+            .push(attachment);
     }
     Ok(attachments)
-}
-
-fn attachment(
-    media: &signal_message_media::Model,
-    meta: &messenger_media_meta::Model,
-    details: &crate::rer_importer::inbox::bl::MessageMediaDetails,
-    positions: Vec<crate::rer_importer::highlight::CNPosition>,
-) -> MessengersAttachment {
-    MessengersAttachment {
-        media: message_media_info(media, details, positions),
-        external_id: meta.external_id.clone(),
-        created_at: meta
-            .external_created_at
-            .map(|dt| dt.and_utc().timestamp_millis()),
-        telegram: meta.telegram_file_id.map(|id| MessengersTelegramMedia {
-            file_id: id.to_string(),
-            media_type: meta.telegram_media_type.clone(),
-        }),
-    }
-}
-
-async fn load_media_metadata(
-    dbx: &DatabaseConnection,
-    media_ids: Vec<Uuid>,
-) -> Result<HashMap<Uuid, messenger_media_meta::Model>, AppError> {
-    let metadata = messenger_media_meta::Entity::find()
-        .filter(messenger_media_meta::Column::Id.is_in(media_ids))
-        .all(dbx)
-        .await
-        .c(h!())?;
-    Ok(metadata.into_iter().map(|meta| (meta.id, meta)).collect())
-}
-
-async fn load_media_positions(
-    env: &Env,
-    scope: &MessengersScope,
-    media_ids: &Vec<Uuid>,
-) -> Result<
-    HashMap<Uuid, Vec<crate::rer_importer::highlight::CNPosition>>,
-    AppError,
-> {
-    let enabled = crate::user_settings::ai_position_highlights_enabled(
-        &env.dbx,
-        scope.login_id,
-    )
-    .await
-    .c(h!())?;
-    if !enabled {
-        return Ok(HashMap::new());
-    }
-    Ok(crate::ai_position::list::positions_by_media(
-        &env.dbx,
-        media_ids.clone(),
-        &scope.group_master_keys.iter().cloned().collect(),
-    )
-    .await
-    .c(h!())?)
 }

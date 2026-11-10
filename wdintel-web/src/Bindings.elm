@@ -2964,6 +2964,62 @@ messengersMessagesListRspEncoder struct =
         ]
 
 
+type alias MessengersAttachmentsListReq =
+    { accountId : String
+    , chatId : Maybe (String)
+    , cursor : Maybe (String)
+    , limit : Maybe (Int)
+    , direction : Maybe (MessengersMessagesDirection)
+    }
+
+
+messengersAttachmentsListReqEncoder : MessengersAttachmentsListReq -> Json.Encode.Value
+messengersAttachmentsListReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.chatId )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "direction", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersMessagesDirectionEncoder)) struct.direction )
+        ]
+
+
+type alias MessengersAttachmentItem =
+    { chatId : String
+    , messageId : String
+    , sentAt : Int
+    , senderChatMemberId : Maybe (String)
+    , attachment : MessengersAttachment
+    }
+
+
+messengersAttachmentItemEncoder : MessengersAttachmentItem -> Json.Encode.Value
+messengersAttachmentItemEncoder struct =
+    Json.Encode.object
+        [ ( "chat_id", (Json.Encode.string) struct.chatId )
+        , ( "message_id", (Json.Encode.string) struct.messageId )
+        , ( "sent_at", (Json.Encode.int) struct.sentAt )
+        , ( "sender_chat_member_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderChatMemberId )
+        , ( "attachment", (messengersAttachmentEncoder) struct.attachment )
+        ]
+
+
+type alias MessengersAttachmentsListRsp =
+    { items : List (MessengersAttachmentItem)
+    , olderCursor : Maybe (String)
+    , newerCursor : Maybe (String)
+    }
+
+
+messengersAttachmentsListRspEncoder : MessengersAttachmentsListRsp -> Json.Encode.Value
+messengersAttachmentsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersAttachmentItemEncoder)) struct.items )
+        , ( "older_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.olderCursor )
+        , ( "newer_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.newerCursor )
+        ]
+
+
 type alias BatchMessageCommentsReq =
     { messages : List (MessageCommentsReq)
     }
@@ -23175,6 +23231,34 @@ messengersMessagesListRspDecoder : Json.Decode.Decoder MessengersMessagesListRsp
 messengersMessagesListRspDecoder =
     Json.Decode.succeed MessengersMessagesListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersMessageItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "older_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newer_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersAttachmentsListReqDecoder : Json.Decode.Decoder MessengersAttachmentsListReq
+messengersAttachmentsListReqDecoder =
+    Json.Decode.succeed MessengersAttachmentsListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.nullable (messengersMessagesDirectionDecoder))))
+
+
+messengersAttachmentItemDecoder : Json.Decode.Decoder MessengersAttachmentItem
+messengersAttachmentItemDecoder =
+    Json.Decode.succeed MessengersAttachmentItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sent_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_chat_member_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachment" (messengersAttachmentDecoder)))
+
+
+messengersAttachmentsListRspDecoder : Json.Decode.Decoder MessengersAttachmentsListRsp
+messengersAttachmentsListRspDecoder =
+    Json.Decode.succeed MessengersAttachmentsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAttachmentItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "older_cursor" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newer_cursor" (Json.Decode.nullable (Json.Decode.string))))
 

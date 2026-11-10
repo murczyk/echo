@@ -1147,6 +1147,28 @@ export type MessengersMessagesListRsp = {
   newerCursor: string | null;
 };
 
+export type MessengersAttachmentsListReq = {
+  accountId: string;
+  chatId: string | null;
+  cursor: string | null;
+  limit: number | null;
+  direction: MessengersMessagesDirection | null;
+};
+
+export type MessengersAttachmentItem = {
+  chatId: string;
+  messageId: string;
+  sentAt: number;
+  senderChatMemberId: string | null;
+  attachment: MessengersAttachment;
+};
+
+export type MessengersAttachmentsListRsp = {
+  items: Array<MessengersAttachmentItem>;
+  olderCursor: string | null;
+  newerCursor: string | null;
+};
+
 export type BatchMessageCommentsReq = {
   messages: Array<MessageCommentsReq>;
 };

@@ -1,7 +1,8 @@
 # Messengers viewer API
 
 Draft specification of the API that the Echo web UI uses to browse ingested
-messenger data: accounts, their contacts, chats, chat members and messages. The
+messenger data: accounts, their contacts, chats, chat members, messages and
+attachments. The
 data is pushed by collectors through the
 [messenger ingest API](MESSENGER_INGEST.md). Sections marked **Planned** are
 proposals, not contracts.
@@ -22,6 +23,7 @@ are removed from the RER inbox and analysis feeds; see
 | `POST /chats/members/list` | Implemented | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
 | `POST /contacts/list` | Implemented | `MessengersContactsListReq` | `MessengersContactsListRsp` |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
+| `POST /attachments/list` | Implemented | `MessengersAttachmentsListReq` | `MessengersAttachmentsListRsp` |
 
 Every route is a read except `accounts/update`, the only write, which changes
 only fields owned by Echo users; collected data stays read-only. Requests use `POST` with a JSON body, like
@@ -41,8 +43,8 @@ fields without changing the route.
   and zone), the same check that protects inbox messages and media. The ingest
   datasource must be linked to the viewer's zone, otherwise the account is not
   visible.
-- Chats, members, contacts and messages are only reachable through a parent
-  resolved within the caller's scope.
+- Chats, members, contacts, messages and attachments are only reachable through
+  a parent resolved within the caller's scope.
 - Attachments are served by the existing `/api/messenger/media/{id}` routes.
   They require the base role and a group shared with the message, which the
   rules above already imply.
@@ -58,7 +60,7 @@ fields without changing the route.
 | Timestamps | Integer milliseconds since the Unix epoch, UTC |
 | Optional fields | `T \| null` |
 | Collections | Always present, may be empty; never `null` |
-| Pagination | Cursor on `messages/list`, page number on `contacts/list`. The other lists return every item |
+| Pagination | Cursor on `messages/list` and `attachments/list`, page number on `contacts/list`. The other lists return every item |
 | Deleted rows | Soft-deleted accounts, chats, contacts and messages are left out of lists, and a deleted account or chat is a `404`. Deleted chat members stay in `chats/members/list` with `deleted: true` |
 
 A disabled ingest datasource only stops ingest; data already stored stays
@@ -73,7 +75,7 @@ account.
 
 | Status | Meaning | Body |
 |---|---|---|
-| `400` | Invalid uuid, an invalid `cursor`, `limit`, `direction` or combination of them on `messages/list`, or an invalid `page` or `limit` on `contacts/list` | Plain-text message |
+| `400` | Invalid uuid, an invalid `cursor`, `limit`, `direction` or combination of them on `messages/list` or `attachments/list`, or an invalid `page` or `limit` on `contacts/list` | Plain-text message |
 | `401` | Not authenticated | `Unauthenticated` |
 | `403` | Missing `CyberMessengers`, or missing `Rer` / `CyberViewerRestricted` | `Forbidden` |
 | `404` | Account or chat is unknown, deleted, outside the caller's groups, or the chat is not under that account. Also an `around_message_id` that is not a visible message of the chat | `Not found` |
@@ -411,6 +413,104 @@ Semantics:
 - Messages are visible before their attachments arrive, so `has_media: true`
   with an empty `attachments` is valid.
 
+## Attachments
+
+### `POST /attachments/list`
+
+One page of the attachments of one chat, or of every chat of an account, for a
+media gallery with infinite scroll in both directions. Each page is newest
+first. Without `chat_id` the page spans every live chat of the account.
+
+```ts
+type MessengersAttachmentsListReq = {
+  account_id: string
+  chat_id: string | null                // null: every chat of the account
+  cursor: string | null                 // from a previous response
+  limit: number | null                  // default 50, at most 100
+  direction: "Older" | "Newer" | "Oldest" | null   // default "Older"
+}
+
+type MessengersAttachmentsListRsp = {
+  items: MessengersAttachmentItem[]
+  older_cursor: string | null           // null when no older attachments remain
+  newer_cursor: string | null           // null only when there are no attachments
+}
+
+type MessengersAttachmentItem = {
+  chat_id: string                       // Echo chat uuid
+  message_id: string                    // Echo message uuid
+  sent_at: number                       // epoch ms, when the message was sent
+  sender_chat_member_id: string | null
+  attachment: MessengersAttachment      // as in messages/list
+}
+```
+
+Modes:
+
+| Request | Returns |
+|---|---|
+| No `cursor` | The newest page |
+| `direction: "Oldest"`, no `cursor` | The first page, for going to the start |
+| `cursor` from `older_cursor`, `direction` `"Older"` or omitted | Attachments of messages sent before that point |
+| `cursor` from `newer_cursor`, `direction: "Newer"` | The attachments closest after that point |
+
+Example response:
+
+```json
+{
+  "items": [
+    {
+      "chat_id": "0199e3a5-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+      "message_id": "0199e3a8-5e6f-7a0b-9c1d-2e3f4a5b6c7d",
+      "sent_at": 1760431100000,
+      "sender_chat_member_id": "0199e3a7-3b4c-7d5e-8f60-718293a4b5c6",
+      "attachment": {
+        "media": {
+          "id": "0199e3a8-4d5e-7f60-8172-839405162738",
+          "content_type": "image/jpeg",
+          "file_name": "photo_2026-10-14.jpg",
+          "size_bytes": 482113,
+          "href": "/api/messenger/media/0199e3a8-4d5e-7f60-8172-839405162738",
+          "transcription": null,
+          "ocr": null,
+          "summary": null,
+          "coordinate_status": null,
+          "kmz_conversion_status": null,
+          "positions": []
+        },
+        "external_id": "5550001:0",
+        "created_at": 1760431200000,
+        "telegram": { "file_id": "5413920012345678901", "media_type": "photo" }
+      }
+    }
+  ],
+  "older_cursor": "1760431100000000_3008815_0199e3a8-4d5e-7f60-8172-839405162738",
+  "newer_cursor": "1760431100000000_3008815_0199e3a8-4d5e-7f60-8172-839405162738"
+}
+```
+
+Semantics:
+
+- The timeline is the message timeline of `messages/list`
+  (`messenger_sent_at`, then message id), then the media id for attachments of
+  the same message. In the account scope, the chats are merged into one
+  timeline.
+- Cursors follow the `messages/list` rules: they are opaque positions that stay
+  valid if an attachment is deleted, `"Oldest"` cannot be combined with
+  `cursor`, an empty `Newer` page repeats the request's cursor, and
+  `older_cursor` is only known to be final on `Older`, `Oldest` and newest
+  pages.
+- A cursor does not record the scope. Keep `account_id` and `chat_id` the same
+  while paging; an attachment cursor is not a `messages/list` cursor.
+- `message_id` works as `around_message_id` in `messages/list`, to open the
+  message in its chat.
+- Attachments of messages deleted in Echo are left out, and in the account
+  scope also those of deleted chats. They do not count towards `limit`.
+- `messenger_media_meta` keeps a copy of the message's account, chat and send
+  time, which never change after ingest. Its chat and account timeline indexes
+  serve every page, so a page reads about `limit` rows, however large the chat
+  or account.
+
 ## Changes to RER endpoints
 
 Groups of messenger accounts and their messages are removed from the feeds
@@ -454,7 +554,8 @@ Unchanged on purpose:
 
 ### Filtering and search
 
-Optional fields on the same request bodies, starting with `messages/list`.
+Optional fields on the same request bodies, starting with `messages/list`, and
+a media type filter on `attachments/list`.
 `sigint_search.id` equals `sigint_chat_message.id`, so text search joins the
 timeline directly and the message cursor stays the same.
 

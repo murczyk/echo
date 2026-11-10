@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
-use crate::messengers::messages::page_limit;
+use crate::messengers::paging::page_limit;
 use crate::messengers::types::{
     MessengersContactItem, MessengersContactsListReq,
     MessengersContactsListRsp, MessengersTelegramAccountId,
