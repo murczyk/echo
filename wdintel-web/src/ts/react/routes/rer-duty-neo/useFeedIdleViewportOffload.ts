@@ -77,6 +77,7 @@ export function useFeedIdleViewportOffload(options: {
   const offloadActiveRef = useRef(false);
   const itemIdsRef = useRef(itemIds);
   const scrollSyncRafRef = useRef<number | null>(null);
+  const offloadWidthRef = useRef<number | null>(null);
   offloadActiveRef.current = offloadActive;
   itemIdsRef.current = itemIds;
 
@@ -103,8 +104,9 @@ export function useFeedIdleViewportOffload(options: {
   const applyOffloadSnapshot = useCallback(() => {
     if (!enabled) return;
     syncMountedToViewport();
+    offloadWidthRef.current = scrollerRef.current?.clientWidth ?? null;
     setOffloadActive(true);
-  }, [enabled, syncMountedToViewport]);
+  }, [enabled, scrollerRef, syncMountedToViewport]);
 
   const scheduleIdleOffload = useCallback(() => {
     clearIdleTimeout();
@@ -154,18 +156,17 @@ export function useFeedIdleViewportOffload(options: {
   // (the embedded editor opens or closes, the window resizes), remount the full window right away:
   // the feed's resize anchor restore absorbs the new card heights while no reader scroll is in
   // flight. Left stale, the next wheel tick wakes the feed instead, and the height difference above
-  // the viewport turns into a jump of several cards.
+  // the viewport turns into a jump of several cards. Compare with the width at snapshot time, not
+  // at observer creation: the observer is recreated when the feed length changes, which can land in
+  // the same commit as the width change (the report editor closing as the new message arrives).
   useEffect(() => {
     if (!enabled || typeof ResizeObserver === 'undefined') return;
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    let measuredWidth = scroller.clientWidth;
     const observer = new ResizeObserver(() => {
-      const width = scroller.clientWidth;
-      if (Math.abs(width - measuredWidth) < 0.5) return;
-      measuredWidth = width;
+      if (!offloadActiveRef.current || scroller.clientWidth === offloadWidthRef.current) return;
       heightByIdRef.current.clear();
-      if (offloadActiveRef.current) wakeFromOffload();
+      wakeFromOffload();
     });
     observer.observe(scroller);
     return () => observer.disconnect();

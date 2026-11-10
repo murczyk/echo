@@ -471,6 +471,25 @@ describe('useFeedIdleViewportOffload', () => {
         vi.advanceTimersByTime(5_000);
       });
       expect(latest.offloadActive).toBe(true);
+
+      // A new message recreates the observer in the same commit as the width change: the
+      // recreated observer must still compare against the width the placeholders were measured at.
+      width -= 240;
+      await act(async () => {
+        root.render(
+          <Harness
+            enabled
+            itemIds={[1, 2, 3, 4]}
+            idleMs={5_000}
+            onSnapshot={(value) => {
+              latest = value;
+            }}
+          />,
+        );
+      });
+      expect(latest.offloadActive).toBe(true);
+      await resize();
+      expect(latest.offloadActive).toBe(false);
     } finally {
       vi.unstubAllGlobals();
     }
