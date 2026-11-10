@@ -169,6 +169,53 @@ async fn timeout_kills_the_whole_process_group() {
     wait_until_dead(pid.trim());
 }
 
+/// A decoder that stops reporting progress is killed after the progress
+/// timeout, whether it goes silent or keeps printing lines that are not
+/// progress (the device audio watchdog case). It is an operational error,
+/// not invalid media.
+#[tokio::test]
+async fn stalled_stdout_hits_the_progress_timeout() {
+    for chatter in [false, true] {
+        let out = tempfile::tempdir().unwrap();
+        let pid_file = out.path().join("pid");
+        let policy =
+            Policy::for_programs(&[SH, "/usr/bin/sleep"]).write_dir(out.path());
+        let line = if chatter {
+            "echo '#tb 0: 1/48000'"
+        } else {
+            ":"
+        };
+        let script = format!(
+            "echo $$ > {}; while :; do {line}; sleep 0.01; done",
+            pid_file.display()
+        );
+        let spec = Spec {
+            program: SH.into(),
+            args: vec!["-c".into(), script.into()],
+            policy,
+            mode: sandbox_mode(),
+            timeout: TIMEOUT,
+            capture_stdout: true,
+            redact: Vec::new(),
+        };
+        let started = Instant::now();
+        let limit = Duration::from_millis(300);
+        let result = process::run_with(spec, Some(limit), |_| Ok(false)).await;
+        let Err(error) = result else {
+            panic!("stalled process finished: {result:?}");
+        };
+        assert!(
+            matches!(error, MediaError::ProgressTimeout(_)),
+            "{chatter}: {error:?}"
+        );
+        assert!(!error.is_terminal());
+        assert!(started.elapsed() >= limit);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let pid = std::fs::read_to_string(&pid_file).unwrap();
+        wait_until_dead(pid.trim());
+    }
+}
+
 #[tokio::test]
 async fn dropping_a_running_process_kills_it() {
     let out = tempfile::tempdir().unwrap();
