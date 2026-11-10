@@ -737,6 +737,48 @@ function ConversationMessage({
   );
 }
 
+/** Warns about an unhealthy engine; the action wraps under the text on narrow screens. */
+function ProviderHealthNotice({
+  message,
+  actionLabel,
+  onAction,
+}: {
+  message: string;
+  actionLabel: string | null;
+  onAction: () => void;
+}) {
+  return (
+    <PowerAlert
+      severity="warning"
+      autoHideDuration={null}
+      dismissible={false}
+      sx={{
+        width: '100%',
+        maxWidth: 768,
+        alignSelf: 'center',
+        mb: 1,
+        '& .MuiAlert-message': { minWidth: 0 },
+      }}
+    >
+      <Stack spacing={0.5} alignItems="flex-start">
+        <span>{message}</span>
+        {actionLabel ? (
+          <PowerButton
+            type="button"
+            size="small"
+            color="inherit"
+            variant="outlined"
+            style={{ whiteSpace: 'normal' }}
+            onClick={onAction}
+          >
+            {actionLabel}
+          </PowerButton>
+        ) : null}
+      </Stack>
+    </PowerAlert>
+  );
+}
+
 /** An engine's name; unhealthy engines show a warning colour and icon (#4112). */
 function ProviderName({ provider }: { provider?: AiAgentProvider | null }) {
   if (!provider) return null;
@@ -1776,45 +1818,21 @@ export function AiAgentChat({
       ? nextProvider(providers, selectedProvider.id)
       : null;
   const healthNotice = replacedProvider?.unhealthy ? (
-    <PowerAlert
-      severity="warning"
-      autoHideDuration={null}
-      dismissible={false}
-      action={
-        <PowerButton
-          type="button"
-          size="small"
-          color="inherit"
-          onClick={() => selectProviderExplicitly(replacedProvider.id)}
-        >
-          Все одно використати {replacedProvider.name}
-        </PowerButton>
-      }
-    >
-      {replacedProvider.name} тимчасово недоступний
-      {replacedProvider.healthMessage ? `: ${replacedProvider.healthMessage}` : ''}. Вибрано{' '}
-      {selectedProvider?.name}.
-    </PowerAlert>
+    <ProviderHealthNotice
+      message={`${replacedProvider.name} тимчасово недоступний${
+        replacedProvider.healthMessage ? `: ${replacedProvider.healthMessage}` : ''
+      }. Вибрано ${selectedProvider?.name ?? ''}.`}
+      actionLabel={`Все одно використати ${replacedProvider.name}`}
+      onAction={() => selectProviderExplicitly(replacedProvider.id)}
+    />
   ) : selectedProvider?.unhealthy ? (
-    <PowerAlert
-      severity="warning"
-      autoHideDuration={null}
-      dismissible={false}
-      action={
-        healthAlternative ? (
-          <PowerButton
-            type="button"
-            size="small"
-            color="inherit"
-            onClick={() => selectProviderExplicitly(healthAlternative.id)}
-          >
-            Перейти на {healthAlternative.name}
-          </PowerButton>
-        ) : undefined
-      }
-    >
-      {selectedProvider.name}: {selectedProvider.healthMessage || PROVIDER_UNHEALTHY_DEFAULT}
-    </PowerAlert>
+    <ProviderHealthNotice
+      message={`${selectedProvider.name}: ${
+        selectedProvider.healthMessage || PROVIDER_UNHEALTHY_DEFAULT
+      }`}
+      actionLabel={healthAlternative ? `Перейти на ${healthAlternative.name}` : null}
+      onAction={() => healthAlternative && selectProviderExplicitly(healthAlternative.id)}
+    />
   ) : null;
   const composerDisabled =
     submitting || loadingConversation || conversationLoadFailed || !selectedProvider;
