@@ -375,4 +375,104 @@ describe('useFeedIdleViewportOffload', () => {
     expect(latest.offloadActive).toBe(false);
     expect(latest.mountedCount).toBeNull();
   });
+
+  it('wakes when the feed width changes so placeholders never keep stale heights', async () => {
+    const observers = new Set<{ callback: ResizeObserverCallback }>();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        callback: ResizeObserverCallback;
+        constructor(callback: ResizeObserverCallback) {
+          this.callback = callback;
+        }
+        observe() {
+          observers.add(this);
+        }
+        unobserve() {}
+        disconnect() {
+          observers.delete(this);
+        }
+      },
+    );
+    try {
+      await act(async () => {
+        root.render(
+          <Harness
+            enabled
+            itemIds={[1, 2, 3]}
+            idleMs={5_000}
+            onSnapshot={(value) => {
+              latest = value;
+            }}
+          />,
+        );
+      });
+
+      const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+      let width = scroller.clientWidth;
+      Object.defineProperty(scroller, 'clientWidth', { configurable: true, get: () => width });
+      Object.defineProperty(scroller, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          top: 0,
+          bottom: 100,
+          left: 0,
+          right: 100,
+          width: 100,
+          height: 100,
+          x: 0,
+          y: 0,
+          toJSON() {},
+        }),
+      });
+      scroller.querySelectorAll<HTMLElement>('[data-duty-message-id]').forEach((node, index) => {
+        Object.defineProperty(node, 'offsetHeight', { configurable: true, value: 80 });
+        Object.defineProperty(node, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => ({
+            top: index * 80,
+            bottom: index * 80 + 80,
+            left: 0,
+            right: 100,
+            width: 100,
+            height: 80,
+            x: 0,
+            y: index * 80,
+            toJSON() {},
+          }),
+        });
+      });
+      const resize = async () => {
+        await act(async () => {
+          for (const observer of [...observers]) {
+            observer.callback([], observer as unknown as ResizeObserver);
+          }
+        });
+      };
+
+      await act(async () => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(latest.offloadActive).toBe(true);
+
+      // A height-only resize keeps the measured placeholders.
+      await resize();
+      expect(latest.offloadActive).toBe(true);
+
+      // The embedded editor closing widens the feed: placeholders measured at the old width
+      // would be stale, so the full window remounts.
+      width += 240;
+      await resize();
+      expect(latest.offloadActive).toBe(false);
+      expect(latest.mountedCount).toBeNull();
+
+      // Idle re-arms and measures again at the new width.
+      await act(async () => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(latest.offloadActive).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
