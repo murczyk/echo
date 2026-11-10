@@ -73,6 +73,7 @@ pub struct Model {
     pub signoz_metrics_endpoint: Option<String>,
     pub doc_media_serve_from_b2: Option<bool>,
     pub enable_duty_search: Option<bool>,
+    pub ai_network_match_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -618,6 +618,7 @@ update shared msg model =
                                 , areaOfResponsibilityIds = Nothing
                                 , status = network.status
                                 , unitMask = Nothing
+                                , aiInstructions = Nothing
                                 }
                         , editAorSelect =
                             let

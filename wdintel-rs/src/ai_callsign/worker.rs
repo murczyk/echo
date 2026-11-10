@@ -59,7 +59,22 @@ pub async fn enqueue_if_enabled<C>(
 where
     C: ConnectionTrait,
 {
-    let enabled =
+    if !worker_enabled(dbx).await.c(h!())? {
+        return Ok(());
+    }
+    dbx.execute_raw(super::feedback::sql(
+        "insert into ai_callsign_worker_job (sigint_inbox_item_id, sigint_inbox_item_uuid) values ($1, $2) on conflict (sigint_inbox_item_id) do update set created_at = greatest(now() at time zone 'utc', ai_callsign_worker_job.created_at + interval '1 microsecond'), attempts = 0, next_attempt_at = now() at time zone 'utc', last_error = null",
+        vec![sigint_inbox_item_id.into(), sigint_inbox_item_uuid.into()],
+    )).await.c(h!())?;
+    Ok(())
+}
+
+/// Enabled with an engine chosen; the AI network match worker uses the same
+/// engines.
+pub(crate) async fn worker_enabled<C: ConnectionTrait>(
+    dbx: &C,
+) -> anyhow::Result<bool> {
+    Ok(
         ai_callsign_settings::Entity::find_by_id(AI_CALLSIGN_SETTINGS_ID)
             .filter(ai_callsign_settings::Column::WorkerEnabled.eq(true))
             .filter(
@@ -68,15 +83,8 @@ where
             .one(dbx)
             .await
             .c(h!())?
-            .is_some();
-    if !enabled {
-        return Ok(());
-    }
-    dbx.execute_raw(super::feedback::sql(
-        "insert into ai_callsign_worker_job (sigint_inbox_item_id, sigint_inbox_item_uuid) values ($1, $2) on conflict (sigint_inbox_item_id) do update set created_at = greatest(now() at time zone 'utc', ai_callsign_worker_job.created_at + interval '1 microsecond'), attempts = 0, next_attempt_at = now() at time zone 'utc', last_error = null",
-        vec![sigint_inbox_item_id.into(), sigint_inbox_item_uuid.into()],
-    )).await.c(h!())?;
-    Ok(())
+            .is_some(),
+    )
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {

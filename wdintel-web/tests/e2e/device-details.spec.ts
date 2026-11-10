@@ -813,6 +813,7 @@ function systemSettings() {
     disable_bot_tags: false,
     duty_exclude_menu_enabled: true,
     duty_selected_groups_enabled: true,
+    ai_network_match_enabled: false,
     analysis_aor_filter_enabled: false,
     ai_position_highlights_enabled: false,
     important_notify_all_enabled: true,
