@@ -1490,6 +1490,11 @@ pub async fn update_network(
     )
     .await
     .c(h!())?;
+    if crate::ai_network_match::network_input_changed(&old_network, &network) {
+        crate::ai_network_match::enqueue_for_network(&txn, network.id)
+            .await
+            .c(h!())?;
+    }
     txn.commit().await.context(h!())?;
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await

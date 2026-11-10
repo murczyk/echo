@@ -10,7 +10,8 @@ use crate::config::{
     AI_NETWORK_MATCH_WORKER_RETRY_MAX_SECS,
 };
 use crate::entities::{
-    ai_engine, ai_network_match_worker_job, sigint_inbox_item,
+    ai_engine, ai_network_match_result, ai_network_match_worker_job,
+    sigint_inbox_item,
 };
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
@@ -187,8 +188,9 @@ async fn load_next_job(
         .c(h!())
 }
 
-/// `None` when there is nothing to score: the message is gone, or it no
-/// longer has a candidate set the worker scores.
+/// `None` when there is nothing to score: the message is gone, it no
+/// longer has a candidate set the worker scores, or its stored scores came
+/// from the same input.
 async fn load_context(
     dbx: &DatabaseConnection,
     item_id: i64,
@@ -198,7 +200,30 @@ async fn load_context(
     if !is_scored_set(&network_ids) {
         return Ok(None);
     }
-    context::load(dbx, item_id, network_ids).await.c(h!())
+    let Some(context) =
+        context::load(dbx, item_id, network_ids).await.c(h!())?
+    else {
+        return Ok(None);
+    };
+    if has_result_for(dbx, item_id, &context).await.c(h!())? {
+        return Ok(None);
+    }
+    Ok(Some(context))
+}
+
+async fn has_result_for(
+    dbx: &DatabaseConnection,
+    item_id: i64,
+    context: &MatchContext,
+) -> anyhow::Result<bool> {
+    let stored = ai_network_match_result::Entity::find_by_id(item_id)
+        .one(dbx)
+        .await
+        .c(h!())?;
+    Ok(stored.is_some_and(|result| {
+        result.candidate_network_ids == context.network_ids
+            && result.input_md5 == context.input_md5
+    }))
 }
 
 fn is_scored_set(network_ids: &[i64]) -> bool {

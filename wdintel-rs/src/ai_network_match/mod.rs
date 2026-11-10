@@ -6,7 +6,7 @@ use crate::config::{
     AI_NETWORK_MATCH_ENQUEUE_MAX_AGE_HOURS,
     AI_NETWORK_MATCH_INSTRUCTIONS_MAX_CHARS,
 };
-use crate::entities::ai_network_match_result;
+use crate::entities::{ai_network_match_result, sigint_network};
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
@@ -14,7 +14,7 @@ use chrono::{Duration, Utc};
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, EntityTrait, Statement, Value,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 mod context;
 mod inference;
@@ -62,6 +62,9 @@ pub(crate) async fn enabled<C: ConnectionTrait>(
 /// Queues scoring for messages whose links were just written and that match
 /// several networks. Every writer of message–network links calls it:
 /// `calculate_sigint_inbox_item_networks` and the direct-submit link copy.
+/// A message whose stored scores came from the same input is queued too: the
+/// worker drops it without an AI call, and rescores it when a candidate
+/// network changed without changing the candidate set.
 pub async fn enqueue_for_calculated<C: ConnectionTrait>(
     dbx: &C,
     networks_by_item: &HashMap<i64, Vec<i64>>,
@@ -70,15 +73,58 @@ pub async fn enqueue_for_calculated<C: ConnectionTrait>(
     if candidates.is_empty() || !enabled(dbx).await.c(h!())? {
         return Ok(());
     }
-    let scored = items_with_current_result(dbx, &candidates).await.c(h!())?;
-    let item_ids = candidates
-        .into_keys()
-        .filter(|item_id| !scored.contains(item_id))
-        .collect::<Vec<_>>();
+    insert_recent_jobs(dbx, candidates.into_keys().collect())
+        .await
+        .c(h!())
+}
+
+/// Queues the network's recent multi-network messages after an edit that
+/// changes the AI input without relinking messages, such as its name or
+/// «Опис для ШІ».
+pub async fn enqueue_for_network<C: ConnectionTrait>(
+    dbx: &C,
+    network_id: i64,
+) -> anyhow::Result<()> {
+    if !enabled(dbx).await.c(h!())? {
+        return Ok(());
+    }
+    // A link is never older than its message, so the link time bounds the
+    // scan by the (network_id, created_at) index.
+    let rows = dbx
+        .query_all_raw(sql(
+            "select distinct link.sigint_inbox_item_id from sigint_inbox_item_network link where link.sigint_network_id = $1 and link.created_at >= $2 and exists (select 1 from sigint_inbox_item_network other where other.sigint_inbox_item_id = link.sigint_inbox_item_id and other.sigint_network_id <> $1)",
+            vec![network_id.into(), enqueue_cutoff().into()],
+        ))
+        .await
+        .c(h!())?;
+    let item_ids = rows
+        .iter()
+        .map(|row| row.try_get::<i64>("", "sigint_inbox_item_id"))
+        .collect::<Result<Vec<_>, _>>()
+        .c(h!())?;
     if item_ids.is_empty() {
         return Ok(());
     }
     insert_recent_jobs(dbx, item_ids).await.c(h!())
+}
+
+/// Whether an edit changed a network field the AI input includes.
+pub fn network_input_changed(
+    old: &sigint_network::Model,
+    new: &sigint_network::Model,
+) -> bool {
+    let input = |network: &sigint_network::Model| {
+        (
+            network.name.clone(),
+            network.location.clone(),
+            network.purpose.clone(),
+            network.operation_mode.clone(),
+            network.operation_type.clone(),
+            network.radio_station.clone(),
+            network.ai_instructions.clone(),
+        )
+    };
+    input(old) != input(new)
 }
 
 /// Drops the stored scores after an edit, so the following network
@@ -128,18 +174,6 @@ fn multi_network_items(
         .collect()
 }
 
-async fn items_with_current_result<C: ConnectionTrait>(
-    dbx: &C,
-    candidates: &HashMap<i64, Vec<i64>>,
-) -> anyhow::Result<HashSet<i64>> {
-    Ok(load_results(dbx, candidates)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|result| result.sigint_inbox_item_id)
-        .collect())
-}
-
 /// Stored results whose candidate set is still the current one.
 async fn load_results<C: ConnectionTrait>(
     dbx: &C,
@@ -169,9 +203,7 @@ async fn insert_recent_jobs<C: ConnectionTrait>(
     dbx: &C,
     item_ids: Vec<i64>,
 ) -> anyhow::Result<()> {
-    let cutoff = (Utc::now()
-        - Duration::hours(AI_NETWORK_MATCH_ENQUEUE_MAX_AGE_HOURS))
-    .naive_utc();
+    let cutoff = enqueue_cutoff();
     dbx.execute_raw(sql(
         "insert into ai_network_match_worker_job (sigint_inbox_item_id) select item.id from sigint_inbox_item item join signal_message message on message.id = item.id where item.id = any($1) and not message.deleted and message.created_at >= $2 and coalesce(item.datetime, message.created_at) >= $2 on conflict (sigint_inbox_item_id) do nothing",
         vec![item_ids.into(), cutoff.into()],
@@ -179,6 +211,11 @@ async fn insert_recent_jobs<C: ConnectionTrait>(
     .await
     .c(h!())?;
     Ok(())
+}
+
+fn enqueue_cutoff() -> chrono::NaiveDateTime {
+    (Utc::now() - Duration::hours(AI_NETWORK_MATCH_ENQUEUE_MAX_AGE_HOURS))
+        .naive_utc()
 }
 
 fn to_inbox_match(

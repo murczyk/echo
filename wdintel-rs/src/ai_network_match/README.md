@@ -25,14 +25,22 @@ compiled prompt lives in
 Both writers of message–network links call `enqueue_for_calculated` with the
 new links: `calculate_sigint_inbox_item_networks` and the direct-submit copy of
 a source message's links (`copy_inbox_networks`). A message is queued in
-`ai_network_match_worker_job` when it has 2–12 distinct networks, it has no
-stored result for exactly that candidate set, and both its receive time and
-intercept time are within the last 48 hours. The age limit stops network edits,
-which recalculate old messages in bulk, and historical imports from flooding
-the engine.
+`ai_network_match_worker_job` when it has 2–12 distinct networks and both its
+receive time and intercept time are within the last 48 hours. The age limit
+stops network edits, which recalculate old messages in bulk, and historical
+imports from flooding the engine.
+
+A recalculation queues the message even when it already has scores, because a
+frequency, unit or post edit can change a candidate network without changing
+the candidate set. The worker drops such a job without an AI call when the
+stored candidate set and input hash still match.
 
 Message edits (body, frequency, post) delete the stored result before the
-links are recalculated, so the message is queued again.
+links are recalculated, so the message is queued again. Editing a network's
+name, description fields or «Опис для ШІ» (`update_network`) relinks nothing,
+so it queues the network's recent multi-network messages itself
+(`enqueue_for_network`). Callsign edits take effect at the next recalculation
+or for new messages.
 
 ## Processing
 
@@ -70,8 +78,8 @@ Classic Elm views ignore the scores and list every network.
 2. Make sure the callsign parsing worker is enabled, and check on that server
    that its engine accepts the strict `response_format` used here.
 3. Enable «ШІ: головна мережа повідомлення» in the system settings. Analysts
-   can then fill «Опис для ШІ» on networks; new descriptions apply to messages
-   scored afterwards.
+   can then fill «Опис для ШІ» on networks; an edit rescores the network's
+   messages from the last 48 hours.
 
 Tests: `ai_network_match/tests.rs`, `ai_network_match/inference.rs`,
 `system_settings/mod.rs` (`issue_4095_*`), and the React specs listed in the

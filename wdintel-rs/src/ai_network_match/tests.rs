@@ -166,7 +166,7 @@ fn scores(item_id: i64, network_ids: &[i64]) -> HashMap<i64, Vec<i64>> {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn enqueue_follows_flag_worker_age_and_stored_candidates_4095() {
+async fn enqueue_follows_flag_worker_and_age_4095() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let dbx = &env.dbx;
     let engine = engine(dbx, 200, "{}", false).await;
@@ -201,11 +201,10 @@ async fn enqueue_follows_flag_worker_age_and_stored_candidates_4095() {
     .await
     .unwrap();
     enqueue_for_calculated(dbx, &pair).await.unwrap();
-    assert!(job(dbx, item.id).await.is_none(), "stored set unchanged");
-    enqueue_for_calculated(dbx, &scores(item.id, &ids))
-        .await
-        .unwrap();
-    assert!(job(dbx, item.id).await.is_some(), "candidate set changed");
+    assert!(
+        job(dbx, item.id).await.is_some(),
+        "a stored result does not hide a recalculation from the worker"
+    );
     clear_job(dbx, item.id).await;
 
     forget_result(dbx, item.id).await.unwrap();
@@ -273,6 +272,43 @@ async fn worker_stores_scores_and_cards_follow_current_candidates_4095() {
     .unwrap()
     .unwrap();
     assert!(progress.last_completed_at.is_some());
+
+    enqueue_for_calculated(dbx, &current).await.unwrap();
+    assert!(run_once(&env).await);
+    assert!(job(dbx, item.id).await.is_none());
+    assert_eq!(
+        engine.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "an unchanged input is not scored again"
+    );
+
+    let before = sigint_network::Entity::find_by_id(ids[0])
+        .one(dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let after = sigint_network::Model {
+        ai_instructions: Some("Має CC 4".to_string()),
+        ..before.clone()
+    };
+    assert!(!network_input_changed(&before, &before.clone()));
+    assert!(network_input_changed(&before, &after));
+    dbx.execute_raw(sql(
+        "update sigint_network set ai_instructions = 'Має CC 4' where id = $1",
+        vec![ids[0].into()],
+    ))
+    .await
+    .unwrap();
+    enqueue_for_network(dbx, ids[2]).await.unwrap();
+    assert!(job(dbx, item.id).await.is_none(), "unlinked network");
+    enqueue_for_network(dbx, ids[0]).await.unwrap();
+    assert!(job(dbx, item.id).await.is_some(), "edited network");
+    assert!(run_once(&env).await);
+    assert_eq!(
+        engine.calls.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "a changed «Опис для ШІ» is scored again"
+    );
 
     let changed = scores(item.id, &ids);
     assert!(load_for_messages(dbx, &changed).await.unwrap().is_empty());
