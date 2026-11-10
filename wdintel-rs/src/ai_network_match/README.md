@@ -38,9 +38,11 @@ stored candidate set and input hash still match.
 Message edits (body, frequency, post) delete the stored result before the
 links are recalculated, so the message is queued again. Editing a network's
 name, description fields or «Опис для ШІ» (`update_network`) relinks nothing,
-so it queues the network's recent multi-network messages itself
-(`enqueue_for_network`). Callsign edits take effect at the next recalculation
-or for new messages.
+so it queues a recalculation of the network's messages intercepted in the
+last 48 hours (`request_network_rescore`, a network invalidation task). The
+network edit itself takes no message locks; the invalidation worker queues the
+jobs in batches. Callsign edits take effect at the next recalculation or for
+new messages.
 
 ## Processing
 

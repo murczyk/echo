@@ -78,34 +78,26 @@ pub async fn enqueue_for_calculated<C: ConnectionTrait>(
         .c(h!())
 }
 
-/// Queues the network's recent multi-network messages after an edit that
-/// changes the AI input without relinking messages, such as its name or
-/// «Опис для ШІ».
-pub async fn enqueue_for_network<C: ConnectionTrait>(
+/// Rescores the network's recent messages after an edit that changes the AI
+/// input without relinking them, such as its name or «Опис для ШІ». It queues
+/// a recalculation of the network's messages from the last 48 hours instead of
+/// jobs, so the network edit takes no message locks; the recalculation queues
+/// the jobs in batches, and the worker skips unchanged inputs.
+pub async fn request_network_rescore<C: ConnectionTrait>(
     dbx: &C,
     network_id: i64,
 ) -> anyhow::Result<()> {
     if !enabled(dbx).await.c(h!())? {
         return Ok(());
     }
-    // A link is never older than its message, so the link time bounds the
-    // scan by the (network_id, created_at) index.
-    let rows = dbx
-        .query_all_raw(sql(
-            "select distinct link.sigint_inbox_item_id from sigint_inbox_item_network link where link.sigint_network_id = $1 and link.created_at >= $2 and exists (select 1 from sigint_inbox_item_network other where other.sigint_inbox_item_id = link.sigint_inbox_item_id and other.sigint_network_id <> $1)",
-            vec![network_id.into(), enqueue_cutoff().into()],
-        ))
-        .await
-        .c(h!())?;
-    let item_ids = rows
-        .iter()
-        .map(|row| row.try_get::<i64>("", "sigint_inbox_item_id"))
-        .collect::<Result<Vec<_>, _>>()
-        .c(h!())?;
-    if item_ids.is_empty() {
-        return Ok(());
-    }
-    insert_recent_jobs(dbx, item_ids).await.c(h!())
+    crate::sigint::network::etalon_calc::invalidate_network_linked_inbox_since(
+        dbx,
+        network_id,
+        enqueue_cutoff(),
+        format!("AI network match input of network {network_id} changed"),
+    )
+    .await
+    .c(h!())
 }
 
 /// Whether an edit changed a network field the AI input includes.

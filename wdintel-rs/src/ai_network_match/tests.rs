@@ -2,15 +2,15 @@
 use super::*;
 use crate::ai_worker::test_support::{engine, TestEngine};
 use crate::entities::{
-    ai_network_match_worker_job, ai_worker_progress, sigint_inbox_item,
-    sigint_inbox_item_network, sigint_network,
+    ai_network_match_worker_job, ai_worker_progress, network_invalidation_task,
+    sigint_inbox_item, sigint_inbox_item_network, sigint_network,
 };
 use crate::functest::tests::{
     cleanup_locked, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
     mk_sigint_network,
 };
 use crate::types::Env;
-use sea_orm::{ActiveValue::Set, DatabaseConnection};
+use sea_orm::{ActiveValue::Set, ColumnTrait, DatabaseConnection, QueryFilter};
 use std::sync::Arc;
 
 fn candidate(network_id: i64, certainty: i32) -> NetworkMatchCandidate {
@@ -299,10 +299,24 @@ async fn worker_stores_scores_and_cards_follow_current_candidates_4095() {
     ))
     .await
     .unwrap();
-    enqueue_for_network(dbx, ids[2]).await.unwrap();
-    assert!(job(dbx, item.id).await.is_none(), "unlinked network");
-    enqueue_for_network(dbx, ids[0]).await.unwrap();
-    assert!(job(dbx, item.id).await.is_some(), "edited network");
+    request_network_rescore(dbx, ids[0]).await.unwrap();
+    let task = network_invalidation_task::Entity::find()
+        .filter(network_invalidation_task::Column::SigintNetworkId.eq(ids[0]))
+        .one(dbx)
+        .await
+        .unwrap()
+        .expect("the edit queues a recalculation of the network");
+    assert!(task.frequency.is_none());
+    assert!(
+        task.since_ts
+            <= chrono::Utc::now().naive_utc()
+                - chrono::Duration::hours(
+                    crate::config::AI_NETWORK_MATCH_ENQUEUE_MAX_AGE_HOURS
+                )
+                + chrono::Duration::minutes(1)
+    );
+    // The recalculation ends by queueing the linked messages again.
+    enqueue_for_calculated(dbx, &current).await.unwrap();
     assert!(run_once(&env).await);
     assert_eq!(
         engine.calls.load(std::sync::atomic::Ordering::SeqCst),

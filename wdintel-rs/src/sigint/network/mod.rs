@@ -1491,7 +1491,7 @@ pub async fn update_network(
     .await
     .c(h!())?;
     if crate::ai_network_match::network_input_changed(&old_network, &network) {
-        crate::ai_network_match::enqueue_for_network(&txn, network.id)
+        crate::ai_network_match::request_network_rescore(&txn, network.id)
             .await
             .c(h!())?;
     }
