@@ -53,7 +53,7 @@ pub async fn list_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;
