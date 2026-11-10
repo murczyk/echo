@@ -141,9 +141,6 @@ async fn get_inbox_map_inner(
     require_device_filters(&env.dbx, &user_id, &req.inbox_items_filter)
         .await
         .c(h!())?;
-    if req.show_settlements == Some(true) {
-        has_role(&env.dbx, &user_id, ROLE_ADMIN).await.c(h!())?;
-    }
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -208,7 +205,6 @@ async fn map_settlement_messages(
     req: Json<MapSettlementMessagesReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
@@ -5324,6 +5320,37 @@ mod tests {
             .next()
             .unwrap()
             .into_owned();
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/get-inbox-map")
+                .cookie(session_cookie.clone())
+                .set_json(MapPointsReq {
+                    inbox_items_filter: InboxMessagesReq::default(),
+                    map_filter: None,
+                    page_id: None,
+                    show_settlements: Some(true),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/map-settlement-messages")
+                .cookie(session_cookie.clone())
+                .set_json(MapSettlementMessagesReq {
+                    settlement_id: 1,
+                    inbox_items_filter: InboxMessagesReq::default(),
+                    before_id_noninclusive: None,
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
         let device_filter = InboxMessagesReq {
             selected_device_names: Some(vec!["ECHO-3461 device".to_string()]),
             ..Default::default()

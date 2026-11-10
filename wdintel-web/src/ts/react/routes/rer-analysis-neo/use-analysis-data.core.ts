@@ -728,7 +728,7 @@ export function useAnalysisData({
   }, [threadActive, messageList.invalidateMessagePaging, invalidateFilterSectionLoads]);
 
   const mapData = useAnalysisMapData({
-    canShowSettlements: currentUser?.roles.includes('Admin') ?? false,
+    canShowSettlements: true,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
