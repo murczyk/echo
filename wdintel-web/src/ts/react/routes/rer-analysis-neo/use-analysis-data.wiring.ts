@@ -112,6 +112,7 @@ export function buildAnalysisActionsParams({
 }
 
 type BuildReloadParamsInput = {
+  loadUnitsByIds: ReferenceState['loadUnitsByIds'];
   centerTab: UseAnalysisDataProps['centerTab'];
   deferInitialLoad: boolean;
   hideNetworks: boolean;
@@ -206,6 +207,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     rightSidebarVisible: input.rightSidebarVisible,
     reloadTriggerKey: input.reloadTriggerKey,
     shouldLoadNewCallsigns: input.shouldLoadNewCallsigns,
+    loadUnitsByIds: input.loadUnitsByIds,
     optionsFreqValuesRef: input.optionsFreqValuesRef,
     getLoadedFilterSections: input.getLoadedFilterSections,
     getReloadFilterSections: input.getReloadFilterSections,

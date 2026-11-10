@@ -7,6 +7,7 @@ import Dict
 import Effect as E
 import Expect exposing (Expectation)
 import Http
+import Json.Decode as D
 import Layouts.Navbar as Navbar
 import Route exposing (Route)
 import Shared
@@ -18,7 +19,12 @@ import Url
 tests : Test
 tests =
     describe "Expired sessions stop background requests"
-        [ test "#3780 duplicate ticks and stale responses cannot create another poll" <|
+        [ test "#3571 older event servers may omit the unit catalog revision" <|
+            \_ ->
+                D.decodeString B.longPollRspDecoder "{\"events\":[],\"last_event_id\":null}"
+                    |> Result.map .unitCatalogRevision
+                    |> Expect.equal (Ok Nothing)
+        , test "#3780 duplicate ticks and stale responses cannot create another poll" <|
             \_ ->
                 withSession <|
                     \route shared ->
@@ -30,7 +36,7 @@ tests =
                                 [ Msg.EventServicePollEvents 0
                                 , Msg.EventServicePollEvents polling.eventService.generation
                                 , Msg.EventServiceRetryPolling 0
-                                , Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
+                                , Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing, unitCatalogRevision = Nothing })
                                 , Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (httpError 401))
                                 ]
                         in
@@ -64,7 +70,7 @@ tests =
                             obsolete =
                                 [ Msg.EventServiceRetryPolling polling.eventService.generation
                                 , Msg.EventServiceEventsReceived polling.eventService.generation B.LpfGeneric (Err (httpError 401))
-                                , Msg.EventServiceEventsReceived polling.eventService.generation B.LpfGeneric (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
+                                , Msg.EventServiceEventsReceived polling.eventService.generation B.LpfGeneric (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing, unitCatalogRevision = Nothing })
                                 ]
                         in
                         obsolete
@@ -110,7 +116,7 @@ tests =
                                 Shared.update route Msg.SignOut shared
 
                             lateMessages =
-                                [ Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "late", deploymentMaintenance = Nothing })
+                                [ Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "late", deploymentMaintenance = Nothing, unitCatalogRevision = Nothing })
                                 , Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (httpError 500))
                                 , Msg.EventServiceRetryPolling 0
                                 , Msg.EventServicePollEvents 0
@@ -153,7 +159,7 @@ tests =
                                 fail (Http.BadStatus 403) unexpected
 
                             ( recovered, _ ) =
-                                Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "recovered", deploymentMaintenance = Nothing })) unexpected
+                                Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "recovered", deploymentMaintenance = Nothing, unitCatalogRevision = Nothing })) unexpected
                         in
                         Expect.all
                             [ \_ -> Expect.equal True interrupted.eventService.isPolling
@@ -233,7 +239,7 @@ temporaryFailureTest failure =
                                 { shared | eventService = { eventService | retryCount = 5 } }
 
                         ( pollingRecovered, _ ) =
-                            Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Nothing, deploymentMaintenance = Nothing })) polling
+                            Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Nothing, deploymentMaintenance = Nothing, unitCatalogRevision = Nothing })) polling
                     in
                     Expect.all
                         [ \_ -> Expect.equal False interrupted.keepAliveStopped

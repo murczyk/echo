@@ -69,6 +69,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     await act(async () => {
       catalog.resolve({
         revision: '3527',
+        selections: [],
         groups: [
           { id: 'group:2:6 А', label: '6 А', level: 2, parentIndex: null },
           { id: 'group:2:6 А|5:27 омсбр', label: '27 омсбр', level: 5, parentIndex: 0 },

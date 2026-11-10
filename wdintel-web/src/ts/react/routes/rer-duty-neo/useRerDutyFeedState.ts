@@ -236,13 +236,20 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
     true,
     setError,
+    {
+      unitIds: [],
+      selectionValues: messageFeeds.flatMap((feed) => [
+        ...(feed.filter.unitsSelected ?? []),
+        ...(feed.filter.unitsDenied ?? []),
+      ]),
+    },
   );
   const isFeedReady = useCallback(
     (feed: MessageFeedState) =>
       (deps.dutySearchReady !== false || !feed.filter.search?.trim()) &&
-      (unitHierarchy !== null ||
+      ((unitHierarchy !== null && !unitHierarchyLoading) ||
         (feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) === 0),
-    [deps.dutySearchReady, unitHierarchy],
+    [deps.dutySearchReady, unitHierarchy, unitHierarchyLoading],
   );
   const effectiveFiltersReady = frequencyFiltersReady;
 

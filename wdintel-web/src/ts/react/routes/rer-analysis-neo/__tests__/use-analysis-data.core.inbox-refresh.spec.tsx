@@ -10,6 +10,7 @@ import { emptyQueryState } from '../helpers';
 import { useAnalysisData } from '../use-analysis-data.core';
 import { buildUnitHierarchyIndex } from '../../shared/unit-children-filter';
 import { buildUnitFilterOptions } from '../../../utils/unit-search';
+import { reconcileUnitCatalog } from '../../../services/unit-catalog-events';
 
 const hoisted = vi.hoisted(() => ({
   fetchMessagesByIds: vi.fn(),
@@ -351,6 +352,31 @@ afterEach(() => {
   container = null;
 });
 describe('useAnalysisData inbox refreshes', () => {
+  it.each(['original', ''])(
+    '#3571 skips message reloads for window-only reconciliation with nonce "%s"',
+    (nonce) => {
+      reconcileUnitCatalog(`1:${nonce}`, false);
+      renderHook();
+      hoisted.reload.mockClear();
+
+      act(() => reconcileUnitCatalog(`2:${nonce}`, false));
+      expect(hoisted.reload).not.toHaveBeenCalled();
+
+      act(() => reconcileUnitCatalog('3:edited', false));
+      expect(hoisted.reload).toHaveBeenCalledExactlyOnceWith({
+        preserveMessagePage: true,
+        showMessagesLoading: false,
+      });
+
+      hoisted.reload.mockClear();
+      act(() => reconcileUnitCatalog('4:edited', true));
+      expect(hoisted.reload).toHaveBeenCalledExactlyOnceWith({
+        preserveMessagePage: true,
+        showMessagesLoading: false,
+      });
+    },
+  );
+
   it('#4022 removes an assigned message while retaining other messages without units', async () => {
     const message = inboxMessage({ unit: null });
     const assignedMessage = inboxMessage({ unit: 'Assigned Unit' });

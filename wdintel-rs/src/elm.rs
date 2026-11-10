@@ -58,6 +58,8 @@ const EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER: &str = r#"|> Json.Decode.and
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "intelligence_report" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder))))"#;
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))"#;
+const LONG_POLL_UNIT_CATALOG_REVISION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_catalog_revision" (Json.Decode.nullable (Json.Decode.string))))"#;
+const LONG_POLL_UNIT_CATALOG_REVISION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "unit_catalog_revision" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))"#;
 
 const MESSAGE_IS_TIME_NULL_STRICT_DECODER: &str = r#"Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool))"#;
 const MESSAGE_IS_TIME_NULL_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]"#;
@@ -586,6 +588,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::Unit,
             crate::sigint::unit::types::UnitHierarchyGroup,
             crate::sigint::unit::types::UnitHierarchyUnit,
+            crate::sigint::unit::types::UnitHierarchySelection,
             crate::sigint::unit::types::UnitHierarchyRsp,
             crate::sigint::unit::types::UnitHierarchyReq,
             crate::sigint::unit::types::UnitCombatType,
@@ -1619,6 +1622,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::Unit,
             crate::sigint::unit::types::UnitHierarchyGroup,
             crate::sigint::unit::types::UnitHierarchyUnit,
+            crate::sigint::unit::types::UnitHierarchySelection,
             crate::sigint::unit::types::UnitHierarchyRsp,
             crate::sigint::unit::types::UnitHierarchyReq,
             crate::sigint::unit::types::UnitCombatType,
@@ -2451,6 +2455,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
             LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER,
+        )
+        .replace(
+            LONG_POLL_UNIT_CATALOG_REVISION_STRICT_DECODER,
+            LONG_POLL_UNIT_CATALOG_REVISION_COMPAT_DECODER,
         ))
 }
 

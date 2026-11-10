@@ -4107,14 +4107,24 @@ export type UnitHierarchyUnit = {
   groupIndex: number | null;
 };
 
+export type UnitHierarchySelection = {
+  value: string;
+  label: string;
+  unitIds: Array<number>;
+  exactUnitIds: Array<number>;
+};
+
 export type UnitHierarchyRsp = {
   revision: string;
   groups: Array<UnitHierarchyGroup>;
   units: Array<UnitHierarchyUnit>;
+  selections: Array<UnitHierarchySelection>;
 };
 
 export type UnitHierarchyReq = {
   knownRevision: string | null;
+  unitIds: Array<number> | null;
+  selectionValues: Array<string> | null;
 };
 
 export type UnitCombatType = {
@@ -8010,6 +8020,7 @@ export type LongPollRsp = {
   events: Array<EventMsg>;
   lastEventId: string | null;
   deploymentMaintenance: DeploymentMaintenance | null;
+  unitCatalogRevision: string | null;
 };
 
 export type EchoAccountF1 = {

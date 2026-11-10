@@ -11,6 +11,7 @@ import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import 'bootstrap/dist/css/bootstrap.css';
 import { inverse, forward } from 'mgrs';
 import { copyTextToClipboard } from './ts/copy-to-clipboard';
+import { reconcileUnitCatalog } from './ts/react/services/unit-catalog-events';
 import { tdUsk2000ToWgs84, tdWgs84ToUsk2000 } from './ts/utils';
 import './ts/web-components/bar-chart';
 import './ts/web-components/freq-activity-chart';
@@ -841,6 +842,12 @@ export const onReady = ({ app, env }) => {
         }, 300); // Match the transition duration from CSS
       });
     });
+  }
+
+  if (app.ports && app.ports.shared_dispatchUnitChanged) {
+    app.ports.shared_dispatchUnitChanged.subscribe(({ revision, changed }) =>
+      reconcileUnitCatalog(revision, changed),
+    );
   }
 
   if (app.ports && app.ports.shared_dispatchInboxChanged) {

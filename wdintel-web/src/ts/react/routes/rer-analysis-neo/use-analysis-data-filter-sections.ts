@@ -154,6 +154,7 @@ export function filterSectionsToInvalidateForPatch(
 }
 
 type Params = {
+  loadUnitsByIds?: typeof import('../../services/api/units').getUnitsByIds;
   queryState: AnalysisQueryState;
   hideNetworks: boolean;
   canUseDevices?: boolean;
@@ -171,6 +172,7 @@ type Params = {
 };
 
 export function useAnalysisFilterSections({
+  loadUnitsByIds,
   queryState,
   hideNetworks,
   canUseDevices = false,
@@ -357,6 +359,7 @@ export function useAnalysisFilterSections({
       }
       try {
         await loadFilterSectionData(section, {
+          loadUnitsByIds,
           analysisReq: sectionAnalysisReq,
           loadVersion,
           loadVersionRef,
@@ -387,6 +390,7 @@ export function useAnalysisFilterSections({
       }
     },
     [
+      loadUnitsByIds,
       canUseDevices,
       clearSectionInFlight,
       clearFilterRetry,
@@ -487,6 +491,7 @@ export function useAnalysisFilterSections({
           }
           try {
             await loadFilterSectionData(section, {
+              loadUnitsByIds,
               analysisReq: buildAnalysisReqForFilterSection(section, analysisReq),
               loadVersion,
               loadVersionRef,
@@ -529,6 +534,7 @@ export function useAnalysisFilterSections({
       }
     },
     [
+      loadUnitsByIds,
       canUseDevices,
       clearSectionInFlight,
       clearFilterRetry,
