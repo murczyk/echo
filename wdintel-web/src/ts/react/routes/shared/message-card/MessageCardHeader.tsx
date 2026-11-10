@@ -1093,6 +1093,15 @@ function MetaLine({
   );
 }
 
+/** The network icon's tooltip; it carries the AI certainty when there is one. */
+function networkIconTitle(certainty?: number | null, reason?: string | null): string {
+  const title = "Еталонна прив'язка";
+  if (certainty == null) return title;
+  const lines = [title, `Впевненість ШІ, що повідомлення належить саме цій мережі: ${certainty}%`];
+  if (reason) lines.push(`Пояснення ШІ: ${reason}`);
+  return lines.join('\n');
+}
+
 function NetworkMetadataItem({
   networkId,
   label,
@@ -1110,7 +1119,7 @@ function NetworkMetadataItem({
       <span
         className="message-card-header-meta__icon message-card-header-meta__icon--network"
         data-message-card-metadata-icon-kind="network"
-        title="Еталонна прив'язка"
+        title={networkIconTitle(certainty, certaintyReason)}
       >
         <PeopleOutlineOutlinedIcon />
       </span>
@@ -1119,15 +1128,6 @@ function NetworkMetadataItem({
         {badge ? (
           <span className="badge badge-no-unit-sm relative -top-[0.06em] ml-[0.35em] align-middle">
             в дорозвідці
-          </span>
-        ) : null}
-        {certainty != null ? (
-          <span
-            className="message-card-network-certainty"
-            data-message-card-network-certainty="true"
-            title={certaintyReason ? `ШІ: ${certaintyReason}` : 'Впевненість ШІ'}
-          >
-            {certainty}%
           </span>
         ) : null}
       </span>

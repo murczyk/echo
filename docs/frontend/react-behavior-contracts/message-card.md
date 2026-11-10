@@ -10,7 +10,7 @@
 
 ## AI network match
 
-- With the system setting «ШІ: головна мережа повідомлення» on, a message with several networks may carry `network_match`: AI certainty per network and, when the best network reaches 80% and leads the runner-up by 20 points, a confident network. The card then shows only that network with its certainty, followed by «і ще N»; the toggle unfolds every network ordered by certainty and switches to «згорнути». The certainty's tooltip shows the AI reason.
+- With the system setting «ШІ: головна мережа повідомлення» on, a message with several networks may carry `network_match`: AI certainty per network and, when the best network reaches 80% and leads the runner-up by 20 points, a confident network. The card then shows only that network, followed by «і ще N»; the toggle unfolds every network ordered by certainty and switches to «згорнути». Certainty is not printed next to the network name: hovering a network's icon shows it, explained as the AI's confidence that the message belongs to that network, followed by the AI reason.
 - Without `network_match` (setting off, a single network, or candidates that changed since scoring), or without a confident network, the card lists every network as before. Hiding networks («Режим РЕР» off) also drops the fold. Copying the binding and the navigation menu still list every network.
 - Existing tests: `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`. Backend: `wdintel-rs/src/ai_network_match/README.md`.
 

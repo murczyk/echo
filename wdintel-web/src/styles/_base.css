@@ -1251,13 +1251,6 @@ html[data-bs-theme='dark'] .message-reply-chain-popover {
   border-radius: var(--echo-radius-md);
 }
 
-.message-card-network-certainty {
-  margin-left: 0.35em;
-  color: var(--color-text-muted);
-  font-size: calc(1rem * 12 / 14);
-  white-space: nowrap;
-}
-
 .message-card-tag-expand-wrapper {
   display: flex;
   min-height: 24px;

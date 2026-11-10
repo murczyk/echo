@@ -1290,9 +1290,16 @@ describe('MessageCard AI network match', () => {
       msg: buildMessage({ networkIds: [7, 8, 9], networkMatch }),
     });
     expect(networkLabels(view.container)).toEqual(['8']);
-    const certainty = view.container.querySelector('[data-message-card-network-certainty="true"]');
-    expect(certainty?.textContent).toBe('92%');
-    expect(certainty?.getAttribute('title')).toBe('ШІ: CC 3 як в описі');
+    const icon = view.container.querySelector('[data-message-card-metadata-icon-kind="network"]');
+    expect(icon?.getAttribute('title')).toBe(
+      [
+        "Еталонна прив'язка",
+        'Впевненість ШІ, що повідомлення належить саме цій мережі: 92%',
+        'Пояснення ШІ: CC 3 як в описі',
+      ].join('\n'),
+    );
+    const networkItem = view.container.querySelector('[data-message-card-network-item="true"]');
+    expect(networkItem?.textContent).not.toContain('%');
     const toggle = view.container.querySelector<HTMLButtonElement>(
       '[data-message-card-network-expand="true"]',
     );
