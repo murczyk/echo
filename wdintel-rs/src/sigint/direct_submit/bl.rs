@@ -337,7 +337,11 @@ where
         crate::location::peleng::filter_allowed_peleng_coords(coords, dbx)
             .await
             .c(h!())?;
-    let (unit_and_location, unit_v2) = crate::unit::parse_message_unit(
+    let crate::unit::ParsedMessageUnit {
+        unit_and_location,
+        unit_v2,
+        ..
+    } = crate::unit::parse_message_unit(
         dbx,
         env,
         body,

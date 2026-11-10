@@ -169,7 +169,7 @@ async fn parse_missing_submit_unit(
         }
         None => None,
     };
-    let (parsed, unit_v2) = crate::unit::parse_message_unit(
+    let parsed = crate::unit::parse_message_unit(
         txn,
         env,
         &body,
@@ -178,7 +178,11 @@ async fn parse_missing_submit_unit(
     )
     .await
     .c(h!())?;
-    if let Some(unit) = unit_v2.or(parsed.unit) {
+    if let Some(unit) = parsed
+        .synonym
+        .or(parsed.unit_v2)
+        .or(parsed.unit_and_location.unit)
+    {
         item.unit = Some(unit);
     }
     Ok(item)
@@ -631,17 +635,17 @@ mod tests {
             ),
             (
                 json!({"full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял.")}),
-                Some(unit.name.as_str()),
+                Some(label),
                 Some(unit.id),
             ),
             (
                 json!({"full_body": format!("{label}\n10.11.2026, 11:08 (МСК)\n-уточни где они имущество скинули?\n-примерно метров 700 от нас, в ложбину спуститься")}),
-                Some(unit.name.as_str()),
+                Some(label),
                 Some(unit.id),
             ),
             (
                 json!({"full_body": "\r\n 24 ОББПС  РБПЛА\tВБПЛА КТ \r\n10.11.2026, 10:23 (МСК)\r\n- Принял."}),
-                Some(unit.name.as_str()),
+                Some("24 ОББПС  РБПЛА\tВБПЛА КТ"),
                 Some(unit.id),
             ),
             (
@@ -676,6 +680,93 @@ mod tests {
                 request,
                 expected_unit,
                 expected_id,
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_preserves_duplicate_unit_name_link() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let name = "Підрозділ 4022";
+        let first =
+            seed_submit_unit(&env, name, "", "Перший синонім 4022").await;
+        let second =
+            seed_submit_unit(&env, name, "", "Другий синонім 4022").await;
+        for (label, unit_id) in [
+            ("Перший синонім 4022", first.id),
+            ("Другий синонім 4022", second.id),
+        ] {
+            let body = format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял.");
+            assert_submitted_unit(
+                &env_data,
+                &datasource,
+                &login.id,
+                json!({
+                    "full_body": body,
+                    "timestamp": "2026-11-10T07:23:00Z",
+                    "freq": "145.5000",
+                    "locations": ["Невідома локація 3920"],
+                    "group_names": ["SC1"],
+                }),
+                Some(label),
+                Some(unit_id),
+            )
+            .await;
+            let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+                &login.id,
+                &env,
+                crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                    full_body: body,
+                    signal_group_master_key: None,
+                    include_ai_callsigns: false,
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(parsed.unit.as_deref(), Some(label));
+            assert_eq!(parsed.unit_v2.as_deref(), Some(name));
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_refresh_uses_submit_transaction() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        let mut options =
+            ConnectOptions::new(crate::mk_conn_string(&env.config));
+        options
+            .max_connections(1)
+            .acquire_timeout(std::time::Duration::from_secs(1));
+        let mut env = env.as_ref().clone();
+        env.dbx = Database::connect(options).await.unwrap();
+        let env = Data::new(env);
+        for elapsed in [
+            0,
+            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS + 1,
+        ] {
+            advance_synonym_cache_time(elapsed).await;
+            assert_submitted_unit(
+                &env,
+                &datasource,
+                &login.id,
+                json!({
+                    "full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял."),
+                    "timestamp": "2026-11-10T07:23:00Z",
+                    "freq": "145.5000",
+                    "locations": ["Невідома локація 3920"],
+                    "group_names": ["SC1"],
+                }),
+                Some(label),
+                Some(unit.id),
             )
             .await;
         }
@@ -745,7 +836,7 @@ mod tests {
                 &datasource,
                 &login.id,
                 request.clone(),
-                Some(unit.name.as_str()),
+                Some(label),
                 Some(unit.id),
             )
             .await;

@@ -165,21 +165,24 @@ pub fn to_unit_txt(units_list: Vec<String>) -> Option<String> {
     units_list.into_iter().reduce(|a, b| format!("{a}, {b}"))
 }
 
+pub(crate) struct ParsedMessageUnit {
+    pub(crate) unit_and_location: crate::rer_importer::types::UnitAndLoc,
+    pub(crate) unit_v2: Option<String>,
+    pub(crate) synonym: Option<String>,
+}
+
 pub(crate) async fn parse_message_unit<C>(
     db: &C,
     env: &Env,
     body: &str,
     callsigns: Vec<String>,
     aor_id: Option<i64>,
-) -> anyhow::Result<(crate::rer_importer::types::UnitAndLoc, Option<String>)>
+) -> anyhow::Result<ParsedMessageUnit>
 where
     C: ConnectionTrait,
 {
-    if let Some(unit_name) = env
-        .unit_header_synonyms
-        .resolve(&env.dbx, body)
-        .await
-        .c(h!())?
+    if let Some(unit_name) =
+        env.unit_header_synonyms.resolve(db, body).await.c(h!())?
     {
         let unit_and_location = parser::extract_first_line_unit_with_aor(
             env.settlements.clone(),
@@ -188,7 +191,11 @@ where
             aor_id,
         )
         .c(h!())?;
-        return Ok((unit_and_location, Some(unit_name)));
+        return Ok(ParsedMessageUnit {
+            synonym: unit_and_location.unit.clone(),
+            unit_and_location,
+            unit_v2: Some(unit_name),
+        });
     }
     let unit_and_location = parser::extract_unit_with_aor(
         env.settlements.clone(),
@@ -198,7 +205,11 @@ where
     )
     .c(h!())?;
     let Some(unit) = &unit_and_location.unit else {
-        return Ok((unit_and_location, None));
+        return Ok(ParsedMessageUnit {
+            unit_and_location,
+            unit_v2: None,
+            synonym: None,
+        });
     };
     let unit_v2 = crate::inbox::parse_unit_v2(db, unit).await.c(h!())?;
     let unit_v2 = match crate::inbox::unit_resolution::resolve_sigint_unit_id(
@@ -217,7 +228,11 @@ where
             .or(unit_v2),
         None => unit_v2,
     };
-    Ok((unit_and_location, unit_v2))
+    Ok(ParsedMessageUnit {
+        unit_and_location,
+        unit_v2,
+        synonym: None,
+    })
 }
 
 async fn parse_units<'a, 'async_trait, C>(
