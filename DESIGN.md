@@ -37,6 +37,12 @@ MUI spacing and breakpoints are compatibility APIs; Echo spacing and behavioral 
 
 Existing numeric utilities and standard breakpoints remain valid in legacy code. Do not replace layout or responsive behavior merely to make nearby code uniform. Check the affected narrow/wide layouts, overflow, loading, empty, error, and long-content states against the relevant [behavior contract](docs/frontend/react-behavior-contracts/README.md).
 
+Keep side navigation flat, as on the current Analysis page: inherit the workspace
+background by default and separate columns or sections with simple dividers.
+An explicitly approved layout may share the header surface across navigation
+columns. Avoid card wrappers, rounded outer borders, shadows and individual panel
+backgrounds unless the content needs a distinct surface. Use list items for navigation destinations.
+
 ## Elevation & Depth
 
 Use the manifest's `shadow` roles for shared application structure. MUI internal elevations and transitions remain component implementation details. Distinguish overlays and layered content with the existing dialog/drawer/menu behavior, including focus and Escape handling; do not add decorative depth that obscures dense information.
