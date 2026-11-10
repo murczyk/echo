@@ -4678,6 +4678,7 @@ export type DirectSubmitParseRsp = {
   post: string | null;
   unit: string | null;
   unitV2: string | null;
+  unitId: number | null;
   locations: Array<string>;
 };
 

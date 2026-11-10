@@ -127,6 +127,8 @@ pub struct Env {
     /// Used when you need to explicitly create a connection and block on it, like for streams.
     pub redisb: redis::Client,
     pub settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    pub(crate) unit_header_synonyms:
+        Arc<crate::unit::header_synonyms::UnitHeaderSynonyms>,
     pub version: String,
     pub callsigns_whitelist: HashSet<String>,
     pub replicas: Vec<ReplicaPool>,

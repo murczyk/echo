@@ -327,6 +327,7 @@ async fn new_env_from_config(
         metrics,
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),
+        unit_header_synonyms: Arc::new(Default::default()),
         callsigns_whitelist: callsigns_whitelist.clone(),
         version: version.clone(),
         replicas,

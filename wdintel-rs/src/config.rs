@@ -1082,6 +1082,7 @@ pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
     "Нижчий ешелон ORBIT";
 pub const SIGINT_UNIT_DYNAMIC_REGEX_SIZE_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 pub const SIGINT_UNIT_DYNAMIC_REGEX_CHUNK_SIZE: usize = 2_000;
+pub const SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS: u64 = 15 * 60;
 /// Ukraine boundaries WGS84
 pub const LAT_MIN: f64 = 40.0;
 pub const LAT_MAX: f64 = 60.0;

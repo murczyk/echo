@@ -11,6 +11,7 @@ use sea_orm::*;
 use std::sync::OnceLock;
 
 mod const_units;
+pub(crate) mod header_synonyms;
 pub mod parser;
 
 pub(crate) use const_units::{
@@ -164,31 +165,93 @@ pub fn to_unit_txt(units_list: Vec<String>) -> Option<String> {
     units_list.into_iter().reduce(|a, b| format!("{a}, {b}"))
 }
 
-pub(crate) async fn parse_message_unit<C>(
+pub(crate) struct ParsedMessageUnit {
+    pub(crate) unit_and_location: crate::rer_importer::types::UnitAndLoc,
+    pub(crate) unit_v2: Option<String>,
+    pub(crate) unit_id: Option<i64>,
+    pub(crate) synonym: Option<String>,
+}
+
+pub(crate) async fn extract_message_unit_with_aor<C>(
     db: &C,
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     body: &str,
     callsigns: Vec<String>,
     aor_id: Option<i64>,
-) -> anyhow::Result<(crate::rer_importer::types::UnitAndLoc, Option<String>)>
+) -> anyhow::Result<(crate::rer_importer::types::UnitAndLoc, bool)>
 where
     C: ConnectionTrait,
 {
-    let unit_and_location =
+    let is_synonym = header_synonyms::resolve_current(db, body)
+        .await
+        .c(h!())?
+        .is_some();
+    let unit_and_location = if is_synonym {
+        parser::extract_first_line_unit_with_aor(
+            settlements,
+            body,
+            callsigns,
+            aor_id,
+        )
+        .c(h!())?
+    } else {
         parser::extract_unit_with_aor(settlements, body, callsigns, aor_id)
-            .c(h!())?;
+            .c(h!())?
+    };
+    Ok((unit_and_location, is_synonym))
+}
+
+pub(crate) async fn parse_message_unit<C>(
+    db: &C,
+    env: &Env,
+    body: &str,
+    callsigns: Vec<String>,
+    aor_id: Option<i64>,
+) -> anyhow::Result<ParsedMessageUnit>
+where
+    C: ConnectionTrait,
+{
+    if let Some(unit) =
+        env.unit_header_synonyms.resolve(db, body).await.c(h!())?
+    {
+        let unit_and_location = parser::extract_first_line_unit_with_aor(
+            env.settlements.clone(),
+            body,
+            callsigns,
+            aor_id,
+        )
+        .c(h!())?;
+        return Ok(ParsedMessageUnit {
+            synonym: unit_and_location.unit.clone(),
+            unit_and_location,
+            unit_v2: Some(unit.name),
+            unit_id: Some(unit.id),
+        });
+    }
+    let unit_and_location = parser::extract_unit_with_aor(
+        env.settlements.clone(),
+        body,
+        callsigns,
+        aor_id,
+    )
+    .c(h!())?;
     let Some(unit) = &unit_and_location.unit else {
-        return Ok((unit_and_location, None));
+        return Ok(ParsedMessageUnit {
+            unit_and_location,
+            unit_v2: None,
+            unit_id: None,
+            synonym: None,
+        });
     };
     let unit_v2 = crate::inbox::parse_unit_v2(db, unit).await.c(h!())?;
-    let unit_v2 = match crate::inbox::unit_resolution::resolve_sigint_unit_id(
+    let unit_id = crate::inbox::unit_resolution::resolve_sigint_unit_id(
         db,
         None,
         Some(unit),
     )
     .await
-    .c(h!())?
-    {
+    .c(h!())?;
+    let unit_v2 = match unit_id {
         Some(unit_id) => sigint_unit::Entity::find_by_id(unit_id)
             .one(db)
             .await
@@ -197,7 +260,12 @@ where
             .or(unit_v2),
         None => unit_v2,
     };
-    Ok((unit_and_location, unit_v2))
+    Ok(ParsedMessageUnit {
+        unit_and_location,
+        unit_v2,
+        unit_id,
+        synonym: None,
+    })
 }
 
 async fn parse_units<'a, 'async_trait, C>(
