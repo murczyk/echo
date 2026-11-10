@@ -1257,6 +1257,8 @@ pub async fn delete_local_media_files(
             config, media.id,
         )
         .await;
+        crate::messenger::media_wave::remove_audio_pngs_best_effort(media.id)
+            .await;
     }
 }
 

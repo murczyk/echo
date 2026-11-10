@@ -5231,15 +5231,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "milgeo-audio-wave"
-version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=a94bda974c1af3f31362c10965dda066c602cf30#a94bda974c1af3f31362c10965dda066c602cf30"
-dependencies = [
- "log",
- "tokio",
-]
-
-[[package]]
 name = "milgeo-rs"
 version = "0.1.0"
 source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=a94bda974c1af3f31362c10965dda066c602cf30#a94bda974c1af3f31362c10965dda066c602cf30"
@@ -10080,7 +10071,6 @@ dependencies = [
  "libc",
  "log",
  "md-5 0.10.6",
- "milgeo-audio-wave",
  "milgeo-rs",
  "mime_guess",
  "nipper",

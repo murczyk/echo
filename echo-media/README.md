@@ -155,7 +155,7 @@ media
 | `hls_segments` | `media_preview/mod.rs` `render_window` | Wired |
 | `decode_verify` | `devices/audio/probe.rs` `decoder_command`, `run_media_process`, `read_output` | Not wired |
 | `audio_rendition` | `devices/audio/content.rs` `media_command` | Not wired |
-| `audio_image` | `milgeo_audio_wave::generate_wave_png` / `generate_spectrogram_png` (`messenger/media_wave.rs`) | Not wired |
+| `audio_image` | `messenger/media_wave.rs` `generate_png` (replaced `milgeo-audio-wave`) | Wired |
 
 `MediaError::is_terminal()` separates "this input will never work" from
 transient failures, matching today's `InvalidMedia` and transient split.
@@ -213,8 +213,21 @@ Remaining:
 1. Replace the device audio call sites in the table above. Pass the existing
    wdintel-rs `config.rs` constants (filters, limits, timeouts) through the
    option structs.
-2. Remove the `milgeo-audio-wave` ffmpeg path, then close G1, I2 and I3 in the
-   checklist.
+2. Close G1, I2 and I3 in the checklist once device audio is done.
+
+The messenger wave and spectrogram images (`messenger/media_wave.rs`) use
+`audio_image` with `Formats::AUDIO`, and the `milgeo-audio-wave` dependency is
+gone:
+
+- PNGs are cached in `<storage_dir>/messenger_media_cache/audio_png/` (a `0700`
+  directory, `0600` files published atomically) instead of predictable `/tmp`
+  paths (G8). Only a regular file is served from the cache.
+- `delete_local_media_files` removes a message's PNGs (S7). Nothing else
+  expires them, so the directory grows with the number of audio messages whose
+  images were opened.
+- Audio that cannot decode returns the existing "generation failed" error.
+  Timeouts (120 s, `ECHO_MEDIA_AUDIO_IMAGE_TIMEOUT`) and environment failures
+  are internal errors.
 
 ## Tests
 

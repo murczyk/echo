@@ -1,7 +1,10 @@
 use crate::users::{ensure_base_role, login_id_from_identity};
 use std::path::{Path, PathBuf};
 
-use crate::config::MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR;
+use crate::config::{
+    MESSENGER_MEDIA_AUDIO_PNG_CONTENT_DISPOSITION,
+    MESSENGER_MEDIA_AUDIO_PNG_CONTENT_TYPE, MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR,
+};
 use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
@@ -9,10 +12,8 @@ use crate::messenger::media::{fetch_media_bytes, is_audio_media};
 use crate::types::{warn, Env, ShortContext};
 use actix_web::http::header;
 use actix_web::{get, HttpResponse};
-use milgeo_audio_wave::{
-    generate_spectrogram_png, generate_wave_png, PngGenRequest, PngGenResult,
-    PNG_CONTENT_DISPOSITION, PNG_CONTENT_TYPE,
-};
+use echo_media::ffmpeg::{AudioImage, AudioImageOptions};
+use echo_media::{Ffmpeg, Input};
 use uuid::Uuid;
 
 fn audio_temp_suffix(media: &signal_message_media::Model) -> &'static str {
@@ -68,37 +69,70 @@ fn spectrogram_png_path(media_id: Uuid) -> PathBuf {
     ))
 }
 
+/// Removes a message's cached wave and spectrogram PNGs.
+pub(crate) async fn remove_audio_pngs_best_effort(media_id: Uuid) {
+    for path in [wave_png_path(media_id), spectrogram_png_path(media_id)] {
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => warn!(
+                "failed to remove audio PNG file={}: {error:#?}",
+                path.display()
+            ),
+        }
+    }
+}
+
 fn png_http_response(bytes: Vec<u8>) -> HttpResponse {
     HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, PNG_CONTENT_TYPE))
-        .insert_header((header::CONTENT_DISPOSITION, PNG_CONTENT_DISPOSITION))
+        .insert_header((
+            header::CONTENT_TYPE,
+            MESSENGER_MEDIA_AUDIO_PNG_CONTENT_TYPE,
+        ))
+        .insert_header((
+            header::CONTENT_DISPOSITION,
+            MESSENGER_MEDIA_AUDIO_PNG_CONTENT_DISPOSITION,
+        ))
         .body(bytes)
 }
 
-fn png_gen_or_err(
-    label: &str,
-    media_id: Uuid,
-    png: PngGenResult,
-) -> Result<HttpResponse, AppError> {
-    if png.used_fallback {
-        warn!(
-            "{label} generation failed for media {media_id}; ensure ffmpeg is installed and on PATH"
-        );
-        return Err(AppError::BL {
-            msg: format!(
-                "{label} generation failed for media {media_id}; ffmpeg is required"
-            ),
-        });
+/// Only a regular file counts as a cached PNG; anything else (a symlink, a
+/// directory) is ignored and replaced by the next generation.
+async fn read_cached_png(path: &Path) -> Result<Option<Vec<u8>>, AppError> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) if metadata.is_file() => {
+            Ok(Some(tokio::fs::read(path).await.c(h!())?))
+        }
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).c(h!())?,
     }
-    Ok(png_http_response(png.bytes))
 }
 
-async fn read_cached_png(path: &Path) -> Result<Option<Vec<u8>>, AppError> {
-    if !tokio::fs::try_exists(path).await.c(h!())? {
-        return Ok(None);
+/// Renders the PNG with the sandboxed ffmpeg. Audio that cannot decode is a
+/// user-facing error; anything else (timeout, missing ffmpeg) is internal.
+async fn generate_png(
+    label: &str,
+    media_id: Uuid,
+    audio_path: &Path,
+    output_path: &Path,
+    kind: AudioImage,
+) -> Result<Vec<u8>, AppError> {
+    let input = Input::file(audio_path).c(h!())?;
+    let generated = Ffmpeg::shared()
+        .c(h!())?
+        .audio_image(&input, output_path, &AudioImageOptions::new(kind))
+        .await;
+    match generated {
+        Ok(_) => Ok(tokio::fs::read(output_path).await.c(h!())?),
+        Err(error) if error.is_terminal() => {
+            warn!("{label} generation failed for media {media_id}: {error}");
+            Err(AppError::BL {
+                msg: format!("{label} generation failed for media {media_id}"),
+            })
+        }
+        Err(error) => Err(error).c(h!())?,
     }
-    let bytes = tokio::fs::read(path).await.c(h!())?;
-    Ok(Some(bytes))
 }
 
 fn ensure_audio_png_source_supported(
@@ -176,12 +210,14 @@ async fn serve_cached_or_generate_png(
     ensure_audio_png_source_supported(&media)?;
     let data = fetch_media_bytes(env, &media).await?;
     let audio_file = write_audio_temp_file(&media, &data).await?;
-    let req = PngGenRequest::new(audio_file.path(), output_path);
-    let png = match kind {
-        AudioPngKind::Wave => generate_wave_png(&req).await,
-        AudioPngKind::Spectrogram => generate_spectrogram_png(&req).await,
+    let image = match kind {
+        AudioPngKind::Wave => AudioImage::Wave,
+        AudioPngKind::Spectrogram => AudioImage::Spectrogram,
     };
-    png_gen_or_err(label, media_id, png)
+    let bytes =
+        generate_png(label, media_id, audio_file.path(), output_path, image)
+            .await?;
+    Ok(png_http_response(bytes))
 }
 
 #[get("/api/messenger/media/{media_id}/wave")]
