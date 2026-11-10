@@ -595,12 +595,13 @@ export function MessengerAccountSidebar({ mobile, ...props }: SidebarProps & { m
       data-mobile={mobile ? 'true' : 'false'}
     >
       {/* First in the document, so it is the first stop of the keyboard, and above both layers. It hangs on the
-          right edge of the box, which moves with the box, and is centered over the rail when closed. The offsets
+          right edge of the box, which moves with the box, and is centered over the rail when closed. Open, it is 3 px further
+          in than 0.5 rem, so it does not touch the scrollbar of the full sidebar. The offsets
           are in rem like the widths of the box, so they hold at any root font size. */}
       <div
         className={`absolute top-2 z-10 transition-[right] duration-200 ease-in-out motion-reduce:transition-none ${
           open
-            ? 'right-2'
+            ? 'right-[calc(0.5rem_+_4px)]'
             : mobile
               ? 'right-[calc((3.25rem_+_2px_-_32px)_/_2)]'
               : 'right-[calc((4rem_-_32px)_/_2)]'
