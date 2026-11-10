@@ -2,11 +2,13 @@
 """Exercise refusal boundaries with real foreign processes and owned scratch resources."""
 
 import argparse
+import hashlib
 import os
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +22,56 @@ def refused(action):
     except RuntimeError:
         return
     raise AssertionError("Unsafe operation was accepted")
+
+
+def check_persistent_root():
+    parent = harness.REPO / ".dev-runtime/device-files-lab/runtime"
+    parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    assert not parent.stat().st_mode & 0o077
+    with tempfile.TemporaryDirectory(prefix="echo-device-file-preview-", dir=parent) as directory:
+        root = Path(directory)
+        run = "0123456789abcdef0123"
+        environment = {
+            "root": str(root), "repository": str(harness.REPO), "run": run,
+            "profile": "device-file-preview", "main_db": f"wd_test_device_file_preview_{run}",
+            "files_db": f"wd_files_test_device_file_preview_{run}",
+            "bucket": f"device-file-preview-{run}", "config_hashes": {},
+            "lab_manager": str(harness.REPO / ".dev-runtime/device-files-lab/manage.py"),
+        }
+        environment.update({f"{role}_port": port for role, port in zip(
+            ("api_a", "api_b", "proxy", "front", "redis", "s3"), range(25001, 25007))})
+        for role in ("a", "b"):
+            config = {
+                "pg_dbname": environment["main_db"], "pg_host": "127.0.0.1",
+                "file_registry": {"pg_dbname": environment["files_db"], "pg_host": "127.0.0.1"},
+                "s3_config": {"s3_bucket": environment["bucket"], "s3_endpoint": "http://127.0.0.1:25006"},
+                "storage_dir": str(root / f"storage-{role}"),
+                "redis_host": "127.0.0.1", "redis_port": 25005,
+            }
+            text = harness.toml_text(config)
+            harness.private_write(root / f"config-{role}.toml", text)
+            environment["config_hashes"][role] = hashlib.sha256(text.encode()).hexdigest()
+        harness.private_write(root / "environment.sh", "# Ownership fixture only\n")
+        harness.save(root, environment)
+        harness.load(root)
+        harness.save(root, {**environment, "lab_manager": "foreign-manager"})
+        refused(lambda: harness.load(root))
+        harness.save(root, environment)
+        os.chmod(root / "config-a.toml", 0o644)
+        refused(lambda: harness.load(root))
+        os.chmod(root / "config-a.toml", 0o600)
+        alias = root.with_name(root.name + "-symlink")
+        alias.symlink_to(root, target_is_directory=True)
+        try:
+            refused(lambda: harness.load(alias))
+        finally:
+            alias.unlink()
+        harness.load(root)
+    with tempfile.TemporaryDirectory(prefix="preview-foreign-parent-") as directory:
+        foreign = Path(directory) / "echo-device-file-preview-foreign"
+        foreign.mkdir(mode=0o700)
+        refused(lambda: harness.load(foreign))
+    print("PASS: persistent lab root, manager ownership, private config permissions, foreign parent and symlink refusal")
 
 
 def check(root, environment, database):
@@ -135,6 +187,9 @@ def check(root, environment, database):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", action="store_true", help="Also test actual owned PostgreSQL scratch DB refusal")
+    parser.add_argument("--persistent-root-only", action="store_true", help="Test persistent preview ownership without services")
     args = parser.parse_args()
-    root, environment = harness.prepare()
-    check(root, environment, args.database)
+    check_persistent_root()
+    if not args.persistent_root_only:
+        root, environment = harness.prepare()
+        check(root, environment, args.database)

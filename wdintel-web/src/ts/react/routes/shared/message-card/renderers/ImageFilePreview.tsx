@@ -14,6 +14,8 @@ export function ImageFilePreview({
   imageSize,
   onLoad,
   onError,
+  onSurfaceTap,
+  insetForControls = false,
 }: {
   sizeBytes: number | null;
   href: string;
@@ -25,6 +27,8 @@ export function ImageFilePreview({
   imageSize: { width: number; height: number } | null;
   onLoad: (image: HTMLImageElement) => void;
   onError: () => void;
+  onSurfaceTap?: () => void;
+  insetForControls?: boolean;
 }) {
   return (
     <>
@@ -37,6 +41,15 @@ export function ImageFilePreview({
         component="img"
         src={href}
         alt={`Зображення ${carouselIndex + 1}`}
+        role={onSurfaceTap ? 'button' : undefined}
+        tabIndex={onSurfaceTap ? 0 : undefined}
+        aria-label={onSurfaceTap ? 'Показати або приховати панелі зображення' : undefined}
+        onKeyDown={(event) => {
+          if (!onSurfaceTap || event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onSurfaceTap();
+        }}
         data-image-preview-image
         data-image-preview-zoom={zoom}
         data-image-preview-pan-x={pan.x}
@@ -52,7 +65,9 @@ export function ImageFilePreview({
         sx={{
           display: failedHref === href ? 'none' : 'block',
           maxWidth: '100%',
-          maxHeight: '100%',
+          maxHeight: insetForControls
+            ? 'max(1px, calc(100% - 2 * var(--attachment-preview-header-height, 0px)))'
+            : '100%',
           objectFit: 'contain',
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`,
           transformOrigin: 'center center',

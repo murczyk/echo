@@ -56,9 +56,20 @@ vi.mock('@mui/material', () => ({
     </label>
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ label, helperText }: { label?: ReactNode; helperText?: ReactNode }) => (
+  TextField: ({
+    label,
+    helperText,
+    value,
+    onChange,
+  }: {
+    label?: ReactNode;
+    helperText?: ReactNode;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+  }) => (
     <label>
       {label}
+      <input value={value} onChange={onChange} />
       {helperText ? <span>{helperText}</span> : null}
     </label>
   ),
@@ -106,7 +117,8 @@ import type { Source } from '../../../../../../Bindings';
 type Rendered = {
   container: HTMLDivElement;
   root: Root;
-  getCurrentForm: () => NetworkCallsignDrawerForm | null;
+  saveForm: () => NetworkCallsignDrawerForm | null;
+  getRenderCount: () => number;
 };
 
 const rendered: Rendered[] = [];
@@ -124,18 +136,18 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm, radioFeaturesAllo
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  let currentForm: NetworkCallsignDrawerForm | null = initialForm;
+  let savedForm: NetworkCallsignDrawerForm | null = null;
+  let renderCount = 0;
 
   function Harness() {
-    const [form, setForm] = useState<NetworkCallsignDrawerForm | null>(initialForm);
+    renderCount += 1;
     const [error, setError] = useState<string | null>(null);
-    currentForm = form;
 
     return (
       <NetworkCallsignDrawer
         open
         mode="create"
-        form={form}
+        form={initialForm}
         sources={[
           { id: 1, name: 'РЕР', createdAt: 0 } as Source,
           { id: 2, name: 'OSINT', createdAt: 0 } as Source,
@@ -144,8 +156,8 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm, radioFeaturesAllo
         saving={false}
         error={error}
         onClose={() => {}}
-        onChange={(next) => setForm(next)}
-        onSave={() => {
+        onSave={(form) => {
+          savedForm = form;
           if (form && !form.developing && form.sourceId === null) {
             setError('Джерело є обовʼязковим');
           }
@@ -162,9 +174,43 @@ function renderHarness(initialForm: NetworkCallsignDrawerForm, radioFeaturesAllo
     );
   });
 
-  return { container, root, getCurrentForm: () => currentForm };
+  return {
+    container,
+    root,
+    saveForm: () => {
+      act(() => {
+        [...container.querySelectorAll('button')]
+          .find((button) => button.textContent === 'Зберегти')
+          ?.click();
+      });
+      return savedForm;
+    },
+    getRenderCount: () => renderCount,
+  };
 }
 describe('NetworkCallsignDrawer', () => {
+  it('#4108 keeps typing local to the drawer and saves the latest draft', () => {
+    const view = renderHarness({
+      ...createDefaultNetworkCallsignDrawerForm(10, 1),
+      callsign: 'СОКІЛ',
+    });
+    rendered.push(view);
+    const renderCount = view.getRenderCount();
+    const input = view.container.querySelector('input') as HTMLInputElement;
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input,
+        'БАРС',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(input.value).toBe('БАРС');
+    expect(view.getRenderCount()).toBe(renderCount);
+    expect(view.saveForm()).toMatchObject({ callsign: 'БАРС' });
+  });
+
   it('#3568 allows a Cyber network callsign without a hidden RO frequency', () => {
     const view = renderHarness(
       {
@@ -289,18 +335,18 @@ describe('NetworkCallsignDrawer', () => {
     };
 
     clickButton('Головна радіостанція');
-    expect(view.getCurrentForm()).toMatchObject({ mainRadioStation: true, commandControl: false });
+    expect(view.saveForm()).toMatchObject({ mainRadioStation: true, commandControl: false });
 
     clickButton('Ланка управління');
-    expect(view.getCurrentForm()).toMatchObject({ mainRadioStation: false, commandControl: true });
+    expect(view.saveForm()).toMatchObject({ mainRadioStation: false, commandControl: true });
 
     clickButton('Без маркера');
-    expect(view.getCurrentForm()).toMatchObject({ mainRadioStation: false, commandControl: false });
+    expect(view.saveForm()).toMatchObject({ mainRadioStation: false, commandControl: false });
   });
 
   it('allows a catalog-linked row to switch back to developing', () => {
     const view = renderHarness({
-      ...createDefaultNetworkCallsignDrawerForm(10, null),
+      ...createDefaultNetworkCallsignDrawerForm(10, 1),
       callsign: 'СОКІЛ',
       sourceId: 1,
       developing: false,
@@ -313,7 +359,7 @@ describe('NetworkCallsignDrawer', () => {
         ?.click();
     });
 
-    expect(view.getCurrentForm()).toMatchObject({
+    expect(view.saveForm()).toMatchObject({
       developing: true,
     });
 
@@ -323,7 +369,7 @@ describe('NetworkCallsignDrawer', () => {
         ?.click();
     });
 
-    expect(view.getCurrentForm()).toMatchObject({
+    expect(view.saveForm()).toMatchObject({
       developing: false,
     });
   });

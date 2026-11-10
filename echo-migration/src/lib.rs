@@ -16,6 +16,8 @@ mod m20261031_155820_api_sender;
 mod m20261101_151245_ai_agent_uploads;
 mod m20261104_165252_rer_report_unit_selection;
 mod m20261105_212108_iggy_group_refresh_queue;
+mod m20261107_175019_duty_selected_groups_flag;
+mod m20261109_141057_group_message_sending;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -522,6 +524,7 @@ mod m20261031_104502_role_message_settings;
 mod m20261102_131738_report_concurrency_settings;
 mod m20261103_073829_important_notify_all_flag;
 mod m20261103_120000_ai_agent_documents;
+mod m20261104_064753_minimal_report_window;
 
 pub struct Migrator;
 
@@ -537,6 +540,8 @@ mod m20261010_094039_settlement_alias_lookup_indexes;
 mod m20261010_110158_ai_settlement_worker_groups;
 
 mod m20261104_083000_group_message_requirements;
+mod m20261107_175132_important_only_my_organism;
+mod m20261108_090102_signoz_metrics_settings;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1232,6 +1237,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20261104_083000_group_message_requirements::Migration),
             Box::new(m20261104_165252_rer_report_unit_selection::Migration),
             Box::new(m20261105_212108_iggy_group_refresh_queue::Migration),
+            Box::new(m20261104_064753_minimal_report_window::Migration),
+            Box::new(m20261107_175019_duty_selected_groups_flag::Migration),
+            Box::new(m20261107_175132_important_only_my_organism::Migration),
+            Box::new(m20261108_090102_signoz_metrics_settings::Migration),
+            Box::new(m20261109_141057_group_message_sending::Migration),
         ]
     }
 }

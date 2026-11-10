@@ -1,5 +1,5 @@
 import { Box, Button, CircularProgress, Drawer, Typography } from '@mui/material';
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { applyRestrictedAccess, isFormValid } from '../helpers';
@@ -19,8 +19,7 @@ type Props = {
   allLogins: string[];
   availableAccessTypes: AccessType[];
   referenceDataReady: boolean;
-  onSetEditForm: (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => void;
-  onSave: () => void;
+  onSave: (form: PalitraFormState) => void;
   disableRestoreFocus?: boolean;
 };
 
@@ -29,7 +28,7 @@ function EditPalitraDrawerComponent({
   onClose,
   editInFlight,
   editPalitraId,
-  editForm,
+  editForm: initialEditForm,
   user,
   myScope,
   organisms,
@@ -37,10 +36,15 @@ function EditPalitraDrawerComponent({
   allLogins,
   availableAccessTypes,
   referenceDataReady,
-  onSetEditForm,
   onSave,
   disableRestoreFocus = false,
 }: Props) {
+  const [editForm, setEditForm] = useState(initialEditForm);
+
+  useEffect(() => {
+    setEditForm(initialEditForm);
+  }, [initialEditForm]);
+
   const formBlocked = editInFlight || !referenceDataReady;
 
   return (
@@ -60,7 +64,7 @@ function EditPalitraDrawerComponent({
         {editForm ? (
           <PalitraFormFields
             form={editForm}
-            onChange={(updater) => onSetEditForm((prev) => (prev ? updater(prev) : prev))}
+            onChange={(updater) => setEditForm((prev) => (prev ? updater(prev) : prev))}
             user={user}
             myScope={myScope}
             organisms={organisms}
@@ -86,7 +90,7 @@ function EditPalitraDrawerComponent({
           Скасувати
         </Button>
         <Button
-          onClick={onSave}
+          onClick={() => editForm && onSave(editForm)}
           variant="contained"
           disabled={
             formBlocked ||

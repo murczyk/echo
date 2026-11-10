@@ -28,7 +28,7 @@ import {
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerChip } from '../../../components/PowerChip';
 import { ELLIPSIS } from '../../../utils/misc';
-import { isFormValid } from '../helpers';
+import { DEFAULT_COLOR_HEX, isFormValid, kmzColorOptionsFromAnalysis } from '../helpers';
 import { KmzColorOption, PalitraCreateMode, PalitraFormState } from '../types';
 import { PalitraFormFields } from './PalitraFormFields';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -42,9 +42,6 @@ type Props = {
   kmzAnalyzing: boolean;
   kmzFile: File | null;
   kmzAnalysis: AnalyzeKmzResponse | null;
-  kmzColorOptions: KmzColorOption[];
-  selectedColorFromKmz: string;
-  createMode: PalitraCreateMode;
   createForm: PalitraFormState;
   user: User | null;
   myScope: MyScope | null;
@@ -53,11 +50,7 @@ type Props = {
   allLogins: string[];
   availableAccessTypes: ('logins' | 'organisms' | 'aor')[];
   onRequestAnalyzeKmz: () => void;
-  onSetKmzColorOptions: (updater: (prev: KmzColorOption[]) => KmzColorOption[]) => void;
-  onSetSelectedColorFromKmz: (value: string) => void;
-  onSetCreateMode: (mode: PalitraCreateMode) => void;
-  onSetCreateForm: (updater: (prev: PalitraFormState) => PalitraFormState) => void;
-  onCreate: (mode: PalitraCreateMode) => void;
+  onCreate: (mode: PalitraCreateMode, form: PalitraFormState, colors: KmzColorOption[]) => void;
 };
 
 const steps = ['Файл', 'Параметри і доступ'];
@@ -71,10 +64,7 @@ function CreatePalitraDrawerComponent({
   kmzAnalyzing,
   kmzFile,
   kmzAnalysis,
-  kmzColorOptions,
-  selectedColorFromKmz,
-  createMode,
-  createForm,
+  createForm: initialCreateForm,
   user,
   myScope,
   organisms,
@@ -82,17 +72,43 @@ function CreatePalitraDrawerComponent({
   allLogins,
   availableAccessTypes,
   onRequestAnalyzeKmz,
-  onSetKmzColorOptions,
-  onSetSelectedColorFromKmz,
-  onSetCreateMode,
-  onSetCreateForm,
   onCreate,
 }: Props) {
   const [activeStep, setActiveStep] = useState(0);
+  const [createForm, setCreateForm] = useState(initialCreateForm);
+  const [createMode, setCreateMode] = useState<PalitraCreateMode>('basic');
+  const [kmzColorOptions, setKmzColorOptions] = useState<KmzColorOption[]>([]);
   const prevCanContinueFromKmzStepRef = useRef(false);
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!open) return;
+    setCreateForm((prev) =>
+      wasOpen
+        ? { ...initialCreateForm, name: prev.name, colorHex: prev.colorHex }
+        : initialCreateForm,
+    );
+  }, [open, initialCreateForm]);
+
+  useEffect(() => {
+    if (!kmzAnalysis) {
+      setKmzColorOptions([]);
+      return;
+    }
+    const colors = kmzColorOptionsFromAnalysis(kmzAnalysis);
+    setKmzColorOptions(colors);
+    setCreateForm((prev) => ({
+      ...prev,
+      name: kmzAnalysis.filename || prev.name,
+      colorHex: colors[0]?.colorHex ?? DEFAULT_COLOR_HEX,
+    }));
+  }, [kmzAnalysis]);
 
   useEffect(() => {
     setActiveStep(0);
+    setCreateMode('basic');
     prevCanContinueFromKmzStepRef.current = false;
     if (!open) return;
   }, [open]);
@@ -242,7 +258,7 @@ function CreatePalitraDrawerComponent({
                 <Stack spacing={2}>
                   <Tabs
                     value={createMode}
-                    onChange={(_, value: PalitraCreateMode) => onSetCreateMode(value)}
+                    onChange={(_, value: PalitraCreateMode) => setCreateMode(value)}
                     variant="fullWidth"
                     sx={{ mb: 0.5 }}
                   >
@@ -261,7 +277,7 @@ function CreatePalitraDrawerComponent({
                   <Box sx={{ pt: 1.5 }}>
                     <PalitraFormFields
                       form={createForm}
-                      onChange={onSetCreateForm}
+                      onChange={setCreateForm}
                       user={user}
                       myScope={myScope}
                       organisms={organisms}
@@ -276,10 +292,9 @@ function CreatePalitraDrawerComponent({
                             label="Колір"
                             type="color"
                             size="small"
-                            value={selectedColorFromKmz}
+                            value={createForm.colorHex}
                             onChange={(event) => {
-                              onSetSelectedColorFromKmz(event.target.value);
-                              onSetCreateForm((prev) => ({
+                              setCreateForm((prev) => ({
                                 ...prev,
                                 colorHex: event.target.value,
                               }));
@@ -302,7 +317,7 @@ function CreatePalitraDrawerComponent({
                                   size="small"
                                   sx={{ px: '9px' }}
                                   onClick={() =>
-                                    onSetKmzColorOptions((prev) =>
+                                    setKmzColorOptions((prev) =>
                                       prev.map((option) => ({ ...option, selected: true })),
                                     )
                                   }
@@ -314,7 +329,7 @@ function CreatePalitraDrawerComponent({
                                   size="small"
                                   sx={{ px: '9px' }}
                                   onClick={() =>
-                                    onSetKmzColorOptions((prev) =>
+                                    setKmzColorOptions((prev) =>
                                       prev.map((option) => ({ ...option, selected: false })),
                                     )
                                   }
@@ -343,7 +358,7 @@ function CreatePalitraDrawerComponent({
                                         checked={option.selected}
                                         disabled={formBlocked}
                                         onChange={() =>
-                                          onSetKmzColorOptions((prev) =>
+                                          setKmzColorOptions((prev) =>
                                             prev.map((entry) =>
                                               entry.colorHex === option.colorHex
                                                 ? { ...entry, selected: !entry.selected }
@@ -378,7 +393,7 @@ function CreatePalitraDrawerComponent({
                                     value={option.suffix}
                                     disabled={formBlocked}
                                     onChange={(event) =>
-                                      onSetKmzColorOptions((prev) =>
+                                      setKmzColorOptions((prev) =>
                                         prev.map((entry) =>
                                           entry.colorHex === option.colorHex
                                             ? { ...entry, suffix: event.target.value }
@@ -430,7 +445,11 @@ function CreatePalitraDrawerComponent({
                 Далі
               </Button>
             ) : (
-              <Button onClick={() => onCreate(createMode)} variant="contained" disabled={canCreate}>
+              <Button
+                onClick={() => onCreate(createMode, createForm, kmzColorOptions)}
+                variant="contained"
+                disabled={canCreate}
+              >
                 {createInFlight ? <CircularProgress size={16} /> : 'Додати'}
               </Button>
             )}

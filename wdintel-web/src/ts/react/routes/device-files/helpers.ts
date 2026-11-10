@@ -1,8 +1,10 @@
 import type {
   BrowseDeviceFilesReq,
+  DeviceFileFilters,
   DeviceFileTreeEntry,
   SearchDeviceFilesReq,
 } from '../../../../Bindings';
+import { formatFileSize } from '../../components/attachment-files';
 import { HttpRequestError } from '../../services/api/client';
 import { formatDeviceErrorMessage } from '../devices/helpers';
 import {
@@ -12,6 +14,11 @@ import {
   type DeviceFileSearchDraft,
   type DeviceFileSearchValidationErrors,
 } from './types';
+
+export function formatDeviceFileSize(size: number | null): string {
+  if (size == null) return '—';
+  return size === 0 ? '0 Б' : formatFileSize(size) || '—';
+}
 
 export function createDefaultFileSearchDraft(): DeviceFileSearchDraft {
   return {
@@ -61,14 +68,25 @@ export function buildBrowseDeviceFilesReq(params: {
   parentEntryId: string;
   cursor: string | null;
   tagFilter: DeviceAnalyticsTagFilter;
+  filters?: DeviceFileFilters | null;
   hasContent?: BrowseDeviceFilesReq['hasContent'];
+  sortBy?: BrowseDeviceFilesReq['sortBy'];
+  sortDirection?: BrowseDeviceFilesReq['sortDirection'];
+  includeBreadcrumbs?: boolean;
 }): BrowseDeviceFilesReq {
   return {
+    filters: params.filters ?? null,
     archiveRevision: params.archiveRevision ?? null,
+    sortBy: params.sortBy ?? null,
+    sortDirection: params.sortDirection ?? null,
     deviceId: params.deviceId,
     syncId: params.syncId ?? null,
     parentEntryId: params.parentEntryId,
-    includeBreadcrumbs: true,
+    includeBreadcrumbs: params.includeBreadcrumbs ?? true,
+    favoritesOnly: null,
+    unviewedOnly: null,
+    archiveFailed: null,
+    archiveEncrypted: null,
     limit: DEVICE_FILE_PAGE_SIZE,
     cursor: params.cursor,
     hasContent: params.hasContent ?? null,
@@ -78,19 +96,43 @@ export function buildBrowseDeviceFilesReq(params: {
   };
 }
 
+export type DeviceFileSearchFilters = {
+  listingFilters?: DeviceFileFilters | null;
+  sortBy?: BrowseDeviceFilesReq['sortBy'];
+  sortDirection?: BrowseDeviceFilesReq['sortDirection'];
+  hasContent?: boolean | null;
+  favoritesOnly?: boolean;
+  unviewedOnly?: boolean;
+  archiveFailed?: boolean;
+  archiveEncrypted?: boolean;
+};
+
 export function buildSearchDeviceFilesReq(params: {
   deviceId: string;
   syncId?: string | null;
   scopeEntryId: string;
+  archiveRevision?: number | null;
   draft: DeviceFileSearchDraft;
+  filters?: DeviceFileSearchFilters;
   cursor: string | null;
   tagFilter: DeviceAnalyticsTagFilter;
 }): SearchDeviceFilesReq {
   const nameQuery = params.draft.nameQuery.trim();
   return {
+    filters: params.filters?.listingFilters ?? null,
     deviceId: params.deviceId,
     syncId: params.syncId ?? null,
     scopeEntryId: params.scopeEntryId,
+    archiveRevision: params.draft.globalSearch ? null : (params.archiveRevision ?? null),
+    globalSearch: params.draft.globalSearch ?? false,
+    rankByRelevance: true,
+    sortBy: params.filters?.sortBy ?? null,
+    sortDirection: params.filters?.sortDirection ?? null,
+    hasContent: params.filters?.hasContent ?? null,
+    favoritesOnly: params.filters?.favoritesOnly || null,
+    unviewedOnly: params.filters?.unviewedOnly || null,
+    archiveFailed: params.filters?.archiveFailed || null,
+    archiveEncrypted: params.filters?.archiveEncrypted || null,
     nameQuery: nameQuery === '' ? null : nameQuery,
     kinds: params.draft.kinds.length === 0 ? null : params.draft.kinds,
     mimeTypes: splitFilterValues(params.draft.mimeTypes),
@@ -111,12 +153,16 @@ export function buildSearchFingerprint(
   draft: DeviceFileSearchDraft,
   tagFilter: DeviceAnalyticsTagFilter,
   syncId: string | null = null,
+  filters?: DeviceFileSearchFilters,
+  archiveRevision: number | null = null,
 ): string {
   const req = buildSearchDeviceFilesReq({
     deviceId,
     syncId,
     scopeEntryId,
+    archiveRevision,
     draft,
+    filters,
     cursor: null,
     tagFilter,
   });
@@ -135,5 +181,22 @@ export function toDeviceFileLoadError(error: unknown, prefix: string): DeviceFil
   return {
     message: `${prefix}: ${formatDeviceErrorMessage(error)}`,
     status: error instanceof HttpRequestError ? error.status : null,
+  };
+}
+
+export function createDefaultDeviceFileFilters(): DeviceFileFilters {
+  return {
+    fileTypes: [],
+    extensions: [],
+    modifiedFrom: null,
+    modifiedTo: null,
+    hasContent: true,
+    favoritesOnly: false,
+    unviewedOnly: false,
+    archiveFailed: false,
+    archiveEncrypted: false,
+    tagIds: [],
+    tagMatch: 'any',
+    untagged: false,
   };
 }

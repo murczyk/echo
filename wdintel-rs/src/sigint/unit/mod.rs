@@ -4165,6 +4165,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            duty_selected_groups_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
@@ -4172,6 +4173,8 @@ mod tests {
             messenger_media_cache_retention_hours: Set(None),
             messenger_media_cache_max_size_gib: Set(None),
             messenger_media_cache_min_free_gib: Set(None),
+            signoz_metrics_enabled: Set(None),
+            signoz_metrics_endpoint: Set(None),
         }
         .insert(dbx)
         .await

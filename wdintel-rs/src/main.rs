@@ -86,6 +86,7 @@ pub mod tags;
 pub mod telemetry;
 pub mod terminal;
 pub mod tests;
+mod thumbnail;
 pub mod transcriber;
 pub mod transcription;
 pub mod ts;

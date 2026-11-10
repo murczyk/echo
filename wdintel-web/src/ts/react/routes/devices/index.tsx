@@ -167,7 +167,9 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
       <Stack spacing={3} useFlexGap sx={{ minHeight: 0, height: '100%', overflow: 'hidden' }}>
         {mobile ? (
           <header className="flex shrink-0 items-center justify-between gap-echo-sm">
-            <h1 className="m-0 text-[24px]! font-semibold!">Пристрої</h1>
+            <Typography component="h1" variant="h5" sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}>
+              Пристрої
+            </Typography>
           </header>
         ) : (
           <TablePageToolbar
@@ -250,7 +252,6 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           hasChanges={page.editHasChanges}
           nameRequired={page.editNameRequired}
           onClose={page.closeEditDialog}
-          onChange={page.setEditForm}
           onSave={(form) => void page.submitEditDialog(form)}
         />
         <ConfirmDangerDialog

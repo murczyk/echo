@@ -1424,6 +1424,14 @@ fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
             .denied_units
             .as_ref()
             .is_some_and(|units| !units.is_empty())
+        || req
+            .selected_unit_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
+        || req
+            .denied_unit_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
 }
 
 fn effective_inbox_groups(
@@ -2019,6 +2027,7 @@ async fn query_inbox_unit_stats(
     .c(h!())?;
     Ok(rows
         .into_iter()
+        .filter(|row| row.count > 0)
         .map(|row| AnalysisStatsUnit {
             unit_id: row.unit_id,
             name: row.name,
@@ -2060,6 +2069,25 @@ async fn load_inbox_unit_stats(
     query_inbox_unit_stats(connection, query).await.c(h!())
 }
 
+async fn load_fallback_inbox_unit_stats(
+    login: &Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    policy_req: &InboxMessagesReq,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let lower_bound =
+        rer_duty_neo_adaptive_lower_bound(login, env, policy_req).await;
+    let mut req = req.clone();
+    if let Some(lower_bound) = lower_bound {
+        req.since_date_inclusive_ms =
+            Some(lower_bound.and_utc().timestamp_millis());
+        req.sort_by = Some(InboxMessagesSortBy::IMSCreatedAt);
+    }
+    load_inbox_unit_stats(login, env, &req, None, None, None)
+        .await
+        .c(h!())
+}
+
 fn merge_inbox_unit_stats(
     historical: Vec<AnalysisStatsUnit>,
     fresh_tail: Vec<AnalysisStatsUnit>,
@@ -2092,6 +2120,7 @@ async fn inbox_unit_stats(
     require_device_filters(&env.dbx, &login, &req)
         .await
         .c(h!())?;
+    let fallback_req = req.clone();
     req.selected_units = None;
     req.selected_unit_ids = None;
     req.denied_units = None;
@@ -2135,13 +2164,11 @@ async fn inbox_unit_stats(
             Ok(merge_inbox_unit_stats(historical, fresh_tail).c(h!())?)
         },
         |_db| async move {
-            Ok(load_inbox_unit_stats(
+            Ok(load_fallback_inbox_unit_stats(
                 &login,
                 analytics_env,
                 analytics_req,
-                None,
-                None,
-                None,
+                &fallback_req,
             )
             .await
             .c(h!())?)
@@ -2149,7 +2176,11 @@ async fn inbox_unit_stats(
     )
     .await
     .c(h!())?;
-    Ok(Json(UnitStatsRsp { units }))
+    Ok(Json(
+        crate::rer_importer::unit_stats::enrich(&env, units)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/rer-importer/get-inbox-count")]
@@ -2487,6 +2518,7 @@ fn generic_submit_item_to_inbox_message(
         checked: true,
         important: false,
         ai_important: false,
+        important_by_my_organism: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         created_at: None,
@@ -2501,6 +2533,7 @@ fn generic_submit_item_to_inbox_message(
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),
+        unit_display: None,
         unit_ids: vec![],
         callsign_tokens: None,
         signal_tokens: None,
@@ -6298,6 +6331,19 @@ mod tests {
             &env.dbx,
             sigint_unit::ActiveModel {
                 name: Set("Duty count unit".to_string()),
+                army: Set("6 А".to_string()),
+                brigade: Set("27 омсбр".to_string()),
+                company: Set("1 мср".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let deleted_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Deleted duty count unit".to_string()),
+                deleted: Set(true),
                 ..Default::default()
             },
         )
@@ -6314,7 +6360,7 @@ mod tests {
                 signal_message::ActiveModel {
                     datasource_group_id: Set(Some(datasource_group.id)),
                     created_at: Set(if index == 0 {
-                        boundary - Duration::seconds(1)
+                        boundary - Duration::days(15)
                     } else {
                         boundary
                     }),
@@ -6346,6 +6392,14 @@ mod tests {
             )
             .await
             .unwrap();
+            sigint_inbox_item_unit::Entity::insert(
+                sigint_inbox_item_unit::ActiveModel {
+                    item_id: Set(message.id),
+                    unit_id: Set(deleted_unit.id),
+                    kind: Set(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed),
+                    ..Default::default()
+                },
+            ).exec(&env.dbx).await.unwrap();
             if linked {
                 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
                 for kind in [
@@ -6427,6 +6481,72 @@ mod tests {
         assert_eq!(fresh_tail[0].unit_id, ANALYSIS_STATS_UNDEFINED_UNIT_ID);
         let merged = merge_inbox_unit_stats(historical, fresh_tail).unwrap();
         assert_eq!(merged.iter().map(|unit| unit.count).sum::<i64>(), 2);
+        crate::sigint::unit::hierarchy::mark_dirty(&mut env.redis.clone())
+            .await
+            .unwrap();
+        let enriched = crate::rer_importer::unit_stats::enrich(&env, merged)
+            .await
+            .unwrap();
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(|option| option.label == "27 омсбр")
+                .unwrap()
+                .count,
+            1
+        );
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(|option| option.label == "6 А")
+                .unwrap()
+                .count,
+            1
+        );
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(
+                    |option| option.label == ANALYSIS_STATS_UNDEFINED_UNIT_NAME
+                )
+                .unwrap()
+                .value,
+            ANALYSIS_STATS_UNDEFINED_UNIT_NAME
+        );
+        let policy_req = InboxMessagesReq {
+            selected_unit_ids: Some(vec![unit.id]),
+            page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+            ..req.clone()
+        };
+        let fallback =
+            load_fallback_inbox_unit_stats(&login.id, &env, &req, &policy_req)
+                .await
+                .unwrap();
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0].unit_id, ANALYSIS_STATS_UNDEFINED_UNIT_ID);
+        let ids = (0..20_001)
+            .map(|index| i64::MAX - index)
+            .chain(std::iter::once(unit.id))
+            .collect::<Vec<_>>();
+        let selected = crate::rer_importer::analysis::filter_selected_unit_ids(
+            sigint_inbox_item::Entity::find(),
+            &Some(ids.clone()),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(selected.len(), 2);
+        let denied = crate::rer_importer::analysis::filter_denied_unit_ids(
+            sigint_inbox_item::Entity::find(),
+            &Some(ids),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(denied.len(), 1);
     }
 
     #[serial]
@@ -8909,6 +9029,54 @@ mod tests {
         }
     }
 
+    // Regression: https://github.com/echoua/echo/issues/4073
+    #[serial]
+    #[tokio::test]
+    async fn echo_4073_inbox_scopes_importance_to_my_organism() {
+        let env = cleanup().await.unwrap();
+        let viewer = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let colleague = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let outsider = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let logins = vec![viewer.id, colleague.id];
+        let mut marked = vec![];
+        for (label, marker) in [
+            ("colleague", Some(colleague.id)),
+            ("outsider", Some(outsider.id)),
+            ("system", None),
+        ] {
+            let message =
+                seed_message_with_media(&env, &datasource_group, None, label)
+                    .await
+                    .unwrap();
+            mk_sigint_important(
+                &env.dbx,
+                sigint_important::ActiveModel {
+                    login_id: Set(marker),
+                    signal_message_id: Set(message.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            marked.push(message.id);
+        }
+
+        let messages =
+            get_inbox_messages_by_ids(&viewer.id, &logins, &env, &marked)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<HashMap<_, _>>();
+
+        assert_eq!(messages.len(), 3);
+        assert!(marked.iter().all(|id| messages[id].important));
+        assert!(messages[&marked[0]].important_by_my_organism);
+        assert!(!messages[&marked[1]].important_by_my_organism);
+        assert!(!messages[&marked[2]].important_by_my_organism);
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_get_inbox_messages_filters_only_with_media() {
@@ -9500,6 +9668,24 @@ mod tests {
             .all(|entry| entry.model.is_none()));
     }
 
+    async fn unit_metadata_for_message(
+        env: &Env,
+        login: uuid::Uuid,
+        message_id: i64,
+    ) -> InboxMessage {
+        messages_by_id_bl(
+            &login,
+            &vec![login],
+            env,
+            &[message_id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap()
+        .remove(0)
+        .1
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_messages_by_id_includes_distinct_unit_ids() {
@@ -9511,10 +9697,33 @@ mod tests {
             seed_message_with_media(&env, &datasource_group, None, "units")
                 .await
                 .unwrap();
-        let first_unit =
-            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
-        let second_unit =
-            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            unit_v2: Set(Some("Stored unit name".to_string())),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let first_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("First current unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Second current unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let network = mk_sigint_network(&env.dbx, Default::default())
             .await
             .unwrap();
@@ -9554,20 +9763,77 @@ mod tests {
             .unwrap();
         }
 
-        let logins = vec![login.id];
-        let messages = messages_by_id_bl(
-            &login.id,
-            &logins,
-            &env,
-            &[message.id],
-            &messages_by_id_default_req(),
-        )
-        .await
-        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
         let mut expected_unit_ids = vec![first_unit.id, second_unit.id];
         expected_unit_ids.sort_unstable();
 
-        assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
+        assert_eq!(response.unit_ids, expected_unit_ids);
+        assert_eq!(
+            response.unit_display.as_deref(),
+            Some("First current unit, Second current unit")
+        );
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_unit::ActiveModel {
+            id: Set(second_unit.id),
+            name: Set(first_unit.name.clone()),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert_eq!(response.unit_ids, expected_unit_ids);
+        assert_eq!(
+            response.unit_display.as_deref(),
+            Some("First current unit")
+        );
+
+        for (unit_id, deleted) in
+            [(second_unit.id, true), (first_unit.id, false)]
+        {
+            sigint_unit::ActiveModel {
+                id: Set(unit_id),
+                name: Set("Renamed unit".to_string()),
+                deleted: Set(deleted),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert_eq!(response.unit_ids, vec![first_unit.id]);
+        assert_eq!(response.unit_display.as_deref(), Some("Renamed unit"));
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_unit::ActiveModel {
+            id: Set(first_unit.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert!(response.unit_ids.is_empty());
+        assert!(response.unit_display.is_none());
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
+
+        sigint_inbox_item_unit::Entity::delete_many()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(message.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let response =
+            unit_metadata_for_message(&env, login.id, message.id).await;
+        assert!(response.unit_ids.is_empty());
+        assert!(response.unit_display.is_none());
+        assert_eq!(response.unit.as_deref(), Some("Stored unit name"));
     }
 
     #[serial]

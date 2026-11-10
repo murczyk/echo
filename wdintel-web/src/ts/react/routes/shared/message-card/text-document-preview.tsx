@@ -335,7 +335,7 @@ export function TextDocumentPreview({
 
   if (status === 'error') {
     return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
+      <Box sx={{ p: 3, pt: 'var(--attachment-preview-content-inset, 24px)', textAlign: 'center' }}>
         <Typography variant="h6" sx={{ mb: 1, color: 'text.primary' }}>
           Помилка перегляду
         </Typography>
@@ -403,6 +403,8 @@ export function TxtDocumentPreview({
           sx={{
             m: 0,
             p: 3,
+            py: 'var(--attachment-preview-content-inset, 24px)',
+            pb: 'var(--attachment-preview-content-bottom-inset, 24px)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
             fontFamily:
@@ -441,7 +443,15 @@ export function MarkdownDocumentPreview({
       signal={signal}
       kindLabel="Markdown"
       renderText={(text) => (
-        <Box sx={{ px: 3, py: 2.5, color: 'text.primary', '& > *:first-of-type': { mt: 0 } }}>
+        <Box
+          sx={{
+            px: 3,
+            py: 'var(--attachment-preview-content-inset, 20px)',
+            pb: 'var(--attachment-preview-content-bottom-inset, 20px)',
+            color: 'text.primary',
+            '& > *:first-of-type': { mt: 0 },
+          }}
+        >
           <MarkdownRenderer text={text} />
         </Box>
       )}

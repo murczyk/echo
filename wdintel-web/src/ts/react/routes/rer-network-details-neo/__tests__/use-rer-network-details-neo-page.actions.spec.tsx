@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement, useState } from 'react';
+import { act, createElement, useState, type Dispatch, type SetStateAction } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +53,7 @@ type HookResult = ReturnType<typeof useRerNetworkDetailsNeoPageActions>;
 let root: Root | null = null;
 let latestActions: HookResult | null = null;
 let latestState: NetworkDetailsNeoPageState | null = null;
+let latestSetState: Dispatch<SetStateAction<NetworkDetailsNeoPageState>> | null = null;
 
 function buildNetwork(overrides: Partial<Network> = {}): Network {
   return {
@@ -125,6 +126,7 @@ function Harness({
     ...cachedState,
   });
   latestState = state;
+  latestSetState = setState;
 
   latestActions = useRerNetworkDetailsNeoPageActions({
     state,
@@ -161,10 +163,38 @@ afterEach(() => {
   root = null;
   latestActions = null;
   latestState = null;
+  latestSetState = null;
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
 describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
+  it('#4108 saves the local unit mask when settings finish loading after opening the editor', async () => {
+    apiMock.updateNetwork.mockResolvedValue(buildNetwork());
+    apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());
+    apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork());
+    const seed = buildEditForm({ unitMask: ['old-mask'] });
+    renderHarness(buildNetwork(), seed, {
+      supportNonRerInterceptions: false,
+      referenceLoading: true,
+    });
+
+    act(() => {
+      latestSetState?.((state) => ({
+        ...state,
+        supportNonRerInterceptions: true,
+        referenceLoading: false,
+      }));
+    });
+
+    await act(async () => {
+      await latestActions?.saveNetworkEdit({ ...seed, unitMask: ['new-mask'] });
+    });
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({ unitMask: ['new-mask'] }),
+    );
+  });
+
   it.each([{ location: 'New location' }, { aorIds: [2] }])(
     '#2133 invalidates cached settlement geometry after editing resolution context: %j',
     async (changes) => {

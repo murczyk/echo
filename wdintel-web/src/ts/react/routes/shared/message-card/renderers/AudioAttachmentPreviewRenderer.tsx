@@ -1,5 +1,5 @@
-import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
-import { Typography } from '@mui/material';
+import { useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 
 import { useAudioTranscriptionPreferences } from '../MessageCardAudioTranscription';
@@ -12,6 +12,7 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
+import { AudioPreviewContent } from '../attachment-preview/AudioPreviewContent';
 import {
   ReportTextPreviewAction,
   ReportTextPreviewLayout,
@@ -46,6 +47,8 @@ export function AudioAttachmentPreviewRenderer({
     dismissChildOverlay?: number;
   }) {
   const [infoAnchor, setInfoAnchor] = useState<HTMLButtonElement | null>(null);
+  const narrowViewport = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
   const { enabled: transcriptionEnabled } = useAudioTranscriptionPreferences();
   const transcription = transcriptionEnabled ? (audio.transcription?.trim() ?? '') : '';
   const downloadKey = messageCardMediaDownloadKey(audio.mediaId || audio.id);
@@ -63,42 +66,16 @@ export function AudioAttachmentPreviewRenderer({
         if (region === 'background') onClose();
       }}
     >
-      <div className="flex h-full w-full min-h-0 overflow-y-auto overscroll-contain touch-pan-y">
-        <div
-          data-audio-preview-content
-          className="m-auto flex w-[min(685px,calc(100%-32px))] flex-col py-[24px]"
-        >
-          <div data-audio-preview-player className="mx-auto w-full">
-            <AudioPlayerHost
-              href={audio.source}
-              displayName={audio.fileName}
-              mediaId={audio.mediaId ?? ''}
-              sizeBytes={audio.sizeBytes ?? null}
-              suppressInitialAutoplay
-              previewSizing
-            />
-          </div>
-          {transcription !== '' ? (
-            <div
-              data-attachment-preview-scroll
-              data-audio-preview-transcription
-              className="mt-[32px] flex min-w-0 gap-2 text-sm leading-5 select-text"
-            >
-              <RecordVoiceOverIcon
-                className="audio-transcription-icon mt-0.5 shrink-0"
-                aria-hidden
-              />
-              <Typography
-                component="div"
-                className="min-w-0 whitespace-pre-wrap wrap-break-word text-left text-sm leading-5"
-                sx={{ fontSize: '14px', lineHeight: '20px' }}
-              >
-                {transcription}
-              </Typography>
-            </div>
-          ) : null}
-        </div>
-      </div>
+      <AudioPreviewContent transcription={transcription}>
+        <AudioPlayerHost
+          href={audio.source}
+          displayName={audio.fileName}
+          mediaId={audio.mediaId ?? ''}
+          sizeBytes={audio.sizeBytes ?? null}
+          suppressInitialAutoplay
+          previewSizing
+        />
+      </AudioPreviewContent>
     </MessageCardAttachmentPreviewStage>
   );
   const source = (
@@ -107,6 +84,9 @@ export function AudioAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
+      mobileChrome="toggle"
+      onSwipeDismiss={narrowViewport || touchLandscape ? onClose : undefined}
+      headerInFlow={reportDraft != null && reportVisible}
       navigation={navigation}
       header={
         <MessageCardAttachmentPreviewHeader

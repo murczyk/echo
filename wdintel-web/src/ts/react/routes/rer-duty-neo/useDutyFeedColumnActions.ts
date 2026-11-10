@@ -95,8 +95,8 @@ export function useDutyFeedColumnActions(
       onRemoveColumn: () => removeMessageFeed(feedId),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         handleMessageBookmark(feedId, msgId, currentlyBookmarked),
-      onMessageImportant: (msgId, currentlyImportant) =>
-        handleMessageImportant(feedId, msgId, currentlyImportant),
+      onMessageImportant: (msgId, currentlyImportant, keepAiImportance) =>
+        handleMessageImportant(feedId, msgId, currentlyImportant, keepAiImportance),
       onMessageCopy: handleMessageCopy,
       onMessageCreateReport: (messageId, message, etalonDisplayModel, focusTarget) => {
         const { senderName } = buildMessageCardDisplayLabels(message, {
@@ -217,8 +217,8 @@ export function useDutyFeedColumnActions(
       onRemoveColumn: () => latest().onRemoveColumn(),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         latest().onMessageBookmark(msgId, currentlyBookmarked),
-      onMessageImportant: (msgId, currentlyImportant) =>
-        latest().onMessageImportant(msgId, currentlyImportant),
+      onMessageImportant: (msgId, currentlyImportant, keepAiImportance) =>
+        latest().onMessageImportant(msgId, currentlyImportant, keepAiImportance),
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
       onMessageCreateReport: (msgId, message, etalonDisplayModel, focusTarget) =>
         latest().onMessageCreateReport(msgId, message, etalonDisplayModel, focusTarget),

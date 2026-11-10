@@ -12,10 +12,11 @@ const file: DeviceFileTreeEntry = {
   fileId: 'file',
   name: 'notes.bin',
   pathComponents: ['notes.bin'],
-  absolutePath: null,
+  absolutePath: 'C:\\private\\notes.bin',
   hasContent: true,
   mimeType: 'application/octet-stream',
   extension: 'bin',
+  contentUploadedAt: null,
   fileMetadataCreatedAt: null,
   fileMetadataModifiedAt: null,
   createdAt: '2026-10-07T00:00:00Z',
@@ -55,14 +56,23 @@ let container: HTMLDivElement;
 let root: Root;
 const fetchMock = vi.fn<typeof fetch>();
 const head = () => new Response(null, { headers: { 'content-length': '10' } });
-const documentResponse = () => new Response(JSON.stringify(enrichment));
+const documentResponse = (nextAfter: number | null = null) =>
+  new Response(JSON.stringify({ ...enrichment, nextAfter }));
 function download() {
   return [...container.querySelectorAll('button')].find((button) =>
     button.textContent?.includes('Скачати файл'),
   )!;
 }
-async function show() {
-  await act(async () => root.render(<DeviceFileContentPane deviceId="device" file={file} />));
+async function show(selected: DeviceFileTreeEntry = file, showDocumentDetails = false) {
+  await act(async () =>
+    root.render(
+      <DeviceFileContentPane
+        deviceId="device"
+        file={selected}
+        showDocumentDetails={showDocumentDetails}
+      />,
+    ),
+  );
 }
 async function expand() {
   await act(async () => {
@@ -70,6 +80,16 @@ async function expand() {
     details.open = true;
     details.dispatchEvent(new Event('toggle'));
   });
+}
+function infoButton() {
+  return container.querySelector<HTMLButtonElement>('button[aria-label="Інформація"]');
+}
+function infoDialog() {
+  return document.querySelector('[role="dialog"][aria-label="Інформація про вкладення"]');
+}
+async function openInfo() {
+  await act(async () => infoButton()!.click());
+  expect(infoDialog()).not.toBeNull();
 }
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
@@ -84,19 +104,70 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Authorization erasure boundary: specs/002-device-file-formats/contracts/ui.md.
-describe('Foundation denial erases selected-file enrichment', () => {
-  it('removes loaded enrichment and disables download after its own refresh is forbidden', async () => {
+describe('Device file information access #3930', () => {
+  it('erases open metadata and disables download after checked original download is forbidden', async () => {
     fetchMock
       .mockResolvedValueOnce(head())
-      .mockResolvedValueOnce(documentResponse())
       .mockResolvedValueOnce(new Response('Forbidden', { status: 403 }));
     await show();
+    await openInfo();
+    expect(infoDialog()!.textContent).toContain(file.absolutePath);
+    expect(infoDialog()!.textContent).toContain(
+      '/api/device/files/device/file/revisions/1/content',
+    );
+    await act(async () => download().click());
+    await vi.waitFor(() => expect(infoDialog()).toBeNull());
+    expect(document.body.textContent).not.toContain(file.absolutePath);
+    expect(infoButton()).toBeNull();
+    expect(container.querySelector('details')).toBeNull();
+    expect(download().disabled).toBe(true);
+    expect(fetchMock.mock.calls.every(([, options]) => options?.method === 'HEAD')).toBe(true);
+  });
+
+  it.each(['file', 'revision'])(
+    'closes open metadata when the selected %s changes',
+    async (change) => {
+      fetchMock.mockImplementation(async () => head());
+      await show();
+      await openInfo();
+      expect(infoDialog()!.textContent).toContain(file.absolutePath);
+      const selected =
+        change === 'revision'
+          ? { ...file, revision: 2 }
+          : {
+              ...file,
+              entryId: 'other',
+              fileId: 'other',
+              name: 'other.bin',
+              absolutePath: 'C:\\other.bin',
+            };
+      await show(selected);
+      await vi.waitFor(() => expect(infoDialog()).toBeNull());
+      await openInfo();
+      expect(infoDialog()!.textContent).toContain(
+        `/api/device/files/device/${selected.fileId}/revisions/${selected.revision}/content`,
+      );
+      expect(infoDialog()!.textContent).not.toContain(
+        '/api/device/files/device/file/revisions/1/content',
+      );
+      expect(container.querySelector('details')).toBeNull();
+      expect(fetchMock.mock.calls.every(([, options]) => options?.method === 'HEAD')).toBe(true);
+    },
+  );
+});
+
+describe('Foundation denial erases opted-in AI file enrichment', () => {
+  it('removes loaded enrichment and disables download after loading more sections is forbidden', async () => {
+    fetchMock
+      .mockResolvedValueOnce(head())
+      .mockResolvedValueOnce(documentResponse(0))
+      .mockResolvedValueOnce(new Response('Forbidden', { status: 403 }));
+    await show(file, true);
     await expand();
     expect(container.textContent).toContain(enrichment.document.summary);
     await act(async () => {
       [...container.querySelectorAll('button')]
-        .find((button) => button.textContent === 'Оновити')!
+        .find((button) => button.textContent === 'Наступні розділи')!
         .click();
     });
     expect(container.querySelector('details')).toBeNull();
@@ -113,7 +184,7 @@ describe('Foundation denial erases selected-file enrichment', () => {
       .mockResolvedValueOnce(head())
       .mockImplementationOnce(() => pending)
       .mockResolvedValueOnce(new Response('Forbidden', { status: 403 }));
-    await show();
+    await show(file, true);
     await expand();
     const signal = fetchMock.mock.calls[1][1]?.signal;
     await act(async () => download().click());

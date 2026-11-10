@@ -1,3 +1,4 @@
+import { fileFilterInputProps, renderFileFilterChips } from './DeviceFileParameterFilters';
 import { FormControlLabel, Switch, TextField, Typography } from '@mui/material';
 
 import type { AnalyticsTag, TagMatch } from '../../../../../Bindings';
@@ -24,7 +25,13 @@ export function DeviceAnalyticsTagFilterControls({
 
   return (
     <section aria-labelledby="device-tag-filter-title" className="min-w-0">
-      <Typography id="device-tag-filter-title" variant="subtitle2" sx={{ mb: 1 }}>
+      <Typography
+        id="device-tag-filter-title"
+        component={compact ? 'h3' : 'h6'}
+        variant="subtitle2"
+        className={compact ? 'm-0! mb-echo-md!' : undefined}
+        sx={compact ? undefined : { mb: 1 }}
+      >
         Фільтр за тегами
       </Typography>
       {tagsState.error !== null ? (
@@ -49,6 +56,7 @@ export function DeviceAnalyticsTagFilterControls({
         }
       >
         <PowerAutocomplete<AnalyticsTag>
+          size="small"
           options={tagsState.tags}
           value={selectedTags}
           loading={tagsState.loading}
@@ -65,12 +73,23 @@ export function DeviceAnalyticsTagFilterControls({
               label="Теги"
               placeholder={tagsState.loading ? 'Завантаження…' : 'Оберіть теги'}
               size="small"
+              InputLabelProps={compact ? fileFilterInputProps : undefined}
+              InputProps={
+                compact ? { ...params.InputProps, ...fileFilterInputProps } : params.InputProps
+              }
             />
           )}
+          renderTags={
+            compact
+              ? (values, props) => renderFileFilterChips(values, props, (value) => value.name)
+              : undefined
+          }
           className="min-w-0"
         />
         <TextField
           select
+          InputProps={compact ? fileFilterInputProps : undefined}
+          InputLabelProps={compact ? fileFilterInputProps : undefined}
           label="Збіг тегів"
           size="small"
           value={filter.tagMatch}

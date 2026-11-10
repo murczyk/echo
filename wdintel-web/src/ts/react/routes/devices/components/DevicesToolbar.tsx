@@ -64,8 +64,6 @@ export function DevicesToolbar({
               textTransform: 'none',
               px: 1.75,
               py: 0.875,
-              fontSize: '0.875rem',
-              fontWeight: 600,
               lineHeight: 1.25,
               borderRadius: 0,
             },

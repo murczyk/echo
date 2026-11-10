@@ -195,8 +195,8 @@ mod tests {
     };
     use crate::sigint::unit::types::UnitSearchReq;
     use sea_orm::{
-        ActiveModelTrait, DatabaseConnection, IntoActiveModel, Set,
-        TransactionTrait,
+        ActiveModelTrait, DatabaseConnection, IntoActiveModel, PaginatorTrait,
+        Set, TransactionTrait,
     };
     use serial_test::serial;
 
@@ -332,6 +332,13 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(copied.payloads[0].unit_id, Some(child.id));
+        assert_renamed_selection_preserved(
+            &env,
+            &login,
+            created.signal_message_id,
+            &child,
+        )
+        .await;
         for id in [parent.id, child.id] {
             assert!(
                 sigint_unit::Entity::find_by_id(id)
@@ -349,6 +356,146 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    async fn assert_renamed_selection_preserved(
+        env: &Env,
+        login: &Uuid,
+        item_id: i64,
+        unit: &sigint_unit::Model,
+    ) {
+        sigint_unit::ActiveModel {
+            id: Set(unit.id),
+            name: Set("Renamed selected unit".to_string()),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        assert_reconciled_selection(env, item_id, unit.id).await;
+        let messages = crate::rer_importer::inbox::messages_by_id_bl(
+            login,
+            &vec![*login],
+            env,
+            &[item_id],
+            &Default::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(messages[0].1.unit.as_deref(), Some(unit.name.as_str()));
+        assert_eq!(
+            messages[0].1.unit_display.as_deref(),
+            Some("Renamed selected unit")
+        );
+        let copied = copy_signal_messages(login, env, vec![item_id])
+            .await
+            .unwrap();
+        assert_eq!(copied.payloads[0].unit_id, Some(unit.id));
+        assert_eq!(
+            copied.payloads[0].unit.as_deref(),
+            Some(unit.name.as_str())
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn network_unit_display_preserves_edit_and_copy_input() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let created = submit_signal_message(
+            &login,
+            &env,
+            payload("Unresolved source unit"),
+        )
+        .await
+        .unwrap();
+        let id = created.signal_message_id;
+        let unit = seed_network_unit(&env.dbx, id).await;
+        let messages = crate::rer_importer::inbox::messages_by_id_bl(
+            &login,
+            &vec![login],
+            &env,
+            &[id],
+            &Default::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(messages[0].1.unit_ids, vec![unit.id]);
+        assert_eq!(
+            messages[0].1.unit_display.as_deref(),
+            Some(unit.name.as_str())
+        );
+        let copied = copy_signal_messages(&login, &env, vec![id])
+            .await
+            .unwrap()
+            .payloads
+            .remove(0);
+        assert_eq!(copied.unit.as_deref(), Some("Unresolved source unit"));
+        assert_eq!(copied.unit_id, None);
+        let edited = payload(messages[0].1.unit.as_deref().unwrap());
+        edit_signal_message(&login, &env, id, edited).await.unwrap();
+        let report = submit_signal_message(&login, &env, copied).await.unwrap();
+        for id in [id, report.signal_message_id] {
+            let stored = sigint_inbox_item::Entity::find_by_id(id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                stored.unit_v2.as_deref(),
+                Some("Unresolved source unit")
+            );
+            assert_eq!(
+                sigint_inbox_item_unit::Entity::find()
+                    .filter(sigint_inbox_item_unit::Column::ItemId.eq(id))
+                    .filter(
+                        sigint_inbox_item_unit::Column::Kind
+                            .eq(SigintInboxItemUnitKind::Parsed,)
+                    )
+                    .count(&env.dbx)
+                    .await
+                    .unwrap(),
+                0
+            );
+        }
+    }
+
+    async fn seed_network_unit(
+        db: &DatabaseConnection,
+        item_id: i64,
+    ) -> sigint_unit::Model {
+        use crate::functest::tests::{
+            mk_sigint_inbox_item_network, mk_sigint_network,
+            mk_sigint_network_unit, mk_sigint_unit,
+        };
+        let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+        let network = mk_sigint_network(db, Default::default()).await.unwrap();
+        mk_sigint_network_unit(
+            db,
+            crate::entities::sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            db,
+            crate::entities::sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(item_id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::inbox::unit_resolution::sync_network_unit_links(db, &[item_id])
+            .await
+            .unwrap();
+        unit
     }
 
     #[tokio::test]

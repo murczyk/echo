@@ -180,9 +180,9 @@ export function useRerNetworkDetailsNeoPageActions({
     });
   }, [setState]);
 
-  const saveNetworkEdit = useCallback(async () => {
+  const saveNetworkEdit = useCallback(async (formArg?: NetworkEditForm | null) => {
     const network = state.network;
-    const editForm = state.editForm;
+    const editForm = formArg ?? state.editForm;
     const networkId = editForm?.id ?? null;
 
     if (!network || !editForm || networkId === null || state.editInProgress) return;
@@ -266,7 +266,13 @@ export function useRerNetworkDetailsNeoPageActions({
         editError: formatErrorMessage(error),
       }));
     }
-  }, [state.editForm, state.editInProgress, state.network, setState]);
+  }, [
+    state.editForm,
+    state.editInProgress,
+    state.network,
+    state.supportNonRerInterceptions,
+    setState,
+  ]);
 
   const handleDelete = useCallback(async () => {
     if (!state.network) return;

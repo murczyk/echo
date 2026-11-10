@@ -47,6 +47,7 @@ export type FeedFilterPanelModel = {
     locationsList?: string[];
     unitsList?: Unit[];
     unitStatsReq?: InboxMessagesReq;
+    unitStatsRefreshIntervalMs?: number;
     unitHierarchy?: UnitHierarchyIndex | null;
     persistentUnitFilterValues?: string[];
   };

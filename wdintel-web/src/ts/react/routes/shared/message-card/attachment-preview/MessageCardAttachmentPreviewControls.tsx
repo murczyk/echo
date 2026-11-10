@@ -1,9 +1,15 @@
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 
 import type { MessageCardPreviewNavigation } from './message-card-preview.types';
+import {
+  MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_HEIGHT_PX,
+  MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_BOTTOM_PX,
+} from './message-card-preview-config';
 import type { VideoPlayerState } from '../message-card-video-utils';
+import { getAttachmentPreviewStageBg } from './message-card-attachment-preview';
 import { formatVideoTime } from '../message-card-video-utils';
 import {
   PlayPauseButton,
@@ -14,8 +20,10 @@ import {
 
 export function AttachmentPreviewMobileCarouselNav({
   navigation,
+  themed = false,
 }: {
   navigation: MessageCardPreviewNavigation;
+  themed?: boolean;
 }) {
   if (navigation.count <= 1) return null;
 
@@ -26,7 +34,7 @@ export function AttachmentPreviewMobileCarouselNav({
       alignItems="center"
       justifyContent="center"
       sx={{
-        color: '#fff',
+        color: themed ? 'text.primary' : '#fff',
         py: 0.25,
       }}
     >
@@ -34,9 +42,10 @@ export function AttachmentPreviewMobileCarouselNav({
         aria-label="Попереднє"
         size="small"
         onClick={navigation.onPrevious}
+        disabled={navigation.disabled || navigation.previousDisabled}
         sx={{
-          color: 'rgba(255, 255, 255, 0.9)',
-          '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.15)' },
+          color: themed ? 'inherit' : 'rgba(255, 255, 255, 0.9)',
+          '&:hover': { backgroundColor: themed ? 'action.hover' : 'rgba(255, 255, 255, 0.15)' },
         }}
         data-attachment-preview-nav="prev"
       >
@@ -50,8 +59,8 @@ export function AttachmentPreviewMobileCarouselNav({
           px: 1.5,
           py: 0.5,
           borderRadius: 1,
-          backgroundColor: 'rgba(255, 255, 255, 0.15)',
-          color: '#fff',
+          backgroundColor: themed ? 'action.selected' : 'rgba(255, 255, 255, 0.15)',
+          color: themed ? 'inherit' : '#fff',
           fontWeight: 700,
           fontSize: '0.85rem',
           whiteSpace: 'nowrap',
@@ -63,15 +72,55 @@ export function AttachmentPreviewMobileCarouselNav({
         aria-label="Наступне"
         size="small"
         onClick={navigation.onNext}
+        disabled={navigation.disabled || navigation.nextDisabled}
         sx={{
-          color: 'rgba(255, 255, 255, 0.9)',
-          '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.15)' },
+          color: themed ? 'inherit' : 'rgba(255, 255, 255, 0.9)',
+          '&:hover': { backgroundColor: themed ? 'action.hover' : 'rgba(255, 255, 255, 0.15)' },
         }}
         data-attachment-preview-nav="next"
       >
         <ChevronRightIcon fontSize="small" />
       </IconButton>
     </Stack>
+  );
+}
+
+export function AttachmentPreviewMobileCarouselIsland({
+  navigation,
+  visible = true,
+  bottom = `calc(${MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_BOTTOM_PX}px + env(safe-area-inset-bottom, 0px))`,
+}: {
+  navigation: MessageCardPreviewNavigation;
+  visible?: boolean;
+  bottom?: string;
+}) {
+  if (navigation.count <= 1) return null;
+  return (
+    <Box
+      data-attachment-preview-carousel-island
+      sx={{
+        position: 'absolute',
+        bottom,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: { xs: 'flex', sm: 'none' },
+        minHeight: MESSAGE_CARD_PREVIEW_MOBILE_ISLAND_HEIGHT_PX,
+        alignItems: 'center',
+        width: 'max-content',
+        color: 'text.primary',
+        backgroundColor: (theme) => alpha(getAttachmentPreviewStageBg(theme), 0.82),
+        borderRadius: 2,
+        px: 0.5,
+        py: 0.25,
+        zIndex: 1300,
+        visibility: visible ? 'visible' : 'hidden',
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 150ms ease-out, visibility 150ms ease-out',
+        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+      }}
+    >
+      <AttachmentPreviewMobileCarouselNav navigation={navigation} themed />
+    </Box>
   );
 }
 

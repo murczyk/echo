@@ -176,6 +176,7 @@ pub struct Metrics {
     device_file_content_failures: Counter<u64>,
     device_file_preview_events: Counter<u64>,
     device_file_preview_queue_age: Gauge<f64>,
+    device_file_thumbnail_duration: Histogram<f64>,
     device_audio_cleanup: Counter<u64>,
     device_audio_preparation: Counter<u64>,
     device_audio_preparation_duration: Histogram<f64>,
@@ -203,29 +204,46 @@ pub struct Metrics {
     ocr_storage_deferrals: Counter<u64>,
 }
 
+/// Whether and where to export metrics; kept in the admin system settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignozMetricsSettings {
+    pub enabled: bool,
+    pub endpoint: Option<String>,
+}
+
+pub fn is_valid_signoz_metrics_endpoint(endpoint: &str) -> bool {
+    matches!(
+        reqwest::Url::parse(endpoint),
+        Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
+    )
+}
+
 impl Metrics {
-    pub fn from_config(config: &Config) -> Option<Self> {
-        if !config.signoz_metrics_enabled.unwrap_or(false) {
+    /// Builds the exporter. `config` only supplies the resource identity.
+    pub fn from_settings(
+        config: &Config,
+        settings: &SignozMetricsSettings,
+    ) -> Option<Self> {
+        if !settings.enabled {
             return None;
         }
 
-        let Some(endpoint) = config
-            .signoz_metrics_endpoint
+        let Some(endpoint) = settings
+            .endpoint
             .as_deref()
             .map(str::trim)
             .filter(|endpoint| !endpoint.is_empty())
         else {
             warn!(
-                "Signoz metrics are enabled, but signoz_metrics_endpoint is missing"
+                "Signoz metrics are enabled, but the Signoz metrics endpoint is missing"
             );
             return None;
         };
 
-        if !matches!(
-            reqwest::Url::parse(endpoint),
-            Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
-        ) {
-            warn!("Signoz metrics are enabled, but signoz_metrics_endpoint is invalid");
+        if !is_valid_signoz_metrics_endpoint(endpoint) {
+            warn!(
+                "Signoz metrics are enabled, but the Signoz metrics endpoint is invalid"
+            );
             return None;
         }
 
@@ -309,6 +327,11 @@ impl Metrics {
         let device_file_preview_queue_age = meter
             .f64_gauge(DEVICE_FILE_PREVIEW_QUEUE_AGE)
             .with_description("Age of the oldest pending device file preview")
+            .with_unit("s")
+            .build();
+        let device_file_thumbnail_duration = meter
+            .f64_histogram(crate::devices::config::DEVICE_FILE_THUMBNAIL_DURATION_METRIC)
+            .with_description("Device file thumbnail source preparation and generation duration")
             .with_unit("s")
             .build();
         let device_audio_cleanup = meter
@@ -500,6 +523,7 @@ impl Metrics {
             device_file_content_failures,
             device_file_preview_events,
             device_file_preview_queue_age,
+            device_file_thumbnail_duration,
             device_audio_cleanup,
             device_audio_preparation,
             device_audio_preparation_duration,
@@ -769,6 +793,13 @@ impl Metrics {
                 | "publish_cas_lost"
                 | "cleanup_success"
                 | "cleanup_failure"
+                | "thumbnail_hit"
+                | "thumbnail_miss"
+                | "thumbnail_queued"
+                | "thumbnail_capacity"
+                | "thumbnail_generated"
+                | "thumbnail_failed"
+                | "thumbnail_retry"
         ) {
             self.device_file_preview_events
                 .add(1, &[KeyValue::new("event", event)]);
@@ -779,6 +810,14 @@ impl Metrics {
         if seconds.is_finite() && seconds >= 0.0 {
             self.device_file_preview_queue_age.record(seconds, &[]);
         }
+    }
+
+    pub(crate) fn record_device_file_thumbnail_duration(
+        &self,
+        duration: Duration,
+    ) {
+        self.device_file_thumbnail_duration
+            .record(duration.as_secs_f64(), &[]);
     }
 
     pub(crate) fn record_device_audio_cleanup(&self, outcome: &'static str) {
@@ -1010,6 +1049,9 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             DEVICE_FILE_CONTENT_FAILURES_COUNT => (&["stage"], None),
             DEVICE_FILE_PREVIEW_EVENTS_COUNT => (&["event"], None),
             DEVICE_FILE_PREVIEW_QUEUE_AGE => (&[], None),
+            crate::devices::config::DEVICE_FILE_THUMBNAIL_DURATION_METRIC => {
+                (&[], Some(DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS))
+            }
             crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC => {
                 (&["outcome"], None)
             }
@@ -1403,15 +1445,16 @@ mod tests {
     use crate::types::Mode;
 
     #[test]
-    fn metrics_are_disabled_when_config_is_absent() {
-        let mut config = crate::config::read_config(Mode::Test).unwrap();
-        config.signoz_metrics_enabled = None;
-        config.signoz_metrics_endpoint = None;
+    fn metrics_are_disabled_without_a_usable_endpoint() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let mut settings = SignozMetricsSettings::default();
+        assert!(Metrics::from_settings(&config, &settings).is_none());
 
-        assert!(Metrics::from_config(&config).is_none());
+        settings.enabled = true;
+        assert!(Metrics::from_settings(&config, &settings).is_none());
 
-        config.signoz_metrics_enabled = Some(true);
-        assert!(Metrics::from_config(&config).is_none());
+        settings.endpoint = Some("signoz:4317".to_string());
+        assert!(Metrics::from_settings(&config, &settings).is_none());
     }
 
     #[test]

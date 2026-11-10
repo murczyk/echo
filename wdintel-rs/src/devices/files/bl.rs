@@ -161,6 +161,23 @@ pub(in crate::devices) async fn browse(
     login: &login::Model,
     command: BrowseFilesCommand,
 ) -> Result<BrowseFilesResult, AppError> {
+    browse_sorted(
+        main_db,
+        file_registry_db,
+        login,
+        command,
+        Default::default(),
+    )
+    .await
+}
+
+pub(in crate::devices) async fn browse_sorted(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    command: BrowseFilesCommand,
+    sort: super::sorting::FileListingSort,
+) -> Result<BrowseFilesResult, AppError> {
     let BrowseFilesCommand {
         device_id,
         parent_entry_id,
@@ -225,15 +242,20 @@ pub(in crate::devices) async fn browse(
             requested_page,
             tag_filter.as_ref(),
             has_content,
+            sort,
         )
         .await
         .c(h!())?
     } else {
-        let page =
-            query::list_children(file_registry_db, &scope, requested_page)
-                .await
-                .map_err(map_read_error)
-                .c(h!())?;
+        let page = query::list_children_sorted(
+            file_registry_db,
+            &scope,
+            requested_page,
+            sort,
+        )
+        .await
+        .map_err(map_read_error)
+        .c(h!())?;
         (
             page.entries,
             page.next
@@ -274,6 +296,44 @@ pub(in crate::devices) async fn search(
     login: &login::Model,
     command: SearchFilesCommand,
 ) -> Result<SearchFilesResult, AppError> {
+    search_sorted(
+        main_db,
+        file_registry_db,
+        login,
+        command,
+        Default::default(),
+    )
+    .await
+}
+
+pub(in crate::devices) async fn search_sorted(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    command: SearchFilesCommand,
+    sort: super::sorting::FileListingSort,
+) -> Result<SearchFilesResult, AppError> {
+    search_with_options(
+        main_db,
+        file_registry_db,
+        login,
+        command,
+        sort,
+        false,
+        false,
+    )
+    .await
+}
+
+pub(in crate::devices) async fn search_with_options(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    command: SearchFilesCommand,
+    sort: super::sorting::FileListingSort,
+    global_search: bool,
+    rank_by_relevance: bool,
+) -> Result<SearchFilesResult, AppError> {
     let SearchFilesCommand {
         device_id,
         scope_entry_id,
@@ -300,17 +360,16 @@ pub(in crate::devices) async fn search(
     )
     .await
     .c(h!())?;
-    let filters = FileSearchFilters::try_from(filters)
+    let mut filters = FileSearchFilters::try_from(filters)
         .map_err(map_read_error)
         .c(h!())?;
-    let scope = query::find_directory_scope(
-        file_registry_db,
-        device_id,
-        scope_entry_id,
-    )
-    .await
-    .map_err(map_read_error)
-    .c(h!())?;
+    filters.global_search = global_search;
+    filters.rank_by_relevance = rank_by_relevance;
+    let scope =
+        query::find_search_scope(file_registry_db, device_id, scope_entry_id)
+            .await
+            .map_err(map_read_error)
+            .c(h!())?;
     let after = match cursor {
         Some(cursor) => {
             let boundary_entry_id =
@@ -342,14 +401,16 @@ pub(in crate::devices) async fn search(
             &filters,
             requested_page,
             tag_filter,
+            sort,
         )
         .await?
     } else {
-        let page = query::search_entries(
+        let page = query::search_entries_sorted(
             file_registry_db,
             &scope,
             &filters,
             requested_page,
+            sort,
         )
         .await
         .map_err(map_read_error)
@@ -379,13 +440,14 @@ async fn filtered_browse_page(
     requested_page: KeysetPageRequest<EntrySortKey>,
     tag_filter: Option<&TagFilter>,
     has_content: Option<bool>,
+    sort: super::sorting::FileListingSort,
 ) -> Result<(Vec<TreeEntry>, Option<String>), AppError> {
     let target_len = usize::try_from(requested_page.limit())
         .expect("validated file page limit must fit usize");
     let mut after = requested_page.after().cloned();
     let mut entries = Vec::with_capacity(target_len);
     loop {
-        let page = query::list_children(
+        let page = query::list_children_sorted(
             file_registry_db,
             scope,
             KeysetPageRequest::try_new(
@@ -393,6 +455,7 @@ async fn filtered_browse_page(
                 after,
             )
             .expect("configured file page limit must be valid"),
+            sort,
         )
         .await
         .map_err(map_read_error)
@@ -450,13 +513,14 @@ async fn filtered_search_page(
     filters: &FileSearchFilters,
     requested_page: KeysetPageRequest<EntrySortKey>,
     tag_filter: &TagFilter,
+    sort: super::sorting::FileListingSort,
 ) -> Result<(Vec<SearchEntry>, Option<String>), AppError> {
     let target_len = usize::try_from(requested_page.limit())
         .expect("validated file page limit must fit usize");
     let mut after = requested_page.after().cloned();
     let mut entries = Vec::with_capacity(target_len);
     loop {
-        let page = query::search_entries(
+        let page = query::search_entries_sorted(
             file_registry_db,
             scope,
             filters,
@@ -465,6 +529,7 @@ async fn filtered_search_page(
                 after,
             )
             .expect("configured file page limit must be valid"),
+            sort,
         )
         .await
         .map_err(map_read_error)
@@ -596,6 +661,7 @@ pub(super) mod mapping {
             });
         }
         Ok(BrowseDeviceFilesRsp {
+            archive_source: None,
             breadcrumbs: breadcrumbs.into_iter().map(map_breadcrumb).collect(),
             entries: entries
                 .into_iter()
@@ -674,11 +740,19 @@ pub(super) mod mapping {
         root: RootEntry,
     ) -> DeviceFileRoot {
         DeviceFileRoot {
+            is_favorite: false,
             entry_id: root.entry_id.hyphenated().to_string(),
             device_id: root.device_id.hyphenated().to_string(),
             parent_entry_id: None,
             kind: FileEntryKindDto::Directory,
             name: root.name,
+            file_metadata_created_at: root
+                .file_metadata_created_at
+                .map(format_datetime),
+            file_metadata_modified_at: root
+                .file_metadata_modified_at
+                .map(format_datetime),
+            content_uploaded_at: Some(format_datetime(root.created_at)),
             created_at: format_datetime(root.created_at),
             updated_at: format_datetime(root.updated_at),
             tags: Vec::new(),
@@ -687,6 +761,7 @@ pub(super) mod mapping {
 
     fn map_breadcrumb(breadcrumb: Breadcrumb) -> FileBreadcrumb {
         FileBreadcrumb {
+            archive_revision: breadcrumb.archive_revision,
             entry_id: breadcrumb.entry_id.hyphenated().to_string(),
             name: breadcrumb.name,
         }
@@ -699,6 +774,12 @@ pub(super) mod mapping {
     ) -> DeviceFileTreeEntry {
         match entry {
             TreeEntry::Directory(directory) => DeviceFileTreeEntry {
+                is_favorite: false,
+                is_viewed: false,
+                size_bytes: None,
+                content_uploaded_at: Some(format_datetime(
+                    directory.created_at,
+                )),
                 is_archive: false,
                 archive_origin: None,
                 virtual_path: None,
@@ -716,8 +797,12 @@ pub(super) mod mapping {
                 has_content: false,
                 mime_type: None,
                 extension: None,
-                file_metadata_created_at: None,
-                file_metadata_modified_at: None,
+                file_metadata_created_at: directory
+                    .file_metadata_created_at
+                    .map(format_datetime),
+                file_metadata_modified_at: directory
+                    .file_metadata_modified_at
+                    .map(format_datetime),
                 created_at: format_datetime(directory.created_at),
                 updated_at: format_datetime(directory.updated_at),
                 tags: Vec::new(),
@@ -726,6 +811,10 @@ pub(super) mod mapping {
                 source_file_state: None,
             },
             TreeEntry::File(file) => DeviceFileTreeEntry {
+                is_favorite: false,
+                is_viewed: false,
+                size_bytes: None,
+                content_uploaded_at: None,
                 is_archive: super::super::preview::is_archive(
                     &file.name,
                     file.extension.as_deref(),

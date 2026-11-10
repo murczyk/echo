@@ -14,25 +14,21 @@ import { localFilePreviewBackend, previewPost } from './device-file-preview-back
 import { loadDeviceFilePreviewFixture } from './device-file-preview.fixtures';
 import {
   ensureDeviceFilePreviewFixture,
+  openDeviceArchiveFolder,
   openDeviceFilePreview,
+  openDeviceFilePreviewEntry,
+  selectDeviceFilePreviewEntry,
   type FilePreviewBackend,
 } from './device-file-preview.ui';
+
+import { createConverterTransportFixture } from './device-file-preview-converter-fixture';
 
 test.setTimeout(60_000);
 
 async function selectSearchFile(page: Page, backend: FilePreviewBackend, id: string) {
   const { fixture } = await loadDeviceFilePreviewFixture(id);
   const entry = backend.fixtures.seeded.find((entry) => entry.fixtureId === id)!;
-  await page.getByRole('textbox', { name: 'Назва містить', exact: true }).fill(fixture.fileName);
-  await page.getByRole('button', { name: 'Знайти', exact: true }).click();
-  await page
-    .getByRole('region', { name: 'Результати пошуку файлів' })
-    .locator(`[data-entry-id="${entry.file.fileId}"]`)
-    .getByRole('button', { name: fixture.fileName, exact: true })
-    .click();
-  const pane = page.getByTestId('device-file-content-pane');
-  await expect(pane.locator('#device-file-content-title')).toContainText(fixture.fileName);
-  return pane;
+  return selectDeviceFilePreviewEntry(page, entry.file.fileId, fixture.fileName);
 }
 
 async function expectOriginalBytes(page: Page, pane: Locator, id: string) {
@@ -41,6 +37,43 @@ async function expectOriginalBytes(page: Page, pane: Locator, id: string) {
   await pane.getByRole('button', { name: 'Скачати файл', exact: true }).click();
   const download = await saved;
   expect(await readFile((await download.path())!)).toEqual(expected);
+}
+
+async function expectRevision(
+  page: Page,
+  pane: Locator,
+  value: string,
+  entry: FilePreviewBackend['fixtures']['seeded'][number],
+) {
+  const image = pane.locator('[data-image-preview-image]');
+  const dimensions =
+    (await image.count()) === 1
+      ? await image.evaluate(
+          (node: HTMLImageElement) => `${node.naturalWidth} × ${node.naturalHeight}`,
+        )
+      : null;
+  await pane.getByRole('button', { name: 'Інформація', exact: true }).click();
+  const info = page.getByRole('dialog', { name: 'Інформація про вкладення', exact: true });
+  await expect(info.getByText('Ревізія', { exact: true })).toBeVisible();
+  await expect(info.getByText(value, { exact: true })).toBeVisible();
+  await expect(info.getByText(entry.originalHref, { exact: true })).toBeVisible();
+  await expect(info.getByText(entry.file.name, { exact: true })).toBeVisible();
+  await expect(info.getByText(entry.file.fileId, { exact: true })).toBeVisible();
+  if (entry.file.mimeType)
+    await expect(info.getByText(entry.file.mimeType, { exact: true })).toBeVisible();
+  if (entry.file.absolutePath)
+    await expect(info.getByText(entry.file.absolutePath, { exact: true })).toBeVisible();
+  await expect(info.getByText('Розмір файлу', { exact: true }).locator('..')).not.toContainText(
+    '—',
+  );
+  if (dimensions) {
+    await expect(info.getByText('Розмір зображення', { exact: true })).toBeVisible();
+    await expect(info.getByText(dimensions, { exact: true })).toBeVisible();
+  } else {
+    await expect(info.getByText('Розмір зображення', { exact: true })).toHaveCount(0);
+  }
+  await page.keyboard.press('Escape');
+  await expect(info).not.toBeVisible();
 }
 
 async function expectViewer(pane: Locator, id: string) {
@@ -52,10 +85,6 @@ async function expectViewer(pane: Locator, id: string) {
       .toBeGreaterThan(0);
   } else if (id === 'document-pdf') {
     await expect(pane.locator('.react-pdf__Page__canvas').first()).toBeVisible();
-  } else if (id === 'archive-zip') {
-    await expect(
-      pane.getByRole('button', { name: /^(Розгорнути|Згорнути) каталог nested$/ }),
-    ).toBeVisible({ timeout: 45_000 });
   } else if (id === 'native-map-kml') {
     await expect(pane.locator('.leaflet-container')).toBeVisible();
     await expect(pane.locator('.leaflet-overlay-pane canvas').first()).toBeAttached();
@@ -134,20 +163,19 @@ test('@regression retained historical text uses session tree/search revision and
     await expect(pane.locator('pre')).toHaveText(
       (await loadDeviceFilePreviewFixture('current-text')).bytes.toString('utf8'),
     );
-    await expect(pane).toContainText(`Ревізія ${current.file.revision} · Поточна`);
+    await expectRevision(page, pane, `${current.file.revision} · Поточна`, current);
     await expectOriginalBytes(page, pane, 'current-text');
     await page.goto(`/devices/${backend.fixtures.deviceId}?sync_id=${old.file.syncId}`);
     await openDeviceSection(page, 'Файли');
     await page
-      .getByRole('button', { name: /Вибрати каталог C:/ })
-      .first()
+      .getByRole('region', { name: 'Вміст папки', exact: true })
+      .getByRole('button', { name: /^Відкрити папку C:/ })
       .click();
-    await page.getByRole('button', { name: 'Показати пошук файлів', exact: true }).click();
     pane = await selectSearchFile(page, backend, 'historical-text');
     await expect(pane.locator('pre')).toHaveText(
       (await loadDeviceFilePreviewFixture('historical-text')).bytes.toString('utf8'),
     );
-    await expect(pane).toContainText(`Ревізія ${old.file.revision} · Із вибраної сесії`);
+    await expectRevision(page, pane, `${old.file.revision} · Із вибраної сесії`, old);
     await expectOriginalBytes(page, pane, 'historical-text');
   } finally {
     await backend.dispose();
@@ -159,23 +187,19 @@ test('#3778 @regression ZIP nested member uses safe basename, exact bytes and na
 }) => {
   const backend = await localFilePreviewBackend();
   try {
-    const { pane, entry } = await openDeviceFilePreview(page, backend, 'archive-zip');
-    const directory = pane.getByRole('button', { name: 'Розгорнути каталог nested', exact: true });
-    await expect(directory).toBeVisible({ timeout: 45_000 });
-    await directory.click();
-    await pane.getByRole('button', { name: 'Дані.csv', exact: true }).click();
+    const { folder, entry } = await openDeviceArchiveFolder(page, backend, 'archive-zip');
+    await folder.getByRole('button', { name: 'Відкрити папку nested', exact: true }).click();
+    await folder.getByRole('button', { name: 'Відкрити файл Дані.csv', exact: true }).click();
+    const pane = page.getByTestId('device-file-content-pane');
     await expect(pane.locator('#device-file-content-title')).toContainText('Дані.csv');
     const member = pane.getByRole('button', { name: 'Скачати файл', exact: true });
     await expect(member).toBeEnabled();
-    await expect
-      .poll(() =>
-        member.evaluate(
-          (button) =>
-            button.getBoundingClientRect().bottom <=
-            button.closest('header')!.getBoundingClientRect().bottom,
-        ),
-      )
-      .toBe(true);
+    await expect(member).toBeInViewport();
+    const titleBox = (await pane.locator('#device-file-content-title').boundingBox())!;
+    const downloadBox = (await member.boundingBox())!;
+    expect(
+      Math.abs(downloadBox.y + downloadBox.height / 2 - titleBox.y - titleBox.height / 2),
+    ).toBeLessThan(24);
     const checked = page.waitForResponse(
       (response) =>
         response.url().endsWith('/content') &&
@@ -238,14 +262,13 @@ test('@regression ZIP cached member is stopped when actual reader access is revo
     } satisfies UpdateLoginReq);
   };
   try {
-    const { pane } = await openDeviceFilePreview(page, backend, 'archive-zip');
-    const directory = pane.getByRole('button', { name: 'Розгорнути каталог nested', exact: true });
-    await expect(directory).toBeVisible({ timeout: 45_000 });
-    await directory.click();
+    const { folder } = await openDeviceArchiveFolder(page, backend, 'archive-zip');
+    await folder.getByRole('button', { name: 'Відкрити папку nested', exact: true }).click();
+    const pane = page.getByTestId('device-file-content-pane');
     const selectedHead = page.waitForResponse(
       (response) => response.request().method() === 'HEAD' && response.url().endsWith('/content'),
     );
-    await pane.getByRole('button', { name: 'Дані.csv', exact: true }).click();
+    await folder.getByRole('button', { name: 'Відкрити файл Дані.csv', exact: true }).click();
     await expect(pane.locator('#device-file-content-title')).toContainText('Дані.csv');
     const member = pane.getByRole('button', { name: 'Скачати файл', exact: true });
     await expect(member).toBeEnabled();
@@ -280,30 +303,71 @@ test('@regression ZIP cached member is stopped when actual reader access is revo
   }
 });
 
-for (const id of [
-  'document-pdf',
-  'image-png',
-  'archive-zip',
-  'native-map-kml',
-  'audio-wav',
-  'video-mp4',
-]) {
+for (const width of [390, 1440]) {
+  test(`@regression archive folder keyboard navigation and member fullscreen ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const backend = await localFilePreviewBackend();
+    try {
+      const { folder, entry } = await openDeviceArchiveFolder(page, backend, 'archive-zip');
+      const pane = page.getByTestId('device-file-content-pane');
+      const archiveUrl = page.url();
+      const nested = folder.getByRole('button', { name: 'Відкрити папку nested', exact: true });
+      await nested.press('Enter');
+      await folder
+        .getByRole('button', { name: 'Відкрити файл Дані.csv', exact: true })
+        .press('Enter');
+      await expect(pane.getByRole('cell', { name: 'Київ', exact: true })).toBeVisible();
+      const fullscreen = pane.getByRole('button', { name: 'На весь екран', exact: true });
+      await fullscreen.press('Enter');
+      const dialog = page
+        .getByRole('dialog')
+        .filter({ has: page.locator('#device-file-fullscreen-title') });
+      await expect(dialog.getByRole('cell', { name: 'Київ', exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(fullscreen).toBeFocused();
+      await page.getByRole('button', { name: 'До папки', exact: true }).press('Enter');
+      await expect(pane).toHaveCount(0);
+      await expect(
+        folder.getByRole('button', { name: 'Відкрити файл Дані.csv', exact: true }),
+      ).toBeVisible();
+      await page
+        .getByRole('navigation', { name: 'Навігаційний шлях пристрою', exact: true })
+        .getByRole('link', { name: entry.file.name, exact: true })
+        .press('Enter');
+      await expect(page).toHaveURL(archiveUrl);
+      await expect(nested).toBeVisible();
+      await expect(pane).toHaveCount(0);
+    } finally {
+      await backend.dispose();
+    }
+  });
+}
+
+for (const id of ['document-pdf', 'image-png', 'native-map-kml', 'audio-wav', 'video-mp4']) {
   test(`@regression ${['audio-wav', 'video-mp4'].includes(id) ? '@new-api ' : ''}narrow fullscreen Escape focus and layout ${id}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const backend = await localFilePreviewBackend();
     try {
-      const { pane } = await openDeviceFilePreview(page, backend, id);
+      const { pane, entry } = await openDeviceFilePreview(page, backend, id);
       await expectViewer(pane, id);
+      await expect(pane.getByText('Підсумок, текст і позиції', { exact: true })).toHaveCount(0);
+      await expectRevision(page, pane, `${entry.file.revision} · Поточна`, entry);
       await expect(
         pane.getByRole('button', { name: 'Скачати файл', exact: true }),
       ).toBeInViewport();
       const fullscreen = pane.getByRole('button', { name: 'На весь екран', exact: true });
       await fullscreen.click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page
+        .getByRole('dialog')
+        .filter({ has: page.locator('#device-file-fullscreen-title') });
       await expect(dialog).toBeVisible();
       await expectViewer(dialog, id);
+      await expectRevision(page, dialog, `${entry.file.revision} · Поточна`, entry);
       await expect(
         dialog.getByRole('button', { name: 'Скачати файл', exact: true }),
       ).toBeInViewport();
@@ -355,14 +419,14 @@ for (const id of [
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(fullscreen).toBeFocused();
       await expectViewer(pane, id);
-      await page.getByRole('button', { name: 'До файлів', exact: true }).click();
+      await page.getByRole('button', { name: 'До папки', exact: true }).click();
       await expect(page.getByTestId('device-file-content-pane')).toHaveCount(0);
       await expect(
-        page.getByRole('region', { name: 'Результати пошуку файлів' }).getByRole('button', {
-          name: (await loadDeviceFilePreviewFixture(id)).fixture.fileName,
+        page.getByRole('region', { name: 'Вміст папки', exact: true }).getByRole('button', {
+          name: `Відкрити файл ${(await loadDeviceFilePreviewFixture(id)).fixture.fileName}`,
           exact: true,
         }),
-      ).toBeFocused();
+      ).toBeVisible();
     } finally {
       await backend.dispose();
     }
@@ -429,22 +493,29 @@ for (const [id, selector] of [
   });
 }
 
-test('@regression @new-api no Alpine converted GPX reports unavailable service and retains exact original', async ({
+test('@regression @new-api no Alpine proprietary format reports unavailable service and retains exact original', async ({
   page,
 }) => {
   const backend = await localFilePreviewBackend();
   try {
-    const entry = backend.fixtures.seeded.find((entry) => entry.fixtureId === 'converted-map-gpx')!;
+    const entry = await createConverterTransportFixture(backend);
     const unavailable = page.waitForResponse(
       (response) =>
         response.url().includes(`/revisions/${entry.file.revision}/preview/geodata`) &&
         response.status() === 503,
     );
-    const { pane } = await openDeviceFilePreview(page, backend, 'converted-map-gpx');
+    const pane = await openDeviceFilePreviewEntry(
+      page,
+      backend,
+      entry.file.fileId,
+      entry.file.name,
+    );
     await unavailable;
     await expect(pane.getByRole('alert').first()).toContainText(/недоступ|Alpine/i);
     await expect(pane.locator('.leaflet-container')).toHaveCount(0);
-    await expectOriginalBytes(page, pane, 'converted-map-gpx');
+    const saved = page.waitForEvent('download');
+    await pane.getByRole('button', { name: 'Скачати файл', exact: true }).click();
+    expect(await readFile((await (await saved).path())!)).toEqual(entry.bytes);
   } finally {
     await backend.dispose();
   }

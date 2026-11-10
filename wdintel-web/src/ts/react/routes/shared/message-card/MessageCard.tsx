@@ -268,8 +268,10 @@ function MessageCardComponent({
   );
   const visibleEtalonDisplayModel = useMemo(
     () =>
-      hideNetworks ? hideMessageCardNetworks(etalonDisplayModel, msg.unit) : etalonDisplayModel,
-    [hideNetworks, etalonDisplayModel, msg.unit],
+      hideNetworks
+        ? hideMessageCardNetworks(etalonDisplayModel, msg.unitDisplay ?? msg.unit)
+        : etalonDisplayModel,
+    [hideNetworks, etalonDisplayModel, msg.unitDisplay, msg.unit],
   );
   const onCopyEtalonAction =
     visibleEtalonDisplayModel.copyEtalonValue == null || onCopyEtalon == null

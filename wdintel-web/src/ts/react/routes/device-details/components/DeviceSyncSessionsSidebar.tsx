@@ -65,7 +65,7 @@ export function DeviceSyncSessionsSidebar({
     <aside
       aria-labelledby="device-sync-sessions-title"
       data-testid="device-sync-sessions-sidebar"
-      className={`bg-echo-surface border border-echo-border rounded-echo-md min-w-0 min-h-0 flex flex-col overflow-hidden ${fullHeight ? 'h-full' : 'h-[50vh] echo-lg:h-full'}`}
+      className={`min-w-0 min-h-0 flex flex-col overflow-hidden ${fullHeight ? 'h-full' : 'h-[50vh] echo-lg:h-full echo-lg:border-l echo-lg:border-solid echo-lg:border-echo-text/12'}`}
     >
       <header className="p-echo-lg flex flex-col gap-echo-md border-b border-echo-border">
         <div className="flex items-center justify-between gap-echo-sm">
@@ -105,7 +105,7 @@ export function DeviceSyncSessionsSidebar({
         >
           <span className="flex flex-col gap-echo-xs text-left">
             <strong>Усі сесії</strong>
-            <span className="text-echo-sm text-echo-text-muted">
+            <span className="text-[length:var(--echo-typography-font-size-base)] text-echo-text-muted">
               {state.total === null
                 ? 'Усі файли пристрою'
                 : `${number.format(state.total)} файлів за весь час`}
@@ -113,7 +113,10 @@ export function DeviceSyncSessionsSidebar({
           </span>
         </ButtonBase>
         {state.error ? (
-          <div role="alert" className="p-echo-md text-echo-sm">
+          <div
+            role="alert"
+            className="p-echo-md text-[length:var(--echo-typography-font-size-base)]"
+          >
             {state.error}
             <PowerButton size="small" onClick={state.refresh}>
               Спробувати ще раз
@@ -126,7 +129,9 @@ export function DeviceSyncSessionsSidebar({
           </div>
         ) : null}
         {!state.loading && state.rows.length === 0 && !state.error ? (
-          <p className="p-echo-md text-echo-sm text-echo-text-muted">Сесій не знайдено.</p>
+          <p className="p-echo-md text-[length:var(--echo-typography-font-size-base)] text-echo-text-muted">
+            Сесій не знайдено.
+          </p>
         ) : null}
         <ul className="m-0 p-0 list-none">
           {state.rows.map((session) => {
@@ -161,17 +166,17 @@ export function DeviceSyncSessionsSidebar({
                           ? ` — ${time.format(new Date(session.completedAt))}`
                           : ''}
                       </strong>
-                      <span className="text-echo-xs text-echo-text-muted">
+                      <span className="text-[length:var(--echo-typography-font-size-xs)] text-echo-text-muted">
                         {statuses[session.status]}
                       </span>
                     </span>
-                    <span className="text-echo-sm">
+                    <span className="text-[length:var(--echo-typography-font-size-base)]">
                       {summary
                         ? `${number.format(summary.totalFileCount)} файлів`
                         : `${number.format(session.counts.accepted)} прийнято`}
                     </span>
                     {summary?.items.length ? (
-                      <span className="text-echo-xs text-echo-text-muted">
+                      <span className="text-[length:var(--echo-typography-font-size-xs)] text-echo-text-muted">
                         {summary.items
                           .slice(0, 3)
                           .map((item) => `${number.format(item.fileCount)} ${item.tag.name}`)
@@ -179,13 +184,13 @@ export function DeviceSyncSessionsSidebar({
                       </span>
                     ) : null}
                     {summary && summary.analyzedFileCount < summary.totalFileCount ? (
-                      <span className="text-echo-xs text-echo-text-muted">
+                      <span className="text-[length:var(--echo-typography-font-size-xs)] text-echo-text-muted">
                         Проаналізовано {number.format(summary.analyzedFileCount)} з{' '}
                         {number.format(summary.totalFileCount)}
                       </span>
                     ) : null}
                     {session.counts.rejected > 0 ? (
-                      <span className="text-echo-xs text-echo-text-muted">
+                      <span className="text-[length:var(--echo-typography-font-size-xs)] text-echo-text-muted">
                         Відхилено: {number.format(session.counts.rejected)}
                       </span>
                     ) : null}

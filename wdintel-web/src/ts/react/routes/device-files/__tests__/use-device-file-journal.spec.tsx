@@ -53,7 +53,6 @@ function Harness() {
     deviceId: DEVICE_ID,
     syncId,
     enabled,
-    tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
   });
   return null;
 }

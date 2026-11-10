@@ -1,4 +1,5 @@
 import type { FilePreviewSource } from './attachment-preview/file-preview-source';
+import { getNativeMapFormat } from './kmz/kmz-preview-utils';
 import { getDocumentFileKind } from './document-file-kind';
 
 export type FilePreviewKind =
@@ -34,24 +35,12 @@ const VIDEO_EXTENSIONS = new Set([
   'vob',
   'asf',
 ]);
-const CONVERTED_MAP_EXTENSIONS = new Set([
-  'gpx',
-  'geojson',
-  'ldk',
-  'trk',
-  'are',
-  'rte',
-  'wpt',
-  'set',
-  'fit',
-]);
+const CONVERTED_MAP_EXTENSIONS = new Set(['ldk', 'trk', 'are', 'rte', 'wpt', 'set', 'fit']);
 export function getFilePreviewKind(source: FilePreviewSource): FilePreviewKind {
   const { extension, contentType } = source;
   if (
-    extension === 'kml' ||
-    extension === 'kmz' ||
-    contentType.includes('kml') ||
-    contentType.includes('google-earth')
+    (getNativeMapFormat(source.fileName, contentType) ?? getNativeMapFormat(`file.${extension}`)) !=
+    null
   )
     return 'map';
   if (CONVERTED_MAP_EXTENSIONS.has(extension)) return 'converted-map';

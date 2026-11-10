@@ -69,12 +69,15 @@ export function useDeviceDetailsPage({
 
   const aorOptions = useMemo(() => resolveAorOptions(aors), [aors]);
   const unitOptions = useMemo(() => resolveUnitOptions(units), [units]);
-  const editHasChanges = useMemo(() => {
-    if (device === null || editForm === null) return false;
-    return hasDeviceUpdatePatchChanges(
-      buildUpdateDevicePatch(device, editForm, permissions.fieldPermissions),
-    );
-  }, [device, editForm, permissions.fieldPermissions]);
+  const editHasChanges = useCallback(
+    (form: DeviceUpsertForm) => {
+      if (device === null) return false;
+      return hasDeviceUpdatePatchChanges(
+        buildUpdateDevicePatch(device, form, permissions.fieldPermissions),
+      );
+    },
+    [device, permissions.fieldPermissions],
+  );
 
   useEffect(() => {
     setDevice(null);
@@ -178,12 +181,6 @@ export function useDeviceDetailsPage({
     setEditServerFieldErrors({});
   }, [editSubmitting]);
 
-  const changeEditForm = useCallback((form: DeviceUpsertForm | null) => {
-    setEditForm(form);
-    setEditError(null);
-    setEditServerFieldErrors({});
-  }, []);
-
   const saveEditDevice = useCallback(
     async (form: DeviceUpsertForm): Promise<boolean> => {
       if (!permissions.canEdit || !device || device.archived || editSubmitting) return false;
@@ -282,7 +279,6 @@ export function useDeviceDetailsPage({
     reload,
     openEditDrawer,
     closeEditDrawer,
-    setEditForm: changeEditForm,
     saveEditDevice,
   };
 }

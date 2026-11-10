@@ -35,6 +35,8 @@ pub struct Model {
     pub large_message_card_text: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
     pub message_card_quick_action: Option<String>,
+    pub minimal_report_window_enabled: Option<bool>,
+    pub important_only_my_organism: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

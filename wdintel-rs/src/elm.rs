@@ -155,6 +155,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::SignalProfilesRsp,
             crate::messenger::group::types::SignalGroupEntry,
             crate::messenger::group::types::GroupCreationInfo,
+            crate::messenger::group::sending::GroupSendingSettings,
             crate::messenger::group::types::OrphanSignalGroupEntry,
             crate::rer_importer::types::SignalProfileEntry,
             crate::rer_importer::types::BatchSignalGroupReq,
@@ -386,6 +387,14 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::devices::files::types::CountDeviceFileSubtreesRsp,
             crate::devices::files::types::RebuildDeviceStatsReq,
             crate::devices::files::types::RebuildDeviceStatsRsp,
+            crate::devices::files::markers::SetDeviceFileFavoriteReq,
+            crate::devices::files::markers::MarkDeviceFileViewedReq,
+            crate::devices::files::markers::DeviceFileMarkers,
+            crate::devices::files::types::DeviceFileSortBy,
+            crate::devices::files::types::DeviceFileSortDirection,
+            crate::devices::files::listing_filters::DeviceFileFilters,
+            crate::devices::files::listing_filters::DeviceFileType,
+            crate::devices::files::listing_filters::DeviceFileFilterOptions,
             crate::devices::files::types::BrowseDeviceFilesReq,
             crate::devices::files::types::BrowseDeviceFilesRsp,
             crate::devices::files::types::SearchDeviceFilesReq,
@@ -821,6 +830,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::MetadataStatsRsp,
             crate::rer_importer::types::TagStatsRsp,
             crate::rer_importer::types::UnitStatsRsp,
+            crate::rer_importer::types::UnitStatsOption,
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
             crate::api_senders::ApiSender,
@@ -1412,6 +1422,14 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::devices::files::preview::types::DeviceFileGeodataPreviewRsp,
             crate::devices::files::preview::types::DeviceFileGeodataPreviewStatus,
             crate::devices::files::preview::types::RetryDeviceFileGeodataPreviewReq,
+            crate::devices::files::markers::SetDeviceFileFavoriteReq,
+            crate::devices::files::markers::MarkDeviceFileViewedReq,
+            crate::devices::files::markers::DeviceFileMarkers,
+            crate::devices::files::types::DeviceFileSortBy,
+            crate::devices::files::types::DeviceFileSortDirection,
+            crate::devices::files::listing_filters::DeviceFileFilters,
+            crate::devices::files::listing_filters::DeviceFileType,
+            crate::devices::files::listing_filters::DeviceFileFilterOptions,
             crate::devices::files::types::BrowseDeviceFilesReq,
             crate::devices::files::types::BrowseDeviceFilesRsp,
             crate::devices::files::types::SearchDeviceFilesReq,
@@ -1828,6 +1846,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::MetadataStatsRsp,
             crate::rer_importer::types::TagStatsRsp,
             crate::rer_importer::types::UnitStatsRsp,
+            crate::rer_importer::types::UnitStatsOption,
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
             crate::api_senders::ApiSender,
@@ -2325,6 +2344,14 @@ fn patch_backward_compatible_decoders(
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMessageCardText" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
         .replace(
+            r#"Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
@@ -2335,6 +2362,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             r#"Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "unit_display" (Json.Decode.nullable (Json.Decode.string))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "unit_display" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]"#,
         )
         .replacen(
             r#"Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string))"#,

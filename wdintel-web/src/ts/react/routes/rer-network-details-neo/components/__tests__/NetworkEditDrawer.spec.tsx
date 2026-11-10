@@ -135,6 +135,7 @@ type Rendered = {
   root: Root;
   setForm: (next: NetworkUpsertForm | null) => void;
   saveSpy: ReturnType<typeof vi.fn>;
+  renderSpy: ReturnType<typeof vi.fn>;
 };
 
 const rendered: Rendered[] = [];
@@ -173,9 +174,11 @@ function renderDrawer(
   document.body.appendChild(container);
   const root = createRoot(container);
   const saveSpy = vi.fn();
+  const renderSpy = vi.fn();
   let setForm = (_next: NetworkUpsertForm | null) => {};
 
   function Harness() {
+    renderSpy();
     const [currentForm, nextSetForm] = useState<NetworkUpsertForm | null>(form);
     setForm = nextSetForm;
     return (
@@ -198,7 +201,6 @@ function renderDrawer(
         postOptions={[{ id: 1, label: '_stihl_XN Пост' } as NetworkEditLookupOption]}
         encryptionOptions={[{ id: 11, label: 'FM' } as NetworkEditLookupOption]}
         onClose={() => {}}
-        onChange={nextSetForm}
         onSave={saveSpy}
         frequencyOptional={options.frequencyOptional}
       />
@@ -213,7 +215,7 @@ function renderDrawer(
     );
   });
 
-  return { container, root, setForm, saveSpy };
+  return { container, root, setForm, saveSpy, renderSpy };
 }
 
 afterEach(() => {
@@ -225,6 +227,27 @@ afterEach(() => {
   }
 });
 describe('NetworkEditDrawer', () => {
+  it('#4108 keeps typing inside the drawer and submits the latest draft without rendering its parent', () => {
+    const view = renderDrawer(buildForm({ id: 42, location: 'район', aorIds: [1] }), 'edit');
+    rendered.push(view);
+    const parentRenders = view.renderSpy.mock.calls.length;
+    const name = view.container.querySelector('input[aria-label="Назва"]') as HTMLInputElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        name,
+        'Нова назва',
+      );
+      name.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(name.value).toBe('Нова назва');
+    expect(view.renderSpy).toHaveBeenCalledTimes(parentRenders);
+    const save = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    );
+    act(() => save?.click());
+    expect(view.saveSpy).toHaveBeenCalledWith(expect.objectContaining({ name: 'Нова назва' }));
+  });
+
   it('#3568 hides radio fields and permits creation without a frequency', () => {
     const view = renderDrawer(
       buildForm({ freq: '', radioStation: 'Existing station', location: 'Київ', aorIds: [1] }),

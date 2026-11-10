@@ -263,20 +263,20 @@ export function useRerCallsignsNeoPageActions({
     setEditForm(null);
   }, [editSubmitting, setEditForm, setEditValidationError]);
 
-  const onSaveEdit = useCallback(async () => {
+  const onSaveEdit = useCallback(async (draft = editForm) => {
     setEditValidationError(null);
     setStatus(null);
 
-    const validation = validateEditForm(editForm, radioFeaturesAllowed);
+    const validation = validateEditForm(draft, radioFeaturesAllowed);
     if (!validation.valid) {
       setEditValidationError(validation.error);
       return;
     }
-    if (!editForm) return;
+    if (!draft) return;
 
     setEditSubmitting(true);
     try {
-      const updated = normalizeCallsign(await updateCallsign(makeUpdatePayload(editForm)));
+      const updated = normalizeCallsign(await updateCallsign(makeUpdatePayload(draft)));
       setCallsigns((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       setEditForm(null);
       setStatus({ kind: 'success', text: 'Позивний оновлено' });

@@ -5,6 +5,7 @@ export const designTokens = {
     light: {
       background: '#eff0f1',
       surface: '#f8f9fb',
+      headerSurface: '#f8f9fb',
       surfaceRaised: '#ffffff',
       dialogSurface: '#ffffff',
       surfaceInactive: '#eff0f1',
@@ -20,6 +21,7 @@ export const designTokens = {
       primaryActive: '#235674',
       onPrimary: '#ffffff',
       secondary: '#d3871d',
+      folderIcon: '#d5a052',
       success: '#16a34a',
       ownRecords: '#66bb6a',
       onOwnRecords: '#000000',
@@ -36,6 +38,7 @@ export const designTokens = {
     dark: {
       background: '#1f1f1f',
       surface: '#2c2c2e',
+      headerSurface: '#262626',
       surfaceRaised: '#000000',
       dialogSurface: '#2c2c2e',
       surfaceInactive: '#2c2c2e',
@@ -51,6 +54,7 @@ export const designTokens = {
       primaryActive: '#76a4c5',
       onPrimary: '#000000',
       secondary: '#d3871d',
+      folderIcon: '#d5a052',
       success: '#16a34a',
       ownRecords: '#66bb6a',
       onOwnRecords: '#000000',

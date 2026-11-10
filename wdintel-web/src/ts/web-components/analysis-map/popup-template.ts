@@ -96,7 +96,7 @@ function messageLinkTemplate(messageUuid: string | null | undefined): string {
 function liTemplate(message_: Message, selectedUnits: string[], battleLineDistance?: number) {
   const rawUnit = message_[1].unit;
   const unitValue = normalizeUnknownUnitFilterValue(rawUnit);
-  const unitDisplay = normalizeUnknownUnitDisplayValue(rawUnit);
+  const unitDisplay = normalizeUnknownUnitDisplayValue(message_[1].unit_display ?? rawUnit);
   const escapedDisplay = escapeHtml(unitDisplay);
   const escapedAttr = escapeHtml(unitValue);
   const isUnitSelected = selectedUnits.some(

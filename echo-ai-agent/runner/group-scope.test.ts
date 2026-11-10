@@ -240,7 +240,7 @@ function modelTurn(toolCall?: { name: string; args: unknown }): Response {
   );
 }
 
-async function runWithGroupArgument(t: any, selectedGroups: string[]) {
+async function runWithGroupArgument(t: any, selectedGroups: string[], extraArgs: Record<string, unknown> = {}) {
   const inbox: any[] = [];
   const lookups: any[] = [];
   const events: any[] = [];
@@ -281,7 +281,7 @@ async function runWithGroupArgument(t: any, selectedGroups: string[]) {
       modelTurns++ === 0
         ? {
             name: "echo_inbox_messages",
-            args: { period: { kind: "relative_hours", hours: 24 }, selectedGroups },
+            args: { period: { kind: "relative_hours", hours: 24 }, selectedGroups, ...extraArgs },
           }
         : undefined,
     );
@@ -341,10 +341,20 @@ test("#4053 incident: a group name reaches Echo as its key and the label names i
 });
 
 test("#4053 incident: an unknown group never reaches the search and the model is told why", async (t) => {
-  const { inbox, toolResults } = await runWithGroupArgument(t, ["Горобець"]);
+  const { events, inbox, toolResults } = await runWithGroupArgument(t, ["Горобець"]);
   assert.deepEqual(inbox, []);
   assert.ok(
     toolResults.some((text) => text.includes('Group "Горобець" is not among')),
     JSON.stringify(toolResults),
   );
+  const diagnostics = events.filter((event) => event.type === "tool_diagnostic");
+  assert.deepEqual(diagnostics.map((event) => event.fields), ["selectedGroups:unknown"]);
+  assert.doesNotMatch(JSON.stringify(diagnostics), /Горобець/);
+});
+
+test("#4083 incident: an empty search reads the group unfiltered instead of failing the step", async (t) => {
+  const { events, inbox } = await runWithGroupArgument(t, ["DEVOPS"], { search: "" });
+  assert.deepEqual(inbox.map((body) => [body.selected_groups, "search" in body]), [[["group.devops"], false]]);
+  assert.deepEqual(events.filter((event) => event.type === "tool_diagnostic"), []);
+  assert.ok(events.some((event) => event.type === "tool_end" && event.is_error === false), JSON.stringify(events));
 });

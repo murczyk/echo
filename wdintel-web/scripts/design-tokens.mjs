@@ -13,6 +13,7 @@ const requiredGroups = ['color', 'spacing', 'size', 'radius', 'typography', 'bre
 const requiredColors = [
   'background',
   'surface',
+  'headerSurface',
   'surfaceRaised',
   'dialogSurface',
   'surfaceInactive',
@@ -28,6 +29,7 @@ const requiredColors = [
   'primaryActive',
   'onPrimary',
   'secondary',
+  'folderIcon',
   'success',
   'ownRecords',
   'onOwnRecords',

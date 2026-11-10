@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useEffect, useRef, useState } from 'react';
 import type { MessageCardPreviewNavigation } from './message-card-preview.types';
 
 const SWIPE_MIN_DISTANCE_PX = 32;
@@ -16,6 +16,9 @@ type TouchStart = {
   y: number;
   time: number;
   axis: SwipeAxis;
+  canDismissUp: boolean;
+  canDismissDown: boolean;
+  canNavigate: boolean;
 };
 
 type SwipeMotion = {
@@ -26,6 +29,60 @@ type SwipeMotion = {
 };
 
 const idleMotion: SwipeMotion = { x: 0, y: 0, opacity: 1, animated: false };
+
+export const AttachmentPreviewSwipeFrameContext = createContext<
+  ((frameDocument: Document | null) => void) | null
+>(null);
+
+function getVerticalScrollEdges(target: HTMLElement | null, stage: HTMLElement) {
+  let hasScroll = false;
+  let atTop = true;
+  let atBottom = true;
+  for (let element = target; element;) {
+    const ownerDocument = element.ownerDocument;
+    if (
+      element.scrollHeight > element.clientHeight + 1 &&
+      (element === ownerDocument.scrollingElement ||
+        /^(auto|scroll|overlay)$/.test(
+          ownerDocument.defaultView?.getComputedStyle(element).overflowY ?? '',
+        ))
+    ) {
+      hasScroll = true;
+      atTop &&= element.scrollTop <= 1;
+      atBottom &&= element.scrollTop + element.clientHeight >= element.scrollHeight - 1;
+    }
+    if (element === stage) break;
+    element =
+      element.parentElement ?? (ownerDocument.defaultView?.frameElement as HTMLElement | null);
+  }
+  return { hasScroll, atTop, atBottom };
+}
+
+function getTouchPoint(touch: Touch, target: EventTarget | null, stage: HTMLElement) {
+  let x = touch.clientX;
+  let y = touch.clientY;
+  let ownerDocument = (target as Node | null)?.ownerDocument;
+  while (ownerDocument && ownerDocument !== stage.ownerDocument) {
+    const frame = ownerDocument.defaultView?.frameElement;
+    if (!frame) break;
+    const bounds = frame.getBoundingClientRect();
+    x += bounds.left;
+    y += bounds.top;
+    ownerDocument = frame.ownerDocument;
+  }
+  return { x, y };
+}
+
+function hasPreviewSelection(target: EventTarget | null, stage: HTMLElement): boolean {
+  const selection = (target as Node | null)?.ownerDocument?.getSelection();
+  if (!selection || selection.isCollapsed) return false;
+  const frame = selection.anchorNode?.ownerDocument?.defaultView?.frameElement;
+  return (
+    stage.contains(selection.anchorNode) ||
+    stage.contains(selection.focusNode) ||
+    (frame != null && stage.contains(frame))
+  );
+}
 
 function getSwipeAxis(
   deltaX: number,
@@ -53,11 +110,15 @@ export function useAttachmentPreviewSwipe({
   navigation,
   enabled = true,
   onDismiss,
+  dismissFromScrollEdges = false,
+  frameDocument,
 }: {
   stageEl: HTMLElement | null;
   navigation?: MessageCardPreviewNavigation;
   enabled?: boolean;
   onDismiss?: () => void;
+  dismissFromScrollEdges?: boolean;
+  frameDocument?: Document | null;
 }) {
   const [motion, setMotion] = useState<SwipeMotion>(idleMotion);
   const touchStartRef = useRef<TouchStart | null>(null);
@@ -66,10 +127,12 @@ export function useAttachmentPreviewSwipe({
   const enabledRef = useRef(enabled);
   const navigationRef = useRef(navigation);
   const dismissRef = useRef(onDismiss);
+  const scrollEdgesRef = useRef(dismissFromScrollEdges);
   const animationTimerRef = useRef<number | null>(null);
   enabledRef.current = enabled;
   navigationRef.current = navigation;
   dismissRef.current = onDismiss;
+  scrollEdgesRef.current = dismissFromScrollEdges;
 
   const clearAnimation = () => {
     if (animationTimerRef.current !== null) window.clearTimeout(animationTimerRef.current);
@@ -104,8 +167,9 @@ export function useAttachmentPreviewSwipe({
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
-          'button, a, input, [role="slider"], .MuiSlider-root, [data-audio-player-host], [data-attachment-preview-controls], [data-attachment-preview-scroll]',
-        )
+          'button, a, input, textarea, select, [contenteditable="true"], [role="slider"], .MuiSlider-root, [data-audio-player-host], [data-attachment-preview-controls], [data-attachment-preview-scroll]',
+        ) ||
+        hasPreviewSelection(event.target, stageEl)
       ) {
         touchStartRef.current = null;
         return;
@@ -113,11 +177,16 @@ export function useAttachmentPreviewSwipe({
 
       clearAnimation();
       setMotion(idleMotion);
+      const edges = getVerticalScrollEdges(target, stageEl);
+      const point = getTouchPoint(touch, event.target, stageEl);
       touchStartRef.current = {
-        x: touch.clientX,
-        y: touch.clientY,
+        x: point.x,
+        y: point.y,
         time: Date.now(),
         axis: null,
+        canDismissUp: !edges.hasScroll || (scrollEdgesRef.current && edges.atBottom),
+        canDismissDown: !edges.hasScroll || (scrollEdgesRef.current && edges.atTop),
+        canNavigate: target?.ownerDocument === stageEl.ownerDocument,
       };
     };
 
@@ -125,20 +194,34 @@ export function useAttachmentPreviewSwipe({
       const touchStart = touchStartRef.current;
       const touch = event.touches[0];
       if (!touchStart || !touch || pinchRef.current || !enabledRef.current) return;
+      if (hasPreviewSelection(event.target, stageEl)) {
+        handleTouchCancel();
+        return;
+      }
 
-      const deltaX = touch.clientX - touchStart.x;
-      const deltaY = touch.clientY - touchStart.y;
+      const point = getTouchPoint(touch, event.target, stageEl);
+      const deltaX = point.x - touchStart.x;
+      const deltaY = point.y - touchStart.y;
       const currentNavigation = navigationRef.current;
       touchStart.axis ??= getSwipeAxis(
         deltaX,
         deltaY,
-        (currentNavigation?.count ?? 0) > 1,
-        dismissRef.current != null,
+        touchStart.canNavigate && (currentNavigation?.count ?? 0) > 1,
+        (deltaY < 0 ? touchStart.canDismissUp : touchStart.canDismissDown) &&
+          dismissRef.current != null,
       );
       if (touchStart.axis === null) return;
+      if (!event.cancelable) {
+        handleTouchCancel();
+        return;
+      }
 
       event.preventDefault();
       if (touchStart.axis === 'horizontal') return;
+      if (!(deltaY < 0 ? touchStart.canDismissUp : touchStart.canDismissDown)) {
+        setMotion(idleMotion);
+        return;
+      }
 
       const height = Math.max(stageEl.clientHeight, window.innerHeight, 1);
       setMotion({
@@ -181,8 +264,9 @@ export function useAttachmentPreviewSwipe({
       const touch = event.changedTouches[0];
       if (!touch) return;
 
-      const deltaX = touch.clientX - touchStart.x;
-      const deltaY = touch.clientY - touchStart.y;
+      const point = getTouchPoint(touch, event.target, stageEl);
+      const deltaX = point.x - touchStart.x;
+      const deltaY = point.y - touchStart.y;
       const deltaTime = Date.now() - touchStart.time;
       const horizontalDistance = Math.abs(deltaX);
       const horizontalVelocity = horizontalDistance / Math.max(deltaTime, 1);
@@ -192,8 +276,9 @@ export function useAttachmentPreviewSwipe({
         getSwipeAxis(
           deltaX,
           deltaY,
-          (currentNavigation?.count ?? 0) > 1,
-          dismissRef.current != null,
+          touchStart.canNavigate && (currentNavigation?.count ?? 0) > 1,
+          (deltaY < 0 ? touchStart.canDismissUp : touchStart.canDismissDown) &&
+            dismissRef.current != null,
         );
 
       if (
@@ -205,7 +290,12 @@ export function useAttachmentPreviewSwipe({
         commitNavigation(deltaX < 0 ? 'next' : 'previous');
         return;
       }
-      if (axis === 'vertical' && Math.abs(deltaY) >= DISMISS_MIN_DISTANCE_PX) {
+      if (
+        axis === 'vertical' &&
+        (deltaY < 0 ? touchStart.canDismissUp : touchStart.canDismissDown) &&
+        !hasPreviewSelection(event.target, stageEl) &&
+        Math.abs(deltaY) >= DISMISS_MIN_DISTANCE_PX
+      ) {
         animateDismiss(deltaY);
         return;
       }
@@ -234,6 +324,10 @@ export function useAttachmentPreviewSwipe({
     stageEl.addEventListener('touchcancel', handleTouchCancel, { passive: true });
     stageEl.addEventListener('attachment-preview-pinch', handlePinch);
     stageEl.addEventListener('attachment-preview-gesture-end', handleGestureEnd);
+    frameDocument?.addEventListener('touchstart', handleTouchStart, { passive: true });
+    frameDocument?.addEventListener('touchmove', handleTouchMove, { passive: false });
+    frameDocument?.addEventListener('touchend', handleTouchEnd, { passive: true });
+    frameDocument?.addEventListener('touchcancel', handleTouchCancel, { passive: true });
 
     return () => {
       touchStartRef.current = null;
@@ -245,8 +339,12 @@ export function useAttachmentPreviewSwipe({
       stageEl.removeEventListener('touchcancel', handleTouchCancel);
       stageEl.removeEventListener('attachment-preview-pinch', handlePinch);
       stageEl.removeEventListener('attachment-preview-gesture-end', handleGestureEnd);
+      frameDocument?.removeEventListener('touchstart', handleTouchStart);
+      frameDocument?.removeEventListener('touchmove', handleTouchMove);
+      frameDocument?.removeEventListener('touchend', handleTouchEnd);
+      frameDocument?.removeEventListener('touchcancel', handleTouchCancel);
     };
-  }, [stageEl]);
+  }, [stageEl, frameDocument]);
 
   useEffect(() => {
     if (enabled) return;

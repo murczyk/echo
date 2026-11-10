@@ -152,6 +152,7 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
     pendingActivationRef.current = { region: endRegion };
   };
   const handleClick: MouseEventHandler<HTMLDivElement> = (event) => {
+    if (event.currentTarget.closest('[data-attachment-preview-mobile-chrome="true"]')) return;
     const pendingActivation = pendingActivationRef.current;
     pendingActivationRef.current = null;
     if (!activationEnabledRef.current || event.detail !== 1 || pendingActivation === null) return;

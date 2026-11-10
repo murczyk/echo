@@ -77,6 +77,7 @@ vi.mock('@mui/material/styles', () => ({
 }));
 
 import { MessageCardAttachmentPreviewActions } from '../MessageCardAttachmentPreviewActions.tsx';
+import { MessageCardAttachmentPreviewHeader } from '../MessageCardAttachmentPreviewHeader.tsx';
 import { MessageCardDisabledControlCursorWrapper } from '../../MessageCardDisabledControlCursorWrapper.tsx';
 import { MessageMediaDownloadLink } from '../../MessageCardMedia.tsx';
 
@@ -117,6 +118,64 @@ function SharedMediaDownloadHarness() {
 describe('MessageCardAttachmentPreviewActions', () => {
   afterEach(() => {
     document.body.innerHTML = '';
+  });
+
+  it('#3930 supports an embedded title without unused navigation or close controls', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MessageCardAttachmentPreviewHeader
+          fileName="report.pdf"
+          titleId="device-file-content-title"
+          embedded
+        />,
+      );
+    });
+    expect(container.querySelector('#device-file-content-title')?.textContent).toBe('report.pdf');
+    expect(container.querySelector('[data-attachment-preview-counter]')).toBeNull();
+    expect(container.querySelector('[aria-label="Закрити"]')).toBeNull();
+    root.unmount();
+  });
+
+  it('#3930 disables only the unavailable sibling and uses the device close action', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onNext = vi.fn();
+    const onClose = vi.fn();
+    await act(async () => {
+      root.render(
+        <MessageCardAttachmentPreviewHeader
+          embedded
+          navigation={{
+            index: 0,
+            count: 2,
+            previousDisabled: true,
+            onPrevious: vi.fn(),
+            onNext,
+          }}
+          onClose={onClose}
+          closeLabel="До папки"
+        />,
+      );
+    });
+    const previous = container.querySelector<HTMLButtonElement>(
+      '[data-attachment-preview-nav="prev"]',
+    )!;
+    const next = container.querySelector<HTMLButtonElement>(
+      '[data-attachment-preview-nav="next"]',
+    )!;
+    expect(previous.disabled).toBe(true);
+    expect(next.disabled).toBe(false);
+    await act(async () => {
+      next.click();
+      container.querySelector<HTMLButtonElement>('[aria-label="До папки"]')!.click();
+    });
+    expect(onNext).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+    root.unmount();
   });
 
   it('renders one carousel for any attachment type', async () => {

@@ -7,6 +7,7 @@ export type SystemSettingsTab =
   | 'pelengs'
   | 'api'
   | 'notifications'
+  | 'monitoring'
   | 'cache'
   | 'integrations';
 
@@ -22,6 +23,7 @@ const SYSTEM_SETTINGS_TABS = new Set<SystemSettingsTab>([
   'pelengs',
   'api',
   'notifications',
+  'monitoring',
   'cache',
   'integrations',
 ]);

@@ -98,6 +98,7 @@ export type UseManageMessageDrawerProps = {
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   interactionActive?: boolean;
   keepOpenAfterCreate?: boolean;
+  quickSuggestionsEnabled?: boolean;
   intentKey?: string;
   initialGroupMasterKey?: string | null;
 };
@@ -120,6 +121,7 @@ export function useManageMessageDrawer({
   onSubmitEdit,
   interactionActive = true,
   keepOpenAfterCreate = false,
+  quickSuggestionsEnabled = true,
   intentKey,
   initialGroupMasterKey = null,
 }: UseManageMessageDrawerProps) {
@@ -775,6 +777,16 @@ export function useManageMessageDrawer({
     uppyFiles,
   ]);
 
+  // Group requirements cannot apply here: the minimal panel has no group field.
+  const reportDetailsMissing =
+    isReportCreateMode &&
+    reportCopyLoaded &&
+    !isMessageUnitSelectionValid(
+      formValues.unit,
+      formValues.unitSelection,
+      formValues.unitNetworkSelection,
+    );
+
   useEffect(() => {
     if (!formReady) {
       setGroupsLoaded(false);
@@ -979,7 +991,13 @@ export function useManageMessageDrawer({
   ]);
 
   useEffect(() => {
-    if (!formReady || !isReportCreateMode || !reportCopyLoaded || !reportSource) {
+    if (
+      !formReady ||
+      !isReportCreateMode ||
+      !reportCopyLoaded ||
+      !reportSource ||
+      !quickSuggestionsEnabled
+    ) {
       setQuickSuggestion({ status: 'idle' });
       return;
     }
@@ -1016,7 +1034,14 @@ export function useManageMessageDrawer({
       active = false;
       controller.abort();
     };
-  }, [isReportCreateMode, formReady, quickSuggestionAttempt, reportCopyLoaded, reportSource?.id]);
+  }, [
+    isReportCreateMode,
+    formReady,
+    quickSuggestionAttempt,
+    quickSuggestionsEnabled,
+    reportCopyLoaded,
+    reportSource?.id,
+  ]);
 
   const applyQuickSuggestion = () => {
     if (quickSuggestion.status !== 'available') return;
@@ -1121,6 +1146,7 @@ export function useManageMessageDrawer({
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
+    setAttachmentErrorMsg(null);
     setReferenceDataError(null);
     setReportCopyError(null);
     pendingIntentChangeRef.current = null;
@@ -1203,13 +1229,14 @@ export function useManageMessageDrawer({
     (change: ManageMessageIntentChange) => {
       if (saving) return;
       if (!hasUnsavedChanges) {
+        setAttachmentErrorMsg(null);
         change.commit();
         return;
       }
       pendingIntentChangeRef.current = change;
       setDiscardConfirmationOpen(true);
     },
-    [hasUnsavedChanges, saving],
+    [hasUnsavedChanges, saving, setAttachmentErrorMsg],
   );
 
   const cancelDiscard = () => {
@@ -1225,6 +1252,7 @@ export function useManageMessageDrawer({
       uppy.cancelAll();
       reset();
       setErrorMsg(null);
+      setAttachmentErrorMsg(null);
       pendingIntentChange.commit();
       return;
     }
@@ -1330,6 +1358,7 @@ export function useManageMessageDrawer({
     setAttachmentErrorMsg,
     methods,
     canSubmit,
+    reportDetailsMissing,
     handleParse,
     acceptParsedField: handleAcceptParsedField,
     autoParseEnabled,

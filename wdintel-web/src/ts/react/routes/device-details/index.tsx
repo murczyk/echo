@@ -1,5 +1,7 @@
+import { DeviceFileExplorer } from '../device-files/components/DeviceFileExplorer';
 import { useDeviceFileLink } from '../device-files/use-device-file-link';
 import SettingsIcon from '@mui/icons-material/Settings';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { Box, Skeleton, Tooltip } from '@mui/material';
 import { useEffect, useState, useRef, type CSSProperties } from 'react';
 
@@ -20,12 +22,11 @@ import { DeviceAudioForwardingWarning } from './components/DeviceAudioForwarding
 import { DeviceDetailsNavigation } from './components/DeviceDetailsNavigation';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
 import { DeviceDetailsContent } from './components/DeviceDetailsContent';
-import { DeviceDetailsSection } from './page-route';
+import { DeviceDetailsSection, readDeviceTagFilter } from './page-route';
 import { useDevicePageNavigation } from './use-device-page-navigation';
 import { useDeviceMobileLayout } from '../devices/use-device-mobile-layout';
 import { DeviceMobileHeader } from './components/DeviceMobileHeader';
 import { DeviceMobileSheet } from '../devices/components/DeviceMobileSheet';
-import { DeviceMobileFilesPanel } from '../device-files/components/DeviceMobileFilesPanel';
 import { useDeviceDetailsPage } from './use-device-details-page';
 import { useDeviceAudioSettings } from './use-device-audio-settings';
 import { useDeviceAudio } from './use-device-audio';
@@ -40,6 +41,7 @@ import { DeviceSyncSessionsSidebar } from './components/DeviceSyncSessionsSideba
 import { DeviceSyncSessionFilter } from './components/DeviceSyncSessionFilter';
 import { useDeviceFileErrorNotification } from '../device-files/use-device-file-error-notification';
 import { useDeviceFilesPanelResize } from './use-device-files-panel-resize';
+import { DEVICE_OVERVIEW_SIDEBAR_WIDTH, DEVICE_SIDEBAR_WIDTH } from './layout';
 
 export function DeviceDetailsPage({
   deviceId,
@@ -54,8 +56,10 @@ export function DeviceDetailsPage({
 }) {
   const page = useDeviceDetailsPage({ deviceId, authUserRoles });
   const isMobileLayout = useDeviceMobileLayout();
+  const [mobileFilesOpen, setMobileFilesOpen] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
+  const [fileFiltersOpen, setFileFiltersOpen] = useState(false);
   const linkedFile = useDeviceFileLink();
   const isOverview = section === DeviceDetailsSection.Overview;
   const isFiles = section === DeviceDetailsSection.Files;
@@ -65,7 +69,11 @@ export function DeviceDetailsPage({
   const rightPanelVisible = isFiles && rightPanelOpen;
   const filesPanel = useDeviceFilesPanelResize(rightPanelVisible, !isMobileLayout);
   const device = page.device;
-  const audio = useDeviceAudio(deviceId, page.permissions.canRead && device?.id === deviceId);
+  const audio = useDeviceAudio(
+    deviceId,
+    page.permissions.canRead && device?.id === deviceId,
+    section === DeviceDetailsSection.Audio,
+  );
   const audioSettings = useDeviceAudioSettings(
     deviceId,
     section === DeviceDetailsSection.Audio && page.permissions.canRead && device?.id === deviceId,
@@ -119,6 +127,11 @@ export function DeviceDetailsPage({
   const tagsState = useDeviceAnalyticsTags({
     deviceId,
     enabled: page.permissions.canRead && device !== null,
+    active:
+      section !== DeviceDetailsSection.Journal &&
+      (!isFiles ||
+        fileFiltersOpen ||
+        readDeviceTagFilter(window.location.search).tagIds.length > 0),
   });
   const { tagFilter, changeTagFilter, backHref, backLabel } = useDevicePageNavigation({
     deviceId,
@@ -132,6 +145,9 @@ export function DeviceDetailsPage({
     enabled: section === DeviceDetailsSection.Files && sessions.ready,
     linkedFile,
     tagFilter,
+    filtersOpen: fileFiltersOpen,
+    setFiltersOpen: setFileFiltersOpen,
+    treeActive: isMobileLayout ? mobileFilesOpen : leftPanelOpen,
   });
   const fileCitation =
     linkedFile?.revision && files.revisionPinned
@@ -141,7 +157,6 @@ export function DeviceDetailsPage({
     deviceId,
     syncId,
     enabled: section === DeviceDetailsSection.Journal && sessions.ready,
-    tagFilter,
   });
   const refreshRef = useRef(() => {});
   refreshRef.current = () => {
@@ -154,6 +169,8 @@ export function DeviceDetailsPage({
   }, [sessions.refreshVersion]);
   const fileError = [
     files.linkError,
+    files.markerError,
+    files.directory.error?.message,
     files.rootsError?.message,
     files.searchError?.message,
     files.searchLoadMoreError?.message,
@@ -193,12 +210,21 @@ export function DeviceDetailsPage({
 
   const showLeftPanelToggle =
     isOverview || section === DeviceDetailsSection.Files || section === DeviceDetailsSection.Audio;
-  const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
-  const mobileFileOpen =
-    isMobileLayout && section === DeviceDetailsSection.Files && files.selectedFile !== null;
+  const showEditAction =
+    !isFiles && page.permissions.canEdit && device !== null && !device.archived;
 
   return (
     <Box
+      className={isFiles ? 'pr-6' : undefined}
+      style={
+        isFiles
+          ? ({
+              '--device-files-scroll-gutter': rightPanelVisible
+                ? 'var(--echo-spacing-lg)'
+                : '1.5rem',
+            } as CSSProperties)
+          : undefined
+      }
       sx={{
         minHeight: 0,
         height: '100%',
@@ -209,30 +235,33 @@ export function DeviceDetailsPage({
       }}
     >
       {isMobileLayout ? (
-        !mobileFileOpen && (
-          <DeviceMobileHeader
-            key={section}
-            device={device}
-            deviceId={deviceId}
-            section={section}
-            backHref={backHref}
-            backLabel={backLabel}
-            canEdit={showEditAction}
-            editSubmitting={page.editSubmitting}
-            onEdit={page.openEditDrawer}
-            onInfo={() => setMobileInfoOpen(true)}
-            onSessions={isFiles ? () => setMobileSessionsOpen(true) : undefined}
-            syncId={syncId}
-            session={sessions.session}
-          />
-        )
+        <DeviceMobileHeader
+          key={section}
+          files={isFiles ? files : undefined}
+          filesOpen={mobileFilesOpen}
+          onToggleFiles={() => setMobileFilesOpen((current) => !current)}
+          device={device}
+          deviceId={deviceId}
+          section={section}
+          backHref={backHref}
+          backLabel={backLabel}
+          canEdit={showEditAction}
+          editSubmitting={page.editSubmitting}
+          onEdit={page.openEditDrawer}
+          onInfo={() => setMobileInfoOpen(true)}
+          onSessions={isFiles ? () => setMobileSessionsOpen(true) : undefined}
+          syncId={syncId}
+          session={sessions.session}
+        />
       ) : (
         <PageHeader
           titleComponent="div"
-          titleClassName="!font-normal"
+          className="device-page-header flex-nowrap! [&>div:first-child]:w-auto! [&>div:first-child]:min-w-0 [&>div:first-child]:flex-1! [&>div:last-child]:pl-echo-sm"
+          titleClassName="min-w-0! flex-1!"
           title={
             <DeviceHeaderTitle
               key={section}
+              files={isFiles ? files : undefined}
               deviceId={deviceId}
               section={section}
               deviceName={device === null ? null : (device.name ?? 'Без назви')}
@@ -253,14 +282,16 @@ export function DeviceDetailsPage({
           }
           titleLeadingGap={2}
           actions={
-            <div className="flex flex-wrap items-center justify-end gap-echo-sm">
+            <div className="flex flex-nowrap items-center justify-end gap-echo-sm">
               {syncId !== null ? (
                 <DeviceSyncSessionFilter
                   session={sessions.session}
                   onReset={() => selectDeviceSyncSession(null)}
                 />
               ) : null}
-              <DeviceAudioForwardingWarning configured={device?.audioForwardingConfigured} />
+              {!isFiles ? (
+                <DeviceAudioForwardingWarning configured={device?.audioForwardingConfigured} />
+              ) : null}
               {showEditAction ? (
                 <Tooltip title="Редагувати">
                   <span>
@@ -297,14 +328,14 @@ export function DeviceDetailsPage({
 
       <div
         ref={filesPanel.containerRef}
-        className={
+        className={`${
           isMobileLayout
-            ? 'relative flex min-h-0 flex-1 flex-col gap-echo-md overflow-hidden'
-            : 'relative flex-1 min-h-0 grid grid-cols-1 auto-rows-auto gap-echo-lg overflow-auto echo-lg:grid-cols-[var(--device-columns)] echo-lg:grid-rows-[minmax(0,1fr)] echo-lg:overflow-hidden'
-        }
+            ? 'relative flex min-h-0 flex-1 flex-col gap-echo-md'
+            : 'relative flex-1 min-h-0 grid grid-cols-1 auto-rows-auto gap-echo-lg echo-lg:grid-cols-[var(--device-columns)] echo-lg:grid-rows-[minmax(0,1fr)]'
+        } ${isFiles ? 'overflow-visible' : isMobileLayout ? 'overflow-hidden' : 'overflow-auto echo-lg:overflow-hidden'}`}
         style={
           {
-            '--device-columns': `${isOverview && leftPanelVisible ? '280px ' : ''}${leftPanelVisible && section === DeviceDetailsSection.Files ? `${filesPanel.width}px ` : leftPanelVisible && section === DeviceDetailsSection.Audio ? '280px ' : ''}minmax(0, 1fr)${rightPanelVisible ? ' 344px' : ''}`,
+            '--device-columns': `${leftPanelVisible && showLeftPanelToggle ? `${isFiles ? filesPanel.width : isOverview ? DEVICE_OVERVIEW_SIDEBAR_WIDTH : DEVICE_SIDEBAR_WIDTH}px ` : ''}minmax(0, 1fr)${rightPanelVisible ? ' 344px' : ''}`,
           } as CSSProperties
         }
       >
@@ -344,21 +375,26 @@ export function DeviceDetailsPage({
                   aria-label="Ширина панелі файлів"
                   aria-orientation="vertical"
                   aria-controls="device-files-sidebar-panel"
+                  title="Перетягніть, щоб змінити ширину панелі"
                   {...filesPanel.separatorProps}
-                  className="group absolute inset-y-0 left-full z-10 flex w-echo-lg touch-none cursor-col-resize select-none justify-center outline-none"
+                  className="group absolute inset-y-0 left-full z-10 -ml-px flex w-echo-lg touch-none cursor-col-resize select-none justify-start text-echo-text/40 outline-none transition-colors hover:bg-echo-primary/10 hover:text-echo-primary focus-visible:bg-echo-primary/10 focus-visible:text-echo-primary active:bg-echo-primary/15 active:text-echo-primary"
                 >
-                  <span className="w-px bg-echo-primary opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100" />
+                  <span className="pointer-events-none w-px bg-echo-primary/0 group-hover:bg-echo-primary group-focus-visible:bg-echo-primary group-active:bg-echo-primary" />
+                  <MoreVertIcon
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-1/2 top-1/2 h-6! w-4! -translate-x-1/2 -translate-y-1/2"
+                  />
                 </div>
               </div>
             ) : !isMobileLayout && section === DeviceDetailsSection.Audio && leftPanelVisible ? (
               <DeviceAudioSidebar audio={guardedAudio} settings={audioSettings} />
             ) : null}
             <div
-              className={
+              className={`${
                 isMobileLayout
                   ? 'flex min-h-0 min-w-0 flex-1 overflow-hidden'
                   : 'min-h-[420px] echo-lg:min-h-0 min-w-0 flex overflow-hidden'
-              }
+              } ${isFiles ? '-mr-[var(--device-files-scroll-gutter)]' : ''}`}
             >
               <DeviceDetailsContent
                 device={device}
@@ -366,17 +402,16 @@ export function DeviceDetailsPage({
                 audioEditor={audioEditor}
                 audioSettings={audioSettings}
                 mobile={isMobileLayout}
-                mobileFiles={
-                  isMobileLayout ? (
-                    <DeviceMobileFilesPanel
-                      session={sessions.session}
-                      deviceId={deviceId}
-                      syncId={syncId}
+                fileExplorer={
+                  isFiles ? (
+                    <DeviceFileExplorer
                       files={files}
-                      citation={fileCitation}
                       tagsState={tagsState}
                       tagFilter={tagFilter}
                       onTagFilterChange={changeTagFilter}
+                      sessionScoped={syncId !== null}
+                      mobile={isMobileLayout}
+                      citation={fileCitation}
                     />
                   ) : undefined
                 }
@@ -394,8 +429,6 @@ export function DeviceDetailsPage({
                 refreshVersion={sessions.refreshVersion}
                 isAdmin={hasRole(authUserRoles, 'Admin')}
                 tagsState={tagsState}
-                tagFilter={tagFilter}
-                onTagFilterChange={changeTagFilter}
               />
             </div>
             {!isMobileLayout && rightPanelVisible ? (
@@ -418,6 +451,32 @@ export function DeviceDetailsPage({
 
       {isMobileLayout ? (
         <>
+          {isFiles ? (
+            <DeviceMobileSheet
+              open={mobileFilesOpen}
+              title="Файли"
+              onClose={() => setMobileFilesOpen(false)}
+            >
+              <DeviceFilesSidebar
+                active={mobileFilesOpen}
+                fullHeight
+                files={{
+                  ...files,
+                  openDirectory: (id, revision) => {
+                    files.openDirectory(id, revision);
+                    setMobileFilesOpen(false);
+                  },
+                  selectFile: (file) => {
+                    files.selectFile(file);
+                    setMobileFilesOpen(false);
+                  },
+                }}
+                tagsState={tagsState}
+                tagFilter={tagFilter}
+                onTagFilterChange={changeTagFilter}
+              />
+            </DeviceMobileSheet>
+          ) : null}
           <DeviceMobileSheet
             open={mobileInfoOpen}
             title="Про пристрій"
@@ -464,7 +523,6 @@ export function DeviceDetailsPage({
         hasChanges={page.editHasChanges}
         nameRequired={page.device?.name !== null}
         onClose={page.closeEditDrawer}
-        onChange={page.setEditForm}
         onSave={(form) => void page.saveEditDevice(form)}
       />
       <ConfirmDangerDialog

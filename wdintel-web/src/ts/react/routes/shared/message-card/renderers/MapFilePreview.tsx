@@ -8,7 +8,11 @@ import type {
 import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
 import { KmzAttachmentPreviewMap } from '../KmzAttachmentPreviewMap';
 import { fetchCachedDocumentResponse } from '../document-preview-utils';
-import { MAX_KMZ_PREVIEW_SOURCE_BYTES, kmzPreviewErrorCopy } from '../kmz/kmz-preview-utils';
+import {
+  MAX_KMZ_PREVIEW_SOURCE_BYTES,
+  kmzPreviewErrorCopy,
+  type NativeMapFormat,
+} from '../kmz/kmz-preview-utils';
 import type { KmzPreview } from '../kmz/kmz-preview-types';
 import { FilePreviewRenderError } from '../attachment-preview/file-preview-source';
 import { HttpRequestError } from '../../../../services/api/client';
@@ -49,7 +53,7 @@ export async function loadMapFilePreview({
   href: string;
   sizeBytes: number | null;
   maxBytes?: number;
-  format: 'kml' | 'kmz';
+  format: NativeMapFormat;
   signal: AbortSignal;
 }) {
   const controller = new AbortController();
@@ -70,7 +74,7 @@ export async function loadMapFilePreview({
       controller.signal,
     );
     return await runWorkerTask<
-      { buffer: ArrayBuffer; format: 'kml' | 'kmz'; maxBytes: number },
+      { buffer: ArrayBuffer; format: NativeMapFormat; maxBytes: number },
       KmzPreview
     >(
       () =>
@@ -94,7 +98,7 @@ export function MapFilePreview({
   lifecycle,
 }: {
   source: FilePreviewSource;
-  format: 'kml' | 'kmz';
+  format: NativeMapFormat;
   lifecycle: FilePreviewLifecycleProps;
 }) {
   const [preview, setPreview] = useState<KmzPreview | null>(null);

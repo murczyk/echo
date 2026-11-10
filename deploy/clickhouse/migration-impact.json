@@ -1,5 +1,39 @@
 {
   "migrations": {
+    "echo:m20261109_141057_group_message_sending": {
+      "changes": [
+        { "table": "public.signal_group", "strategy": "cdc_additive" },
+        { "table": "public.sigint_group_sender_organism", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261108_090102_signoz_metrics_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261107_175132_important_only_my_organism": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261107_175019_duty_selected_groups_flag": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261104_064753_minimal_report_window": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20261105_212108_iggy_group_refresh_queue": { "changes": [{ "table": "public.api_integration_iggy_group_refresh", "strategy": "excluded" }] },
     "echo:m20261104_165252_rer_report_unit_selection": { "changes": [{ "table": "public.sigint_unit_rer_report_metadata", "strategy": "excluded" }] },
     "echo:m20261104_083000_group_message_requirements": {

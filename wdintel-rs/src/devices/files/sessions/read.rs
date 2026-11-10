@@ -16,9 +16,31 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+pub(in crate::devices::files) use tree::search_snapshot;
 pub(in crate::devices) use tree::{browse, search};
 
-pub(super) fn scope_key(
+pub(in crate::devices::files) fn browse_scope_key(
+    kind: &str,
+    request: &BrowseDeviceFilesReq,
+) -> anyhow::Result<String> {
+    let mut request = request.clone();
+    request.include_breadcrumbs = None;
+    request.sort_by = Some(request.sort_by.unwrap_or_default());
+    request.sort_direction = Some(request.sort_direction.unwrap_or_default());
+    if request.filters.is_some() {
+        request.has_content = None;
+        request.favorites_only = None;
+        request.unviewed_only = None;
+        request.archive_failed = None;
+        request.archive_encrypted = None;
+        request.tag_ids = None;
+        request.tag_match = None;
+        request.untagged = None;
+    }
+    scope_key(kind, &request).c(h!())
+}
+
+pub(in crate::devices::files) fn scope_key(
     kind: &str,
     request: &impl Serialize,
 ) -> anyhow::Result<String> {

@@ -1389,6 +1389,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     createMessageFeed: crud.createMessageFeed,
     removeMessageFeed: crud.removeMessageFeed,
     buildReqForFeed,
+    pollIntervalMs,
     unitHierarchy,
     isFeedReady,
     unitHierarchyLoading,

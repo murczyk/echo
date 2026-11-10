@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { Box, CircularProgress, Typography, useTheme } from '@mui/material';
 
+import { AttachmentPreviewMobileSurfaceContext } from '../attachment-preview/use-attachment-preview-mobile-chrome';
+import { AttachmentPreviewSwipeFrameContext } from '../attachment-preview/useAttachmentPreviewSwipe';
 import { buildDocxHtmlDocument } from '../docx/build-docx-html-document';
 import type { DocxPageSize, DocxPreviewResult } from '../docx/docx-preview.types';
 import { sanitizeDocxHtml } from '../docx/sanitize-docx-html';
@@ -15,6 +17,54 @@ export function formatDocxPreviewErrorMessage(error: string | null): string {
     return `Файл DOCX завеликий для попереднього перегляду. Максимум: ${MAX_DOCX_FILE_MB} МБ.`;
   }
   return error ?? 'DOCX недоступний';
+}
+
+function useDocxMobileChrome() {
+  const surface = useContext(AttachmentPreviewMobileSurfaceContext);
+  const registerSwipeFrame = useContext(AttachmentPreviewSwipeFrameContext);
+  const [frame, setFrame] = useState<HTMLIFrameElement | null>(null);
+  const [frameDocument, setFrameDocument] = useState<Document | null>(null);
+
+  useEffect(() => {
+    registerSwipeFrame?.(frameDocument);
+    return () => registerSwipeFrame?.(null);
+  }, [registerSwipeFrame, frameDocument]);
+
+  useEffect(() => {
+    if (!surface || !frame || !frameDocument || frame.contentDocument !== frameDocument) return;
+    frameDocument.documentElement.style.overscrollBehaviorY = 'none';
+    frameDocument.body.style.overscrollBehaviorY = 'none';
+    const updateInsets = () => {
+      const style = getComputedStyle(frame);
+      frameDocument.body.style.paddingTop =
+        style.getPropertyValue('--attachment-preview-content-inset') || '0px';
+      frameDocument.body.style.paddingBottom =
+        style.getPropertyValue('--attachment-preview-content-bottom-inset') || '0px';
+    };
+    updateInsets();
+    const observer = new ResizeObserver(updateInsets);
+    observer.observe(frame);
+    const listeners = {
+      pointerdown: surface.onPointerDownCapture,
+      pointermove: surface.onPointerMoveCapture,
+      pointerup: surface.onPointerUpCapture,
+      pointercancel: surface.onPointerCancelCapture,
+      click: surface.onClick,
+    };
+    for (const [type, listener] of Object.entries(listeners))
+      frameDocument.addEventListener(type, listener as EventListener);
+    return () => {
+      observer.disconnect();
+      for (const [type, listener] of Object.entries(listeners))
+        frameDocument.removeEventListener(type, listener as EventListener);
+    };
+  }, [surface, frame, frameDocument]);
+
+  return {
+    ref: setFrame,
+    sandbox: surface ? 'allow-same-origin' : '',
+    onLoad: () => setFrameDocument(surface ? (frame?.contentDocument ?? null) : null),
+  };
 }
 
 export function DocxDocumentPreview({
@@ -33,6 +83,7 @@ export function DocxDocumentPreview({
   signal?: AbortSignal;
 }) {
   const theme = useTheme();
+  const mobileFrameProps = useDocxMobileChrome();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [html, setHtml] = useState('');
   const [pageSize, setPageSize] = useState<DocxPageSize | null>(null);
@@ -108,7 +159,7 @@ export function DocxDocumentPreview({
 
   if (status === 'error') {
     return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
+      <Box sx={{ p: 3, pt: 'var(--attachment-preview-content-inset, 24px)', textAlign: 'center' }}>
         <Typography variant="h6" sx={{ mb: 1, color: 'text.primary' }}>
           Помилка перегляду
         </Typography>
@@ -144,8 +195,9 @@ export function DocxDocumentPreview({
       ) : null}
       {status === 'ready' ? (
         <iframe
+          key={mobileFrameProps.sandbox}
           title="DOCX preview"
-          sandbox=""
+          {...mobileFrameProps}
           referrerPolicy="no-referrer"
           srcDoc={srcDoc}
           style={{

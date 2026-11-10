@@ -56,6 +56,16 @@ decoder =
 
 loadSharedLookupData : Route.Path.Path -> Effect Msg
 loadSharedLookupData path =
+    case path of
+        Route.Path.Devices_Id__Files _ ->
+            E.none
+
+        _ ->
+            loadSharedLookups
+
+
+loadSharedLookups : Effect Msg
+loadSharedLookups =
     E.batch
         [ E.getUnits MasterUnitsLoadedByApi
             { sortBy = Nothing
@@ -223,11 +233,14 @@ update req msg model =
                 | user = Just user
                 , userLoaded = True
                 , systemSettingsLoaded = False
+                , masterUnits = NotAsked
+                , networks = NotAsked
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
             , E.batch
                 [ E.pushRoute { path = Route.Path.Home_, query = Dict.empty, hash = Nothing }
+                , E.getSystemSettings GotSystemSettings
                 , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
                 ]
             )
@@ -253,6 +266,18 @@ update req msg model =
             ( { model
                 | user = Just user
                 , userLoaded = True
+                , masterUnits =
+                    if Maybe.map .id model.user == Just user.id then
+                        model.masterUnits
+
+                    else
+                        NotAsked
+                , networks =
+                    if Maybe.map .id model.user == Just user.id then
+                        model.networks
+
+                    else
+                        NotAsked
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
@@ -265,7 +290,6 @@ update req msg model =
 
                   else
                     E.none
-                , loadSharedLookupData req.path
                 , E.getSystemSettings GotSystemSettings
                 , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
                 ]
@@ -601,7 +625,15 @@ update req msg model =
                 ( model, E.none )
 
         EventServiceStartPolling ->
-            if (model.eventService.isPolling && model.eventService.flavor == eventServiceFlavor req.path) || not model.userLoaded || model.user == Nothing then
+            if model.userLoaded && model.user /= Nothing && needsSharedLookups req.path && (model.masterUnits == NotAsked || model.networks == NotAsked) then
+                ( { model | masterUnits = Loading, networks = Loading }
+                , E.batch
+                    [ loadSharedLookupData req.path
+                    , E.sendSharedMsg EventServiceStartPolling
+                    ]
+                )
+
+            else if (model.eventService.isPolling && model.eventService.flavor == eventServiceFlavor req.path) || not model.userLoaded || model.user == Nothing then
                 ( model, E.none )
 
             else
@@ -840,18 +872,28 @@ isRerNetworkDetailsPath path =
 
 
 subscriptions : Route () -> Model -> Sub Msg
-subscriptions _ model =
+subscriptions route model =
     Sub.batch
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
         , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
         , Ports.shared_loadRerNetworkDetailsPreferredViewRes RerNetworkDetailsPreferredViewLoaded
-        , if model.userLoaded && model.user /= Nothing then
+        , if model.userLoaded && model.user /= Nothing && needsSharedLookups route.path then
             Time.every Config.sharedLookupReconciliationIntervalMs (\_ -> ReconcileSharedLookups)
 
           else
             Sub.none
         ]
+
+
+needsSharedLookups : Route.Path.Path -> Bool
+needsSharedLookups path =
+    case path of
+        Route.Path.Devices_Id__Files _ ->
+            False
+
+        _ ->
+            True
 
 
 preserveLookupOnRefreshError : ApiError -> RemoteData ApiError a -> RemoteData ApiError a

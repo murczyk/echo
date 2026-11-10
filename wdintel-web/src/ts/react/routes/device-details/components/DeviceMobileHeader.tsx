@@ -1,4 +1,7 @@
+import type { DeviceFilesState } from '../../device-files/use-device-files';
+import { SidePanelToggleButton } from '../../../components/SidePanelToggleButton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { Typography } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import HistoryIcon from '@mui/icons-material/History';
 import InfoIcon from '@mui/icons-material/Info';
@@ -11,11 +14,14 @@ import { formatDeviceLifecycleLabel } from '../helpers';
 import { DeviceSyncSessionFilter } from './DeviceSyncSessionFilter';
 import { selectDeviceSyncSession } from '../url-state';
 import { DeviceAudioForwardingWarning } from './DeviceAudioForwardingWarning';
-import type { DeviceDetailsSection } from '../page-route';
+import { DeviceDetailsSection } from '../page-route';
 import { DeviceBreadcrumbs } from './DeviceBreadcrumbs';
 
 export function DeviceMobileHeader({
   device,
+  files,
+  onToggleFiles,
+  filesOpen,
   deviceId,
   section,
   backHref,
@@ -29,6 +35,9 @@ export function DeviceMobileHeader({
   session,
 }: {
   device: DeviceDetails | null;
+  files?: DeviceFilesState;
+  onToggleFiles?: () => void;
+  filesOpen?: boolean;
   deviceId: string;
   section: DeviceDetailsSection;
   backHref: string;
@@ -42,8 +51,16 @@ export function DeviceMobileHeader({
   session: SyncSummary | null;
 }) {
   return (
-    <header className="flex shrink-0 flex-col gap-echo-sm">
+    <header className="device-page-header flex shrink-0 flex-col gap-echo-sm">
       <div className="flex min-w-0 items-center gap-echo-sm">
+        {files && onToggleFiles ? (
+          <SidePanelToggleButton
+            side="left"
+            active={filesOpen ?? false}
+            label={filesOpen ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
+            onClick={onToggleFiles}
+          />
+        ) : null}
         <PowerIconButton
           className="!size-echo-control-lg shrink-0"
           aria-label={backLabel}
@@ -52,13 +69,14 @@ export function DeviceMobileHeader({
           <ArrowBackIcon />
         </PowerIconButton>
         <div className="min-w-0 flex-1">
-          <div className="text-[17px] font-semibold">
+          <Typography component="div" variant="h5" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
             <DeviceBreadcrumbs
               deviceId={deviceId}
               deviceName={device ? (device.name ?? 'Без назви') : null}
               section={section}
+              files={files}
             />
-          </div>
+          </Typography>
           {device ? (
             <span
               className={
@@ -71,7 +89,9 @@ export function DeviceMobileHeader({
             </span>
           ) : null}
         </div>
-        <DeviceAudioForwardingWarning configured={device?.audioForwardingConfigured} />
+        {section !== DeviceDetailsSection.Files ? (
+          <DeviceAudioForwardingWarning configured={device?.audioForwardingConfigured} />
+        ) : null}
         {canEdit ? (
           <PowerIconButton
             className="!size-echo-control-lg shrink-0"
