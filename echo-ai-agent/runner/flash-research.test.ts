@@ -1982,7 +1982,10 @@ test("incident 01a1c4a5: a document request still goes to synthesis", async (t) 
 
 // Generated from Echo's Rust request types by `just gen-ai-agent-schemas`.
 const REQUEST_SCHEMAS = JSON.parse(
-  readFileSync(new URL("../../wdintel-rs/src/ai_agent/request_schemas.json", import.meta.url), "utf8"),
+  readFileSync(
+    process.env.ECHO_AI_AGENT_REQUEST_SCHEMAS ?? new URL("../../wdintel-rs/src/ai_agent/request_schemas.json", import.meta.url),
+    "utf8",
+  ),
 );
 
 test("#4125 a harmless extra key inside period no longer fails the read and is logged by name", async (t) => {

@@ -2094,10 +2094,16 @@ test("#4125 period repair drops only keys that cannot move the window", () => {
   ] as const) {
     assert.equal((normalizePeriodArgument(input).period as any).kind, kind);
   }
-  assert.deepEqual(
-    normalizePeriodArgument({ kind: "date_range", sinceDate: "2026-11-07T00:00:00+02:00", tillDateInclusive: "2026-11-08" }).period,
-    { kind: "date_range", sinceDate: "2026-11-07", tillDateInclusive: "2026-11-08" },
-  );
+  // A midnight keeps its date only when its offset is Kyiv's on that day.
+  for (const [sinceDate, kept] of [
+    ["2026-11-07T00:00:00+02:00", "2026-11-07"],
+    ["2026-07-01T00:00+03:00", "2026-07-01"],
+    ["2026-11-07T00:00:00Z", "2026-11-07"],
+    ["2026-11-07T00:00:00+03:00", "2026-11-07T00:00:00+03:00"],
+    ["2026-07-01T00:00:00+02:00", "2026-07-01T00:00:00+02:00"],
+  ]) {
+    assert.equal((normalizePeriodArgument({ kind: "date_range", sinceDate, tillDateInclusive: "2026-11-08" }).period as any).sinceDate, kept, sinceDate);
+  }
   const startEnd = { start: "2026-11-01", end: "2026-11-02" };
   assert.equal(normalizePeriodArgument(startEnd).period, startEnd);
   // A bound or another time zone would change what is read, so they stay for a precise rejection.

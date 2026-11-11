@@ -1116,7 +1116,23 @@ const PERIOD_DIAGNOSTIC_KEYS = new Set([
   ...PERIOD_FIELDS, ...PERIOD_TIME_ZONE_KEYS, ...PERIOD_HARMLESS_KEYS, "from", "to", "until", "since", "till",
   "startDate", "endDate", "fromDate", "toDate", "untilDate", "tillDate", "date", "asOf", "includeToday", "type", "unit",
 ]);
-const MIDNIGHT_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T00:00(?::00(?:\.0+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
+const MIDNIGHT_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T00:00(?::00(?:\.0+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/** The Kyiv date of a midnight timestamp. An offset must be Kyiv's own on that
+ * date; any other names a different instant, so it is left for rejection. A bare
+ * or `Z` midnight already means that calendar date to the period parser. */
+function kyivMidnightDate(value: string): string | undefined {
+  const match = MIDNIGHT_DATE_TIME.exec(value);
+  if (!match) return undefined;
+  const [, date, zone] = match;
+  if (!zone || zone === "Z") return date;
+  const instant = Date.parse(`${date}T00:00:00${zone.replace(/^([+-]\d{2})(\d{2})$/, "$1:$2")}`);
+  try {
+    return kyivMidnightEpochMs(parseCalendarDate(date, "period")) === instant ? date : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function isEmptyArgument(value: unknown): boolean {
   return value === null || value === "" ||
@@ -1157,8 +1173,8 @@ export function normalizePeriodArgument(value: unknown): { period: unknown; igno
   if (!kind || kind.required.some((key) => period[key] === undefined)) return { period: value, ignored: [] };
   for (const key of Object.keys(period)) {
     if (kind.fields.includes(key)) {
-      const midnight = typeof period[key] === "string" && key !== "kind" ? MIDNIGHT_DATE_TIME.exec(period[key] as string) : null;
-      if (midnight) period[key] = midnight[1];
+      const date = typeof period[key] === "string" && key !== "kind" ? kyivMidnightDate(period[key] as string) : undefined;
+      if (date) period[key] = date;
       continue;
     }
     const kyivZone = PERIOD_TIME_ZONE_KEYS.has(key) && typeof period[key] === "string" && KYIV_TIME_ZONE.test((period[key] as string).trim());
