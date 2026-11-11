@@ -211,6 +211,9 @@ pub const AI_CALLSIGN_MAX_CHARS: usize = 255;
 pub const AI_CALLSIGN_MAX_CONCURRENT_REQUESTS: usize = 4;
 pub const DIRECT_SUBMIT_AI_CALLSIGN_TIMEOUT_SECS: u64 = 10;
 pub const AI_CALLSIGN_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+/// Messages the callsign worker parses at once (#4123): one at a time could
+/// not keep up with ~120k messages a day.
+pub const AI_CALLSIGN_WORKER_CONCURRENCY: usize = 4;
 pub const AI_CALLSIGN_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_CALLSIGN_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;

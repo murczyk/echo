@@ -39,11 +39,15 @@ async fn oversized_primary_responses_are_bounded_in_fallback_logs_3888() {
         .finish();
     let _capture = subscriber.set_default();
     let mut redis = env.redis.clone();
-    assert!(
-        process_next(&env.ai_engine_client, &env.dbx, &env.rq, &mut redis,)
-            .await
-            .unwrap()
-    );
+    assert!(process_next(
+        &env.ai_engine_client,
+        &env.dbx,
+        &env.rq,
+        &mut redis,
+        &JobClaims::default(),
+    )
+    .await
+    .unwrap());
     let output = std::fs::read_to_string(output.path()).unwrap();
     assert!(output.contains("AI worker primary failed; using fallback"));
     assert!(output.contains('ж'));
@@ -84,7 +88,13 @@ async fn fallback_recovers_http_invalid_json_and_deadline_without_losing_empty_s
         let mut redis = env.redis.clone();
         assert!(tokio::time::timeout(
             Duration::from_secs(25),
-            process_next(&env.ai_engine_client, &env.dbx, &env.rq, &mut redis)
+            process_next(
+                &env.ai_engine_client,
+                &env.dbx,
+                &env.rq,
+                &mut redis,
+                &JobClaims::default(),
+            )
         )
         .await
         .unwrap()
@@ -134,11 +144,15 @@ async fn failed_fallback_preserves_queue_and_error_without_advancing_success() {
         .await
         .unwrap();
     let mut redis = env.redis.clone();
-    assert!(
-        process_next(&env.ai_engine_client, &env.dbx, &env.rq, &mut redis)
-            .await
-            .unwrap()
-    );
+    assert!(process_next(
+        &env.ai_engine_client,
+        &env.dbx,
+        &env.rq,
+        &mut redis,
+        &JobClaims::default(),
+    )
+    .await
+    .unwrap());
     let job = ai_callsign_worker_job::Entity::find_by_id(item.id)
         .one(&env.dbx)
         .await

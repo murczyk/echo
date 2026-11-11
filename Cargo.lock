@@ -2878,7 +2878,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 
 [[package]]
 name = "echo-gpu-client"
@@ -2967,7 +2967,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ce0222279ef36d09b3d24d
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "echo-messengers"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3765,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -10000,7 +10000,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "actix-files",
  "actix-identity",
