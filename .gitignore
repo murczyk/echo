@@ -59,5 +59,58 @@ echo-iggy/deploy/iggy-server
 echo-iggy/test-cli/.env
 
 .specify
-.agents
+# Explicit team skills; keep personal agent state local.
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/echo-designer
+!/.agents/skills/echo-dev
+!/.agents/skills/echo-qa
+!/.agents/skills/echo-spec
+!/.agents/skills/playwright-best-practices
+!/.agents/skills/make-interfaces-feel-better
+!/.agents/skills/ponytail
+!/.agents/skills/brainstorming
+!/.agents/skills/systematic-debugging
+!/.agents/skills/verification-before-completion
+!/.agents/skills/impeccable/
+
+# Personal Impeccable configuration and state are not shared.
+/.impeccable/
+# Share only reviewed team configuration; keep local client state private.
+!/.codex/
+/.codex/*
+!/.codex/config.toml
+!/.codex/agents/
+/.codex/agents/*
+!/.codex/agents/designer.toml
+!/.codex/agents/dev.toml
+!/.codex/agents/qa.toml
+!/.codex/agents/spec.toml
+
+# Shared Claude Code configuration; personal settings and runtime state stay local.
+/.claude/*
+!/.claude/settings.json
+!/.claude/agents/
+/.claude/agents/*
+!/.claude/agents/spec.md
+!/.claude/agents/designer.md
+!/.claude/agents/dev.md
+!/.claude/agents/qa.md
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/echo-spec/
+!/.claude/skills/echo-designer/
+!/.claude/skills/echo-dev/
+!/.claude/skills/echo-qa/
+!/.claude/skills/brainstorming/
+!/.claude/skills/impeccable/
+!/.claude/skills/ponytail/
+!/.claude/skills/systematic-debugging/
+!/.claude/skills/verification-before-completion/
+!/.claude/skills/make-interfaces-feel-better/
+!/.claude/skills/playwright-best-practices/
+/.claude/skills/*/*
+!/.claude/skills/*/SKILL.md
+# Generated task specifications are local artifacts, not shared configuration.
 specs

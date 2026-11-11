@@ -1,0 +1,6 @@
+interface:
+  display_name: "Playwright Best Practices (Echo)"
+  short_description: "Scoped Playwright guidance for Echo QA"
+  default_prompt: "Use $playwright-best-practices for this assigned Echo test task within its allowed files and commands."
+policy:
+  allow_implicit_invocation: false
