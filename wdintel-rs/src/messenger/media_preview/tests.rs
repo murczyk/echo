@@ -154,3 +154,45 @@ async fn disk_pressure_reclaims_previews_before_rejecting_generation() {
     assert!(error.to_string().contains("free-space floor"));
     assert!(!segment.exists());
 }
+
+#[tokio::test]
+async fn planted_symlinks_and_fifos_are_never_published_or_served() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let secret = directory.path().join("secret");
+    std::fs::write(&secret, b"secret").unwrap();
+    std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o644))
+        .unwrap();
+    let work = directory.path().join("work");
+    std::fs::create_dir(&work).unwrap();
+
+    let link = work.join("0.ts");
+    std::os::unix::fs::symlink(&secret, &link).unwrap();
+    assert!(seal_segment(&link).await.is_err());
+    let mode = std::fs::metadata(&secret).unwrap().permissions().mode();
+    assert_eq!(
+        mode & 0o777,
+        0o644,
+        "the symlink target must not be chmodded"
+    );
+
+    let fifo = work.join("1.ts");
+    let fifo_path = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo_path.as_ptr(), 0o600) }, 0);
+    assert!(seal_segment(&fifo).await.is_err());
+
+    let segment = work.join("2.ts");
+    std::fs::write(&segment, b"segment").unwrap();
+    assert_eq!(seal_segment(&segment).await.unwrap(), Some(7));
+    let mode = std::fs::metadata(&segment).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, MESSENGER_MEDIA_CACHE_FILE_MODE);
+    assert_eq!(seal_segment(&work.join("3.ts")).await.unwrap(), None);
+
+    let entry = cache::Entry::for_test(directory.path());
+    std::os::unix::fs::symlink(&secret, entry.path("0.ts")).unwrap();
+    assert!(entry.cached_segment(0).await.is_err());
+    std::fs::rename(&segment, entry.path("1.ts")).unwrap();
+    assert!(entry.cached_segment(1).await.unwrap().is_some());
+    assert!(entry.cached_segment(2).await.unwrap().is_none());
+}

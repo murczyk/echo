@@ -9,6 +9,7 @@ use anyhow::{bail, Result};
 use echo_media::ffmpeg::{HlsOptions, HlsSegments};
 use echo_media::process::Running;
 use echo_media::{Ffmpeg, Formats};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::time::Duration;
 use tokio::fs;
@@ -219,6 +220,37 @@ fn hls_options() -> Result<HlsOptions<'static>> {
     })
 }
 
+/// Make a finished segment private and return its size, or `None` while it
+/// does not exist yet. The work directory is writable by the sandboxed
+/// encoder, which may plant a symlink or FIFO there: the segment is opened
+/// without following symlinks and without blocking, must be a regular
+/// file, and is changed through its descriptor only, so this root process
+/// never acts on a path the encoder chose.
+async fn seal_segment(path: &Path) -> Result<Option<u64>> {
+    let file = match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .await
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None)
+        }
+        Err(error) => return Err(error).c(h!()),
+    };
+    let metadata = file.metadata().await.c(h!())?;
+    if !metadata.is_file() {
+        bail!("video preview segment is not a regular file");
+    }
+    file.set_permissions(std::fs::Permissions::from_mode(
+        MESSENGER_MEDIA_CACHE_FILE_MODE,
+    ))
+    .await
+    .c(h!())?;
+    Ok(Some(metadata.len()))
+}
+
 async fn publish_window(
     mut running: Running,
     entry: &cache::Entry,
@@ -231,28 +263,16 @@ async fn publish_window(
         while published < count {
             let current = index + published;
             let path = directory.join(format!("{current}.ts"));
-            let metadata = match fs::metadata(&path).await {
-                Ok(metadata) => metadata,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    break
-                }
-                Err(error) => return Err(error).c(h!()),
+            let Some(size) = seal_segment(&path).await.c(h!())? else {
+                break;
             };
-            if metadata.len() == 0
-                || metadata.len() >= MESSENGER_MEDIA_PREVIEW_SEGMENT_MAX_BYTES
-            {
+            if size == 0 || size >= MESSENGER_MEDIA_PREVIEW_SEGMENT_MAX_BYTES {
                 bail!(
                     "video preview segment exceeded its size limit or is empty"
                 )
             }
-            fs::set_permissions(
-                &path,
-                std::os::unix::fs::PermissionsExt::from_mode(
-                    MESSENGER_MEDIA_CACHE_FILE_MODE,
-                ),
-            )
-            .await
-            .c(h!())?;
+            // The encoder still runs and could swap a symlink in before the
+            // rename; `cache::Entry::cached_segment` refuses to serve one.
             fs::rename(path, entry.path(&format!("{current}.ts")))
                 .await
                 .c(h!())?;
