@@ -15,13 +15,17 @@ Three main user groups are confirmed by the product owner:
 - **Analysts:** people who process and sort those messages, then send important information to curated groups («групи-чистовики»).
 - **Readers:** people who consume the information prepared by analysts and cannot create content. Convenient reading and inspection are core outcomes for this group.
 
-These are product user groups; derive their technical permissions from existing role and server access contracts. Operational and analytical views, administrative views, and device access still depend on roles and server permissions. A visible control is not an authorization boundary. Relative task priorities, usage frequency, and typical working conditions still need confirmation.
+For users in the RER role, a primary workflow is reading incoming messages from different groups in multiple columns in real time, mainly on «Оперативний» (Duty). Their goal is to read as many messages as possible across those streams and react as quickly as needed. This workflow includes reading and monitoring, alongside contributing information.
+
+These are product user groups; derive their technical permissions from existing role and server access contracts. Operational and analytical views, administrative views, and device access still depend on roles and server permissions. A visible control is not an authorization boundary. Outside the confirmed RER workflow, relative task priorities, usage frequency, and typical working conditions still need confirmation.
 
 ## Product Purpose
 
 Support the handoff from raw information in draft groups, through analysts' processing and selection, to prepared information in curated groups that readers can conveniently consume.
 
 Help each group complete its part of that workflow within its permissions. Preserve enough context to continue work after inspecting an attachment, changing a filter, following a link, or recovering from an error.
+
+On Duty, support RER users' continuous monitoring of multiple message streams and quick reactions. Search and message inspection should preserve awareness of incoming messages and make returning to live reading straightforward.
 
 ## Operating Context
 
@@ -40,7 +44,7 @@ Do not assume a desktop-only audience, reliable connectivity, a particular devic
 
 ## Evidence on Hand
 
-The user groups and draft-to-curated workflow above are confirmed product-owner context. The following repository sources describe current implementation and behavior:
+The user groups, draft-to-curated workflow, and RER users' real-time multi-column reading and reaction workflow above are confirmed product-owner context. The following repository sources describe current implementation and behavior:
 
 - [System purpose and development setup](README.md), [architecture](docs/README.md).
 - [Duty behavior](docs/frontend/react-behavior-contracts/duty.md) and [creation-time contract](docs/duty/README.md#creation-time-contract).
@@ -60,7 +64,7 @@ These sources establish current behavior. They do not constitute user research o
 
 ## Open Questions
 
-- Which concrete scenarios within these three user groups should the next UX improvement prioritize?
+- Which additional scenarios within these three user groups should the next UX improvement prioritize?
 - Which devices, connection conditions, and accessibility needs should guide those tasks?
 - What baseline task-completion evidence should determine whether a future UI change helps?
 
