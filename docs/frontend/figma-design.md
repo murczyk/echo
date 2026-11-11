@@ -103,22 +103,37 @@ Place edit actions beside the editable value; replace only that value with the
 input, preserving surrounding read-only data.
 
 In file galleries and media previews, clicking a card opens the file; do not add
-a separate “Open” button. In galleries, put a visible checkbox at the top of each
-card for single or multiple file selection. Place the individual download action
-in the same top row beside selection. Show only the filename beneath the preview,
-without a second checkbox or repeated opening/download actions. Checking or
+a separate “Open” button. In galleries, overlay a visible selection checkbox at
+the top-left of the preview and the individual download action at the top-right.
+For visual design, reuse the message thumbnail's circular download-control
+appearance for both overlay actions. Keep selection recognizable as a checkbox.
+Let the preview reach the card edges, with square bottom corners where it joins
+the metadata. Keep card gaps and filename/metadata spacing compact, with the date
+on the left and file size on the right. Do not add a second checkbox or repeat
+opening/download actions below the preview. Checking or
 unchecking the top checkbox changes selection without opening the file; download
 also remains independent of opening and selection. Do not add “Обрати” or
 “Вибрано” beside individual card checkboxes; the checkbox and card outline show
 selection. Preserve an accessible filename-specific checkbox label and keep the
 aggregate selected-file count separate.
+For visual design, use an actual available tabbar component instance with
+supported properties and variants, rather than drawing a visually similar bar or
+just naming it as a component. Keep tabs content-sized rather than stretching
+each tab equally.
+In wide galleries, put media tabs and compact bulk-action controls in one toolbar
+row; allow a separate action row in narrow panels to preserve readability.
 Show the selected count and the corresponding bulk-action state consistently
 across gallery screens; this does not introduce selection in contact lists.
 
 For `design`, follow the affected surface's effective theme and source components,
 including the documented MUI/legacy differences. Reuse existing variants rather
-than proposing a new visual language. Preserve the contrast-review limits in
-DESIGN.md; using a token does not establish accessibility.
+than proposing a new visual language. Check every screen for existing library
+components before drawing replacements. Verify the instance's source component
+and its effective project styling; a generic library instance with default
+geometry is insufficient when the project customizes that component. Preserve
+supported slots and variants, and report missing representations explicitly.
+Preserve the contrast-review limits in DESIGN.md; using a token does not
+establish accessibility.
 
 When borrowing UX from familiar products, reproduce the reading and interaction
 patterns, not just rounded containers. For messenger views, use recognizable chat
@@ -150,6 +165,14 @@ A request for both wireframes and design produces both sets of frames. An
 existing wireframe board owns wireframe screens and flows; the assigned design
 frame owns visual designs, detail states and content-type examples. Keep these
 outputs in their respective containers rather than on a mixed standalone board.
+Present all visual-design screens and details inside that one assigned design
+frame on a light neutral background. Keep external captions and notes readable
+against that background; the UI screens retain their requested theme.
+Arrange screens in a consistent grid grouped by task, with uniform captions and
+gutters. Place compact states near their related screens and remove unused
+presentation space; preserve the screens' dimensions instead of scaling them to fit.
+Keep screen-to-screen connector lines and action labels on the wireframe board,
+not in the visual-design presentation.
 An explicit task instruction overrides a presentation default within the authorized
 scope; it does not change shared tokens or future defaults. An explicit SVG or
 Mermaid format overrides the preset's Figma format. Without a preset or Figma
@@ -179,7 +202,7 @@ to configure presets do not invoke a designer stage.
    revised requirements need approval before dependent design. Do not ask for
    another start confirmation for the already authorized stage.
 
-For a requested UI flow, build a sequence of editable screen/state frames with
+For a requested wireframe flow, build a sequence of editable screen/state frames with
 labeled connector lines and arrowheads between the actual frames. Label each
 connector with its triggering action and any relevant condition/result; include
 back, close, cancel and error/retry branches. Route lines around frames and labels
