@@ -42,6 +42,18 @@ state or raw traces. Use synthetic/redacted fixtures/captures. External tools
 need the authorized data/destination scope; no real-environment mutation without
 the specific approval required by AGENTS.md.
 
+An actual invocation of this role for task implementation/preparation/verification
+includes necessary local baseline/regression tests, task-scoped E2E/browser
+checks and applicable build/type/lint checks on synthetic or isolated test-owned
+data. Affected browser flows use CPU slowdown 4x. Main derives the commands and
+local API mode under docs/frontend/echo-workflows.md#default-local-verification-authorization;
+do not require another testing-permission sentence or reconfirm each check.
+Use existing installed tooling and task-local preview/test processes. Explicit
+read-only/no-execution or environment limits win. Maintenance, quoted invocations
+and read-only role smokes do not authorize product verification. Real-environment
+operations retain the AGENTS.md target/operation approval gate; no installation,
+external upload, shared-database mutation or sandbox bypass is authorized.
+
 Return artifact paths, changed files, exact commands/exit codes, evidence limits
 and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
@@ -112,8 +124,9 @@ Inspect implemented interactions through available Playwright browser control:
 main/negative paths, permission/recovery, Back/context, focus/keyboard, relevant
 widths/themes and shared consumers. Fix scoped mismatches and repeat affected
 checks. Record API mode and unavailable checks; mocks do not prove persistence
-or server authorization. Full E2E/final acceptance needs the owner's separate
-scope/environment authorization through main. Main schedules QA verification.
+or server authorization. Task-scoped local E2E follows the default local
+verification authorization; real-environment approval and human acceptance
+remain separate. Main schedules QA verification.
 After three unsuccessful repair cycles for the same defect, return diagnosis
 and options. Self-check is not independent QA or owner acceptance.
 """

@@ -121,8 +121,9 @@ explicit order, but report missing prerequisites instead of silently reordering.
 Main may return defects to dev and repeat affected QA checks within an authorized
 dev+QA chain. After three unsuccessful repair cycles for the same defect, stop
 with diagnosis/options. A standalone QA request never starts a repair loop.
-Final acceptance/full E2E requires the owner's separate authorization naming the
-test scope/environment. It never weakens required checks before merge. Human
+Task-scoped local E2E and browser verification follow the default authorization
+below; do not request a separate testing-permission sentence. Real-environment
+mutations retain the operation/target approval gate in `AGENTS.md`. Human
 acceptance, QA verification and dev self-checks are distinct. Children never
 commit, push, manage PRs, merge or deploy; main follows existing Git permissions,
 and push/PR/publication is not implied by a workflow request. Real-environment
@@ -184,6 +185,7 @@ revision / staged, unstaged and untracked starting changes:
 relevant_paths: contracts, source, shared consumers, prepared tests
 allowed_write_paths: assigned files or none
 allowed_commands: actual local commands, environment/API mode or none
+local verification: default task-scoped permission / explicit owner restrictions
 dev/QA CPU baseline: 4x slowdown; affected browser scenarios/data and execution limits
 spec/designer UX: mandatory ongoing analysis, best-practice check and findings in output
 stop_after:
@@ -344,6 +346,34 @@ HTML/interactive prototypes require an explicit format request. Image alternativ
 and external editable canvases are optional requested outputs, not prerequisites;
 external data/publication permissions still apply.
 
+## Default local verification authorization
+
+An actual invocation of `echo-dev` for approved implementation or `echo-qa` for
+task preparation/verification includes the necessary local verification. Main
+derives and records the affected baseline/regression tests, task-scoped E2E,
+browser checks and applicable build/type/lint commands and local API mode in the
+handoff. Use synthetic or isolated test-owned data; browser scenarios use CPU
+slowdown **4x**. QA prepare may run relevant baseline/RED checks as part of test
+preparation; it still cannot implement product behavior. The user need not repeat
+an additional sentence permitting these checks or reconfirm each transition.
+
+Use existing installed runners and browsers, reusing an appropriate local preview
+or starting the repository's task-local test/preview process when needed. Stop
+only processes started for this task; do not replace another running environment.
+Test data mutations stay within isolated test-owned resources. This permission
+does not include package/browser installation, unrelated test campaigns, external
+accounts/uploads or changes to shared databases and real environments. Staging,
+including `echo-staging`, production and all their mutations retain the explicit
+operation/target approval gate in `AGENTS.md`. Human acceptance is not implied.
+
+Explicit read-only, prepare-without-execution, command or environment restrictions
+take precedence and must be passed to the child. Missing tools/CPU controls or
+safe test resources remain reported gaps, not reasons to weaken checks or bypass
+sandbox approvals. Skill/configuration maintenance, quoted invocations and
+read-only role smokes do not invoke dev/QA or authorize product verification.
+This is task authorization, not a tool ACL or permission-mode change, and never
+invokes another stage or a real environment implicitly.
+
 ## CPU throttling baseline
 
 Functionality is always developed with **CPU throttling: 4x slowdown** in mind.
@@ -361,8 +391,9 @@ with extra sleeps, retries or increased timeouts.
 Record browser, CPU setting/method, data volume, scenario IDs and observed results
 in dev/QA evidence. Unthrottled runs are supplementary. If authorized execution
 or CPU controls are unavailable, report the 4x scenarios as not-run/unverified
-with the reason; do not claim the baseline passed. Preparation alone still does
-not authorize execution. Browser CPU slowdown does not emulate network latency
+with the reason; do not claim the baseline passed. Execution follows the default
+local verification authorization and any explicit owner restrictions. Browser
+CPU slowdown does not emulate network latency
 or backend load, and does not replace other required checks or environment gates.
 
 ## Dev
@@ -380,7 +411,9 @@ is not a claim that tests passed. Inspect actual files and the starting dirty st
 
 Use repository `make-interfaces-feel-better` for approved details with Echo tokens
 and reduced-motion/accessibility rules. No new styling system or global visual
-change follows from loading it. Full E2E/final acceptance waits for its owner gate.
+change follows from loading it. Task-scoped local E2E is covered by the default
+verification authorization; real-environment approval and human acceptance remain
+separate.
 
 Before implementation, read repository [Ponytail](../../.github/skills/ponytail/SKILL.md)
 directly and apply its default `full` level unless the task selects `lite`/`ultra`.
@@ -412,15 +445,18 @@ within that mode; guidance cannot authorize product fixes or extra execution.
 Read repository [systematic-debugging](../../.github/skills/systematic-debugging/SKILL.md)
 for failures and [verification-before-completion](../../.github/skills/verification-before-completion/SKILL.md)
 before returning prepare/verify results, not personal copies or Superpowers aliases.
-Prepared tests without authorized execution remain not-run; a verify assignment
-does not permit product or permanent test/assertion edits.
+Necessary local execution is covered by an actual QA invocation unless the owner
+restricts it. Prepared tests that were not executed remain not-run; a verify
+assignment does not permit product or permanent test/assertion edits.
 
 **Prepare:** after spec approval, map stable acceptance IDs to existing tests/gaps,
 then add useful behavior tests/fixtures before product changes. Follow Echo's
 Playwright, Vitest, Elm and backend test boundaries. Preserve existing behavior
 with green baseline cases and identify changed behavior intended to fail before
-implementation. Execute only the commands allowed in the brief; without execution,
-record not-run instead of inventing RED/GREEN. Return readiness/gaps and stop.
+implementation. Main includes necessary local checks under the default
+verification authorization in the brief, honoring explicit owner limits. Without
+execution, record not-run instead of inventing RED/GREEN. Return readiness/gaps
+and stop.
 
 **Verify:** inspect the actual implementation/diff and criteria, not only the dev
 report. Run relevant authorized checks and rendered interactions; report missing
