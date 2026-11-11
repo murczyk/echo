@@ -779,6 +779,62 @@ async fn native_group_routes_require_system_admin_even_for_group_admin() {
 
 #[serial]
 #[tokio::test]
+async fn issue_4103_mixed_destinations_are_rejected_before_creating_messages() {
+    use crate::sigint::direct_submit::bl::submit_signal_message;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let admin = find_test_login(&env.dbx).await.unwrap();
+    let aor = find_test_aor(&env.dbx).await.unwrap();
+    let external = find_test_signal_group(&env.dbx).await.unwrap();
+    let mut settings = settings(&admin);
+    settings.zone_ids = vec![admin.sigint_zone_id.unwrap()];
+    settings.area_of_responsibility_ids = vec![aor.id];
+    let txn = env.dbx.begin().await.unwrap();
+    let native = create_group(
+        &txn,
+        admin.id,
+        NativeGroupCreateReq {
+            request_id: Uuid::new_v4().to_string(),
+            settings,
+        },
+    )
+    .await
+    .unwrap();
+    txn.commit().await.unwrap();
+    let messages_before = signal_message::Entity::find()
+        .count(&env.dbx)
+        .await
+        .unwrap();
+    for (primary, additional) in [
+        (&native.master_key, &external.master_key),
+        (&external.master_key, &native.master_key),
+    ] {
+        let request = serde_json::from_value(serde_json::json!({
+            "text": "Mixed destinations must not persist",
+            "signal_group_master_key": primary,
+            "additional_signal_group_master_keys": [additional],
+        }))
+        .unwrap();
+        let error = submit_signal_message(&admin.id, &env, request)
+            .await
+            .unwrap_err();
+        let AppError::AnyhowError { source } = error else {
+            panic!("expected mixed destination validation error: {error:?}");
+        };
+        assert!(source.chain().any(|cause| cause.to_string()
+            == "Не можна одночасно надсилати повідомлення у групи Echo Native та зовнішніх джерел."));
+    }
+    assert_eq!(
+        signal_message::Entity::find()
+            .count(&env.dbx)
+            .await
+            .unwrap(),
+        messages_before
+    );
+}
+
+#[serial]
+#[tokio::test]
 async fn direct_edit_preserves_native_or_external_message_origin() {
     use crate::sigint::direct_submit::bl::{
         edit_signal_message, submit_signal_message,

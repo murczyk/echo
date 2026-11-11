@@ -62,7 +62,7 @@ async fn can_send<C: ConnectionTrait>(
 ) -> anyhow::Result<bool> {
     let row = db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "select exists(select 1 from signal_group g join datasource d on d.id = g.datasource_id where g.master_key = $1 and not g.deleted and not d.deleted and d.kind in ('signal', 'whatsapp') and d.can_send_messages is true) as allowed",
+        "select exists(select 1 from datasource_group dg join datasource d on d.id = dg.datasource_id where dg.group_master_key = $1 and not dg.deleted and not d.deleted and d.kind in ('signal', 'whatsapp') and d.can_send_messages is true) as allowed",
         vec![master_key.into()],
     )).await.c(h!())?.c(h!())?;
     row.try_get("", "allowed").c(h!())
