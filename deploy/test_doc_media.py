@@ -4,9 +4,12 @@
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
+from urllib.parse import unquote
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 
@@ -135,6 +138,49 @@ else:
                     self.assertIn("backslashes", result.stderr)
                     self.assertFalse((self.root / "uploads").exists())
             source.unlink()
+
+
+@unittest.skipUnless(shutil.which("zola"), "Zola is required to build documentation")
+class DocumentationBuildTests(unittest.TestCase):
+    def test_issue_3938_rebuilds_all_image_and_video_urls_without_public_media_copies(self):
+        with tempfile.TemporaryDirectory(prefix="doc-media-build-3938-") as directory:
+            repository = Path(directory)
+            shutil.copyfile(REPOSITORY / "justfile", repository / "justfile")
+            (repository / "deploy").mkdir()
+            shutil.copyfile(REPOSITORY / "deploy/doc_media.py", repository / "deploy/doc_media.py")
+            docs = repository / "docs"
+            docs.mkdir()
+            shutil.copyfile(REPOSITORY / "docs/config.toml", docs / "config.toml")
+            for name in ("content", "templates", "themes", "static"):
+                shutil.copytree(REPOSITORY / "docs" / name, docs / name,
+                                ignore=shutil.ignore_patterns("*.mp4"))
+            for source in (REPOSITORY / "docs/static").glob("*.mp4"):
+                (docs / "static" / source.name).write_bytes(b"video fixture")
+            (docs / "releases").mkdir()
+            public = docs / "public"
+            (public / "overview").mkdir(parents=True)
+            (public / "overview/index.html").write_text('<video src="/docs/overview.mp4"></video>')
+
+            result = subprocess.run([
+                "just", "--justfile", str(repository / "justfile"), "docs",
+            ], cwd=repository, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            media_types = set()
+            for page in public.rglob("*.html"):
+                for kind, url in re.findall(r'<(img|video)\b[^>]*\bsrc="([^"]+)"', page.read_text()):
+                    with self.subTest(page=page.relative_to(public), url=url):
+                        self.assertTrue(url.startswith("/doc-media/docs/static/"))
+                        relative = Path(unquote(url.removeprefix("/doc-media/")))
+                        self.assertTrue((repository / "wdintel-web/.doc-media" / relative).is_file())
+                        self.assertFalse((public / relative.relative_to("docs/static")).exists())
+                        media_types.add(kind)
+            self.assertEqual(media_types, {"img", "video"})
+            overview = unquote((public / "overview/index.html").read_text())
+            self.assertIn('/doc-media/docs/static/overview.mp4', overview)
+            self.assertIn('/doc-media/docs/static/overview_mar2026.mp4', overview)
+            self.assertTrue((public / "icon.png").is_file())
+            self.assertTrue((public / "css/custom.css").is_file())
 
 
 if __name__ == "__main__":

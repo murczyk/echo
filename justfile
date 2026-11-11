@@ -2513,6 +2513,7 @@ deploy-vector-conf:
 
 docs:
     cd docs && zola build
+    python3 deploy/doc_media.py prepare --docs-public docs/public
 
 dev-docs:
     cd docs && zola serve
@@ -2525,7 +2526,7 @@ builder-build-docs: prepare-workspace
     if [[ "{{ builder }}" == "echo-gpu" ]]; then
       ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
       ssh {{ builder }} '(cd ~/workspace/echo && just prepare-workspace)'
-      ssh {{ builder }} '(cd ~/workspace/echo/docs && zola build)'
+      ssh {{ builder }} '(cd ~/workspace/echo && just docs)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs/echo-docs && PATH=$HOME/.local/bin:$PATH /home/ubuntu/.cargo/bin/cargo deb)'
       rsync {{ builder }}:~/workspace/echo/docs/echo-docs/target/debian/echo-docs_0.1.0-1_amd64.deb ~/Downloads/
     else

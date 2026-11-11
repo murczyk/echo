@@ -91,6 +91,12 @@ shortcodes point to the authenticated endpoint. The docs package retains its
 HTML, theme assets, and favicon. nginx proxies `/doc-media/` to Echo and blocks
 `/docs/docs/` so its filesystem alias cannot expose the media cache.
 
+`just docs` always rebuilds the Zola pages and prepares documentation media,
+removing direct image/video copies from `docs/public/`. CI and local package
+builds use this recipe so cached HTML cannot retain the old `/docs/` media URLs.
+Deploy the rebuilt `echo-docs` package alongside the application; updating
+`wdintel-rs` alone does not replace previously installed documentation pages.
+
 After local validation, obtain approval naming the B2 destinations and each
 environment operation before running this sequence:
 

@@ -110,17 +110,7 @@ fi
 
 # echo-docs
 if [ -f "docs/echo-docs/Cargo.toml" ]; then
-  # Ensure Zola site is built so that docs/public/* exists for packaging
-  if [ ! -d "docs/public" ] || [ -z "$(ls -A docs/public 2>/dev/null || true)" ]; then
-    echo "> Building docs site (zola)"
-    if ! command -v zola >/dev/null 2>&1; then
-      echo "Missing required command: zola" >&2
-      exit 1
-    fi
-    (cd docs && zola build)
-  fi
-
-  python3 deploy/doc_media.py prepare --docs-public docs/public
+  just docs
 
   if [ -n "$doc_version_epoch" ]; then
     find docs/public -exec touch -d "@$doc_version_epoch" {} +
