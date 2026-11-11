@@ -1,4 +1,5 @@
 use super::{query, types::DirectSubmitPayload};
+use crate::datasource::native::is_native_group;
 use crate::entities::signal_group;
 use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::*;
@@ -34,6 +35,19 @@ pub(super) async fn resolve(
                 .await
                 .c(h!())?,
         );
+    }
+    if groups.len() > 1 {
+        let is_native =
+            is_native_group(txn, &groups[0].master_key).await.c(h!())?;
+        for group in &groups[1..] {
+            anyhow::ensure!(
+                is_native
+                    == is_native_group(txn, &group.master_key)
+                        .await
+                        .c(h!())?,
+                "Не можна одночасно надсилати повідомлення у групи Echo Native та зовнішніх джерел."
+            );
+        }
     }
     Ok(groups)
 }

@@ -19,6 +19,7 @@ The **+** composer in Duty and Analysis accepts multiple groups. The direct
 submission API keeps `signal_group_master_key` as the primary destination and
 accepts `additional_signal_group_master_keys` for additional destinations.
 Every destination must be accessible and satisfy its group requirements.
+Echo Native groups cannot be combined with external groups in one submission.
 The message and attachments are stored once, with links to every selected
 group. Repeated destinations are ignored. Saving and queuing all messenger
 deliveries share one transaction, so a failure does not leave a partial send.
@@ -36,6 +37,7 @@ destination; without a choice it keeps the report local.
 
 Regression coverage:
 
+- `wdintel-rs/src/messenger/group/native/tests.rs`
 - `wdintel-rs/src/messenger/group/sending/tests.rs`
 - `wdintel-web/tests/e2e/manage-message-drawer.spec.ts`
 - `wdintel-web/tests/e2e/rer-duty-minimal-report.spec.ts`
