@@ -34,7 +34,7 @@ async fn run_for(
     let spec = Spec {
         program: program.into(),
         args: vec!["-c".into(), script.into()],
-        policy,
+        policy: policy.fs_isolation(fs_isolation()),
         mode: sandbox_mode(),
         timeout,
         capture_stdout: true,
@@ -72,7 +72,7 @@ async fn reads_only_granted_files() {
         format!("/proc/{}/environ", std::process::id()),
     ] {
         let stderr = denied(run(SH, &format!("cat {path}"), policy()).await);
-        assert!(stderr.contains("Permission denied"), "{path}: {stderr}");
+        assert!(is_denial(&stderr), "{path}: {stderr}");
     }
 }
 
@@ -85,7 +85,7 @@ async fn symlinks_cannot_reach_ungranted_files() {
     let policy = Policy::for_programs(&[SH, CAT]).write_dir(out.path());
     let stderr =
         denied(run(SH, &format!("cat {}", link.display()), policy).await);
-    assert!(stderr.contains("Permission denied"), "{stderr}");
+    assert!(is_denial(&stderr), "{stderr}");
 }
 
 #[tokio::test]
@@ -114,7 +114,7 @@ async fn executes_only_listed_programs() {
     assert_eq!(stdout(&output), "builtin\n");
     for program in ["/usr/bin/ls /", "/usr/bin/cat /dev/null", "/usr/bin/env"] {
         let stderr = denied(run(SH, program, policy()).await);
-        assert!(stderr.contains("Permission denied"), "{program}: {stderr}");
+        assert!(is_denial(&stderr), "{program}: {stderr}");
     }
 }
 
@@ -141,7 +141,8 @@ async fn environment_is_cleared() {
     let spec = Spec {
         program: "/usr/bin/env".into(),
         args: Vec::new(),
-        policy: Policy::for_programs(&["/usr/bin/env"]),
+        policy: Policy::for_programs(&["/usr/bin/env"])
+            .fs_isolation(fs_isolation()),
         mode: sandbox_mode(),
         timeout: TIMEOUT,
         capture_stdout: true,
@@ -192,7 +193,7 @@ async fn stalled_stdout_hits_the_progress_timeout() {
         let spec = Spec {
             program: SH.into(),
             args: vec!["-c".into(), script.into()],
-            policy,
+            policy: policy.fs_isolation(fs_isolation()),
             mode: sandbox_mode(),
             timeout: TIMEOUT,
             capture_stdout: true,
@@ -228,7 +229,7 @@ async fn dropping_a_running_process_kills_it() {
             "-c".into(),
             format!("echo $$ > {}; exec sleep 30", pid_file.display()).into(),
         ],
-        policy,
+        policy: policy.fs_isolation(fs_isolation()),
         mode: sandbox_mode(),
         timeout: TIMEOUT,
         capture_stdout: false,

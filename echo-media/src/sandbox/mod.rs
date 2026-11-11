@@ -6,12 +6,18 @@
 //! Isolation (Landlock, capabilities, namespaces) is Linux-only. On other
 //! platforms, such as macOS developer machines, processes still get the
 //! cleared environment, a new session and rlimits, but no sandbox.
+//!
+//! Filesystem access is limited with Landlock. On kernels without it, a
+//! process with `CAP_SYS_ADMIN` gets a private mount namespace instead
+//! (`mounts.rs`); see [`FsIsolation`].
 
 mod child;
 #[cfg(target_os = "linux")]
 mod landlock;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod mounts;
 
 use crate::constants::*;
 use crate::error::{MediaError, Result};
@@ -36,6 +42,20 @@ impl Default for SandboxMode {
             Self::BestEffort
         }
     }
+}
+
+/// How filesystem access is limited on Linux.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FsIsolation {
+    /// Landlock when the kernel supports it; otherwise a private mount
+    /// namespace when the process has `CAP_SYS_ADMIN` (a root service, or
+    /// root in an LXC container on a kernel without Landlock, such as
+    /// Proxmox's).
+    #[default]
+    Auto,
+    /// Always a private mount namespace, even when Landlock is available.
+    /// Needs `CAP_SYS_ADMIN`. Used to test the fallback.
+    MountNamespace,
 }
 
 /// Network access granted to the sandboxed process.
@@ -71,6 +91,7 @@ pub struct Policy {
     pub(crate) optional_read_dirs: Vec<PathBuf>,
     pub(crate) network: Network,
     pub(crate) limits: Limits,
+    pub(crate) fs_isolation: FsIsolation,
 }
 
 impl Policy {
@@ -126,6 +147,11 @@ impl Policy {
 
     pub fn limits(mut self, limits: Limits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    pub fn fs_isolation(mut self, fs_isolation: FsIsolation) -> Self {
+        self.fs_isolation = fs_isolation;
         self
     }
 

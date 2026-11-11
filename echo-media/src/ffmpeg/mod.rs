@@ -24,7 +24,7 @@ use crate::constants::*;
 use crate::error::{MediaError, Result};
 use crate::limits::*;
 use crate::process::Spec;
-use crate::sandbox::{Limits, Policy, SandboxMode};
+use crate::sandbox::{FsIsolation, Limits, Policy, SandboxMode};
 use args::Args;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -38,6 +38,7 @@ pub struct MediaConfig {
     /// Absolute path to ffprobe; jobs never search `PATH` themselves.
     pub ffprobe_bin: PathBuf,
     pub sandbox_mode: SandboxMode,
+    pub fs_isolation: FsIsolation,
 }
 
 impl MediaConfig {
@@ -49,6 +50,7 @@ impl MediaConfig {
             ffmpeg_bin: find_program(ECHO_MEDIA_FFMPEG_NAME)?,
             ffprobe_bin: find_program(ECHO_MEDIA_FFPROBE_NAME)?,
             sandbox_mode: SandboxMode::default(),
+            fs_isolation: FsIsolation::default(),
         })
     }
 }
@@ -142,9 +144,11 @@ impl Ffmpeg {
         if let Some(dir) = job.write_dir {
             policy = policy.write_dir(dir);
         }
-        let policy = policy.limits(Limits {
-            file_size: job.file_size,
-        });
+        let policy = policy
+            .limits(Limits {
+                file_size: job.file_size,
+            })
+            .fs_isolation(self.config.fs_isolation);
         Spec {
             program: program.clone(),
             args: job.args.into_vec(),

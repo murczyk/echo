@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use echo_media::ffmpeg::find_program;
-use echo_media::{Ffmpeg, MediaConfig, SandboxMode};
+use echo_media::{Ffmpeg, FsIsolation, MediaConfig, SandboxMode};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,12 +20,32 @@ pub fn sandbox_mode() -> SandboxMode {
     }
 }
 
+/// `ECHO_MEDIA_TEST_SANDBOX=mount-namespace` runs the suite with the
+/// mount-namespace fallback instead of Landlock. Needs `CAP_SYS_ADMIN`:
+/// run as root, or as root of a user namespace (`unshare -r`).
+pub fn fs_isolation() -> FsIsolation {
+    match std::env::var("ECHO_MEDIA_TEST_SANDBOX").as_deref() {
+        Ok("mount-namespace") => FsIsolation::MountNamespace,
+        _ => FsIsolation::default(),
+    }
+}
+
 pub fn ffmpeg() -> Ffmpeg {
     Ffmpeg::new(MediaConfig {
         sandbox_mode: sandbox_mode(),
+        fs_isolation: fs_isolation(),
         ..MediaConfig::from_path().unwrap()
     })
     .unwrap()
+}
+
+/// Whether `stderr` reports a path the sandbox hid. Landlock denies access;
+/// the mount namespace has no such path at all.
+pub fn is_denial(stderr: &str) -> bool {
+    stderr.contains("Permission denied")
+        || (fs_isolation() == FsIsolation::MountNamespace
+            && (stderr.contains("No such file")
+                || stderr.contains("not found")))
 }
 
 /// The ffmpeg found on `PATH`, for fixtures and control runs.

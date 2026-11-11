@@ -1,7 +1,7 @@
 //! Builds the Landlock ruleset in the parent. The child only calls
 //! `RulesetCreated::restrict_self` on it.
 
-use super::{unavailable, Network, Policy, SandboxMode};
+use super::{Network, Policy, SandboxMode};
 use crate::error::{MediaError, Result};
 use landlock::{
     make_bitflags, Access, AccessFs, AccessNet, BitFlags, CompatLevel,
@@ -23,18 +23,21 @@ const WRITE_DIR: BitFlags<AccessFs> = make_bitflags!(AccessFs::{
     ReadFile | ReadDir | WriteFile | MakeReg | RemoveFile | Truncate
 });
 
+/// The ruleset for `policy`. The caller (`linux.rs`) has already checked
+/// [`supported`]; without Landlock, `Enforce` also fails in `handled`.
 pub(super) fn build(
     policy: &Policy,
     mode: SandboxMode,
 ) -> Result<RulesetCreated> {
-    // `Enforce` already fails in `handled` when ABI 1 is missing.
-    if !supports(ABI::V1) {
-        unavailable(mode, "Landlock is not supported by this kernel")?;
-    }
     let ruleset = handled(mode).map_err(sandbox_error)?;
     let ruleset = ruleset.create().map_err(sandbox_error)?;
     let ruleset = add_fs_rules(ruleset, policy)?;
     add_net_rules(ruleset, &policy.network)
+}
+
+/// Whether the kernel enforces Landlock (ABI 1 or newer).
+pub(super) fn supported() -> bool {
+    supports(ABI::V1)
 }
 
 /// The newest Landlock ABI the kernel supports, up to [`BEST_EFFORT_ABI`].

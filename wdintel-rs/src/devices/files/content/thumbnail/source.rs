@@ -30,7 +30,10 @@ pub(super) async fn generate(
     let temporary = tempfile::Builder::new()
         .prefix("source-")
         .tempfile_in(destination.parent().ok_or(Failure::Transient)?)
-        .map_err(|_| Failure::Transient)?;
+        .map_err(|error| {
+            log::warn!("device thumbnail source file failed: {error}");
+            Failure::Transient
+        })?;
     let prepared = tokio::time::timeout(
         Duration::from_secs(DEVICE_FILE_THUMBNAIL_SOURCE_TIMEOUT_SECS),
         prepare(env, source, &temporary),
@@ -39,9 +42,17 @@ pub(super) async fn generate(
     match prepared {
         Ok(Ok(())) => {}
         Ok(Err(error)) if error.downcast_ref::<InvalidSource>().is_some() => {
-            return Err(Failure::Terminal)
+            log::warn!("device thumbnail source rejected: {error:#}");
+            return Err(Failure::Terminal);
         }
-        _ => return Err(Failure::Transient),
+        Ok(Err(error)) => {
+            log::warn!("device thumbnail source failed: {error:#}");
+            return Err(Failure::Transient);
+        }
+        Err(_) => {
+            log::warn!("device thumbnail source timed out");
+            return Err(Failure::Transient);
+        }
     }
     authorize(env, actor, target, source).await?;
     let result = crate::thumbnail::generate(
@@ -61,21 +72,20 @@ pub(super) async fn generate(
     )
     .await;
     if let Err(error) = result {
-        return Err(
-            if error
-                .downcast_ref::<crate::thumbnail::InvalidMedia>()
-                .is_some()
-            {
-                Failure::Terminal
-            } else {
-                Failure::Transient
-            },
-        );
+        if error
+            .downcast_ref::<crate::thumbnail::InvalidMedia>()
+            .is_some()
+        {
+            return Err(Failure::Terminal);
+        }
+        log::warn!("device thumbnail decoder failed: {error:#}");
+        return Err(Failure::Transient);
     }
     authorize(env, actor, target, source).await?;
-    let bytes = super::read_jpeg(destination)
-        .await
-        .map_err(|_| Failure::Terminal)?;
+    let bytes = super::read_jpeg(destination).await.map_err(|error| {
+        log::warn!("device thumbnail output rejected: {error:#}");
+        Failure::Terminal
+    })?;
     Ok(bytes.len() as u64)
 }
 
@@ -90,8 +100,10 @@ async fn authorize(
         .await
         .map_err(|error| {
             if error.status_code().is_server_error() {
+                log::warn!("device thumbnail authorization failed: {error}");
                 Failure::Transient
             } else {
+                log::debug!("device thumbnail access denied: {error}");
                 Failure::Access
             }
         })

@@ -1,9 +1,11 @@
 //! Linux-only isolation steps run by `child.rs`: parent-death signal,
-//! network namespace, capability drop, `NO_NEW_PRIVS` and Landlock.
+//! network and mount namespaces, capability drop, `NO_NEW_PRIVS` and
+//! Landlock.
 //! Same async-signal-safety rules as `child.rs`; `rustix` and `landlock`
 //! make the syscalls directly, without allocating.
 
-use super::{landlock, unavailable, Network, Policy, SandboxMode};
+use super::mounts::Mounts;
+use super::{landlock, unavailable, FsIsolation, Network, Policy, SandboxMode};
 use crate::constants::*;
 use crate::error::Result;
 use ::landlock::RulesetCreated;
@@ -14,8 +16,8 @@ use rustix::process::{
 use rustix::thread::{
     capabilities, clear_ambient_capability_set,
     remove_capability_from_bounding_set, set_capabilities,
-    set_capabilities_secure_bits, unshare_unsafe, CapabilitiesSecureBits,
-    CapabilitySet, CapabilitySets, UnshareFlags,
+    set_capabilities_secure_bits, set_no_new_privs, unshare_unsafe,
+    CapabilitiesSecureBits, CapabilitySet, CapabilitySets, UnshareFlags,
 };
 use std::io;
 
@@ -33,20 +35,29 @@ const SECURE_BITS: CapabilitiesSecureBits = CapabilitiesSecureBits::NO_ROOT
 const CAP_LAST_REPRESENTABLE: u32 = 63;
 
 pub(super) struct Restrictions {
-    /// Taken by the child; `restrict_self` consumes it.
+    /// Taken by the child; `restrict_self` consumes it. `None` when the
+    /// mount namespace replaces Landlock.
     ruleset: Option<RulesetCreated>,
+    mounts: Option<Mounts>,
     parent: Option<Pid>,
     drop_bounding_set: bool,
-    unshare_network: bool,
+    unshare: UnshareFlags,
     cap_last: u32,
+}
+
+/// How the filesystem is restricted: exactly one of the two, or a Landlock
+/// ruleset that only sets `NO_NEW_PRIVS` in `BestEffort` without Landlock.
+struct Filesystem {
+    ruleset: Option<RulesetCreated>,
+    mounts: Option<Mounts>,
 }
 
 impl Restrictions {
     pub(super) fn new(policy: &Policy, mode: SandboxMode) -> Result<Self> {
-        let ruleset = landlock::build(policy, mode)?;
         let effective = capabilities(None)
             .map_or(CapabilitySet::empty(), |sets| sets.effective);
         let can_unshare = effective.contains(CapabilitySet::SYS_ADMIN);
+        let filesystem = filesystem(policy, mode, can_unshare)?;
         let denied = policy.network == Network::Denied;
         if denied && !can_unshare && geteuid().is_root() {
             unavailable(
@@ -54,11 +65,19 @@ impl Restrictions {
                 "root without CAP_SYS_ADMIN cannot isolate the network",
             )?;
         }
+        let mut unshare = UnshareFlags::empty();
+        if denied && can_unshare {
+            unshare |= UnshareFlags::NEWNET | UnshareFlags::NEWIPC;
+        }
+        if filesystem.mounts.is_some() {
+            unshare |= UnshareFlags::NEWNS;
+        }
         Ok(Self {
-            ruleset: Some(ruleset),
+            ruleset: filesystem.ruleset,
+            mounts: filesystem.mounts,
             parent: Pid::from_raw(std::process::id() as i32),
             drop_bounding_set: effective.contains(CapabilitySet::SETPCAP),
-            unshare_network: denied && can_unshare,
+            unshare,
             cap_last: cap_last(),
         })
     }
@@ -72,15 +91,19 @@ impl Restrictions {
         Ok(())
     }
 
-    pub(super) fn isolate_network(&self) -> io::Result<()> {
-        if self.unshare_network {
+    /// Enter new network/IPC and mount namespaces as planned, and build the
+    /// private root in the mount namespace. Needs `CAP_SYS_ADMIN`, so it
+    /// runs before the capabilities are dropped.
+    pub(super) fn isolate(&self) -> io::Result<()> {
+        if !self.unshare.is_empty() {
             // SAFETY: rustix marks unshare unsafe because of CLONE_FILES,
             // which can leave other threads with a different fd table. Only
-            // the network and IPC namespaces are unshared here, in a
-            // single-threaded forked child.
-            unsafe {
-                unshare_unsafe(UnshareFlags::NEWNET | UnshareFlags::NEWIPC)
-            }?;
+            // namespaces are unshared here, in a single-threaded forked
+            // child.
+            unsafe { unshare_unsafe(self.unshare) }?;
+        }
+        if let Some(mounts) = &self.mounts {
+            mounts.enter()?;
         }
         Ok(())
     }
@@ -123,8 +146,13 @@ impl Restrictions {
 
     /// `restrict_self` sets `NO_NEW_PRIVS` before entering the domain. When
     /// the kernel lacks Landlock (allowed only in `BestEffort`), it sets
-    /// `NO_NEW_PRIVS` alone.
+    /// `NO_NEW_PRIVS` alone. With the mount namespace instead of Landlock,
+    /// `NO_NEW_PRIVS` is set directly.
     fn restrict_filesystem(&mut self) -> io::Result<()> {
+        if self.mounts.is_some() {
+            set_no_new_privs(true)?;
+            return Ok(());
+        }
         let Some(ruleset) = self.ruleset.take() else {
             // The child runs this once; a second call is a bug.
             return Err(Errno::INVAL.into());
@@ -136,6 +164,52 @@ impl Restrictions {
             .map_err(|_| io::Error::last_os_error())?;
         Ok(())
     }
+}
+
+/// Landlock when available (and not overridden), else the mount namespace
+/// when the process may create one, else whatever `mode` allows.
+fn filesystem(
+    policy: &Policy,
+    mode: SandboxMode,
+    can_unshare: bool,
+) -> Result<Filesystem> {
+    let landlock = landlock::supported();
+    let mounts = match policy.fs_isolation {
+        FsIsolation::Auto => !landlock && can_unshare,
+        FsIsolation::MountNamespace => can_unshare,
+    };
+    if mounts {
+        if policy.fs_isolation == FsIsolation::Auto {
+            warn_fallback_once();
+        }
+        return Ok(Filesystem {
+            ruleset: None,
+            mounts: Some(Mounts::plan(policy)?),
+        });
+    }
+    if policy.fs_isolation == FsIsolation::MountNamespace {
+        unavailable(mode, "a mount namespace needs CAP_SYS_ADMIN")?;
+    } else if !landlock {
+        unavailable(
+            mode,
+            "Landlock is not supported by this kernel, and the mount \
+             namespace fallback needs CAP_SYS_ADMIN",
+        )?;
+    }
+    Ok(Filesystem {
+        ruleset: Some(landlock::build(policy, mode)?),
+        mounts: None,
+    })
+}
+
+fn warn_fallback_once() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        log::warn!(
+            "Landlock is not supported by this kernel; media processes are \
+             isolated with a private mount namespace instead"
+        )
+    });
 }
 
 fn cap_last() -> u32 {

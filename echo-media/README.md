@@ -76,6 +76,24 @@ sandbox separately.
      - ABI 1 (Linux 5.13, Ubuntu 22.04) is required in `Enforce` mode;
      - TCP rules (ABI 4) and signal/abstract-socket scoping (ABI 6) apply when
        the kernel has them.
+   - Without Landlock (e.g. the Proxmox kernel), a parent with `CAP_SYS_ADMIN`
+     uses a mount namespace instead (`sandbox/mounts.rs`, `FsIsolation::Auto`):
+     - `unshare(CLONE_NEWNS)`, then `pivot_root` into an empty read-only tmpfs
+       that holds only the same paths, bind-mounted from the host at their
+       resolved locations, with the symlinks met on the way recreated, plus
+       `/etc/alternatives` (read-only, `noexec`), which Debian library
+       symlinks such as `libblas.so.3` pass through;
+     - read paths are read-only, the job directory is writable and `noexec`,
+       and `/bin`, `/sbin`, `/usr/bin`, `/usr/sbin` and `/usr/local/{bin,sbin}`
+       are covered with an empty tmpfs, so only the listed binary can run
+       from them;
+     - unlike Landlock, `/usr` and `/lib*` stay executable (shared libraries
+       are mapped executable), so programs elsewhere, such as `/usr/lib`, can
+       still be run; and there are no TCP rules or scoping;
+     - in an LXC container the service runs as root of a user namespace, which
+       has `CAP_SYS_ADMIN` there; the container's AppArmor profile must allow
+       tmpfs and bind mounts and `pivot_root` (on Proxmox, `nesting=1`);
+     - `FsIsolation::MountNamespace` forces it, even with Landlock.
 4. **Output staging** (`ffmpeg/output.rs`):
    - ffmpeg writes into a fresh `0700` directory next to the target;
    - the parent checks the size and magic bytes, sets the mode to `0600` and
@@ -84,9 +102,9 @@ sandbox separately.
 
 `SandboxMode::default()` depends on the platform:
 
-- **Linux:** `Enforce`. Spawning fails if Landlock is unavailable.
-  `BestEffort` logs a warning and continues; use it only on development hosts
-  without Landlock.
+- **Linux:** `Enforce`. Spawning fails if neither Landlock nor the mount
+  namespace fallback (needs `CAP_SYS_ADMIN`) is available. `BestEffort` logs
+  a warning and continues; use it only on development hosts without either.
 - **macOS and other platforms:** `BestEffort`. Layer 3 is Linux-only, so there
   is no sandbox. Processes still get the whitelists, the cleared environment, a
   new session, rlimits and output staging, and a warning is logged once.
@@ -169,9 +187,11 @@ All call sites are wired. Across them:
 - `MediaError::is_terminal()` errors (input that can never decode) map to each
   call site's terminal failure; timeouts and environment failures stay
   transient or retryable.
-- On Linux the default is `Enforce`. A host without Landlock, or a root service
-  without `CAP_SYS_ADMIN`, now fails media jobs as transient errors instead of
-  running them unsandboxed. Check every host's kernel before deploying.
+- On Linux the default is `Enforce`. A host without Landlock uses the mount
+  namespace fallback when the service has `CAP_SYS_ADMIN` (and logs a warning
+  once). Without either, or a root service without `CAP_SYS_ADMIN`, media jobs
+  fail as transient errors instead of running unsandboxed. Check every host's
+  kernel before deploying.
 - wdintel-rs passes its own `config.rs` constants (filters, limits, timeouts)
   through the option structs.
 
@@ -254,15 +274,19 @@ a pre-signed S3 URL:
 2. Clean up `.echo-media-*` job directories left by a crash. Cache cleanup
    ignores them in the playback cache root, the thumbnail directories and
    `/tmp`.
-3. Check the deployment: Landlock in `/sys/kernel/security/lsm`,
-   `CAP_SYS_ADMIN` for the services, and root-owned `ffmpeg` and `ffprobe` on
-   the service `PATH`.
+3. Check the deployment: Landlock in `/sys/kernel/security/lsm` (or the mount
+   namespace fallback working there), `CAP_SYS_ADMIN` for the services, and
+   root-owned `ffmpeg` and `ffprobe` on the service `PATH`.
+4. Clean up `.echo-media-root-*` directories in the temp dir. They are empty,
+   and are left only if the service dies while spawning a job.
 
 ## Tests
 
 ```bash
 cargo test -p echo-media
 ECHO_MEDIA_TEST_SANDBOX=best-effort cargo test -p echo-media  # Linux without Landlock
+# Mount-namespace fallback; needs CAP_SYS_ADMIN (root, or a user namespace):
+ECHO_MEDIA_TEST_SANDBOX=mount-namespace unshare -r cargo test -p echo-media --offline
 ```
 
 Tests find ffmpeg on `PATH`. On macOS, `tests/sandbox.rs` and

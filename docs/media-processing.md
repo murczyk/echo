@@ -155,7 +155,8 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 Thumbnail, transcription-probe, playback-copy, HLS-preview and
 waveform/spectrogram processes run through `echo-media`. Each gets a cleared
 environment and no capabilities. Landlock limits it to reading system libraries
-and its input, and writing only a private job directory. Offline jobs run in
+and its input, and writing only a private job directory; on kernels without
+Landlock (such as Proxmox's), a private mount namespace does the same. Offline jobs run in
 their own network namespace when the service is root. The other ffmpeg rows
 above still spawn ffmpeg directly; the
 [echo-media README](../echo-media/README.md#wiring) tracks them.

@@ -5,7 +5,8 @@
 //! prepared by the parent, no allocation, no locks, no logging.
 //!
 //! The session, signal and rlimit steps are portable POSIX. The isolation
-//! steps (capabilities, namespaces, Landlock) live in `linux.rs`.
+//! steps (capabilities, namespaces, Landlock, the mount-namespace root) live
+//! in `linux.rs` and `mounts.rs`.
 
 use super::Policy;
 use rustix::process::{setrlimit, setsid, Resource, Rlimit};
@@ -52,7 +53,7 @@ impl Prepared {
         self.linux.bind_to_parent()?;
         reset_signal(libc::SIGXFSZ);
         #[cfg(target_os = "linux")]
-        self.linux.isolate_network()?;
+        self.linux.isolate()?;
         self.set_limits()?;
         #[cfg(target_os = "linux")]
         self.linux.restrict()?;

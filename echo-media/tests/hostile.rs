@@ -236,7 +236,8 @@ async fn sandbox_alone_blocks_the_playlist() {
             .collect(),
         policy: Policy::for_programs(&[ffmpeg_bin()])
             .read_file(&input)
-            .write_dir(out.path()),
+            .write_dir(out.path())
+            .fs_isolation(fs_isolation()),
         mode: sandbox_mode(),
         timeout: Duration::from_secs(30),
         capture_stdout: false,

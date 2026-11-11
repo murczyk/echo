@@ -51,6 +51,30 @@ pub const ECHO_MEDIA_SANDBOX_SYSTEM_READ_FILES: &[&str] = &[
     "/dev/null",
     "/dev/urandom",
 ];
+/// Mount-namespace fallback (kernels without Landlock): these program
+/// directories are covered with an empty tmpfs, so only the policy's
+/// executables can run from them. Missing entries are skipped.
+pub const ECHO_MEDIA_SANDBOX_MASKED_DIRS: &[&str] = &[
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+];
+/// Mount-namespace fallback: directories of symlinks that system libraries
+/// resolve through, bound read-only and `noexec` when they exist. Debian's
+/// `update-alternatives` links `libblas.so.3` and `liblapack.so.3` (ffmpeg
+/// dependencies) through `/etc/alternatives`. Landlock needs no rule for
+/// them: it only checks the file a path finally resolves to.
+pub const ECHO_MEDIA_SANDBOX_SYMLINK_DIRS: &[&str] = &["/etc/alternatives"];
+/// Prefix of the empty directory in the temp dir that the child's private
+/// root tmpfs is mounted on.
+pub const ECHO_MEDIA_SANDBOX_ROOT_PREFIX: &str = ".echo-media-root-";
+pub const ECHO_MEDIA_SANDBOX_TMPFS_OPTIONS: &std::ffi::CStr = c"mode=0755";
+pub const ECHO_MEDIA_SANDBOX_MOUNTPOINT_MODE: u32 = 0o755;
+/// Same limit as the kernel's `MAXSYMLINKS`.
+pub const ECHO_MEDIA_SANDBOX_MAX_SYMLINKS: usize = 40;
 /// Extra read-only paths for jobs that resolve names and speak TLS.
 pub const ECHO_MEDIA_SANDBOX_NETWORK_READ_FILES: &[&str] = &[
     "/etc/resolv.conf",
