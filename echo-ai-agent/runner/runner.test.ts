@@ -2080,6 +2080,9 @@ test("#4125 period repair drops only keys that cannot move the window", () => {
   for (const period of [
     { kind: "relative_days", days: 7, sinceDate: "2026-10-01" },
     { kind: "relative_days", days: 7, hours: 5 },
+    { kind: "sinceDate", sinceDate: "2026-11-01", days: 2 },
+    { kind: "date_range", sinceDate: "2026-07-01", tillDateInclusive: "2026-07-07", timezone: "EET" },
+    { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07", timezone: "EEST" },
     { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07", start: "2026-10-01" },
   ]) {
     assert.deepEqual(normalizePeriodArgument(period), { period, ignored: [] }, JSON.stringify(period));

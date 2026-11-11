@@ -1107,7 +1107,8 @@ const PERIOD_KINDS: Record<string, PeriodKind> = {
 };
 const PERIOD_FIELDS = new Set(["kind", "hours", "days", "sinceDate", "tillDateInclusive", "start", "end"]);
 const PERIOD_TIME_ZONE_KEYS = new Set(["timezone", "timeZone", "time_zone", "tz"]);
-const KYIV_TIME_ZONE = /^(?:europe\/(?:kyiv|kiev)|kyiv|kiev|eet|eest)$/i;
+// Names only: EET and EEST are fixed offsets that differ from Kyiv for half the year.
+const KYIV_TIME_ZONE = /^(?:europe\/(?:kyiv|kiev)|kyiv|kiev)$/i;
 // Keys that only describe a period; any other key might anchor or bound it (an
 // `until`, an `asOf`), so it is rejected rather than silently dropped.
 const PERIOD_HARMLESS_KEYS = new Set(["label", "description", "title", "name", "comment", "note", "reason", "format", "granularity"]);
@@ -1147,10 +1148,12 @@ function inferPeriodKind(period: JsonObject): string | undefined {
   return ({ hours: "relative_hours", days: "relative_days", "sinceDate,tillDateInclusive": "date_range" } as Record<string, string>)[present];
 }
 
-// Fields of another kind that cannot move this kind's window: explicit dates
-// already fix a date range, so a stray duration beside them is noise.
-function droppableOtherKindField(kindName: string, key: string): boolean {
-  return (kindName === "date_range" || kindName === "sinceDate") && (key === "hours" || key === "days");
+// Fields of another kind that cannot move this kind's window: two explicit dates
+// already fix the range, so a stray duration beside them is noise. Without an
+// end date the duration may be the intended end, so it is kept for rejection.
+function droppableOtherKindField(period: JsonObject, key: string): boolean {
+  return (key === "hours" || key === "days") && period.sinceDate !== undefined && period.tillDateInclusive !== undefined &&
+    (period.kind === "date_range" || period.kind === "sinceDate");
 }
 
 /** Repairs a period whose kind and required fields are valid: drops empty values,
@@ -1178,7 +1181,7 @@ export function normalizePeriodArgument(value: unknown): { period: unknown; igno
       continue;
     }
     const kyivZone = PERIOD_TIME_ZONE_KEYS.has(key) && typeof period[key] === "string" && KYIV_TIME_ZONE.test((period[key] as string).trim());
-    const harmless = PERIOD_FIELDS.has(key) ? droppableOtherKindField(period.kind as string, key) : kyivZone || PERIOD_HARMLESS_KEYS.has(key);
+    const harmless = PERIOD_FIELDS.has(key) ? droppableOtherKindField(period, key) : kyivZone || PERIOD_HARMLESS_KEYS.has(key);
     if (!harmless) continue;
     delete period[key];
     ignored.push(key);
