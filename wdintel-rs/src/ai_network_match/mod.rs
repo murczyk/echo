@@ -16,6 +16,7 @@ use sea_orm::{
 };
 use std::collections::HashMap;
 
+mod callsigns;
 mod context;
 mod inference;
 #[cfg(test)]
@@ -23,6 +24,7 @@ mod tests;
 pub mod types;
 pub mod worker;
 
+use types::StoredCertainty;
 pub use types::{InboxNetworkMatch, NetworkMatchCandidate};
 
 /// Trims «Опис для ШІ»; blank text clears it.
@@ -147,11 +149,25 @@ pub async fn load_for_messages<C: ConnectionTrait>(
         return Ok(HashMap::new());
     }
     let results = load_results(dbx, &candidates).await.c(h!())?;
+    let item_ids = results
+        .iter()
+        .map(|result| result.sigint_inbox_item_id)
+        .collect::<Vec<_>>();
+    let network_ids = candidate_set(
+        &results
+            .iter()
+            .flat_map(|result| result.candidate_network_ids.iter().copied())
+            .collect::<Vec<_>>(),
+    );
+    let mut matches =
+        callsigns::matched_callsigns(dbx, &item_ids, &network_ids)
+            .await
+            .c(h!())?;
     results
         .into_iter()
         .map(|result| {
             let item_id = result.sigint_inbox_item_id;
-            Ok((item_id, to_inbox_match(result).c(h!())?))
+            Ok((item_id, to_inbox_match(result, &mut matches).c(h!())?))
         })
         .collect()
 }
@@ -218,24 +234,75 @@ fn enqueue_cutoff() -> chrono::NaiveDateTime {
 
 fn to_inbox_match(
     result: ai_network_match_result::Model,
+    matches: &mut callsigns::CallsignMatches,
 ) -> anyhow::Result<InboxNetworkMatch> {
-    let mut candidates: Vec<NetworkMatchCandidate> =
+    let item_id = result.sigint_inbox_item_id;
+    let stored: Vec<StoredCertainty> =
         serde_json::from_value(result.certainties).c(h!())?;
+    Ok(rank(
+        stored
+            .into_iter()
+            .map(|score| NetworkMatchCandidate {
+                matched_callsigns: matches
+                    .remove(&(item_id, score.network_id))
+                    .unwrap_or_default(),
+                network_id: score.network_id,
+                certainty: score.certainty,
+                reason: score.reason,
+            })
+            .collect(),
+    ))
+}
+
+/// Picks the main network, then orders the candidates: the main network,
+/// networks holding the message's callsigns, then by certainty.
+pub(crate) fn rank(
+    mut candidates: Vec<NetworkMatchCandidate>,
+) -> InboxNetworkMatch {
+    let confident = confident_network_id(&candidates);
+    candidates.sort_by(|a, b| {
+        let is_confident =
+            |c: &NetworkMatchCandidate| confident == Some(c.network_id);
+        is_confident(b)
+            .cmp(&is_confident(a))
+            .then(has_callsigns(b).cmp(&has_callsigns(a)))
+            .then(b.certainty.cmp(&a.certainty))
+            .then(a.network_id.cmp(&b.network_id))
+    });
+    InboxNetworkMatch {
+        confident_network_id: confident,
+        candidates,
+    }
+}
+
+/// Callsigns win: the only network holding the message's callsigns is the
+/// main network whatever its certainty, and when several hold them, the
+/// certainty rule picks among those only. Without callsign matches, the best
+/// network needs high certainty and a clear lead.
+pub(crate) fn confident_network_id(
+    candidates: &[NetworkMatchCandidate],
+) -> Option<i64> {
+    let with_callsigns = candidates
+        .iter()
+        .filter(|c| has_callsigns(c))
+        .collect::<Vec<_>>();
+    match with_callsigns.as_slice() {
+        [only] => Some(only.network_id),
+        [] => by_certainty(candidates.iter().collect()),
+        several => by_certainty(several.to_vec()),
+    }
+}
+
+fn has_callsigns(candidate: &NetworkMatchCandidate) -> bool {
+    !candidate.matched_callsigns.is_empty()
+}
+
+fn by_certainty(mut candidates: Vec<&NetworkMatchCandidate>) -> Option<i64> {
     candidates.sort_by(|a, b| {
         b.certainty
             .cmp(&a.certainty)
             .then(a.network_id.cmp(&b.network_id))
     });
-    Ok(InboxNetworkMatch {
-        confident_network_id: confident_network_id(&candidates),
-        candidates,
-    })
-}
-
-/// `candidates` are ordered by certainty, highest first.
-pub(crate) fn confident_network_id(
-    candidates: &[NetworkMatchCandidate],
-) -> Option<i64> {
     let best = candidates.first()?;
     let runner_up = candidates.get(1).map_or(0, |c| c.certainty);
     (best.certainty >= AI_NETWORK_MATCH_CONFIDENT_MIN_CERTAINTY

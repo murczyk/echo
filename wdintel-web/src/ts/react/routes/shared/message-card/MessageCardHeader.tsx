@@ -1093,12 +1093,27 @@ function MetaLine({
   );
 }
 
-/** The network icon's tooltip; it carries the AI certainty when there is one. */
-function networkIconTitle(certainty?: number | null, reason?: string | null): string {
-  const title = "Еталонна прив'язка";
-  if (certainty == null) return title;
-  const lines = [title, `Впевненість ШІ, що повідомлення належить саме цій мережі: ${certainty}%`];
-  if (reason) lines.push(`Пояснення ШІ: ${reason}`);
+/**
+ * The network icon's tooltip; it carries the message's callsigns this network
+ * lists and the AI certainty when there are any.
+ */
+function networkIconTitle(
+  certainty?: number | null,
+  reason?: string | null,
+  matchedCallsigns?: string[],
+): string {
+  const lines = ["Еталонна прив'язка"];
+  if (matchedCallsigns?.length) {
+    lines.push(
+      `Позивні з повідомлення в цій мережі: ${matchedCallsigns
+        .map((callsign) => callsign.toLocaleUpperCase('uk'))
+        .join(', ')}`,
+    );
+  }
+  if (certainty != null) {
+    lines.push(`Впевненість ШІ, що повідомлення належить саме цій мережі: ${certainty}%`);
+    if (reason) lines.push(`Пояснення ШІ: ${reason}`);
+  }
   return lines.join('\n');
 }
 
@@ -1108,6 +1123,7 @@ function NetworkMetadataItem({
   badge,
   certainty,
   certaintyReason,
+  matchedCallsigns,
 }: MessageCardRenderedNetwork) {
   return (
     <div
@@ -1119,7 +1135,7 @@ function NetworkMetadataItem({
       <span
         className="message-card-header-meta__icon message-card-header-meta__icon--network"
         data-message-card-metadata-icon-kind="network"
-        title={networkIconTitle(certainty, certaintyReason)}
+        title={networkIconTitle(certainty, certaintyReason, matchedCallsigns)}
       >
         <PeopleOutlineOutlinedIcon />
       </span>

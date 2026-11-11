@@ -19,6 +19,8 @@ export type MessageCardRenderedNetwork = {
   /** AI certainty, 0–100, when the message has network match scores. */
   certainty?: number | null;
   certaintyReason?: string | null;
+  /** The message's callsigns this network lists; such a network is the main one. */
+  matchedCallsigns?: string[];
 };
 
 export type MessageCardNavigationMenuItem = {
@@ -122,8 +124,10 @@ export function resolveMessageCardRenderedNetworks(
 }
 
 /**
- * Adds AI certainty and orders networks by it, highest first. The confident
- * network folds the others only when it is one of several rendered networks.
+ * Adds AI certainty and callsign matches, in the server's order: the main
+ * network, networks holding the message's callsigns, then by certainty. The
+ * confident network folds the others only when it is one of several rendered
+ * networks.
  */
 export function applyMessageCardNetworkMatch(
   renderedNetworks: MessageCardRenderedNetwork[],
@@ -133,18 +137,27 @@ export function applyMessageCardNetworkMatch(
     return { renderedNetworks, confidentNetworkId: null };
   }
   const byNetworkId = new Map(
-    networkMatch.candidates.map((candidate) => [candidate.networkId, candidate]),
+    networkMatch.candidates.map((candidate, rank) => [candidate.networkId, { candidate, rank }]),
   );
+  const unranked = networkMatch.candidates.length;
   const scored = renderedNetworks
     .map((network) => {
-      const candidate = byNetworkId.get(network.networkId);
+      const { candidate, rank } = byNetworkId.get(network.networkId) ?? {
+        candidate: null,
+        rank: unranked,
+      };
       return {
-        ...network,
-        certainty: candidate?.certainty ?? null,
-        certaintyReason: candidate?.reason || null,
+        network: {
+          ...network,
+          certainty: candidate?.certainty ?? null,
+          certaintyReason: candidate?.reason || null,
+          matchedCallsigns: candidate?.matchedCallsigns ?? [],
+        },
+        rank,
       };
     })
-    .sort((a, b) => (b.certainty ?? -1) - (a.certainty ?? -1));
+    .sort((a, b) => a.rank - b.rank)
+    .map(({ network }) => network);
   const confidentNetworkId = scored.some(
     (network) => network.networkId === networkMatch.confidentNetworkId,
   )
