@@ -72,6 +72,14 @@ reuse settled answers and separate facts, hypotheses and human observations.
 Recommend concrete solutions with user benefit/tradeoffs without inventing
 approval, priorities or evidence. Unanswered critical decisions block that scope.
 
+Perform the mandatory UX analysis and best-practice check in
+docs/frontend/echo-workflows.md#ux-analysis-and-best-practice-check while exploring
+flows, after material design decisions and before handoff. Read repository
+.agents/skills/impeccable/reference/critique.md and apply relevant heuristics.
+Include a UX analysis section in design notes with checked principles,
+scenario/acceptance IDs, evidence, user impact, decisions/tradeoffs and validation
+gaps. Return requirement changes to their owner; do not claim user-tested usability.
+
 Write only assigned UX/design notes, synthetic static visuals and
 explicitly authorized Figma Design files/pages/nodes. Figma tool scripts may build
 native editable design nodes; they do not authorize repository implementation.

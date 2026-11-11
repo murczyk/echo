@@ -172,6 +172,7 @@ relevant_paths: contracts, source, shared consumers, prepared tests
 allowed_write_paths: assigned files or none
 allowed_commands: actual local commands, environment/API mode or none
 dev/QA CPU baseline: 4x slowdown; affected browser scenarios/data and execution limits
+spec/designer UX: mandatory ongoing analysis, best-practice check and findings in output
 stop_after:
 return: artifact paths, changes, commands/results, gaps and blockers
 ```
@@ -183,8 +184,8 @@ permissions; this configuration does not create independent sandboxes.
 
 | Artifact | Required content |
 | --- | --- |
-| Specification (spec role or manual input) | User/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; owner decisions and unresolved questions |
-| Design result (designer) | Input specification revision/approval; acceptance-ID → UX flow/frame/state mapping; reused component/token sources; design links/notes, observations, UX decisions, design approval and evidence limits; requirement gaps returned to the owner |
+| Specification (spec role or manual input) | User/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; UX analysis and best-practice check for spec-role output; owner decisions and unresolved questions |
+| Design result (designer) | Input specification revision/approval; acceptance-ID → UX flow/frame/state mapping; reused component/token sources; design links/notes, observations, UX decisions, UX analysis and best-practice check, design approval and evidence limits; requirement gaps returned to the owner |
 | Implementation plan (main, only for requested planning/dev work) | Approved specification and needed design links; expected files/reasons; shared consumers/invariants; exact existing test paths/cases and gaps; new tests marked planned; small steps and real verification commands |
 | QA prepare result | Acceptance ID → existing/new test → preserved/changed behavior → observed result or not-run; gaps, baseline readiness, execution limits |
 | Dev result | Input versions/revision/dirty scope; expected versus actual changes; scenario/test outcomes; commands/environment/API mode; browser observations; deviations and unverified work |
@@ -202,6 +203,35 @@ there unless the user explicitly requests an export.
 Keep role results in its evidence section or the task/PR, with full sanitized
 logs/captures in a stated ignored local directory. No report publication or new
 status database is implied. Resume from these materials after compaction.
+
+## UX analysis and best-practice check
+
+Spec and designer must analyze UX throughout their work: establish the user task
+and current friction during discovery, assess meaningful alternatives as decisions
+are made, and recheck the proposed result before handoff. A final checklist alone
+does not replace this analysis. Use repository product context, contracts and
+actual source/artifacts; preserve established patterns and approved decisions.
+
+Check relevant UX principles: clear system status and feedback; familiar domain
+language and consistency; user control, Back/cancel and context preservation;
+error prevention and recovery; recognition over recall and cognitive load;
+efficient frequent tasks; information/action hierarchy; keyboard/focus,
+accessibility and responsive behavior; loading, empty, error and success states.
+Explain material tradeoffs rather than citing a generic best practice as proof.
+
+Include a **UX analysis** section in the specification or design notes: checked
+principles; scenario/acceptance ID → evidence or hypothesis → user impact →
+decision/proposed change and rationale → validation needed. Record supported
+no-change conclusions, unresolved risks and evidence limits; do not invent issues.
+For work without user-facing impact, state why the check is not applicable.
+
+Spec translates findings into proposed behavioral requirements and observable
+acceptance criteria for approval, leaving layout to designer. Designer checks
+concrete flows/states with repository Impeccable `critique`, documents UX choices
+and returns requirement changes to their owner before dependent work continues.
+Plugins, live previews and user research are not prerequisites for this analysis;
+label source-only/static checks and hypotheses. Heuristic review does not prove
+rendered interactions or user-tested usability and grants no extra tool access.
 
 ## Specification
 

@@ -19,6 +19,8 @@ Resolve `wireframe` / `wireframes` / `design` requests using the shared [output 
 
 ## Design tools
 
+Require [UX analysis and a best-practice check](../../../docs/frontend/echo-workflows.md#ux-analysis-and-best-practice-check) while exploring flows, after material design decisions and before handoff. Include the analysis in design notes and inspect its findings, acceptance-ID mappings and evidence limits. Read repository Impeccable's `critique` guidance for this check; optional tools do not replace it.
+
 The assigned designer reads repository [brainstorming](../brainstorming/SKILL.md) directly for UX discovery from approved requirements. It does not author a replacement specification or start implementation/planning; no personal Superpowers plugin is needed.
 
 The assigned designer reads [.agents/skills/impeccable/SKILL.md](../../../.agents/skills/impeccable/SKILL.md) and its relevant Markdown guidance (`shape`, `critique`, `audit`) for UX structure, hierarchy, accessibility and responsive design. This Echo adaptation contains no runtime, hooks or additional agents. Use source/authorized browser evidence within the [workflow safety boundaries](../../../docs/frontend/echo-workflows.md#skill-and-tool-boundaries).

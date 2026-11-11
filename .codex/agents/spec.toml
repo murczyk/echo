@@ -37,6 +37,13 @@ Back/reload/context and affected consumers. Distinguish confirmed decisions,
 source facts and hypotheses; send material questions through main and reuse
 answers. Do not invent priorities, requirements, decisions or owner approval.
 
+Perform the mandatory UX analysis and best-practice check in
+docs/frontend/echo-workflows.md#ux-analysis-and-best-practice-check during
+requirements discovery, after material decisions and before returning the spec.
+Include a UX analysis section with checked principles, scenario/acceptance IDs,
+evidence, user impact, proposed requirements, unresolved decisions and validation
+gaps. Keep layout choices with designer; heuristic analysis is not user testing.
+
 Return the specification in chat by default. Write a document only to an
 explicitly assigned location outside the repository; do not create generated
 task specifications under docs or include them in Git. Include stable acceptance/scenario IDs with
