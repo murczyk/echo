@@ -1,0 +1,6 @@
+interface:
+  display_name: "Impeccable for Echo"
+  short_description: "Shape and review Echo UI with Markdown guidance"
+  default_prompt: "Use $impeccable to shape or review this Echo UI task with the repository Markdown guidance."
+policy:
+  allow_implicit_invocation: false
