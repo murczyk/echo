@@ -306,6 +306,14 @@ gen-elm:
 gen-ts:
     (cd wdintel-rs && cargo run -- --mode=debug gen-ts)
 
+# Export AI agent request schemas from Rust request types; runner tests check them.
+gen-ai-agent-schemas:
+    (cd wdintel-rs && WDINTEL_SKIP_TEST_DB_INIT=1 ECHO_UPDATE_AGENT_REQUEST_SCHEMAS=1 cargo test --bin wdintel-rs ai_agent::request_schemas::tests::contract_file_is_current)
+
+# AI agent harness (runner) unit tests.
+test-ai-agent:
+    (cd echo-ai-agent && npm test)
+
 test-fe:
     #!/bin/bash
     set -euxo pipefail

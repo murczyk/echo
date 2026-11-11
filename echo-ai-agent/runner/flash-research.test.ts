@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
@@ -1640,14 +1641,33 @@ const providerRejection = (status: number, message: string) =>
     headers: { "content-type": "application/json" },
   });
 
+const TEST_SKILLS = [
+  {
+    method: "POST",
+    path: "/api/user/sigint-groups-detailed",
+    skill: "accessible_group_details",
+    label: "List groups",
+    requestKind: "json",
+  },
+  {
+    method: "POST",
+    path: "/api/signal/inbox/messages",
+    skill: "inbox_messages",
+    label: "Read archive",
+    requestKind: "inboxMessages",
+  },
+];
+
 async function researchWithProviderScript(
   t: any,
   script: (() => Response)[],
   policyForRun: ExecutionPolicy = policy,
   overrides: Record<string, unknown> = {},
+  echoResponses: Record<string, unknown> = {},
 ) {
   const events: any[] = [];
   const reads: unknown[] = [];
+  const echoRequests: { path: string; body: unknown }[] = [];
   const synthesisBodies: string[] = [];
   let researchCalls = 0;
   const oldSignals = {
@@ -1675,6 +1695,10 @@ async function researchWithProviderScript(
     }
     if (path === "/api/user/sigint-groups-detailed")
       return Response.json([{ master_key: "group.devops", name: "DEVOPS" }]);
+    if (path in echoResponses) {
+      echoRequests.push({ path, body: JSON.parse(init.body) });
+      return Response.json(echoResponses[path]);
+    }
     const purpose = new Headers(init.headers).get("x-echo-ai-purpose");
     if (purpose === "synthesis") {
       synthesisBodies.push(init.body);
@@ -1704,22 +1728,7 @@ async function researchWithProviderScript(
             timeZone: "Europe/Kyiv",
             requestStartedAtUtc: new Date().toISOString(),
           },
-          skills: [
-            {
-              method: "POST",
-              path: "/api/user/sigint-groups-detailed",
-              skill: "accessible_group_details",
-              label: "List groups",
-              requestKind: "json",
-            },
-            {
-              method: "POST",
-              path: "/api/signal/inbox/messages",
-              skill: "inbox_messages",
-              label: "Read archive",
-              requestKind: "inboxMessages",
-            },
-          ],
+          skills: TEST_SKILLS,
           ...overrides,
         },
         false,
@@ -1734,7 +1743,7 @@ async function researchWithProviderScript(
   const metadata = events.find((event) => event.type === "completion_metadata");
   const reason = metadata?.reason;
   const answer = events.findLast((event) => event.type === "assistant_snapshot")?.text?.trim();
-  return { answer, events, metadata, reads, reason, researchCalls, synthesisBodies };
+  return { answer, echoRequests, events, metadata, reads, reason, researchCalls, synthesisBodies };
 }
 
 const readArchive = () =>
@@ -1969,4 +1978,118 @@ test("incident 01a1c4a5: a document request still goes to synthesis", async (t) 
     ticketFollowUp,
   );
   assert.equal(synthesisBodies.length, 1);
+});
+
+// Generated from Echo's Rust request types by `just gen-ai-agent-schemas`.
+const REQUEST_SCHEMAS = JSON.parse(
+  readFileSync(new URL("../../wdintel-rs/src/ai_agent/request_schemas.json", import.meta.url), "utf8"),
+);
+
+test("#4125 a harmless extra key inside period no longer fails the read and is logged by name", async (t) => {
+  const { events, reads } = await researchWithProviderScript(t, [
+    () =>
+      stream("", {
+        name: "echo_inbox_messages",
+        args: { period: { ...period, timezone: "Europe/Kyiv", SENSITIVE: "x", hours: null } },
+      }),
+    () => stream(""),
+  ]);
+  assert.equal(reads.length, 1);
+  assert.ok(!events.some((event) => event.type === "tool_end" && event.is_error));
+  const diagnostics = events.filter((event) => event.type === "tool_diagnostic");
+  assert.deepEqual(diagnostics, [
+    {
+      type: "tool_diagnostic",
+      tool: "echo_inbox_messages",
+      reason: "ignored_arguments",
+      handledPrivately: false,
+      fields: "period.hours:ignored, period.timezone:ignored, period:ignored",
+    },
+  ]);
+  assert.ok(!JSON.stringify(diagnostics).includes("SENSITIVE"));
+});
+
+test("#4125 a period key that could move the window is rejected precisely", async (t) => {
+  const { events, reads } = await researchWithProviderScript(t, [
+    () => stream("", { name: "echo_inbox_messages", args: { period: { ...period, until: "2026-11-08" } } }),
+    () => stream(""),
+  ]);
+  assert.equal(reads.length, 0);
+  const failure = events.find((event) => event.type === "tool_diagnostic");
+  assert.equal(failure.reason, "invalid_arguments");
+  assert.equal(failure.fields, "period.until:additional");
+  const retryPrompt = (globalThis.fetch as any).mock.calls
+    .map((call: any) => String(call.arguments[1]?.body ?? ""))
+    .find((body: string) => body.includes("unsupported field"));
+  assert.match(retryPrompt, /unsupported field \\"until\\" for kind relative_days; allowed fields: kind, days/);
+});
+
+test("#4125 messages_by_uuid takes Echo's generated schema and the shapes models send", async (t) => {
+  const route = {
+    method: "POST",
+    path: "/api/rer-importer/messages-by-uuid",
+    skill: "messages_by_uuid",
+    label: "Read selected messages",
+    requestKind: "json",
+    requestSchema: REQUEST_SCHEMAS.messages_by_uuid,
+  };
+  const uuid = "01a1ba32-c862-7bcc-b685-d71d1d326f77";
+  const { echoRequests, events } = await researchWithProviderScript(
+    t,
+    [
+      () =>
+        stream("", {
+          name: "echo_messages_by_uuid",
+          args: { body: { messageUuids: [`[джерело](/rer-analysis-neo?m=${uuid.toUpperCase()})`] } },
+        }),
+      () => stream(""),
+    ],
+    policy,
+    { skills: [...TEST_SKILLS, route] },
+    { [route.path]: { messages: [] } },
+  );
+  assert.deepEqual(echoRequests, [{ path: route.path, body: { message_uuids: [uuid] } }]);
+  assert.ok(!events.some((event) => event.type === "tool_diagnostic"));
+  const tools = JSON.parse(
+    (globalThis.fetch as any).mock.calls.find((call: any) => String(call.arguments[0]).endsWith("/chat/completions")).arguments[1].body,
+  ).tools;
+  const tool = tools.find((entry: any) => entry.function.name === "echo_messages_by_uuid").function;
+  assert.equal(tool.description, REQUEST_SCHEMAS.messages_by_uuid.description);
+  assert.deepEqual(Object.keys(tool.parameters.properties), ["message_uuids"]);
+});
+
+test("#4125 statistics reach the tool-free synthesis even without a saved draft", async (t) => {
+  const route = {
+    method: "POST",
+    path: "/api/rer/analysis/ai/frequency-summary",
+    skill: "frequency_summary",
+    label: "Frequency activity",
+    requestKind: "analysisPeriod",
+  };
+  const summary = {
+    rows: [{ freq: "163.9350", count: 42, callsigns: ["Сокіл"], units: [], locations: [] }],
+    total_rows: 1,
+    row_values_truncated: false,
+  };
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [
+      () => stream("", { name: "echo_frequency_summary", args: { period } }),
+      () => stream("Найактивніша частота 163.9350: 42 повідомлення."),
+    ],
+    policy,
+    { skills: [...TEST_SKILLS, route] },
+    { [route.path]: summary },
+  );
+  assert.equal(answer, "Підсумок.");
+  assert.equal(synthesisBodies.length, 1);
+  const records = JSON.parse(synthesisBodies[0]).messages
+    .map((message: any) => message.content)
+    .filter((content: unknown) => typeof content === "string" && content.startsWith('{"statisticsFrom"'))
+    .map((content: string) => JSON.parse(content));
+  assert.equal(records.length, 1);
+  assert.equal(records[0].statisticsFrom, "echo_frequency_summary");
+  assert.deepEqual(records[0].request, { period });
+  assert.equal(records[0].result.rows[0].freq, "163.9350");
+  assert.equal(records[0].result.rows[0].count, 42);
 });

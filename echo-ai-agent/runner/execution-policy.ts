@@ -179,6 +179,14 @@ export interface BudgetEvidence {
   messages: CitedMessage[];
   files: FileSection[];
   saved?: { text: string; citations: string[] }[];
+  /** Statistics and lookups as the research model saw them; they cite no message. */
+  aggregates?: AggregateEvidence[];
+}
+
+export interface AggregateEvidence {
+  tool: string;
+  request: unknown;
+  result: unknown;
 }
 
 function evidenceRecords(
@@ -213,7 +221,7 @@ export function chooseBudgetAnswer(
     fileCitationHref(section.source),
   ),
 ): string {
-  const savedOnly = !evidence.messages.length && !evidence.files.length && Boolean(evidence.saved?.length);
+  const savedOnly = !evidence.messages.length && !evidence.files.length && !evidence.aggregates?.length && Boolean(evidence.saved?.length);
   const valid =
     candidate &&
     (!savedOnly || evidence.saved!.some((record) => record.citations.some((citation) => candidate.includes(citation)))) &&
@@ -448,9 +456,15 @@ export function synthesisConversation(
 
 function synthesisContext(options: SynthesisOptions): Context | null {
   const records = evidenceRecords(options.evidence);
+  const aggregates = (options.evidence.aggregates ?? []).map(({ tool, request, result }) => ({
+    statisticsFrom: tool,
+    request,
+    result,
+  }));
   if (
     !records.length &&
     !options.evidence.saved?.length &&
+    !aggregates.length &&
     !options.allowUserEvidence
   )
     return null;
@@ -486,7 +500,8 @@ function synthesisContext(options: SynthesisOptions): Context | null {
     savedEvidence: record.text,
     citations: record.citations,
   }));
-  for (const record of [...records, ...saved].reverse()) {
+  // Newest first within the budget; aggregates are compact and often the whole answer.
+  for (const record of [...aggregates.reverse(), ...[...records, ...saved].reverse()]) {
     const message = {
       role: "user" as const,
       content: JSON.stringify(record),
