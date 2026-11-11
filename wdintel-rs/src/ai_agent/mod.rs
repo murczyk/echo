@@ -16,6 +16,7 @@ pub mod profile;
 pub mod provider_gateway;
 pub(crate) mod reasoning;
 mod refusal;
+mod request_schemas;
 mod review;
 mod route_registry;
 pub mod types;

@@ -88,7 +88,11 @@ research-effort turns.
 Synthesis has no tools and sees only delivered evidence, so its request also carries
 `completedActions`: the harness's record of each public tool's calls, failures and
 result counts. Without it, a search that found nothing or a published map looks like
-work that never ran. Its conversation is the opening user message, which often sets
+work that never ran. Statistics and lookups (frequency summary, daily activity,
+callsign relations, positions, units and similar) cite no message, so each result
+also reaches synthesis as a `statisticsFrom` record with the tool's arguments and
+the compacted result research saw; otherwise an answer built on them would have
+nothing to report. Its conversation is the opening user message, which often sets
 rules for the whole chat, plus the newest history entries that fit a quarter of the
 engine's input allowance; the rest stays for evidence. Synthesis uses the same context-aware evidence packing as other engines and at
 most 16,384 output tokens (the whole configured output cap on Deep), bounded by
