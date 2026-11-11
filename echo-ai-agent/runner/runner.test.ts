@@ -2064,12 +2064,27 @@ test("#3913 persists only allowlisted diagnostics even for unlabelled provider p
 });
 
 test("#4125 period repair drops only keys that cannot move the window", () => {
-  const original = { kind: "relative_days", days: 3, timezone: "Europe/Kyiv", hours: 5, sinceDate: null, label: "доба", SENSITIVE: 1 };
+  const original = { kind: "relative_days", days: 3, timezone: "Europe/Kyiv", sinceDate: null, label: "доба", SENSITIVE: 1 };
   const snapshot = structuredClone(original);
   assert.deepEqual(normalizePeriodArgument(original), {
     period: { kind: "relative_days", days: 3 },
-    ignored: ["sinceDate", "timezone", "hours", "label", "SENSITIVE"],
+    ignored: ["sinceDate", "timezone", "label", "SENSITIVE"],
   });
+  // Explicit dates fix a range, so a stray duration beside them is dropped...
+  assert.deepEqual(
+    normalizePeriodArgument({ kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07", days: 2 }),
+    { period: { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07" }, ignored: ["days"] },
+  );
+  // ...but a bound beside a relative period, or a second bound, would move the window.
+  for (const period of [
+    { kind: "relative_days", days: 7, sinceDate: "2026-10-01" },
+    { kind: "relative_days", days: 7, hours: 5 },
+    { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07", start: "2026-10-01" },
+  ]) {
+    assert.deepEqual(normalizePeriodArgument(period), { period, ignored: [] }, JSON.stringify(period));
+  }
+  const mixed = { days: 7, tillDateInclusive: "2026-10-01" };
+  assert.equal(normalizePeriodArgument(mixed).period, mixed);
   assert.deepEqual(original, snapshot);
   for (const [input, kind] of [
     [{ hours: 24 }, "relative_hours"],
@@ -2170,9 +2185,14 @@ test("#4125 schema arguments lift the shapes models send without guessing", () =
   // Not a UUID: left for validation, which names the field and the format.
   assert.deepEqual(schemaArguments(MESSAGE_UUIDS_SCHEMA, { message_uuids: ["legacy / uid", 42] }), { message_uuids: ["legacy / uid", 42] });
   assert.equal(uuidArgument("legacy / uid"), "legacy / uid");
+  // A second spelling of the same field is kept as sent, so validation rejects it.
   assert.deepEqual(
     schemaArguments(MESSAGE_UUIDS_SCHEMA, { message_uuids: [uuid], messageUuids: ["other"] }),
     { message_uuids: [uuid], messageUuids: ["other"] },
+  );
+  assert.deepEqual(
+    schemaArguments(MESSAGE_UUIDS_SCHEMA, { messageUuids: [uuid], messageUUIDs: ["other"] }),
+    { message_uuids: [uuid], messageUUIDs: ["other"] },
   );
   const comments = {
     type: "object",

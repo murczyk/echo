@@ -503,3 +503,39 @@ test("#4115 synthesis keeps the opening rules and the newest turns within its bu
   assert.deepEqual(synthesisConversation([], 1000), []);
   assert.deepEqual(Object.keys(synthesisConversation([{ role: "user", content: "a", citations: [] } as any], 10)[0]), ["role", "content"]);
 });
+
+test("#4125 statistics reach synthesis without crowding out cited sources", async () => {
+  const small = { ...engine, contextWindow: 24_000 };
+  const aggregate = { tool: "echo_frequency_summary", request: { period: { kind: "relative_days", days: 1 } }, result: { rows: "x".repeat(40_000) } };
+  const message = { ...evidence.messages[0], text: "y".repeat(5_000) };
+  const sent = async (packed: typeof evidence & { aggregates?: unknown[] }) => {
+    let serialized = "";
+    await synthesizeBudgetEvidence(
+      {
+        engine: small,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Частоти за добу",
+        evidence: packed as any,
+        maxTokens: 8192,
+        signal: new AbortController().signal,
+      },
+      async (_engine, context) => {
+        serialized = JSON.stringify(context.messages);
+        return { stopReason: "stop", content: [{ type: "text", text: "done" }] } as any;
+      },
+    );
+    return serialized;
+  };
+  const both = await sent({ messages: [message], files: [], aggregates: [aggregate] });
+  assert.match(both, /yyyy/);
+  assert.doesNotMatch(both, /statisticsFrom/);
+  const alone = await sent({ messages: [], files: [], aggregates: [aggregate] });
+  assert.match(alone, /statisticsFrom/);
+  assert.match(alone, /echo_frequency_summary/);
+  // Statistics are evidence: an uncited answer from them is not judged by saved notes alone.
+  const saved = { messages: [], files: [], saved: [{ text: "earlier", citations: ["/rer-analysis-neo?m=old"] }] };
+  assert.equal(chooseBudgetAnswer("42 повідомлення на 163.9350.", saved, []), budgetFallback());
+  assert.equal(chooseBudgetAnswer("42 повідомлення на 163.9350.", { ...saved, aggregates: [aggregate] }, []), "42 повідомлення на 163.9350.");
+});

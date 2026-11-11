@@ -1123,19 +1123,24 @@ function isEmptyArgument(value: unknown): boolean {
     (typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length === 0);
 }
 
+// Only when the period fields present are exactly one kind's: a stray bound
+// would otherwise be dropped and the request would read a different window.
 function inferPeriodKind(period: JsonObject): string | undefined {
-  const has = (key: string) => period[key] !== undefined;
-  if (has("start") || has("end")) return undefined;
-  if (has("hours") && !has("days") && !has("sinceDate")) return "relative_hours";
-  if (has("days") && !has("hours") && !has("sinceDate")) return "relative_days";
-  if (has("sinceDate") && has("tillDateInclusive") && !has("hours") && !has("days")) return "date_range";
-  return undefined;
+  const present = Object.keys(period).filter((key) => PERIOD_FIELDS.has(key)).sort().join(",");
+  return ({ hours: "relative_hours", days: "relative_days", "sinceDate,tillDateInclusive": "date_range" } as Record<string, string>)[present];
+}
+
+// Fields of another kind that cannot move this kind's window: explicit dates
+// already fix a date range, so a stray duration beside them is noise.
+function droppableOtherKindField(kindName: string, key: string): boolean {
+  return (kindName === "date_range" || kindName === "sinceDate") && (key === "hours" || key === "days");
 }
 
 /** Repairs a period whose kind and required fields are valid: drops empty values,
- * fields of other kinds, a Europe/Kyiv time zone and keys that cannot move the
- * window, and infers an omitted kind when only one fits. Anything else is left
- * for `kyivPeriodBoundaries` to reject with a precise message. */
+ * a Europe/Kyiv time zone, a duration beside explicit dates and keys that cannot
+ * move the window, and infers an omitted kind when only one fits. Anything else,
+ * including any other bound, is left for `kyivPeriodBoundaries` to reject with a
+ * precise message. */
 export function normalizePeriodArgument(value: unknown): { period: unknown; ignored: string[] } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { period: value, ignored: [] };
   const period: JsonObject = { ...(value as JsonObject) };
@@ -1157,7 +1162,10 @@ export function normalizePeriodArgument(value: unknown): { period: unknown; igno
       continue;
     }
     const kyivZone = PERIOD_TIME_ZONE_KEYS.has(key) && typeof period[key] === "string" && KYIV_TIME_ZONE.test((period[key] as string).trim());
-    if (!PERIOD_FIELDS.has(key) && !kyivZone && (PERIOD_TIME_ZONE_KEYS.has(key) || PERIOD_BOUND_KEY.test(key))) continue;
+    const keep = PERIOD_FIELDS.has(key)
+      ? !droppableOtherKindField(period.kind as string, key)
+      : !kyivZone && (PERIOD_TIME_ZONE_KEYS.has(key) || PERIOD_BOUND_KEY.test(key));
+    if (keep) continue;
     delete period[key];
     ignored.push(key);
   }
@@ -2702,7 +2710,9 @@ export function schemaArguments(schema: JsonObject, args: JsonObject): JsonObjec
   const result: JsonObject = {};
   for (const [key, value] of Object.entries(input)) {
     const name = key in properties ? key : byLooseName.get(looseName(key)) ?? key;
-    if (name !== key && name in input) {
+    // Another spelling of a field already given stays as sent, so validation
+    // rejects it instead of one list silently replacing the other.
+    if (name !== key && (name in input || name in result)) {
       result[key] = value;
       continue;
     }

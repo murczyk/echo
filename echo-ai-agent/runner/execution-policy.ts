@@ -500,8 +500,18 @@ function synthesisContext(options: SynthesisOptions): Context | null {
     savedEvidence: record.text,
     citations: record.citations,
   }));
-  // Newest first within the budget; aggregates are compact and often the whole answer.
-  for (const record of [...aggregates.reverse(), ...[...records, ...saved].reverse()]) {
+  // Newest first within the budget. Statistics may take at most half of it when
+  // cited sources exist, so they cannot crowd out the evidence answers must cite.
+  let aggregateRemaining = records.length || saved.length ? Math.floor(remaining / 2) : remaining;
+  for (const record of aggregates.reverse()) {
+    const message = { role: "user" as const, content: JSON.stringify(record), timestamp: Date.now() };
+    const tokens = estimateTokens(message);
+    if (tokens > aggregateRemaining) continue;
+    aggregateRemaining -= tokens;
+    remaining -= tokens;
+    messages.push(message);
+  }
+  for (const record of [...records, ...saved].reverse()) {
     const message = {
       role: "user" as const,
       content: JSON.stringify(record),
