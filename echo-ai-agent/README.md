@@ -274,8 +274,9 @@ callsigns returned by another tool. A passthrough (`json`) route carries a
 `requestSchema` that Echo generates from its Rust request type: it is the tool's
 parameters, and the arguments are sent as the body. Lossless variants (an old
 `body` wrapper, camelCase names, a UUID inside a citation link) are repaired
-first. A period field that cannot move the window is dropped and logged as an
-`ignored_arguments` diagnostic; any other is rejected with the allowed fields
+first. In a period, empty values, a Europe/Kyiv time zone and fields that only
+describe it are dropped and logged as an `ignored_arguments` diagnostic; any
+other field might move the window, so it is rejected with the allowed fields
 and an example. Inbox tools also expose text search; [search behavior](SEARCH.md)
 describes complementary text/tag retrieval, syntax and bounded date expansion. Harness routes,
 redirects, arbitrary URLs, path traversal, other methods, built-in Pi shell,

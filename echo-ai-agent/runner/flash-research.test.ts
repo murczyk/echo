@@ -1990,7 +1990,7 @@ test("#4125 a harmless extra key inside period no longer fails the read and is l
     () =>
       stream("", {
         name: "echo_inbox_messages",
-        args: { period: { ...period, timezone: "Europe/Kyiv", SENSITIVE: "x", hours: null } },
+        args: { period: { ...period, timezone: "Europe/Kyiv", label: "SENSITIVE", hours: null } },
       }),
     () => stream(""),
   ]);
@@ -2003,7 +2003,7 @@ test("#4125 a harmless extra key inside period no longer fails the read and is l
       tool: "echo_inbox_messages",
       reason: "ignored_arguments",
       handledPrivately: false,
-      fields: "period.hours:ignored, period.timezone:ignored, period:ignored",
+      fields: "period.hours:ignored, period.timezone:ignored, period.label:ignored",
     },
   ]);
   assert.ok(!JSON.stringify(diagnostics).includes("SENSITIVE"));

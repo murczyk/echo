@@ -1108,12 +1108,13 @@ const PERIOD_KINDS: Record<string, PeriodKind> = {
 const PERIOD_FIELDS = new Set(["kind", "hours", "days", "sinceDate", "tillDateInclusive", "start", "end"]);
 const PERIOD_TIME_ZONE_KEYS = new Set(["timezone", "timeZone", "time_zone", "tz"]);
 const KYIV_TIME_ZONE = /^(?:europe\/(?:kyiv|kiev)|kyiv|kiev|eet|eest)$/i;
-// Dropping a key like these could silently move the window, so it is rejected instead.
-const PERIOD_BOUND_KEY = /^(?:until|to|from|since|till|start|end|before|after|include|exclude|inclusive|exclusive|offset|last|next)|(?:time|date|day|days|hour|hours|from|to|until|since|till|start|end|before|after)$/i;
+// Keys that only describe a period; any other key might anchor or bound it (an
+// `until`, an `asOf`), so it is rejected rather than silently dropped.
+const PERIOD_HARMLESS_KEYS = new Set(["label", "description", "title", "name", "comment", "note", "reason", "format", "granularity"]);
 // Key names a diagnostic may log; any other key the model invents stays unnamed.
 const PERIOD_DIAGNOSTIC_KEYS = new Set([
-  ...PERIOD_FIELDS, ...PERIOD_TIME_ZONE_KEYS, "from", "to", "until", "since", "till", "startDate", "endDate",
-  "fromDate", "toDate", "untilDate", "tillDate", "date", "includeToday", "type", "unit", "label", "description",
+  ...PERIOD_FIELDS, ...PERIOD_TIME_ZONE_KEYS, ...PERIOD_HARMLESS_KEYS, "from", "to", "until", "since", "till",
+  "startDate", "endDate", "fromDate", "toDate", "untilDate", "tillDate", "date", "asOf", "includeToday", "type", "unit",
 ]);
 const MIDNIGHT_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T00:00(?::00(?:\.0+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
 
@@ -1137,10 +1138,9 @@ function droppableOtherKindField(kindName: string, key: string): boolean {
 }
 
 /** Repairs a period whose kind and required fields are valid: drops empty values,
- * a Europe/Kyiv time zone, a duration beside explicit dates and keys that cannot
- * move the window, and infers an omitted kind when only one fits. Anything else,
- * including any other bound, is left for `kyivPeriodBoundaries` to reject with a
- * precise message. */
+ * a Europe/Kyiv time zone, a duration beside explicit dates and keys that only
+ * describe it, and infers an omitted kind when only one fits. Any other key could
+ * move the window, so it is left for `kyivPeriodBoundaries` to reject precisely. */
 export function normalizePeriodArgument(value: unknown): { period: unknown; ignored: string[] } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { period: value, ignored: [] };
   const period: JsonObject = { ...(value as JsonObject) };
@@ -1162,10 +1162,8 @@ export function normalizePeriodArgument(value: unknown): { period: unknown; igno
       continue;
     }
     const kyivZone = PERIOD_TIME_ZONE_KEYS.has(key) && typeof period[key] === "string" && KYIV_TIME_ZONE.test((period[key] as string).trim());
-    const keep = PERIOD_FIELDS.has(key)
-      ? !droppableOtherKindField(period.kind as string, key)
-      : !kyivZone && (PERIOD_TIME_ZONE_KEYS.has(key) || PERIOD_BOUND_KEY.test(key));
-    if (keep) continue;
+    const harmless = PERIOD_FIELDS.has(key) ? droppableOtherKindField(period.kind as string, key) : kyivZone || PERIOD_HARMLESS_KEYS.has(key);
+    if (!harmless) continue;
     delete period[key];
     ignored.push(key);
   }

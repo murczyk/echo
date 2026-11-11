@@ -506,8 +506,9 @@ test("#4115 synthesis keeps the opening rules and the newest turns within its bu
 
 test("#4125 statistics reach synthesis without crowding out cited sources", async () => {
   const small = { ...engine, contextWindow: 24_000 };
-  const aggregate = { tool: "echo_frequency_summary", request: { period: { kind: "relative_days", days: 1 } }, result: { rows: "x".repeat(40_000) } };
-  const message = { ...evidence.messages[0], text: "y".repeat(5_000) };
+  // About 8,750 tokens of cited text fits alone; 6,250 more tokens of statistics would not.
+  const aggregate = { tool: "echo_frequency_summary", request: { period: { kind: "relative_days", days: 1 } }, result: { rows: "x".repeat(25_000) } };
+  const message = { ...evidence.messages[0], text: "y".repeat(35_000) };
   const sent = async (packed: typeof evidence & { aggregates?: unknown[] }) => {
     let serialized = "";
     await synthesizeBudgetEvidence(

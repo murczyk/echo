@@ -2066,9 +2066,10 @@ test("#3913 persists only allowlisted diagnostics even for unlabelled provider p
 test("#4125 period repair drops only keys that cannot move the window", () => {
   const original = { kind: "relative_days", days: 3, timezone: "Europe/Kyiv", sinceDate: null, label: "доба", SENSITIVE: 1 };
   const snapshot = structuredClone(original);
+  // Only keys known to describe a period are dropped; an unknown one may anchor it.
   assert.deepEqual(normalizePeriodArgument(original), {
-    period: { kind: "relative_days", days: 3 },
-    ignored: ["sinceDate", "timezone", "label", "SENSITIVE"],
+    period: { kind: "relative_days", days: 3, SENSITIVE: 1 },
+    ignored: ["sinceDate", "timezone", "label"],
   });
   // Explicit dates fix a range, so a stray duration beside them is dropped...
   assert.deepEqual(
@@ -2100,7 +2101,7 @@ test("#4125 period repair drops only keys that cannot move the window", () => {
   const startEnd = { start: "2026-11-01", end: "2026-11-02" };
   assert.equal(normalizePeriodArgument(startEnd).period, startEnd);
   // A bound or another time zone would change what is read, so they stay for a precise rejection.
-  for (const key of ["until", "endDate", "fromTime", "includeToday"]) {
+  for (const key of ["until", "endDate", "fromTime", "includeToday", "asOf"]) {
     const period = { kind: "relative_days", days: 3, [key]: "x" };
     assert.deepEqual(normalizePeriodArgument(period), { period: { kind: "relative_days", days: 3, [key]: "x" }, ignored: [] });
   }
@@ -2136,12 +2137,12 @@ test("#4125 a rejected period names the field, the allowed fields and an example
 test("#4125 route arguments repair the period and report what they dropped", () => {
   const inbox = validateSkill({ method: "POST", path: "/api/rer-importer/get-inbox", skill: "inbox_messages", label: "Inbox", requestKind: "inboxMessages" });
   const reports: string[] = [];
-  const args = { period: { kind: "relative_days", days: 2, timezone: "Europe/Kyiv", SENSITIVE: "x" }, search: "Сокіл" };
+  const args = { period: { kind: "relative_days", days: 2, timezone: "Europe/Kyiv", description: "x" }, search: "Сокіл" };
   assert.deepEqual(prepareRouteArguments(inbox, args, (fields) => reports.push(fields)), {
     period: { kind: "relative_days", days: 2 },
     search: "Сокіл",
   });
-  assert.deepEqual(reports, ["period.timezone:ignored, period:ignored"]);
+  assert.deepEqual(reports, ["period.timezone:ignored, period.description:ignored"]);
   assert.deepEqual(prepareRouteArguments(inbox, { period: { kind: "relative_days", days: 2 } }, () => assert.fail("reported")), {
     period: { kind: "relative_days", days: 2 },
   });
