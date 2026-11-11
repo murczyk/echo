@@ -47,6 +47,8 @@ export function useFeedFilterSavedFiltersViewModel(
   const isDirty =
     isPresent(loadedFilterNormalized) &&
     !(
+      (filterState.search ?? '') === (loadedFilterNormalized.search ?? '') &&
+      (filterState.searchMode ?? 'Fuzzy') === (loadedFilterNormalized.searchMode ?? 'Fuzzy') &&
       JSON.stringify(filterState.groupsSelected) ===
         JSON.stringify(loadedFilterNormalized.groupsSelected ?? []) &&
       JSON.stringify(filterState.deniedGroups) ===

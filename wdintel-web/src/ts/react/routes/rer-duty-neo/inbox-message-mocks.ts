@@ -77,6 +77,7 @@ export function minimalInboxMessage(overrides: Partial<InboxMessage> = {}): Inbo
     location: null,
     tags: null,
     networkIds: null,
+    networkMatch: null,
     inboxTags: null,
     metadata: [],
     parentMessages: [],

@@ -18,6 +18,7 @@ import {
   formatErrorMessage,
   getNetworkUpsertValidationError,
   normalizeNetworkUnitMask,
+  toNetworkAiInstructionsReq,
   toNetworkEditForm,
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
@@ -180,99 +181,106 @@ export function useRerNetworkDetailsNeoPageActions({
     });
   }, [setState]);
 
-  const saveNetworkEdit = useCallback(async (formArg?: NetworkEditForm | null) => {
-    const network = state.network;
-    const editForm = formArg ?? state.editForm;
-    const networkId = editForm?.id ?? null;
+  const saveNetworkEdit = useCallback(
+    async (formArg?: NetworkEditForm | null) => {
+      const network = state.network;
+      const editForm = formArg ?? state.editForm;
+      const networkId = editForm?.id ?? null;
 
-    if (!network || !editForm || networkId === null || state.editInProgress) return;
+      if (!network || !editForm || networkId === null || state.editInProgress) return;
 
-    const validationError = getNetworkUpsertValidationError(editForm, { includeFrequency: false });
-    if (validationError !== null) {
-      setState((current) => ({
-        ...current,
-        editError:
-          validationError.name ??
-          validationError.location ??
-          validationError.aorIds ??
-          'Перевірте форму',
-      }));
-      return;
-    }
-
-    setState((current) => ({
-      ...current,
-      editInProgress: true,
-      editError: null,
-      menuAnchorEl: null,
-    }));
-
-    try {
-      const updatedNetwork = await updateNetwork({
-        id: networkId,
-        restoreNetwork: getRestoreNetworkOnEditValue(network, editForm.status),
-        areaOfResponsibilityIds: [...editForm.aorIds],
-        name: editForm.name,
-        location: editForm.location,
-        radioStation: canUseRadioFeatures(state.currentUser?.roles)
-          ? editForm.radioStation.trim() === ''
-            ? null
-            : editForm.radioStation
-          : network.radioStation,
-        purpose: editForm.purpose.trim() === '' ? null : editForm.purpose,
-        operationMode: editForm.operationMode.trim() === '' ? null : editForm.operationMode,
-        operationType: editForm.operationType.trim() === '' ? null : editForm.operationType,
-        operationPeriod: editForm.operationPeriod.trim() === '' ? null : editForm.operationPeriod,
-        doNotArchive: editForm.doNotArchive,
-        unitMask: state.supportNonRerInterceptions
-          ? normalizeNetworkUnitMask(editForm.unitMask)
-          : null,
-        descriptions: null,
-        status: editForm.status,
+      const validationError = getNetworkUpsertValidationError(editForm, {
+        includeFrequency: false,
       });
-
-      await syncNetworkRelations(editForm);
+      if (validationError !== null) {
+        setState((current) => ({
+          ...current,
+          editError:
+            validationError.name ??
+            validationError.location ??
+            validationError.aorIds ??
+            'Перевірте форму',
+        }));
+        return;
+      }
 
       setState((current) => ({
         ...current,
-        ...(current.network?.location !== updatedNetwork.location ||
-        current.network?.aorIds.length !== editForm.aorIds.length ||
-        editForm.aorIds.some((aorId) => !current.network?.aorIds.includes(aorId))
-          ? {
-              networkSettlements: [],
-              networkSettlementsPending: false,
-              pelengPointsLoaded: false,
-              pelengPointsLoading: false,
-              pelengPointsError: null,
-              pelengPointsRequestedFrom: null,
-              pelengPointsRequestedTo: null,
-            }
-          : {}),
-        network: {
-          ...updatedNetwork,
-          aorIds: [...editForm.aorIds],
-          unitIds: [...editForm.unitIds],
-          postIds: [...editForm.postIds],
-        },
-        editDrawerOpen: false,
-        editForm: null,
-        editInProgress: false,
+        editInProgress: true,
         editError: null,
+        menuAnchorEl: null,
       }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        editInProgress: false,
-        editError: formatErrorMessage(error),
-      }));
-    }
-  }, [
-    state.editForm,
-    state.editInProgress,
-    state.network,
-    state.supportNonRerInterceptions,
-    setState,
-  ]);
+
+      try {
+        const updatedNetwork = await updateNetwork({
+          id: networkId,
+          restoreNetwork: getRestoreNetworkOnEditValue(network, editForm.status),
+          areaOfResponsibilityIds: [...editForm.aorIds],
+          name: editForm.name,
+          location: editForm.location,
+          radioStation: canUseRadioFeatures(state.currentUser?.roles)
+            ? editForm.radioStation.trim() === ''
+              ? null
+              : editForm.radioStation
+            : network.radioStation,
+          purpose: editForm.purpose.trim() === '' ? null : editForm.purpose,
+          operationMode: editForm.operationMode.trim() === '' ? null : editForm.operationMode,
+          operationType: editForm.operationType.trim() === '' ? null : editForm.operationType,
+          operationPeriod: editForm.operationPeriod.trim() === '' ? null : editForm.operationPeriod,
+          doNotArchive: editForm.doNotArchive,
+          unitMask: state.supportNonRerInterceptions
+            ? normalizeNetworkUnitMask(editForm.unitMask)
+            : null,
+          descriptions: null,
+          status: editForm.status,
+          aiInstructions: toNetworkAiInstructionsReq(editForm, state.aiNetworkMatchEnabled),
+        });
+
+        await syncNetworkRelations(editForm);
+
+        setState((current) => ({
+          ...current,
+          ...(current.network?.location !== updatedNetwork.location ||
+          current.network?.aorIds.length !== editForm.aorIds.length ||
+          editForm.aorIds.some((aorId) => !current.network?.aorIds.includes(aorId))
+            ? {
+                networkSettlements: [],
+                networkSettlementsPending: false,
+                pelengPointsLoaded: false,
+                pelengPointsLoading: false,
+                pelengPointsError: null,
+                pelengPointsRequestedFrom: null,
+                pelengPointsRequestedTo: null,
+              }
+            : {}),
+          network: {
+            ...updatedNetwork,
+            aorIds: [...editForm.aorIds],
+            unitIds: [...editForm.unitIds],
+            postIds: [...editForm.postIds],
+          },
+          editDrawerOpen: false,
+          editForm: null,
+          editInProgress: false,
+          editError: null,
+        }));
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          editInProgress: false,
+          editError: formatErrorMessage(error),
+        }));
+      }
+    },
+    [
+      state.aiNetworkMatchEnabled,
+      state.editForm,
+      state.editInProgress,
+      state.network,
+      state.supportNonRerInterceptions,
+      setState,
+    ],
+  );
 
   const handleDelete = useCallback(async () => {
     if (!state.network) return;

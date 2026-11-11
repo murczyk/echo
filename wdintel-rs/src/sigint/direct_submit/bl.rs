@@ -337,9 +337,14 @@ where
         crate::location::peleng::filter_allowed_peleng_coords(coords, dbx)
             .await
             .c(h!())?;
-    let (unit_and_location, unit_v2) = crate::unit::parse_message_unit(
+    let crate::unit::ParsedMessageUnit {
+        unit_and_location,
+        unit_v2,
+        unit_id,
+        ..
+    } = crate::unit::parse_message_unit(
         dbx,
-        env.settlements.clone(),
+        env,
         body,
         callsigns.clone(),
         aor_id,
@@ -400,6 +405,7 @@ where
         post: crate::rer_importer::post::extract_post(body)?,
         unit,
         unit_v2,
+        unit_id,
         locations: unit_and_location
             .locality
             .map(|l| {
@@ -3594,6 +3600,10 @@ mod tests {
             callsign_enabled: Set(true),
             ocr_enabled: Set(true),
             ocr_request_profile: Set("openai_vision".into()),
+            unhealthy: Set(None),
+            health_message: Set(None),
+            health_updated_at: Set(None),
+            health_updated_by_login_id: Set(None),
         }
         .insert(&env.dbx)
         .await

@@ -48,6 +48,8 @@ export function useRerDutyFeedCrud(
                     }
                   : {}),
                 filter: f,
+                historySinceMs: preserveUnread ? feed.historySinceMs : null,
+                historyPeriodMs: preserveUnread ? feed.historyPeriodMs : null,
                 unitsIncludeChildren: true,
                 loading: true,
                 loadingOlder: false,

@@ -59,6 +59,7 @@ network =
     , doNotArchive = False
     , unitMask = []
     , status = B.NetworkActive
+    , aiInstructions = Nothing
     }
 
 
@@ -118,6 +119,7 @@ message textMarked callsigns networkIds =
     , location = Nothing
     , tags = Nothing
     , networkIds = networkIds
+    , networkMatch = Nothing
     , networkName = Nothing
     , deviceName = Nothing
     , inboxTags = Nothing

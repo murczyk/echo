@@ -93,11 +93,18 @@ export type AiAgentMessage = Omit<
   | 'maxRuntimeSeconds'
   | 'startedAt'
   | 'completionMetadata'
+  | 'aiEngineId'
+  | 'aiEngineName'
 > &
   Partial<
     Pick<
       AiAgentMessageItem,
-      'reasoningPreset' | 'maxRuntimeSeconds' | 'startedAt' | 'completionMetadata'
+      | 'reasoningPreset'
+      | 'maxRuntimeSeconds'
+      | 'startedAt'
+      | 'completionMetadata'
+      | 'aiEngineId'
+      | 'aiEngineName'
     >
   > & {
     id: string;
@@ -393,6 +400,8 @@ function normalizeProvider(
 ): AiAgentProvider {
   return {
     ...value,
+    unhealthy: value.unhealthy ?? false,
+    healthMessage: value.healthMessage ?? null,
     enabled: true,
     isDefault: value.id === defaultProviderId,
   };
@@ -442,9 +451,9 @@ export function normalizeAiAgentEvent(
     type: value.eventType as AiAgentEventType,
     completionMetadata:
       value.eventType === 'completion_metadata' &&
-      payload.coverageLimited === true &&
+      typeof payload.coverageLimited === 'boolean' &&
       typeof payload.reason === 'string'
-        ? { coverageLimited: true, reason: payload.reason }
+        ? { coverageLimited: payload.coverageLimited, reason: payload.reason }
         : null,
     createdAt: value.createdAt,
     text: payloadString(
@@ -951,8 +960,9 @@ function normalizeUserStatus(value: AiAgentAdminUserItem): AiAgentUserStatus {
 
 export async function listAiAgentAuditRequests(
   pageStartId: string | null = null,
+  searchId: string | null = null,
 ): Promise<Omit<AiAgentAdminRequestListRsp, 'items'> & { items: AiAgentAuditRequest[] }> {
-  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId };
+  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId, searchId };
   const response = await postJson<AiAgentAdminRequestListRsp>(
     '/api/admin/ai-agent/requests/list',
     req,

@@ -64,6 +64,10 @@ pub enum Relation {
     AiCallsignOverride,
     #[sea_orm(has_one = "super::ai_callsign_worker_job::Entity")]
     AiCallsignWorkerJob,
+    #[sea_orm(has_one = "super::ai_network_match_result::Entity")]
+    AiNetworkMatchResult,
+    #[sea_orm(has_one = "super::ai_network_match_worker_job::Entity")]
+    AiNetworkMatchWorkerJob,
     #[sea_orm(has_many = "super::ai_position_mention::Entity")]
     AiPositionMention,
     #[sea_orm(has_many = "super::ai_position_worker_job::Entity")]
@@ -153,6 +157,18 @@ impl Related<super::ai_callsign_override::Entity> for Entity {
 impl Related<super::ai_callsign_worker_job::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiCallsignWorkerJob.def()
+    }
+}
+
+impl Related<super::ai_network_match_result::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiNetworkMatchResult.def()
+    }
+}
+
+impl Related<super::ai_network_match_worker_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiNetworkMatchWorkerJob.def()
     }
 }
 

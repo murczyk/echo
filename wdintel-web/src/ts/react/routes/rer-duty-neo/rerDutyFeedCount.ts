@@ -2,9 +2,12 @@ import type { MessageFeedState } from './utils';
 
 export function buildFeedCountSignature(feed: MessageFeedState, freqs: string[]): string {
   return JSON.stringify({
+    historySinceMs: feed.historySinceMs ?? null,
     unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
     groupScopeMasterKey: feed.groupScopeMasterKey ?? null,
     filter: {
+      search: feed.filter.search ?? null,
+      searchMode: feed.filter.searchMode ?? null,
       groupsSelected: feed.filter.groupsSelected ?? null,
       deniedGroups: feed.filter.groupsDenied ?? null,
       sendersSelected: feed.filter.sendersSelected ?? null,

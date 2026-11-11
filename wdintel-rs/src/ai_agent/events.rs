@@ -391,6 +391,7 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             | "tool_limit"
             | "continued"
             | "draft_refresh"
+            | "research_text"
     ) {
         return None;
     }
@@ -881,6 +882,22 @@ mod tests {
         assert!(completion_diagnostic(&serde_json::json!({
             "type": "completion_diagnostic", "stage": "secret", "outcome": "complete"
         })).is_none());
+    }
+
+    #[test]
+    fn issue_4115_logged_answers_research_wrote_without_tools() {
+        assert_eq!(
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "answer",
+                "outcome": "research_text", "textCharacters": 12234,
+                "remainingMs": 120_000, "text": "private answer"
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "stage": "answer", "outcome": "research_text",
+                "textCharacters": 12234, "remainingMs": 120_000
+            })
+        );
     }
 
     #[test]

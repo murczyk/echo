@@ -92,4 +92,6 @@ pub struct LongPollRsp {
     pub last_event_id: Option<String>,
     #[serde(default)]
     pub deployment_maintenance: Option<DeploymentMaintenance>,
+    #[serde(default)]
+    pub unit_catalog_revision: Option<String>,
 }

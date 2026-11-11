@@ -1907,12 +1907,16 @@ pub async fn oneoff_reprocess_unit_names(
                     .into_iter()
                     .map(|x| x.to_uppercase())
                     .collect_vec();
-                let result = crate::unit::parser::extract_unit_with_aor(
-                    settlements.clone(),
-                    &body,
-                    callsigns,
-                    m_aor_id,
-                )?;
+                let (result, is_synonym) =
+                    crate::unit::extract_message_unit_with_aor(
+                        &dbx,
+                        settlements.clone(),
+                        &body,
+                        callsigns,
+                        m_aor_id,
+                    )
+                    .await
+                    .c(h!())?;
                 let unit_new = result.unit.clone();
                 if unit_new.is_none() && unit_old.is_some() {
                     continue;
@@ -1937,11 +1941,12 @@ pub async fn oneoff_reprocess_unit_names(
                         }
                         _ => None,
                     };
+                item.unit_v2 =
+                    Set(if is_synonym { unit_new.clone() } else { None });
                 item.unit = Set(unit_new);
-                item.unit_v2 = Set(None);
                 item.location = Set(result.locality);
                 item.location_v2 = Set(location_v2.clone());
-                item.parsed_unit_v2 = Set(false);
+                item.parsed_unit_v2 = Set(is_synonym);
                 let txn = dbx.begin().await.c(h!())?;
                 let item = item.update(&txn).await.c(h!())?;
                 crate::battle_line::settlement_queue::reconcile_item_locations(
@@ -1952,7 +1957,7 @@ pub async fn oneoff_reprocess_unit_names(
                 )
                 .await
                 .c(h!())?;
-                crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+                crate::inbox::unit_resolution::resolve_and_sync_reprocessed_inbox_item(
                     &txn,
                     item.id,
                     item.id_uuid,
@@ -1969,6 +1974,11 @@ pub async fn oneoff_reprocess_unit_names(
                 .await
                 .c(h!())?;
                 reset_inbox_pelengs(id, &txn).await.c(h!())?;
+                let item = sigint_inbox_item::Entity::find_by_id(item.id)
+                    .one(&txn)
+                    .await
+                    .c(h!())?
+                    .c(h!())?;
                 crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
                     vec![item], &txn,
                 ).await.c(h!())?;

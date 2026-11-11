@@ -2439,6 +2439,7 @@ mod tests {
             location: None,
             tags: None,
             network_ids: None,
+            network_match: None,
             network_name: None,
             device_name: None,
             inbox_tags: None,

@@ -188,6 +188,8 @@ pub struct DirectSubmitParseRsp {
     pub post: Option<String>,
     pub unit: Option<String>,
     pub unit_v2: Option<String>,
+    #[serde(default)]
+    pub unit_id: Option<i64>,
     pub locations: Vec<String>,
 }
 

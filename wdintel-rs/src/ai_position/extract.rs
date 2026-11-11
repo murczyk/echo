@@ -147,7 +147,7 @@ fn parse_response(content: &str) -> anyhow::Result<ModelResponse> {
     serde_json::from_str(strip_code_fence(content)).c(h!())
 }
 
-fn strip_code_fence(text: &str) -> &str {
+pub(crate) fn strip_code_fence(text: &str) -> &str {
     let text = text.trim();
     let Some(inner) = text.strip_prefix("```") else {
         return text;

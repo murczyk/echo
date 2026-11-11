@@ -629,6 +629,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                     tags: None,
                     callsigns_alg2: vec![],
                     network_ids: None,
+                    network_match: None,
                     network_name: None,
                     device_name: None,
                     inbox_tags: None,

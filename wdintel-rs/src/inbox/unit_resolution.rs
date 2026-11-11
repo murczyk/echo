@@ -31,9 +31,10 @@ use regex::RegexBuilder;
 use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
 use sea_orm::{
     ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, Condition,
-    ConnectionTrait, DatabaseConnection, EntityTrait, ExprTrait, JoinType,
-    ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    QueryTrait, RelationTrait, TransactionTrait,
+    ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, ExprTrait,
+    FromQueryResult, JoinType, ModelTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, RelationTrait, Statement,
+    TransactionTrait,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration as StdDuration;
@@ -103,9 +104,65 @@ type FailureMetadataCache = HashMap<String, FailureMetadata>;
 #[derive(Default)]
 struct InboxUnitBackfillCache {
     selections: HashMap<i64, super::unit_selection::InboxUnitSelection>,
+    header_synonyms: HashMap<i64, UnitTextResolution>,
     unit_text_resolutions:
         HashMap<UnitTextResolutionCacheKey, Vec<UnitTextResolution>>,
     failure_metadata: FailureMetadataCache,
+}
+
+#[derive(FromQueryResult)]
+struct HeaderSynonymResolution {
+    item_id: i64,
+    unit_id: i64,
+    unit_text: String,
+}
+
+async fn load_header_synonym_resolutions<C>(
+    db: &C,
+    item_ids: &[i64],
+) -> anyhow::Result<HashMap<i64, UnitTextResolution>>
+where
+    C: ConnectionTrait,
+{
+    let resolutions = HeaderSynonymResolution::find_by_statement(
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+            with sources as (
+                select item.id, coalesce(nullif(btrim(item.unit_v2), ''), item.unit) as unit_text,
+                    lower(btrim(regexp_replace(
+                        substring(message.body from '[^\r\n[:space:]][^\r\n]*'),
+                        '[[:space:]]+', ' ', 'g'
+                    ))) as header
+                from sigint_inbox_item item
+                join signal_message message on message.id = item.id
+                where item.id = any($1)
+            )
+            select sources.id as item_id, label.sigint_unit_id as unit_id, sources.unit_text
+            from sources
+            join sigint_unit_label label on
+                lower(regexp_replace(btrim(label.label), '[[:space:]]+', ' ', 'g')) = sources.header
+            join sigint_unit unit on unit.id = label.sigint_unit_id and unit.deleted = false
+            where lower(btrim(regexp_replace(sources.unit_text, '[[:space:]]+', ' ', 'g'))) = sources.header
+            "#,
+            [item_ids.to_vec().into()],
+        ),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(resolutions
+        .into_iter()
+        .map(|resolution| {
+            (
+                resolution.item_id,
+                UnitTextResolution::resolved(
+                    &resolution.unit_text,
+                    resolution.unit_id,
+                ),
+            )
+        })
+        .collect())
 }
 
 fn contains_word(value: &str, word: &str) -> bool {
@@ -1470,6 +1527,13 @@ where
         .context(h!())?
     {
         vec![resolution]
+    } else if let Some(resolution) =
+        load_header_synonym_resolutions(db, &[inbox_item_id])
+            .await
+            .c(h!())?
+            .remove(&inbox_item_id)
+    {
+        vec![resolution]
     } else {
         resolve_unit_text_candidates(db, unit_v2, unit)
             .await
@@ -1511,6 +1575,8 @@ where
         .context(h!())?
     {
         vec![resolution]
+    } else if let Some(resolution) = cache.header_synonyms.get(&inbox_item_id) {
+        vec![resolution.clone()]
     } else {
         resolve_unit_text_candidates_cached(db, unit_v2, unit, cache)
             .await
@@ -1901,6 +1967,12 @@ pub(crate) async fn backfill_inbox_unit_links(
             )
             .await
             .context(h!())?,
+            header_synonyms: load_header_synonym_resolutions(
+                &transaction,
+                &item_ids,
+            )
+            .await
+            .c(h!())?,
             ..Default::default()
         };
         for item in &items {

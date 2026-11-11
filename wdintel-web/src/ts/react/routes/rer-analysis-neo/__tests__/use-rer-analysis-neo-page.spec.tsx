@@ -1590,6 +1590,7 @@ describe('useRerAnalysisNeoPage', () => {
       await act(async () => {
         catalog.resolve({
           revision: parent,
+          selections: [],
           groups: [
             { id: 'group:2:6 А', label: '6 А', level: 2, parentIndex: null },
             {

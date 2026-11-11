@@ -96,3 +96,10 @@
 - **Expected observable result:** Cyber users cannot select the frequency column and preserve hidden radio metadata when editing a network.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-networks-neo/__tests__/index.cyber-columns.regression.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-networks-neo/__tests__/use-rer-networks-neo-page.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
+
+## AI instructions field
+
+- **Behavior ID:** `react-networks-ai-instructions`
+- **Expected observable result:** with the system setting «ШІ: головна мережа повідомлення» on, the network create/edit drawer shows a multiline «Опис для ШІ» below the location, with helper text explaining that it is used to decide whether a message belongs to the network and to show the main network match. Saving sends the text; a blank value clears it. With the setting off the field is hidden and saves send `null`, which keeps the stored text.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-network-details-neo/components/__tests__/NetworkEditDrawer.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-network-details-neo/__tests__/use-rer-network-details-neo-page.forms.spec.ts`
+- **Original Echo issue/PR, if known:** [#4095](https://github.com/echoua/echo/issues/4095)

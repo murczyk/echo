@@ -69,6 +69,7 @@ createNetwork id freqs unitIds =
     , doNotArchive = False
     , unitMask = []
     , status = B.NetworkActive
+    , aiInstructions = Nothing
     }
 
 

@@ -32,6 +32,7 @@ import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
 import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
 import { inboxMessagesEqual } from '../shared/message-card/message-card-message-updates';
 import { useAnalysisThreadData } from './use-analysis-thread-data';
+import { UNIT_CATALOG_CHANGED_EVENT } from '../../services/unit-catalog-events';
 
 const noScopedPage = async () => false;
 const noScopedLoad = async () => undefined;
@@ -547,12 +548,19 @@ export function useAnalysisData({
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
+  const messagesRef = useRef<Array<[number, InboxMessage]>>([]);
+  const referenceState = useAnalysisReferenceState({
+    messagesRef,
+    shouldLoadNewCallsigns,
+    onError,
+  });
   const thread = useAnalysisThreadData({
     messageId: threadMessageId,
     enabled: !deferInitialLoad && currentUser != null && authUserName != null,
     queryState,
     newestFirst,
     onError,
+    loadUnitsByIds: referenceState.loadUnitsByIds,
   });
   const threadActive = threadMessageId != null;
   deferInitialLoad ||= threadActive;
@@ -563,7 +571,6 @@ export function useAnalysisData({
       ) ?? null,
     [focusedWindow],
   );
-  const referenceState = useAnalysisReferenceState({ shouldLoadNewCallsigns });
   const optionsFreqValues = useMemo(
     () => referenceState.options.freqs.map((option) => option.value),
     [referenceState.options.freqs],
@@ -587,9 +594,22 @@ export function useAnalysisData({
   const reloadRef = useRef<(options?: AnalysisReloadOptions) => Promise<void>>(
     async () => undefined,
   );
+  useEffect(() => {
+    const changed = (event: Event) => {
+      if ((event as CustomEvent<{ refreshMessages?: boolean }>).detail?.refreshMessages === false)
+        return;
+      void reloadRef.current({ preserveMessagePage: true, showMessagesLoading: false });
+    };
+    window.addEventListener(UNIT_CATALOG_CHANGED_EVENT, changed);
+    return () => window.removeEventListener(UNIT_CATALOG_CHANGED_EVENT, changed);
+  }, []);
   const localInboxChangeOrigins = useLocalInboxChangeOrigins();
 
   const hydrateNetworksForMessages = useLoadMissingNetworksForMessages({
+    scopeKey: reloadTriggerKey,
+    hideNetworks,
+    loadUnitsByIds: referenceState.loadUnitsByIds,
+    setUnitsMap: referenceState.setUnitsMap,
     networksRef: referenceState.networksRef,
     onError,
     onUnauthorized,
@@ -599,10 +619,9 @@ export function useAnalysisData({
   });
   const loadMissingNetworksForMessages = useCallback(
     async (messageItems: Array<[number, InboxMessage]>) => {
-      if (hideNetworks) return;
       await hydrateNetworksForMessages(messageItems);
     },
-    [hideNetworks, hydrateNetworksForMessages],
+    [hydrateNetworksForMessages],
   );
 
   const messageList = useAnalysisMessageList({
@@ -628,6 +647,7 @@ export function useAnalysisData({
     setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
+  messagesRef.current = messageList.messages;
   useEffect(() => {
     if (!threadActive) return;
     messageList.setMessages(thread.messages);
@@ -654,24 +674,23 @@ export function useAnalysisData({
     );
     referenceState.setTagsMap(thread.tags.tagsMap);
     referenceState.setTagsOrder(thread.tags.tagsOrder);
-    referenceState.setUnitsMap(thread.units);
     referenceState.setSummaryCallsignsInfo(
       Object.fromEntries(thread.inbox.callsigns.map((callsign) => [callsign.callsign, callsign])),
     );
-    void loadMissingNetworksForMessages(thread.messages);
   }, [
     threadActive,
     thread.messages,
     thread.options,
     thread.inbox,
     thread.tags,
-    thread.units,
     thread.loading,
     messageList.setMessages,
     messageList.setHasLoadedInitialMessages,
     messageList.setNoMoreToLoad,
-    loadMissingNetworksForMessages,
   ]);
+  useEffect(() => {
+    if (threadActive) void loadMissingNetworksForMessages(thread.messages);
+  }, [threadActive, thread.messages, loadMissingNetworksForMessages]);
   const realtimeMessageWindowRef = useRef({
     messages: messageList.messages,
     firstLoadedMessageIndex: messageList.firstLoadedMessageIndex,
@@ -706,6 +725,7 @@ export function useAnalysisData({
     loadInitialFilterSections,
     refreshTagFacet,
   } = useAnalysisFilterSections({
+    loadUnitsByIds: referenceState.loadUnitsByIds,
     queryState,
     canUseDevices,
     hideNetworks,
@@ -728,7 +748,7 @@ export function useAnalysisData({
   }, [threadActive, messageList.invalidateMessagePaging, invalidateFilterSectionLoads]);
 
   const mapData = useAnalysisMapData({
-    canShowSettlements: currentUser?.roles.includes('Admin') ?? false,
+    canShowSettlements: true,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
@@ -1224,6 +1244,7 @@ export function useAnalysisData({
       setTopLocations: sidebarData.setTopLocations,
       setTopUnits: sidebarData.setTopUnits,
       setUnitsMap: referenceState.setUnitsMap,
+      loadUnitsByIds: referenceState.loadUnitsByIds,
       setHasLoadedInitialMessages: messageList.setHasLoadedInitialMessages,
     }),
   );
