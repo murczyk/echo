@@ -62,6 +62,13 @@ permission, environment/API mode, criteria/revision and stop condition. Read the
 approved criteria, CODE_REVIEW.md, owning contracts and actual source/diff.
 Accept manually prepared inputs; do not require another role for formality.
 
+Apply docs/frontend/echo-workflows.md#cpu-throttling-baseline: 4x slowdown.
+PREPARE includes affected browser scenarios at 4x with representative data;
+preparation without execution remains not-run. VERIFY runs those scenarios at
+4x within authorized execution, checking responsiveness and correctness.
+Return the CPU setting, scenarios, observations and pass/fail/not-run gaps;
+unthrottled checks alone do not verify the 4x baseline.
+
 PREPARE: after owner spec approval, map stable acceptance IDs to existing cases
 and gaps. Write useful behavior tests and synthetic fixtures only in assigned
 paths, following Echo's Playwright/Vitest/Elm/backend boundaries. Important

@@ -15,6 +15,8 @@ This is a main-chat entrypoint. Read the [invocation contract](../../../docs/fro
 
 The dev role implements the entire approved specification with existing components/tokens and applicable Elm/React/regression guidance, read directly from the `.github/skills` paths in its role profile. These existing references do not need discovery aliases. It reads repository [Ponytail](../ponytail/SKILL.md) for minimal implementation without a personal plugin. It uses the repository `make-interfaces-feel-better` only for scoped UI details; its examples do not authorize new dependencies, global styling or redesign. Missing helpers do not replace repository contracts.
 
+Always include the [CPU throttling baseline](../../../docs/frontend/echo-workflows.md#cpu-throttling-baseline) in the dev handoff: implement for **4x slowdown**, self-check affected browser flows at that setting and require the setting/results or explicit unverified gaps in the return.
+
 For failures, read repository [systematic-debugging](../systematic-debugging/SKILL.md); before reporting results, read [verification-before-completion](../verification-before-completion/SKILL.md). These helpers need no personal Superpowers plugin and retain the assigned commands, baseline and environment approval rules.
 
 Return changed paths, input/revision/dirty-state identity, commands/results, browser observations and unverified work. Stop after a dev-only request. Main dispatches QA only when requested; the child never starts another stage or performs Git/publication/deployment operations.

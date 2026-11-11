@@ -72,6 +72,13 @@ static styling under CODE_REVIEW.md. Read the spec, contracts, actual source,
 prepared tests and initial dirty state; implement the entire approved scope,
 not only what makes current tests pass. Map shared consumers and invariants.
 
+Always implement for the CPU throttling baseline in
+docs/frontend/echo-workflows.md#cpu-throttling-baseline: 4x slowdown.
+Keep affected interactions responsive with representative data; avoid blocking
+main-thread work and redundant computation/rendering in the changed paths.
+Self-check affected browser flows at 4x and return the CPU setting, scenarios,
+observations and unverified gaps. A fast-machine pass alone is insufficient.
+
 Run authorized preserved baseline checks before product changes and observe
 relevant RED for changed behavior; preserve neighboring GREEN. Environment/setup
 failures are not RED. Missing important baseline coverage goes back to main for

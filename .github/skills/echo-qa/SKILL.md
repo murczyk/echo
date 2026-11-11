@@ -15,6 +15,8 @@ This is a main-chat entrypoint. Read the [invocation contract](../../../docs/fro
 
 The assigned QA role reads repository [systematic-debugging](../systematic-debugging/SKILL.md) for failures and [verification-before-completion](../verification-before-completion/SKILL.md) before reporting either mode's result. No personal Superpowers plugin is needed; these helpers do not permit repairs or extra execution.
 
+Always include the [CPU throttling baseline](../../../docs/frontend/echo-workflows.md#cpu-throttling-baseline) in the QA handoff: prepare affected browser scenarios for **4x slowdown**, verify them at that setting when execution is authorized and require the setting/results or explicit not-run gaps in the return.
+
 Prepare returns acceptance-ID → test → baseline/new behavior → result/not-run/gap and stops. Verify returns scenario-level pass/fail/not-run, exact commands, evidence limits, severity, reproduction and expected/actual results. Environment failures are not product RED; mocked tests do not prove server permissions or persistence.
 
 A QA-only request stops after its report. Main may dispatch bounded repairs only in an explicitly requested dev+QA chain; QA never fixes application code or delegates. Role verification is not human acceptance, and separation of roles alone does not prove review independence or usability.

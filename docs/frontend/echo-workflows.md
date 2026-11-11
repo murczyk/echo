@@ -171,6 +171,7 @@ revision / staged, unstaged and untracked starting changes:
 relevant_paths: contracts, source, shared consumers, prepared tests
 allowed_write_paths: assigned files or none
 allowed_commands: actual local commands, environment/API mode or none
+dev/QA CPU baseline: 4x slowdown; affected browser scenarios/data and execution limits
 stop_after:
 return: artifact paths, changes, commands/results, gaps and blockers
 ```
@@ -278,6 +279,27 @@ otherwise mark rendering unverified. A diagram never proves interaction behavior
 HTML/interactive prototypes require an explicit format request. Image alternatives
 and external editable canvases are optional requested outputs, not prerequisites;
 external data/publication permissions still apply.
+
+## CPU throttling baseline
+
+Functionality is always developed with **CPU throttling: 4x slowdown** in mind.
+This is the default browser baseline for dev and QA, even when the approved spec
+does not repeat it. Dev accounts for it during implementation and self-checks;
+QA prepare includes it in affected browser scenarios and QA verify checks them.
+
+Use available browser CPU controls to set 4x before navigation/interactions and
+keep it enabled for affected flows, including relevant loading, input/filtering,
+scrolling and recovery, with representative data volumes. Check correctness and
+responsiveness against approved criteria; report freezes, delayed feedback and
+timing/race defects. Do not invent numerical performance budgets or hide failures
+with extra sleeps, retries or increased timeouts.
+
+Record browser, CPU setting/method, data volume, scenario IDs and observed results
+in dev/QA evidence. Unthrottled runs are supplementary. If authorized execution
+or CPU controls are unavailable, report the 4x scenarios as not-run/unverified
+with the reason; do not claim the baseline passed. Preparation alone still does
+not authorize execution. Browser CPU slowdown does not emulate network latency
+or backend load, and does not replace other required checks or environment gates.
 
 ## Dev
 
