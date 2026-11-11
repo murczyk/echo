@@ -1271,9 +1271,9 @@ describe('MessageCard AI network match', () => {
   const networkMatch = {
     confidentNetworkId: 8,
     candidates: [
-      { networkId: 8, certainty: 92, reason: 'CC 3 як в описі' },
-      { networkId: 7, certainty: 30, reason: '' },
-      { networkId: 9, certainty: 10, reason: '' },
+      { networkId: 8, certainty: 92, reason: 'CC 3 як в описі', matchedCallsigns: [] },
+      { networkId: 7, certainty: 30, reason: '', matchedCallsigns: [] },
+      { networkId: 9, certainty: 10, reason: '', matchedCallsigns: [] },
     ],
   };
 
@@ -1313,6 +1313,39 @@ describe('MessageCard AI network match', () => {
 
     await act(async () => toggle?.click());
     expect(networkLabels(view.container)).toEqual(['8']);
+  });
+
+  it('folds to the callsign network the server ranked first and names its callsigns', async () => {
+    const view = await renderCard({
+      networkMap,
+      networkDisplayMap,
+      msg: buildMessage({
+        networkIds: [7, 8, 9],
+        networkMatch: {
+          confidentNetworkId: 7,
+          candidates: [
+            { networkId: 7, certainty: 78, reason: 'Кутеп', matchedCallsigns: ['кутеп'] },
+            { networkId: 8, certainty: 83, reason: 'частота', matchedCallsigns: [] },
+            { networkId: 9, certainty: 25, reason: '', matchedCallsigns: [] },
+          ],
+        },
+      }),
+    });
+    expect(networkLabels(view.container)).toEqual(['7']);
+    const icon = view.container.querySelector('[data-message-card-metadata-icon-kind="network"]');
+    expect(icon?.getAttribute('title')).toBe(
+      [
+        "Еталонна прив'язка",
+        'Позивні з повідомлення в цій мережі: КУТЕП',
+        'Впевненість ШІ, що повідомлення належить саме цій мережі: 78%',
+        'Пояснення ШІ: Кутеп',
+      ].join('\n'),
+    );
+    const toggle = view.container.querySelector<HTMLButtonElement>(
+      '[data-message-card-network-expand="true"]',
+    );
+    await act(async () => toggle?.click());
+    expect(networkLabels(view.container)).toEqual(['7', '8', '9']);
   });
 
   it.each([

@@ -4,17 +4,37 @@ use crate::ai_worker::test_support::{engine, TestEngine};
 use crate::entities::{
     ai_network_match_worker_job, ai_worker_progress, network_invalidation_task,
     sigint_inbox_item, sigint_inbox_item_network, sigint_network,
+    sigint_network_callsign, sigint_network_freq,
 };
 use crate::functest::tests::{
     cleanup_locked, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
-    mk_sigint_network,
+    mk_sigint_network, mk_sigint_network_freq,
 };
 use crate::types::Env;
-use sea_orm::{ActiveValue::Set, ColumnTrait, DatabaseConnection, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
+    QueryFilter,
+};
 use std::sync::Arc;
 
 fn candidate(network_id: i64, certainty: i32) -> NetworkMatchCandidate {
     NetworkMatchCandidate {
+        network_id,
+        certainty,
+        reason: String::new(),
+        matched_callsigns: vec![],
+    }
+}
+
+fn with_callsign(network_id: i64, certainty: i32) -> NetworkMatchCandidate {
+    NetworkMatchCandidate {
+        matched_callsigns: vec!["кутеп".to_string()],
+        ..candidate(network_id, certainty)
+    }
+}
+
+fn stored(network_id: i64, certainty: i32) -> StoredCertainty {
+    StoredCertainty {
         network_id,
         certainty,
         reason: String::new(),
@@ -40,6 +60,55 @@ fn confident_network_needs_high_certainty_and_a_clear_lead_4095() {
         None
     );
     assert_eq!(confident_network_id(&[]), None);
+}
+
+#[test]
+fn callsigns_decide_the_main_network_4095() {
+    assert_eq!(
+        confident_network_id(&[candidate(1, 83), with_callsign(2, 78)]),
+        Some(2),
+        "the only network with the message's callsign wins"
+    );
+    assert_eq!(
+        confident_network_id(&[candidate(1, 95), with_callsign(2, 5)]),
+        Some(2)
+    );
+    assert_eq!(
+        confident_network_id(&[
+            candidate(1, 99),
+            with_callsign(2, 90),
+            with_callsign(3, 40),
+        ]),
+        Some(2),
+        "the certainty rule picks among callsign networks only"
+    );
+    assert_eq!(
+        confident_network_id(&[
+            candidate(1, 99),
+            with_callsign(2, 90),
+            with_callsign(3, 80),
+        ]),
+        None
+    );
+    let ranked = rank(vec![
+        candidate(1, 83),
+        candidate(3, 25),
+        with_callsign(2, 78),
+        with_callsign(4, 10),
+    ]);
+    assert_eq!(ranked.confident_network_id, None);
+    assert_eq!(
+        ranked
+            .candidates
+            .iter()
+            .map(|c| c.network_id)
+            .collect::<Vec<_>>(),
+        vec![2, 4, 1, 3],
+        "callsign networks come first"
+    );
+    let ranked = rank(vec![candidate(1, 83), with_callsign(2, 78)]);
+    assert_eq!(ranked.confident_network_id, Some(2));
+    assert_eq!(ranked.candidates[0].network_id, 2);
 }
 
 #[test]
@@ -396,7 +465,7 @@ async fn worker_retries_bad_replies_and_skips_stale_results_4095() {
         dbx,
         &pending,
         &context,
-        vec![candidate(ids[0], 90), candidate(ids[1], 10)],
+        vec![stored(ids[0], 90), stored(ids[1], 10)],
         engine.engine.id,
     )
     .await
@@ -439,7 +508,7 @@ async fn requeue_during_scoring_keeps_the_job_4095() {
         dbx,
         &read,
         &context,
-        vec![candidate(ids[0], 90), candidate(ids[1], 10)],
+        vec![stored(ids[0], 90), stored(ids[1], 10)],
         engine.engine.id,
     )
     .await
@@ -487,4 +556,161 @@ async fn submitted_dmr_metadata_reaches_the_model_and_its_hash_4095() {
     assert!(after.input_json.contains(r#""color_codes":["7"]"#));
     assert!(after.input_json.contains(r#""call_groups":["2001"]"#));
     assert_ne!(before.input_md5, after.input_md5);
+}
+
+async fn network_callsign(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    callsign: &str,
+) {
+    sigint_network_callsign::ActiveModel {
+        sigint_network_id: Set(network_id),
+        sigint_callsign: Set(callsign.to_string()),
+        created_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(dbx)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn callsigns_win_and_long_lists_keep_the_message_values_4095() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let dbx = &env.dbx;
+    let engine = engine(
+        dbx,
+        200,
+        r#"{"networks":[{"key":1,"certainty":78,"reason":"Кутеп"},{"key":2,"certainty":83,"reason":"частота"}]}"#,
+        false,
+    )
+    .await;
+    set_flag(dbx, true).await;
+    set_callsign_worker(dbx, true, &engine).await;
+    let ids = networks(dbx, 2).await;
+    let item = recent_item(dbx, "КУТЕП, я ГРАНИТ").await;
+    dbx.execute_raw(sql(
+        "update sigint_inbox_item set freq = '148.2000' where id = $1",
+        vec![item.id.into()],
+    ))
+    .await
+    .unwrap();
+    // The busy network sorts the message's frequency and callsign past the
+    // input caps, as network 198 on echo-pivnich did.
+    for index in 0..30 {
+        mk_sigint_network_freq(
+            dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(ids[0]),
+                freq: Set(format!("140.{index:04}")),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    for network_id in &ids {
+        mk_sigint_network_freq(
+            dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(*network_id),
+                freq: Set("148.2000".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    for index in 0..crate::config::AI_NETWORK_MATCH_MAX_CALLSIGNS_PER_NETWORK {
+        network_callsign(dbx, ids[0], &format!("позивний {index}")).await;
+    }
+    network_callsign(dbx, ids[0], "КУТЕП").await;
+    crate::inbox::callsigns::sync(
+        dbx,
+        item.id,
+        item.id_uuid,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: vec!["кутеп".to_string(), "гранит".to_string()],
+            alg2: vec![],
+        },
+        crate::users::system_login_id(dbx).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    link(dbx, item.id, &ids).await;
+
+    let context = context::load(dbx, item.id, candidate_set(&ids))
+        .await
+        .unwrap()
+        .unwrap();
+    let input: serde_json::Value =
+        serde_json::from_str(&context.input_json).unwrap();
+    assert_eq!(
+        input["message"]["callsigns"],
+        serde_json::json!(["кутеп", "гранит"]),
+        "in the message's order"
+    );
+    let busy = &input["candidates"][0];
+    assert!(
+        busy["frequencies"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("148.2000"),
+        "the message's frequency survives the cap: {busy}"
+    );
+    assert_eq!(
+        busy["frequencies"].as_array().unwrap().len(),
+        crate::config::AI_NETWORK_MATCH_MAX_LIST_ITEMS_PER_NETWORK
+    );
+    assert_eq!(busy["matched_callsigns"], serde_json::json!(["кутеп"]));
+    assert_eq!(busy["callsigns"][0], "КУТЕП");
+    assert_eq!(
+        input["candidates"][1]["matched_callsigns"],
+        serde_json::json!([])
+    );
+
+    enqueue_for_calculated(dbx, &scores(item.id, &ids))
+        .await
+        .unwrap();
+    assert!(run_once(&env).await);
+    let result = ai_network_match_result::Entity::find_by_id(item.id)
+        .one(dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        !result.certainties.to_string().contains("matched_callsigns"),
+        "callsign matches are read with the card, not stored"
+    );
+
+    let found = load_for_messages(dbx, &scores(item.id, &ids))
+        .await
+        .unwrap();
+    let network_match = found.get(&item.id).unwrap();
+    assert_eq!(
+        network_match.confident_network_id,
+        Some(ids[0]),
+        "the callsign network wins over a higher certainty"
+    );
+    assert_eq!(network_match.candidates[0].network_id, ids[0]);
+    assert_eq!(network_match.candidates[0].matched_callsigns, vec!["кутеп"]);
+
+    // A network callsign edit applies to stored scores at once.
+    network_callsign(dbx, ids[1], "ГРАНИТ").await;
+    let found = load_for_messages(dbx, &scores(item.id, &ids))
+        .await
+        .unwrap();
+    let network_match = found.get(&item.id).unwrap();
+    assert_eq!(
+        network_match.confident_network_id, None,
+        "two callsign networks need the certainty rule"
+    );
+    let other = network_match
+        .candidates
+        .iter()
+        .find(|c| c.network_id == ids[1])
+        .unwrap();
+    assert_eq!(other.matched_callsigns, vec!["гранит"]);
+    assert_eq!(engine.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
