@@ -65,12 +65,22 @@ full level unless the task selects another. Do not substitute personal Ponytail,
 its plugin router or code-simplification skill. Missing personal helpers are not
 prerequisites.
 
-Before product edits require the approved specification, implementation
-authorization and prepared tests/coverage map (QA or equivalent manual work).
+Before product edits require the approved Markdown spec_path, applicable
+Markdown plan_path, implementation authorization and prepared tests/coverage
+map (QA or equivalent manual work). Read the documents and their revisions;
+a chat transcript does not replace these handoff files.
 An explicitly justified no-behavior-tests entry is sufficient for trivial docs/
 static styling under CODE_REVIEW.md. Read the spec, contracts, actual source,
 prepared tests and initial dirty state; implement the entire approved scope,
 not only what makes current tests pass. Map shared consumers and invariants.
+
+Keep the task specification and plan available through QA and repairs. Return
+their exact task-created cleanup_paths to main. Dev completion alone does
+not delete them: main removes them automatically only after implementation
+and successful QA verify of the same final revision/dirty diff, following
+docs/frontend/echo-workflows.md#handoff-document-lifecycle. Failed, interrupted
+or required not-run checks retain the files. Do not invoke an unrequested
+stage or remove other tasks, user source documents or verification evidence.
 
 Always implement for the CPU throttling baseline in
 docs/frontend/echo-workflows.md#cpu-throttling-baseline: 4x slowdown.

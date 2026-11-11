@@ -154,16 +154,29 @@ plan, prepared tests/coverage map, relevant contracts and code; it does not need
 the designer's exploratory conversation. Load only relevant references and return
 short evidence summaries rather than copying full logs between stages.
 
-Use a short brief with external artifact paths rather than copying complete
-code/logs. When the approved specification exists only in chat, include its full
-approved text and owner decisions in the handoff; do not pass the exploratory
+Use a short brief with absolute artifact paths rather than copying complete
+code/logs. Every task specification must exist as a Markdown document before
+handoff. Main assigns `specs/<task-id-or-slug>/specification.md` from the Git root
+by default, or the user's explicit destination, without asking for routine path
+confirmation. The existing `specs/` ignore rule keeps the default artifacts local.
+Main materializes approved in-chat/manual requirements before dispatch too; a
+previous spec-role run is not required. Keep the document current after owner
+corrections and include the task, settled decisions, acceptance IDs, scope,
+source revision, approval status, coverage and evidence limits so a fresh agent
+can work without this chat. When technical planning is requested, main also
+saves `implementation-plan.md` beside it, referencing the exact spec revision.
+Pass `spec_path` and applicable `plan_path`, verify they are readable from the
+destination checkout/host, and return their links to the user. Saving documents
+does not grant approval or invoke another stage. Do not pass the exploratory
 conversation or reconstruct it from session history.
 
 ```text
 role / stage / requested sequence:
 invocation: actual user request excerpt / named skill(s) / task and permitted stages
 authorization: owner-approved scope, current phase, execution permission
-external spec_path or approved spec text / revision / owner approval and decisions:
+spec_path (absolute Markdown path) / document revision / owner approval and decisions:
+plan_path (absolute Markdown path, when planning was requested) / input spec revision:
+cleanup_paths (exact temporary documents created for this task; retain until dev + QA verify pass):
 design_paths / design approval (when applicable):
 output_preset / explicit task overrides:
 output_format / Figma target, permitted operations and synthetic input scope (when requested):
@@ -184,25 +197,45 @@ permissions; this configuration does not create independent sandboxes.
 
 | Artifact | Required content |
 | --- | --- |
-| Specification (spec role or manual input) | User/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; UX analysis and best-practice check for spec-role output; owner decisions and unresolved questions |
+| Specification (spec role or manual input) | Saved Markdown path and document revision/approval status; user/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; UX analysis and best-practice check for spec-role output; owner decisions and unresolved questions |
 | Design result (designer) | Input specification revision/approval; acceptance-ID → UX flow/frame/state mapping; reused component/token sources; design links/notes, observations, UX decisions, UX analysis and best-practice check, design approval and evidence limits; requirement gaps returned to the owner |
-| Implementation plan (main, only for requested planning/dev work) | Approved specification and needed design links; expected files/reasons; shared consumers/invariants; exact existing test paths/cases and gaps; new tests marked planned; small steps and real verification commands |
+| Implementation plan (main, only for requested planning/dev work) | Saved Markdown path; input specification path/revision and approval evidence; needed design links; expected files/reasons; shared consumers/invariants; exact existing test paths/cases and gaps; new tests marked planned; small steps and real verification commands |
 | QA prepare result | Acceptance ID → existing/new test → preserved/changed behavior → observed result or not-run; gaps, baseline readiness, execution limits |
 | Dev result | Input versions/revision/dirty scope; expected versus actual changes; scenario/test outcomes; commands/environment/API mode; browser observations; deviations and unverified work |
 | QA verify result | Exact criteria/revision/dirty diff; pass/fail/not-run with evidence; severity, reproduction, expected/actual; coverage gaps and readiness for joint review |
 
-Return generated task specifications, design notes and audit reports in chat by
-default. If a file is needed, use an explicitly agreed location outside the
-repository; do not automatically create task artifacts under `docs/` or add them
-to Git. Pass the approved text/revision or external file path in the handoff so
-fresh stages can consume it. Shared skill/workflow documentation stays in the
-repository. An implementation plan still requires a separate planning/dev scope.
+Task specifications and requested implementation plans are mandatory Markdown
+handoff documents at the assigned paths; chat summaries alone are insufficient.
+Design notes and audit reports still default to chat unless a document was
+assigned. Do not automatically put generated task artifacts under `docs/` or
+add them to Git. Shared skill/workflow documentation stays in the repository.
+An implementation plan still requires a separate planning/dev scope and belongs
+to main, not spec or designer.
 For Figma deliverables, images/screenshots are transient inspection evidence;
 do not save companion PNG/mockup files into repository documentation or link them
 there unless the user explicitly requests an export.
 Keep role results in its evidence section or the task/PR, with full sanitized
 logs/captures in a stated ignored local directory. No report publication or new
 status database is implied. Resume from these materials after compaction.
+
+## Handoff document lifecycle
+
+Specifications and implementation plans created for a task are temporary handoff
+documents. Keep them available through dev, QA prepare/verify and any repairs.
+After implementation is complete and QA verify passes the applicable criteria
+for the same final revision/dirty diff, main records the final result and
+automatically deletes the exact task-created files listed in `cleanup_paths`.
+Dev and QA return these paths and completion/verification evidence to main;
+neither deletes the documents while another stage still needs them. No extra
+cleanup confirmation is needed for these generated files.
+
+Dev self-checks, QA prepare, a failed/interrupted verify or a required not-run
+check do not satisfy this condition: retain the files for continuation. Do not
+invoke an unrequested QA stage to unlock cleanup. Remove only the listed
+generated documents, never a whole `specs/` tree, another task's files,
+user-provided source documents, shared guidance, product code, tests or QA
+evidence. Honor an explicit user instruction to retain the documents. Saving or
+cleaning up artifacts does not grant Git, publication or deployment authority.
 
 ## UX analysis and best-practice check
 
@@ -250,7 +283,8 @@ Assign stable acceptance/scenario IDs and observable outcomes, preserve existing
 behavior, and name exact existing coverage/gaps without claiming tests ran.
 Describe applicable accessibility/theme/responsive constraints, leaving UX layout
 and styling to designer unless already constrained by the owner or contracts.
-Return the specification in chat, or write only its assigned external file. No wireframes,
+Write the specification to its assigned Markdown `spec_path`, update it after
+owner corrections and return the document link/revision in chat. No wireframes,
 Figma access, implementation plans, product code, executable tests or test/build
 execution. No Figma destination is needed. Return readiness/open questions and
 evidence limits, then stop for owner approval. Main owns technical planning.

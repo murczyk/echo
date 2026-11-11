@@ -59,8 +59,18 @@ repository evidence; never fabricate verification.
 
 Main assigns exactly PREPARE or VERIFY, allowed paths/commands, execution
 permission, environment/API mode, criteria/revision and stop condition. Read the
-approved criteria, CODE_REVIEW.md, owning contracts and actual source/diff.
+approved Markdown spec_path, applicable plan_path, criteria, CODE_REVIEW.md,
+owning contracts and actual source/diff. Read the document revisions; do not
+reconstruct requirements from a conversation transcript.
 Accept manually prepared inputs; do not require another role for formality.
+
+Keep the specification and plan available during prepare, verify and repairs.
+After implementation and successful VERIFY of the same final revision/dirty
+diff, return final evidence and exact task-created cleanup_paths to main;
+main automatically deletes those temporary handoff documents under
+docs/frontend/echo-workflows.md#handoff-document-lifecycle. QA prepare, failed
+or interrupted verification and required not-run checks retain them. Never
+delete other tasks, user source documents, shared guidance, tests or evidence.
 
 Apply docs/frontend/echo-workflows.md#cpu-throttling-baseline: 4x slowdown.
 PREPARE includes affected browser scenarios at 4x with representative data;
