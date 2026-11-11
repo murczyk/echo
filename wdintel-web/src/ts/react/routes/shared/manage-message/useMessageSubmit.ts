@@ -237,6 +237,10 @@ export function useMessageSubmit({
             : data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
               ? null
               : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
+        additional_signal_group_master_keys:
+          !isEditMode && !isReportMode && engagedMessageId == null
+            ? data.additionalSignalGroupMasterKeys
+            : undefined,
         source_signal_group_master_key: isEditMode ? editTarget?.message.groupMasterKey : undefined,
         device_name_id: deviceNameId,
         upload_urls: uploadUrls.length ? uploadUrls : null,
@@ -433,7 +437,7 @@ function buildRecentValues(
   return {
     group:
       data.signalGroupMasterKey && data.signalGroupMasterKey !== DO_NOT_SEND_GROUP_VALUE
-        ? [data.signalGroupMasterKey]
+        ? [data.signalGroupMasterKey, ...(data.additionalSignalGroupMasterKeys ?? [])]
         : [],
     post: data.post ? [data.post] : [],
     freq: data.freq ? [data.freq] : [],

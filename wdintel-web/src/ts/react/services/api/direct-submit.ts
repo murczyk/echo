@@ -238,6 +238,7 @@ export type DirectSubmitRequest = {
   network?: SubmitNetwork;
   dmr?: SubmitDmrMetadata[];
   signal_group_master_key: string | null;
+  additional_signal_group_master_keys?: DirectSubmitPayload['additionalSignalGroupMasterKeys'];
   source_signal_group_master_key?: DirectSubmitPayload['sourceSignalGroupMasterKey'];
   device_name_id?: number | null;
   upload_urls?: string[] | null;

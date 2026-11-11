@@ -5,6 +5,7 @@ import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import type { SignalGroupEntry } from '../../../../../../Bindings';
 import { DO_NOT_SEND_GROUP_VALUE, type MessageFormData } from '../manage-message-drawer.schema';
+import { rememberReportDestination } from '../report-destination';
 
 const DO_NOT_SEND_GROUP_OPTION = {
   masterKey: DO_NOT_SEND_GROUP_VALUE,
@@ -47,8 +48,12 @@ export function SystemSection({
   const theme = useTheme();
   const {
     control,
+    watch,
+    setValue,
     formState: { errors },
   } = useFormContext<MessageFormData>();
+  const multipleGroups = !isEditMode && !isReportMode && !groupLocked;
+  const additionalGroupKeys = watch('additionalSignalGroupMasterKeys') ?? [];
 
   const sortedSignalGroups = useMemo(() => {
     if (!recentValues?.group || recentValues.group.length === 0) return signalGroups;
@@ -84,6 +89,8 @@ export function SystemSection({
           control={control}
           render={({ field }) => (
             <Autocomplete
+              multiple={multipleGroups}
+              disableCloseOnSelect={multipleGroups}
               options={signalGroupOptions}
               noOptionsText="Немає варіантів"
               getOptionLabel={(option) => option.name || option.masterKey}
@@ -112,8 +119,29 @@ export function SystemSection({
               }}
               loading={groupsLoading}
               disabled={busy || groupLocked || (isEditMode && !groupEditable)}
-              value={signalGroupOptions.find((group) => group.masterKey === field.value) || null}
-              onChange={(_, newValue) => field.onChange(newValue?.masterKey || '')}
+              value={
+                multipleGroups
+                  ? [field.value, ...additionalGroupKeys].flatMap((key) => {
+                      const group = signalGroupOptions.find((group) => group.masterKey === key);
+                      return group ? [group] : [];
+                    })
+                  : signalGroupOptions.find((group) => group.masterKey === field.value) || null
+              }
+              onChange={(_, newValue) => {
+                const selected = Array.isArray(newValue) ? newValue : newValue ? [newValue] : [];
+                const masterKey = selected[0]?.masterKey ?? '';
+                if (multipleGroups) {
+                  setValue(
+                    'additionalSignalGroupMasterKeys',
+                    selected.slice(1).map((group) => group.masterKey),
+                    {
+                      shouldDirty: true,
+                    },
+                  );
+                }
+                field.onChange(masterKey);
+                if (isReportMode) rememberReportDestination(masterKey);
+              }}
               renderInput={(params) => (
                 <TextField
                   {...params}

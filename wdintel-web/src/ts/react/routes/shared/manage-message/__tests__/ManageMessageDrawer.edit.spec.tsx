@@ -360,11 +360,13 @@ type DrawerCloseReason = 'escapeKeyDown' | 'backdropClick';
 let drawerOnClose: ((event: unknown, reason: DrawerCloseReason) => void) | undefined;
 
 function setRecentValues(values: Record<string, unknown>) {
+  const stored = new Map([['cyberEcho_recentMessageFields', JSON.stringify(values)]]);
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
-      getItem: vi.fn().mockReturnValue(JSON.stringify(values)),
-      setItem: vi.fn(),
+      getItem: vi.fn((key: string) => stored.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => stored.set(key, value)),
+      removeItem: vi.fn((key: string) => stored.delete(key)),
     },
   });
 }
@@ -3197,7 +3199,7 @@ describe('ManageMessageDrawer edit mode', () => {
 
     expect(pickerValuesByLabel.get('Дата перехоплення')).toBeTruthy();
     expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
     expect(autocompleteValuesByLabel.get('Підрозділ')).toEqual({ id: 1, name: 'u-1' });
     expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('device-1');
     expect(textFieldPropsByLabel.get('Частота')?.value ?? '').toBe('');
@@ -3231,7 +3233,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-2' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-2' }]);
     root.unmount();
   });
 
@@ -3258,7 +3260,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
     root.unmount();
   });
 
@@ -3286,7 +3288,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect(autocompleteValuesByLabel.get('Група')).toEqual([]);
     expect(container.textContent).toContain('Обрана група більше недоступна.');
     root.unmount();
   });
@@ -3385,7 +3387,7 @@ describe('ManageMessageDrawer edit mode', () => {
       });
     });
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
 
     const discard = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Відхилити зміни',
@@ -3396,7 +3398,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-2' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-2' }]);
     expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('');
     root.unmount();
   });
@@ -3474,7 +3476,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect(autocompleteValuesByLabel.get('Група')).toEqual([]);
     expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
       true,
     );
@@ -6666,7 +6668,7 @@ describe('ManageMessageDrawer edit mode', () => {
       });
 
       expect(autocompleteValuesByLabel.get('Частота (МГц)') ?? '').toBe('');
-      expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+      expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
       root.unmount();
       vi.useRealTimers();
     });
@@ -6701,7 +6703,7 @@ describe('ManageMessageDrawer edit mode', () => {
         );
         await Promise.resolve();
       });
-      expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+      expect(autocompleteValuesByLabel.get('Група')).toEqual([]);
 
       await act(async () => {
         textFieldPropsByLabel

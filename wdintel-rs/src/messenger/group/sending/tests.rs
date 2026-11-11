@@ -64,6 +64,13 @@ async fn configure(
     let datasource = messenger(&env.dbx, source).await;
     let group = find_test_signal_group(&env.dbx).await.unwrap();
     let key = group.master_key.clone();
+    crate::messenger::group::ensure_datasource_group_id(
+        &env.dbx,
+        key.clone(),
+        datasource.id,
+    )
+    .await
+    .unwrap();
     let mut group = group.into_active_model();
     group.datasource_id = Set(Some(datasource.id));
     group.update(&env.dbx).await.unwrap();
@@ -89,6 +96,237 @@ async fn outbox_count(db: &DatabaseConnection) -> usize {
         .await
         .unwrap()
         .len()
+}
+
+async fn additional_group(env: &Env, key: &str) -> String {
+    let datasource = messenger(&env.dbx, EchoMessageSource::Whatsapp).await;
+    let group = signal_group::Entity::find_by_id(key)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut group = group.into_active_model();
+    let second_key = format!("{key}-second");
+    group.master_key = Set(second_key.clone());
+    group.datasource_id = Set(Some(datasource.id));
+    group.insert(&env.dbx).await.unwrap();
+    crate::messenger::group::ensure_datasource_group_id(
+        &env.dbx,
+        second_key.clone(),
+        datasource.id,
+    )
+    .await
+    .unwrap();
+    let group_aor = signal_group_aor::Entity::find()
+        .filter(signal_group_aor::Column::MasterKey.eq(key))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut group_aor = group_aor.into_active_model();
+    group_aor.id = NotSet;
+    group_aor.master_key = Set(second_key.clone());
+    group_aor.insert(&env.dbx).await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    crate::functest::tests::mk_sigint_zone_datasource(
+        &env.dbx,
+        sigint_zone_datasource::ActiveModel {
+            sigint_zone_id: Set(login.sigint_zone_id.unwrap()),
+            datasource_id: Set(datasource.id),
+            group_master_key: Set(second_key.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    set(
+        &txn,
+        &second_key,
+        Some(true),
+        Some(&[login.organism_id.unwrap()]),
+    )
+    .await
+    .unwrap();
+    txn.commit().await.unwrap();
+    second_key
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_4103_multiple_groups_are_authorized_and_queued_atomically() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (login_id, key, _) = configure(&env, EchoMessageSource::Signal).await;
+    let second_key = additional_group(&env, &key).await;
+    let mut request = payload(&key, "Multiple groups");
+    request.additional_signal_group_master_keys =
+        vec![second_key.clone(), key.clone(), second_key.clone()];
+    let before = outbox_count(&env.dbx).await;
+    signal_group::ActiveModel {
+        master_key: Set(second_key.clone()),
+        is_sigint_unit_mandatory: Set(Some(true)),
+        ..Default::default()
+    }
+    .update(&env.dbx)
+    .await
+    .unwrap();
+    assert!(bl::submit_signal_message(&login_id, &env, request.clone())
+        .await
+        .is_err());
+    assert_eq!(outbox_count(&env.dbx).await, before);
+    signal_group::ActiveModel {
+        master_key: Set(second_key.clone()),
+        is_sigint_unit_mandatory: Set(Some(false)),
+        ..Default::default()
+    }
+    .update(&env.dbx)
+    .await
+    .unwrap();
+    let created = bl::submit_signal_message(&login_id, &env, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(outbox_count(&env.dbx).await, before + 2);
+    let links = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .eq(created.signal_message_id),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+    assert_eq!(links.len(), 2);
+    for key in [&key, &second_key] {
+        assert!(links
+            .iter()
+            .any(|link| link.group_master_key.as_ref() == Some(key)));
+    }
+    sigint_zone_datasource::Entity::delete_many()
+        .filter(sigint_zone_datasource::Column::GroupMasterKey.eq(&second_key))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    signal_group_aor::Entity::delete_many()
+        .filter(signal_group_aor::Column::MasterKey.eq(&second_key))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    assert!(bl::submit_signal_message(&login_id, &env, request)
+        .await
+        .is_err());
+    assert_eq!(outbox_count(&env.dbx).await, before + 2);
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_4103_shared_groups_choose_an_allowed_active_sender() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (login_id, key, first) =
+        configure(&env, EchoMessageSource::Signal).await;
+    let second = messenger(&env.dbx, EchoMessageSource::Signal).await;
+    crate::messenger::group::ensure_datasource_group_id(
+        &env.dbx,
+        key.clone(),
+        second.id,
+    )
+    .await
+    .unwrap();
+    for (
+        first_allowed,
+        first_status,
+        second_allowed,
+        second_status,
+        expected,
+    ) in [
+        (
+            false,
+            AccountStatus::Active,
+            true,
+            AccountStatus::Paused,
+            Some(&second),
+        ),
+        (
+            true,
+            AccountStatus::Paused,
+            true,
+            AccountStatus::Active,
+            Some(&second),
+        ),
+        (
+            true,
+            AccountStatus::Active,
+            true,
+            AccountStatus::Active,
+            Some(&first),
+        ),
+        (
+            true,
+            AccountStatus::Active,
+            false,
+            AccountStatus::Active,
+            Some(&first),
+        ),
+        (
+            false,
+            AccountStatus::Active,
+            false,
+            AccountStatus::Active,
+            None,
+        ),
+    ] {
+        for (datasource, allowed, status, name) in [
+            (&first, first_allowed, first_status, "Alpha"),
+            (&second, second_allowed, second_status, "Zulu"),
+        ] {
+            datasource::ActiveModel {
+                id: Set(datasource.id),
+                can_send_messages: Set(Some(allowed)),
+                status: Set(status),
+                display_name: Set(name.into()),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        assert_eq!(
+            read(&env.dbx, &key).await.unwrap().can_send_messages,
+            expected.is_some()
+        );
+        let txn = env.dbx.begin().await.unwrap();
+        assert_eq!(
+            set(&txn, &key, Some(true), None).await.is_ok(),
+            expected.is_some()
+        );
+        txn.rollback().await.unwrap();
+        let before = outbox_count(&env.dbx).await;
+        bl::submit_signal_message(
+            &login_id,
+            &env,
+            payload(&key, "Shared group"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outbox_count(&env.dbx).await,
+            before + usize::from(expected.is_some())
+        );
+        if let Some(expected) = expected {
+            let lock = echo_client_lock::Entity::find_by_id(
+                i32::try_from(expected.echo_client_lock_id.unwrap()).unwrap(),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+            let instance = echo_outbox_message_instance::Entity::find()
+                .order_by_desc(echo_outbox_message_instance::Column::Id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(instance.account_id, lock.account_id);
+        }
+    }
 }
 
 #[actix_web::test]
@@ -236,6 +474,22 @@ async fn issue_4103_text_and_attachment_queue_rolls_back_with_the_item() {
     )
     .await
     .unwrap();
+    let second_key = additional_group(&env, &key).await;
+    let destination = datasource_group::Entity::find()
+        .filter(datasource_group::Column::GroupMasterKey.eq(&second_key))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    signal_message_group::ActiveModel {
+        signal_message_id: Set(item.signal_message_id),
+        group_master_key: Set(Some(second_key)),
+        datasource_group_id: Set(Some(destination.id)),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
     let bytes = b"attachment contents";
     operator
         .write("sending-test.txt", bytes.to_vec())
@@ -256,6 +510,12 @@ async fn issue_4103_text_and_attachment_queue_rolls_back_with_the_item() {
     .await
     .unwrap();
     let before = outbox_count(&env.dbx).await;
+    let last_attachment_id = echo_outbox_message_attachment::Entity::find()
+        .order_by_desc(echo_outbox_message_attachment::Column::Id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .map_or(0, |attachment| attachment.id);
     let txn = env.dbx.begin().await.unwrap();
     set(&txn, &key, Some(true), None).await.unwrap();
     enqueue(&env, &txn, &login_id, item.signal_message_id)
@@ -269,17 +529,22 @@ async fn issue_4103_text_and_attachment_queue_rolls_back_with_the_item() {
         .await
         .unwrap();
     txn.commit().await.unwrap();
-    let attachment = echo_outbox_message_attachment::Entity::find()
-        .order_by_desc(echo_outbox_message_attachment::Column::Id)
-        .one(&env.dbx)
+    assert_eq!(outbox_count(&env.dbx).await, before + 2);
+    let attachments = echo_outbox_message_attachment::Entity::find()
+        .filter(
+            echo_outbox_message_attachment::Column::Id.gt(last_attachment_id),
+        )
+        .all(&env.dbx)
         .await
-        .unwrap()
         .unwrap();
-    assert_eq!(
-        STANDARD.decode(attachment.content_base64.unwrap()).unwrap(),
-        bytes
-    );
-    assert_eq!(attachment.extension.as_deref(), Some("txt"));
+    assert_eq!(attachments.len(), 2);
+    for attachment in attachments {
+        assert_eq!(
+            STANDARD.decode(attachment.content_base64.unwrap()).unwrap(),
+            bytes
+        );
+        assert_eq!(attachment.extension.as_deref(), Some("txt"));
+    }
 }
 
 #[actix_web::test]
