@@ -63,6 +63,8 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub signal_group_master_key: Option<String>,
     #[serde(default)]
+    pub additional_signal_group_master_keys: Vec<String>,
+    #[serde(default)]
     pub source_signal_group_master_key: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_update")]
     pub device_name_id: Option<Option<i64>>,

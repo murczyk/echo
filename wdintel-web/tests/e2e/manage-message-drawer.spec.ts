@@ -28,8 +28,12 @@ async function dismissSettingsFailureNotifications(page: Page, host: ManageMessa
       .getByRole('alert')
       .filter({ hasText: 'System settings unavailable' });
     await expect(requestFailure).toBeVisible();
-    await requestFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
-    await expect(requestFailure).not.toBeVisible();
+    await expect(async () => {
+      if (await requestFailure.isVisible()) {
+        await requestFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
+      }
+      await expect(requestFailure).not.toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 5000 });
   }
 }
 
@@ -272,6 +276,108 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
   });
 
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
+    test(`@regression #4103 ${host} creates a message for multiple groups`, async ({ page }) => {
+      const groups = ['e2e-group', 'second-group'];
+      if (host === 'duty') await installRerDutyShortStateMocks(page, { signalGroups: groups });
+      else await installAnalysisNeoApiMocks(page, { signalGroups: groups });
+      await page.route('**/api/1.1/submit-direct', (route) =>
+        route.fulfill({ json: { signal_message_id: 701 } }),
+      );
+      await page.goto(`/rer-${host === 'duty' ? 'duty' : 'analysis'}-neo`);
+      await clickCreateMessage(page, host);
+      const editor = page.locator('[data-manage-message-presentation]');
+      const group = editor.getByRole('combobox', { name: 'Група', exact: true });
+      await group.click();
+      for (const name of groups) await page.getByRole('option', { name, exact: true }).click();
+      await group.press('Escape');
+      await editor.getByRole('textbox', { name: 'Текст повідомлення' }).fill('For both groups');
+      const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+      await editor.getByRole('button', { name: 'Створити', exact: true }).click();
+      expect((await submitted).postDataJSON()).toMatchObject({
+        signal_group_master_key: 'e2e-group',
+        additional_signal_group_master_keys: ['second-group'],
+      });
+    });
+
+    test(`@regression #4103 ${host} remembers the report destination across reload and replaces it`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1600, height: 1000 });
+      await openCreateEditorWithLinkedMessage(page, host);
+      await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
+      await page.route('**/api/user/sigint-groups', (route) =>
+        route.fulfill({ json: ['e2e-group', 'second-group'] }),
+      );
+      await page.route('**/api/rer-importer/signal-group-batch', (route) =>
+        route.fulfill({
+          json: {
+            data: [
+              { master_key: 'e2e-group', name: 'e2e-group' },
+              { master_key: 'second-group', name: 'second-group' },
+            ],
+          },
+        }),
+      );
+      await page.route('**/api/1.1/messages/copy', (route) =>
+        route.fulfill({ json: { payloads: [{ full_body: 'Source report' }] } }),
+      );
+      await page.route('**/api/1.1/submit-direct', (route) =>
+        route.fulfill({ json: { signal_message_id: 701 } }),
+      );
+      const openReport = async () => {
+        await page
+          .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
+          .first()
+          .click();
+        return page.locator('[data-manage-message-presentation]');
+      };
+      for (const name of ['e2e-group', 'second-group']) {
+        const editor = await openReport();
+        const group = editor.getByRole('combobox', { name: 'Відправити в групу' });
+        if (name === 'second-group') await expect(group).toHaveValue('e2e-group');
+        await group.click();
+        await page.getByRole('option', { name, exact: true }).click();
+        await editor.getByRole('textbox', { name: 'Текст розвіддонесення' }).fill('Report');
+        const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+        await editor.getByRole('button', { name: 'Створити', exact: true }).click();
+        expect((await submitted).postDataJSON().signal_group_master_key).toBe(name);
+        await expect(editor).toHaveCount(0);
+        await page.reload();
+      }
+      const editor = await openReport();
+      await expect(editor.getByRole('combobox', { name: 'Відправити в групу' })).toHaveValue(
+        'second-group',
+      );
+      await editor.getByRole('button', { name: 'Закрити', exact: true }).click();
+      await page.route('**/api/rer-importer/signal-group-batch', (route) =>
+        route.fulfill({ json: { data: [{ master_key: 'e2e-group', name: 'e2e-group' }] } }),
+      );
+      await page.reload();
+      const staleEditor = await openReport();
+      await expect(staleEditor.getByRole('combobox', { name: 'Відправити в групу' })).toHaveValue(
+        '',
+      );
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem('echo_lastReportDestination')))
+        .toBeNull();
+      await staleEditor.getByRole('button', { name: 'Закрити', exact: true }).click();
+      await page.route('**/api/rer-importer/signal-group-batch', (route) =>
+        route.fulfill({
+          json: {
+            data: [
+              { master_key: 'e2e-group', name: 'e2e-group' },
+              { master_key: 'second-group', name: 'second-group' },
+            ],
+          },
+        }),
+      );
+      await page.reload();
+      const restoredEditor = await openReport();
+      await expect(
+        restoredEditor.getByRole('combobox', { name: 'Відправити в групу' }),
+      ).toHaveValue('');
+    });
+
     test(`#3894 ${host} remembers a cleared device name after creating and reopening @regression`, async ({
       page,
     }) => {
@@ -681,7 +787,9 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         0,
       );
     });
-    test(`${host} edits an own report without accessible parents as a report`, async ({ page }) => {
+    test(`@regression #4103 ${host} edits an own report without changing the remembered creation destination`, async ({
+      page,
+    }) => {
       const drawer = await openLinkedMessageEditDrawer(
         page,
         host,
@@ -692,6 +800,14 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expectEmbeddedEditor(page);
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toHaveCount(0);
       expect(drawer.getCopyRequestCount()).toBe(0);
+      await page.evaluate(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
+      await page.getByRole('combobox', { name: 'Відправити в групу' }).click();
+      await page.getByRole('option', { name: 'e2e-group', exact: true }).click();
+      await page.getByRole('combobox', { name: 'Відправити в групу' }).click();
+      await page.getByRole('option', { name: 'Не відправляти', exact: true }).click();
+      expect(await page.evaluate(() => localStorage.getItem('echo_lastReportDestination'))).toBe(
+        'e2e-group',
+      );
     });
   }
 
@@ -1185,7 +1301,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       { width: 1440, fontSize: '14px' },
     ]) {
       await page.setViewportSize({ width: scenario.width, height: 900 });
-      await page.goto('/rer-analysis-neo?leftPanelOpen=false');
+      await page.goto('/rer-analysis-neo?leftPanelOpen=false&filterPanelOpen=false');
       await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
       await page.getByRole('button', { name: 'Додати повідомлення' }).click();
 
@@ -1220,7 +1336,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
   test('Analysis keeps the editor and Analytics mutually exclusive', async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 800 });
     await installAnalysisNeoApiMocks(page, { inboxResponse: createOverflowingInboxResponse() });
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=true');
     await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
     await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
     const dock = page.getByTestId('analysis-right-dock');
