@@ -34,7 +34,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::time::{Duration as StdDuration, Instant};
 use tokio::task::JoinSet;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
@@ -513,6 +513,69 @@ async fn run_request(
     }
 }
 
+/// Phase timings up to the runner's first event, logged once per request so
+/// container warm-up can be compared across releases.
+struct EnvironmentTimings {
+    queue_ms: i64,
+    began: Instant,
+    container_start: Option<Instant>,
+    container_ms: Option<u128>,
+    runner_spawned: Option<Instant>,
+    reported: bool,
+}
+
+impl EnvironmentTimings {
+    fn new(request: &ai_agent_request::Model) -> Self {
+        let queue_ms = request
+            .started_at
+            .map(|started| (started - request.queued_at).num_milliseconds())
+            .unwrap_or_default();
+        Self {
+            queue_ms,
+            began: Instant::now(),
+            container_start: None,
+            container_ms: None,
+            runner_spawned: None,
+            reported: false,
+        }
+    }
+
+    fn container_start_began(&mut self) {
+        self.container_start = Some(Instant::now());
+    }
+
+    fn container_start_finished(&mut self) {
+        self.container_ms = self
+            .container_start
+            .map(|started| started.elapsed().as_millis());
+    }
+
+    fn runner_spawned(&mut self) {
+        self.runner_spawned = Some(Instant::now());
+    }
+
+    fn report_first_runner_event(&mut self, request_id: Uuid) {
+        if self.reported {
+            return;
+        }
+        self.reported = true;
+        let before_container_ms = self
+            .container_start
+            .map(|started| started.duration_since(self.began).as_millis())
+            .unwrap_or_default();
+        let runner_ms = self
+            .runner_spawned
+            .map(|spawned| spawned.elapsed().as_millis())
+            .unwrap_or_default();
+        info!(
+            "AI agent environment ready request_id={request_id} queue_ms={} before_container_ms={before_container_ms} container_ms={} runner_first_event_ms={runner_ms} total_ms={}",
+            self.queue_ms,
+            self.container_ms.unwrap_or_default(),
+            self.began.elapsed().as_millis()
+        );
+    }
+}
+
 fn request_execution_timeout(model_name: &str, url: &str) -> StdDuration {
     let seconds = if model_name == crate::config::AI_AGENT_GLM_5_3
         && crate::ai_engine::client::is_government_url(url)
@@ -603,6 +666,7 @@ async fn run_request_inner(
     if cancellation.is_cancelled() {
         return Err(interrupted_error());
     }
+    let mut timings = EnvironmentTimings::new(request);
     let mut activity_titles = ActivityTitles::new(
         env.ai_engine_client.clone(),
         env.dbx.clone(),
@@ -645,6 +709,7 @@ async fn run_request_inner(
     {
         return Ok(RunOutcome::Cancelled);
     }
+    timings.container_start_began();
     let Some(linked) = lifecycle::start_for_request(
         env,
         request.id,
@@ -655,6 +720,7 @@ async fn run_request_inner(
     else {
         return Ok(RunOutcome::Cancelled);
     };
+    timings.container_start_finished();
     if cancellation.is_cancelled() {
         return Err(interrupted_error());
     }
@@ -820,6 +886,7 @@ async fn run_request_inner(
     }
     let payload = bounded_runner_payload(runner_payload, history)?;
     let dispatcher = DispatcherClient::from_env(env).await?;
+    timings.runner_spawned();
     let mut stream = dispatcher
         .start_stream(
             "run_request",
@@ -845,6 +912,7 @@ async fn run_request_inner(
                     return Ok(RunOutcome::Cancelled);
                 }
                 if let Some(event) = envelope.event {
+                    timings.report_first_runner_event(request.id);
                     runner_event_count = runner_event_count.saturating_add(1);
                     runner_event_bytes = runner_event_bytes.saturating_add(
                         serde_json::to_vec(&event).c(h!())?.len(),
