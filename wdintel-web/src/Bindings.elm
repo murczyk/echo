@@ -1304,6 +1304,7 @@ type alias NetworkMatchCandidate =
     { networkId : Int
     , certainty : Int
     , reason : String
+    , matchedCallsigns : List (String)
     }
 
 
@@ -1313,6 +1314,7 @@ networkMatchCandidateEncoder struct =
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "certainty", (Json.Encode.int) struct.certainty )
         , ( "reason", (Json.Encode.string) struct.reason )
+        , ( "matched_callsigns", (Json.Encode.list (Json.Encode.string)) struct.matchedCallsigns )
         ]
 
 
@@ -21756,6 +21758,7 @@ networkMatchCandidateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "certainty" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reason" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matched_callsigns" (Json.Decode.list (Json.Decode.string))))
 
 
 inboxNetworkMatchDecoder : Json.Decode.Decoder InboxNetworkMatch

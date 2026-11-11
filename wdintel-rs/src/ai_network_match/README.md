@@ -43,16 +43,25 @@ name, description fields or «Опис для ШІ» (`update_network`) relinks 
 so it queues a recalculation of the network's messages intercepted in the
 last 48 hours (`request_network_rescore`, a network invalidation task). The
 network edit itself takes no message locks; the invalidation worker queues the
-jobs in batches. Callsign edits take effect at the next recalculation or for
-new messages.
+jobs in batches. A change to a message's callsigns (the AI callsign worker,
+reprocessing, manual edits) recalculates its networks, so it is scored again.
+Network callsign edits change the main network at once (see Display); the AI
+certainty follows at the next recalculation.
 
 ## Processing
 
 `worker.rs` runs one instance across processes (advisory lock
 `AI_NETWORK_MATCH_WORKER_LOCK`). For each job it sends the message text,
-frequency, time, post, unit and DMR metadata parsed from the text, plus each
+frequency, time, post, unit, callsigns and DMR metadata, plus each
 candidate's name, location, purpose, modes, radio station, frequencies, units,
-posts, callsigns and «Опис для ШІ». Candidates are numbered keys, so the model
+posts, callsigns and «Опис для ШІ». Each candidate also carries
+`matched_callsigns`: the message's callsigns found in the network's whole
+callsign list, compared with the callsign search match key
+(`RER_CALLSIGN_MATCH_KEY_SQL`: case and separator spelling ignored). The
+lists are capped, so the message's own frequency, post and matched callsigns
+go first: a list cut before them told the model the network does not use the
+message's frequency. The prompt makes callsigns decisive and frequency
+neutral. Candidates are numbered keys, so the model
 cannot name a network outside the set. A reply with unknown or duplicate keys
 fails the attempt; a candidate the model leaves out scores 0.
 
@@ -70,9 +79,18 @@ under `network_match` and published in `POST /api/monitoring` as
 ## Display
 
 `InboxMessage.network_match` is filled only when the stored candidate set
-equals the message's current networks. `confident_network_id` is set when the
-best certainty is at least 80 and leads the runner-up by at least 20
-(`AI_NETWORK_MATCH_CONFIDENT_*` in `config.rs`). Scores are a point-in-time
+equals the message's current networks. Callsigns win: each candidate's
+`matched_callsigns` is read with the card (`callsigns.rs`), not stored, and
+- when exactly one candidate holds the message's callsigns, it is
+  `confident_network_id`, whatever its certainty;
+- when several do, the certainty rule below picks among them only, so a
+  network without the callsigns is never the main one;
+- otherwise `confident_network_id` is set when the best certainty is at least
+  80 and leads the runner-up by at least 20 (`AI_NETWORK_MATCH_CONFIDENT_*`
+  in `config.rs`).
+
+Candidates come ordered: the main network, networks holding the message's
+callsigns, then by certainty. Scores are a point-in-time
 assessment: a network edit rescores only messages from the last 48 hours, and
 only while scoring runs (the setting on and the callsign worker enabled).
 Older scores, and scores whose network changed while scoring was paused, stay
