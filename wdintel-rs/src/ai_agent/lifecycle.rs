@@ -3,9 +3,9 @@ use super::auth;
 use super::dispatcher::{DispatcherClient, DispatcherResponse};
 use crate::config::{
     AI_AGENT_CONTAINER_NAME_PREFIX, AI_AGENT_HARNESS_RELEASE,
-    AI_AGENT_LINKED_LOGIN_SUFFIX, AI_AGENT_MAX_RUNNING_CONTAINERS,
-    AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER, AI_AGENT_ROLE_RER,
-    AI_AGENT_TEMPLATE_LOGIN_NAME,
+    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_LINKED_LOGIN_SUFFIX,
+    AI_AGENT_MAX_RUNNING_CONTAINERS, AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER,
+    AI_AGENT_ROLE_RER, AI_AGENT_TEMPLATE_LOGIN_NAME,
 };
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::{
@@ -14,7 +14,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::types::{warn, Env, ShortContext};
+use crate::types::{info, warn, Env, ShortContext};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
@@ -23,6 +23,7 @@ use sea_orm::{
     TransactionTrait,
 };
 use serde_json::json;
+use std::time::Instant;
 use url::Url;
 use uuid::Uuid;
 
@@ -425,16 +426,24 @@ async fn start_for_user_locked(
         .await
         .c(h!())?;
     let template = reconcile_template_login(&env.dbx).await?;
-    preflight_template(env, template.id).await?;
     let mut linked = ensure_linked_agent(env, human_login_id).await?;
     auth::revoke_login_credentials(env, linked.login.id).await?;
     enforce_running_limit(&env.dbx, linked.link.id).await?;
     set_container_state(env, &linked.container, "starting", None).await?;
-    let result = start_instance(env, template.id, &linked, ai_engine).await;
-    if let Err(err) = result {
-        cleanup_failed_start(env, &linked, &err).await;
-        return Err(err);
-    }
+    let started = Instant::now();
+    let path = match start_instance(env, template.id, &linked, ai_engine).await
+    {
+        Ok(path) => path,
+        Err(err) => {
+            cleanup_failed_start(env, &linked, &err).await;
+            return Err(err);
+        }
+    };
+    info!(
+        "AI agent container ready human_login_id={human_login_id} path={} duration_ms={}",
+        path.as_str(),
+        started.elapsed().as_millis()
+    );
     linked.login = match activate_login_with_current_scope(
         &env.dbx,
         human_login_id,
@@ -591,62 +600,150 @@ fn validate_preflight_result(
     validate_harness_release(result)
 }
 
+/// How a start reached a running container. Only a container this call
+/// started, cloned or reconfigured needs the end-to-end connection test.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartPath {
+    /// Already running and verified by an earlier start.
+    Warm,
+    Started,
+    Cloned,
+}
+
+impl StartPath {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Warm => "warm",
+            Self::Started => "started",
+            Self::Cloned => "cloned",
+        }
+    }
+}
+
 async fn start_instance(
     env: &Env,
     template_login_id: Uuid,
     linked: &LinkedAgent,
     requested_engine: Option<&ai_engine::Model>,
-) -> Result<(), AppError> {
+) -> Result<StartPath, AppError> {
     let dispatcher = DispatcherClient::from_env(env).await?;
     let ai_engine = match requested_engine {
         Some(ai_engine) => ai_engine.clone(),
         None => access::allowed_engine(&env.dbx, None).await?,
     };
     let echo_proxy = enabled_echo_proxy(env).await?;
-    let provider_transport = access::agent_provider_transport(&ai_engine)
+    let proxy_config = proxy_config(&echo_proxy, &ai_engine)?;
+    let path =
+        ensure_instance_running(&dispatcher, template_login_id, linked).await?;
+    let configured = dispatcher
+        .call("configure_proxies", Some(linked.login.id), proxy_config)
+        .await?;
+    if needs_connection_test(path, &configured.result) {
+        test_connection_internal(env, linked).await?;
+    }
+    Ok(path)
+}
+
+async fn ensure_instance_running(
+    dispatcher: &DispatcherClient,
+    template_login_id: Uuid,
+    linked: &LinkedAgent,
+) -> Result<StartPath, AppError> {
+    let cloned = match dispatcher
+        .call("status", Some(linked.login.id), json!({}))
+        .await
+    {
+        Ok(status) => {
+            let status = validate_linked_instance(
+                &status.result,
+                linked,
+                dispatcher,
+                None,
+            )?;
+            if status == "running" {
+                return Ok(running_instance_path(&linked.container.state));
+            }
+            false
+        }
+        Err(_) => {
+            clone_instance(dispatcher, template_login_id, linked).await?;
+            true
+        }
+    };
+    let started = dispatcher
+        .call("start", Some(linked.login.id), json!({}))
+        .await?;
+    validate_linked_instance(
+        &started.result,
+        linked,
+        dispatcher,
+        Some("running"),
+    )?;
+    Ok(if cloned {
+        StartPath::Cloned
+    } else {
+        StartPath::Started
+    })
+}
+
+/// A running instance is warm only if Echo also recorded it as running, i.e.
+/// an earlier start passed the connection test. One left running by a failed
+/// start or stop is tested again.
+fn running_instance_path(recorded_state: &str) -> StartPath {
+    if recorded_state == "running" {
+        StartPath::Warm
+    } else {
+        StartPath::Started
+    }
+}
+
+async fn clone_instance(
+    dispatcher: &DispatcherClient,
+    template_login_id: Uuid,
+    linked: &LinkedAgent,
+) -> Result<(), AppError> {
+    preflight_template_with_dispatcher(dispatcher, template_login_id).await?;
+    let cloned = dispatcher
+        .call(
+            "clone",
+            Some(linked.login.id),
+            json!({ "template_id": template_login_id }),
+        )
+        .await?;
+    validate_linked_instance(
+        &cloned.result,
+        linked,
+        dispatcher,
+        Some("stopped"),
+    )?;
+    Ok(())
+}
+
+fn validate_linked_instance(
+    result: &serde_json::Value,
+    linked: &LinkedAgent,
+    dispatcher: &DispatcherClient,
+    expected_status: Option<&str>,
+) -> Result<String, AppError> {
+    validate_compatible_instance(
+        result,
+        &linked.container.instance_name,
+        linked.login.id,
+        dispatcher.namespace(),
+        expected_status,
+    )
+}
+
+fn proxy_config(
+    echo_proxy: &ai_agent_echo_proxy::Model,
+    ai_engine: &ai_engine::Model,
+) -> Result<serde_json::Value, AppError> {
+    let provider_transport = access::agent_provider_transport(ai_engine)
         .ok_or_else(|| {
             AppError::Forbidden(
                 "AI engine is not supported by the agent harness".to_string(),
             )
         })?;
-    let status = dispatcher
-        .call("status", Some(linked.login.id), json!({}))
-        .await;
-    match status {
-        Ok(status) => validate_compatible_instance(
-            &status.result,
-            &linked.container.instance_name,
-            linked.login.id,
-            dispatcher.namespace(),
-            None,
-        )?,
-        Err(_) => {
-            let cloned = dispatcher
-                .call(
-                    "clone",
-                    Some(linked.login.id),
-                    json!({ "template_id": template_login_id }),
-                )
-                .await?;
-            validate_compatible_instance(
-                &cloned.result,
-                &linked.container.instance_name,
-                linked.login.id,
-                dispatcher.namespace(),
-                Some("stopped"),
-            )?;
-        }
-    }
-    let started = dispatcher
-        .call("start", Some(linked.login.id), json!({}))
-        .await?;
-    validate_compatible_instance(
-        &started.result,
-        &linked.container.instance_name,
-        linked.login.id,
-        dispatcher.namespace(),
-        Some("running"),
-    )?;
     let mut proxy_config = json!({
         "echo_hostname": echo_proxy.hostname,
         "echo_upstream": format!("{}:{}", echo_proxy.upstream_host, echo_proxy.upstream_port),
@@ -659,11 +756,20 @@ async fn start_instance(
         proxy_config["vllm_upstream"] =
             json!(format!("{engine_host}:{engine_port}"));
     }
-    dispatcher
-        .call("configure_proxies", Some(linked.login.id), proxy_config)
-        .await?;
-    test_connection_internal(env, linked).await?;
-    Ok(())
+    Ok(proxy_config)
+}
+
+/// Dispatchers before the no-op `configure_proxies` omit `changed`; their
+/// containers are always tested, as before.
+fn needs_connection_test(
+    path: StartPath,
+    configured: &serde_json::Value,
+) -> bool {
+    path != StartPath::Warm
+        || configured
+            .get("changed")
+            .and_then(|changed| changed.as_bool())
+            != Some(false)
 }
 
 fn validate_compatible_instance(
@@ -672,7 +778,7 @@ fn validate_compatible_instance(
     agent_login_id: Uuid,
     namespace: &str,
     expected_status: Option<&str>,
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     let instance = result
         .get("instance")
         .ok_or_else(invalid_instance_inventory)?;
@@ -685,7 +791,8 @@ fn validate_compatible_instance(
     if expected_status.is_some_and(|expected| status != expected) {
         return Err(invalid_instance_inventory());
     }
-    validate_harness_release(instance)
+    validate_harness_release(instance)?;
+    Ok(status)
 }
 
 fn validate_harness_release(value: &serde_json::Value) -> Result<(), AppError> {
@@ -885,7 +992,9 @@ pub async fn stop_for_user_if_idle(
         .await
         .c(h!())?
         .is_some();
-    if has_active {
+    if has_active
+        || container_recently_active(&lifecycle_lock, human_login_id).await?
+    {
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(false);
     }
@@ -894,6 +1003,32 @@ pub async fn stop_for_user_if_idle(
     lifecycle_lock.commit().await.c(h!())?;
     failures.into_result()?;
     Ok(true)
+}
+
+/// Rechecked under the lifecycle lock: the maintenance loop selects idle
+/// containers before locking, and a prewarm may have refreshed the activity
+/// in between.
+async fn container_recently_active(
+    txn: &DatabaseTransaction,
+    human_login_id: Uuid,
+) -> Result<bool, AppError> {
+    let Some(link) = ai_agent_user_link::Entity::find()
+        .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+        .one(txn)
+        .await
+        .c(h!())?
+    else {
+        return Ok(false);
+    };
+    let idle_since = Utc::now().naive_utc()
+        - chrono::Duration::minutes(AI_AGENT_IDLE_STOP_MINUTES);
+    let active = ai_agent_container::Entity::find_by_id(link.id)
+        .filter(ai_agent_container::Column::LastActivityAt.gt(idle_since))
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_some();
+    Ok(active)
 }
 
 pub(crate) async fn stop_after_request_interruption(
@@ -1866,6 +2001,27 @@ mod tests {
             "echo-staging"
         )
         .is_err());
+    }
+
+    #[test]
+    fn only_new_or_reconfigured_containers_are_connection_tested() {
+        let unchanged = json!({ "changed": false });
+        let changed = json!({ "changed": true });
+        let older_dispatcher = json!({ "instance": {} });
+
+        assert!(!needs_connection_test(StartPath::Warm, &unchanged));
+        assert!(needs_connection_test(StartPath::Warm, &changed));
+        assert!(needs_connection_test(StartPath::Warm, &older_dispatcher));
+        assert!(needs_connection_test(StartPath::Started, &unchanged));
+        assert!(needs_connection_test(StartPath::Cloned, &unchanged));
+    }
+
+    #[test]
+    fn running_instance_is_warm_only_when_echo_recorded_it_running() {
+        assert_eq!(running_instance_path("running"), StartPath::Warm);
+        for state in ["starting", "stopped", "error", "stopping", "absent"] {
+            assert_eq!(running_instance_path(state), StartPath::Started);
+        }
     }
 
     #[test]

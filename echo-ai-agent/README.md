@@ -222,6 +222,14 @@ and `host:port` upstreams for direct transport. Request execution invokes only
 `/usr/local/bin/echo-ai-agent-runner`; there is no arbitrary command or argument
 facility.
 
+Instances are looked up with `incus query` (one instance, or a `recursion=1`
+listing without runtime state), so lookups stay fast however many backups the
+host retains. `start` on a running instance and `configure_proxies` whose
+devices, `user.echo.ai.*` settings and in-container `/etc/hosts` entry already
+match return `"changed": false` without taking the host-wide lifecycle lock.
+Echo skips its end-to-end connection test only for such an unchanged container
+that it already recorded as running.
+
 Cancellation closes or terminates the SSH child. The dispatcher then
 terminates, waits for, and if necessary kills the `incus exec` process so a Pi
 request is not orphaned.
