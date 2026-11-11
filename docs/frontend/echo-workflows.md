@@ -16,8 +16,9 @@ The main chat retains the user's chosen model and coordinates stages/questions.
 The four `.codex/agents/*.toml` files define Codex child roles; their
 `developer_instructions` strings are the canonical shared role prompts. Claude
 Code adapters read those strings after their own invocation check. `agents/openai.yaml`
-files are Codex skill metadata, not agent definitions. This workflow ships no project
-`config.toml` or shell-environment overrides. For subagent enablement and concurrency
+files are Codex skill metadata, not agent definitions. The project
+`.codex/config.toml` configures only the separate [Figma reading connection](figma-access.md);
+it changes no role model, shell environment or sandbox settings. For subagent enablement and concurrency
 limits, the developer's effective client
 settings apply. If subagents are disabled, report the blocker without changing
 those settings. Main runs this workflow's stages sequentially, with one writer

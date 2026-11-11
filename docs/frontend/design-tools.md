@@ -5,11 +5,17 @@ and repository-owned skill instructions. [Context use](design-workflow.md)
 describes the small brief/review loop; [explicit Echo workflows](echo-workflows.md)
 provides optional managed spec/designer/dev/QA roles. Personal plugins are optional.
 
+For ordinary tasks, a supplied Figma screen/page link can be read without an
+Echo-role invocation. Shared client configuration and the personal sign-in/access
+flow are covered in [Figma access](figma-access.md); no local Figma server or plugin
+installation is required for that flow.
+
 For explicitly requested editable wireframes/designs, the designer can use the
 official Figma MCP with Echo context, tokens and component sources; see the
 [Figma guide](figma-design.md). Start without a library by creating only the
 foundations/components needed for the task. Account/file access is checked per
-developer; repository configuration does not install or connect Figma.
+developer. The shared `echo_figma` connection is for reading; existing authoring
+connections and their permissions are not replaced.
 
 ## Team access and prerequisites
 

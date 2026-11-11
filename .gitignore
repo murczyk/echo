@@ -77,9 +77,10 @@ echo-iggy/test-cli/.env
 
 # Personal Impeccable configuration and state are not shared.
 /.impeccable/
-# Share only the reviewed role configuration; keep local client state private.
+# Share only reviewed team configuration; keep local client state private.
 !/.codex/
 /.codex/*
+!/.codex/config.toml
 !/.codex/agents/
 /.codex/agents/*
 !/.codex/agents/designer.toml
@@ -87,8 +88,9 @@ echo-iggy/test-cli/.env
 !/.codex/agents/qa.toml
 !/.codex/agents/spec.toml
 
-# Claude Code adapters only; personal settings and runtime state stay local.
+# Shared Claude Code configuration; personal settings and runtime state stay local.
 /.claude/*
+!/.claude/settings.json
 !/.claude/agents/
 /.claude/agents/*
 !/.claude/agents/spec.md
