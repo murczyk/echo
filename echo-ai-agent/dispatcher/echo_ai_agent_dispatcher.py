@@ -105,7 +105,7 @@ def run(
     *,
     input_text: str | None = None,
     check: bool = True,
-    timeout: float = COMMAND_TIMEOUT_SECONDS,
+    timeout: float | None = COMMAND_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     try:
         result = subprocess.run(
@@ -449,9 +449,11 @@ def op_clone(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
         fail("agent instance already exists")
     template = require_template(body, namespace)
     template_name = str(template["name"])
+    # No CLI timeout: killing the client does not cancel the daemon's copy,
+    # which could then finish without the ownership settings below.
     run(
         ["incus", "copy", template_name, name, "--profile", PROFILE_NAME],
-        timeout=COMMAND_TIMEOUT_SECONDS * 5,
+        timeout=None,
     )
     try:
         run(

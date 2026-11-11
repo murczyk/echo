@@ -14,7 +14,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::types::{info, warn, Env, ShortContext};
+use crate::types::{info, warn, Context, Env, ShortContext};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
@@ -626,20 +626,22 @@ async fn start_instance(
     linked: &LinkedAgent,
     requested_engine: Option<&ai_engine::Model>,
 ) -> Result<StartPath, AppError> {
-    let dispatcher = DispatcherClient::from_env(env).await?;
+    let dispatcher = DispatcherClient::from_env(env).await.context(h!())?;
     let ai_engine = match requested_engine {
         Some(ai_engine) => ai_engine.clone(),
-        None => access::allowed_engine(&env.dbx, None).await?,
+        None => access::allowed_engine(&env.dbx, None).await.context(h!())?,
     };
-    let echo_proxy = enabled_echo_proxy(env).await?;
-    let proxy_config = proxy_config(&echo_proxy, &ai_engine)?;
-    let path =
-        ensure_instance_running(&dispatcher, template_login_id, linked).await?;
+    let echo_proxy = enabled_echo_proxy(env).await.context(h!())?;
+    let proxy_config = proxy_config(&echo_proxy, &ai_engine).context(h!())?;
+    let path = ensure_instance_running(&dispatcher, template_login_id, linked)
+        .await
+        .context(h!())?;
     let configured = dispatcher
         .call("configure_proxies", Some(linked.login.id), proxy_config)
-        .await?;
+        .await
+        .context(h!())?;
     if needs_connection_test(path, &configured.result) {
-        test_connection_internal(env, linked).await?;
+        test_connection_internal(env, linked).await.context(h!())?;
     }
     Ok(path)
 }
@@ -659,26 +661,31 @@ async fn ensure_instance_running(
                 linked,
                 dispatcher,
                 None,
-            )?;
+            )
+            .context(h!())?;
             if status == "running" {
                 return Ok(running_instance_path(&linked.container.state));
             }
             false
         }
         Err(_) => {
-            clone_instance(dispatcher, template_login_id, linked).await?;
+            clone_instance(dispatcher, template_login_id, linked)
+                .await
+                .context(h!())?;
             true
         }
     };
     let started = dispatcher
         .call("start", Some(linked.login.id), json!({}))
-        .await?;
+        .await
+        .context(h!())?;
     validate_linked_instance(
         &started.result,
         linked,
         dispatcher,
         Some("running"),
-    )?;
+    )
+    .context(h!())?;
     Ok(if cloned {
         StartPath::Cloned
     } else {
@@ -702,20 +709,24 @@ async fn clone_instance(
     template_login_id: Uuid,
     linked: &LinkedAgent,
 ) -> Result<(), AppError> {
-    preflight_template_with_dispatcher(dispatcher, template_login_id).await?;
+    preflight_template_with_dispatcher(dispatcher, template_login_id)
+        .await
+        .context(h!())?;
     let cloned = dispatcher
         .call(
             "clone",
             Some(linked.login.id),
             json!({ "template_id": template_login_id }),
         )
-        .await?;
+        .await
+        .context(h!())?;
     validate_linked_instance(
         &cloned.result,
         linked,
         dispatcher,
         Some("stopped"),
-    )?;
+    )
+    .context(h!())?;
     Ok(())
 }
 
@@ -791,7 +802,7 @@ fn validate_compatible_instance(
     if expected_status.is_some_and(|expected| status != expected) {
         return Err(invalid_instance_inventory());
     }
-    validate_harness_release(instance)?;
+    validate_harness_release(instance).context(h!())?;
     Ok(status)
 }
 
@@ -993,7 +1004,9 @@ pub async fn stop_for_user_if_idle(
         .c(h!())?
         .is_some();
     if has_active
-        || container_recently_active(&lifecycle_lock, human_login_id).await?
+        || container_recently_active(&lifecycle_lock, human_login_id)
+            .await
+            .context(h!())?
     {
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(false);
