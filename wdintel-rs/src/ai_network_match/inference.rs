@@ -2,7 +2,7 @@
 //! network ids here, so the model cannot name a network that is not a
 //! candidate.
 
-use super::NetworkMatchCandidate;
+use super::StoredCertainty;
 use crate::ai_engine::{
     extraction_output_tokens, request_structured_ai_response, AiEngineMessage,
     AiEngineResponse,
@@ -43,7 +43,7 @@ pub(super) async fn score(
     engine: &ai_engine::Model,
     input_json: &str,
     network_ids: &[i64],
-) -> anyhow::Result<Vec<NetworkMatchCandidate>> {
+) -> anyhow::Result<Vec<StoredCertainty>> {
     let base = || {
         vec![
             message(AI_CHAT_ROLE_SYSTEM, AI_NETWORK_MATCH_PROMPT),
@@ -113,7 +113,7 @@ fn parse_response(
 fn validate(
     parsed: ModelResponse,
     network_ids: &[i64],
-) -> anyhow::Result<Vec<NetworkMatchCandidate>> {
+) -> anyhow::Result<Vec<StoredCertainty>> {
     let mut by_index = HashMap::new();
     for network in parsed.networks {
         let index = usize::try_from(network.key)
@@ -124,7 +124,7 @@ fn validate(
                 anyhow::anyhow!("AI returned unknown key {}", network.key)
             })
             .c(h!())?;
-        let candidate = NetworkMatchCandidate {
+        let candidate = StoredCertainty {
             network_id: network_ids[index],
             certainty: network.certainty.round().clamp(0.0, 100.0) as i32,
             reason: network
@@ -144,7 +144,7 @@ fn validate(
         .iter()
         .enumerate()
         .map(|(index, network_id)| {
-            by_index.remove(&index).unwrap_or(NetworkMatchCandidate {
+            by_index.remove(&index).unwrap_or(StoredCertainty {
                 network_id: *network_id,
                 certainty: 0,
                 reason: String::new(),
