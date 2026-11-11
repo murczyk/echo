@@ -2,7 +2,13 @@ use super::{query, types::DirectSubmitPayload};
 use crate::entities::signal_group;
 use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::*;
-use sea_orm::DatabaseTransaction;
+use sea_orm::*;
+
+#[derive(FromQueryResult)]
+struct DestinationDatasource {
+    datasource_id: i64,
+    datasource_group_id: i64,
+}
 
 pub(super) async fn resolve(
     txn: &DatabaseTransaction,
@@ -53,24 +59,53 @@ pub(super) async fn prepare(
         )
         .await
         .c(h!())?;
-        let datasource_id = match group.datasource_id {
-            Some(id) => id,
-            None => {
-                query::resolve_datasource_id_for_group(txn, &group.master_key)
-                    .await
-                    .c(h!())?
-            }
-        };
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                txn,
-                group.master_key.clone(),
-                datasource_id,
-            )
-            .await
-            .c(h!())?;
-        primary_datasource_id.get_or_insert(datasource_id);
-        destinations.push((group.master_key, datasource_group_id));
+        let destination =
+            prepare_datasource_group(txn, &group).await.c(h!())?;
+        primary_datasource_id.get_or_insert(destination.datasource_id);
+        destinations.push((group.master_key, destination.datasource_group_id));
     }
     Ok((primary_datasource_id, destinations))
+}
+
+async fn prepare_datasource_group(
+    txn: &DatabaseTransaction,
+    group: &signal_group::Model,
+) -> anyhow::Result<DestinationDatasource> {
+    let destination = DestinationDatasource::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select dg.datasource_id, dg.id as datasource_group_id
+            from datasource_group dg
+            join datasource d on d.id = dg.datasource_id
+            where dg.group_master_key = $1
+            order by (dg.deleted or d.deleted),
+                coalesce(dg.datasource_id = $2, false) desc,
+                dg.created_at desc, dg.id desc
+            limit 1
+            "#,
+            vec![group.master_key.clone().into(), group.datasource_id.into()],
+        ),
+    )
+    .one(txn)
+    .await
+    .c(h!())?;
+    if let Some(destination) = destination {
+        return Ok(destination);
+    }
+    let datasource_id = group
+        .datasource_id
+        .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            txn,
+            group.master_key.clone(),
+            datasource_id,
+        )
+        .await
+        .c(h!())?;
+    Ok(DestinationDatasource {
+        datasource_id,
+        datasource_group_id,
+    })
 }

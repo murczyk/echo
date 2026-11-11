@@ -140,7 +140,7 @@ export function SystemSection({
                   );
                 }
                 field.onChange(masterKey);
-                if (isReportMode) rememberReportDestination(masterKey);
+                if (isReportMode && !isEditMode) rememberReportDestination(masterKey);
               }}
               renderInput={(params) => (
                 <TextField

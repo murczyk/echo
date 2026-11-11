@@ -5,6 +5,7 @@ use crate::functest::tests::{
     cleanup_locked, find_test_login, find_test_signal_group,
 };
 use crate::sigint::direct_submit::{bl, types::DirectSubmitPayload};
+use sea_orm::sea_query::Expr;
 use serial_test::serial;
 
 async fn messenger(
@@ -191,6 +192,7 @@ async fn issue_4103_multiple_groups_are_authorized_and_queued_atomically() {
             signal_message_group::Column::SignalMessageId
                 .eq(created.signal_message_id),
         )
+        .order_by_asc(signal_message_group::Column::Id)
         .all(&env.dbx)
         .await
         .unwrap();
@@ -200,6 +202,22 @@ async fn issue_4103_multiple_groups_are_authorized_and_queued_atomically() {
             .iter()
             .any(|link| link.group_master_key.as_ref() == Some(key)));
     }
+    let mut edit = payload(&second_key, "Edited through the second group");
+    edit.source_signal_group_master_key = Some(second_key.clone());
+    bl::edit_signal_message(&login_id, &env, created.signal_message_id, edit)
+        .await
+        .unwrap();
+    let edited_links = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .eq(created.signal_message_id),
+        )
+        .order_by_asc(signal_message_group::Column::Id)
+        .all(&env.dbx)
+        .await
+        .unwrap();
+    assert_eq!(edited_links, links);
+    assert_eq!(outbox_count(&env.dbx).await, before + 2);
     sigint_zone_datasource::Entity::delete_many()
         .filter(sigint_zone_datasource::Column::GroupMasterKey.eq(&second_key))
         .exec(&env.dbx)
@@ -214,6 +232,75 @@ async fn issue_4103_multiple_groups_are_authorized_and_queued_atomically() {
         .await
         .is_err());
     assert_eq!(outbox_count(&env.dbx).await, before + 2);
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_4103_late_delivery_failure_rolls_back_all_destinations() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (login_id, key, _) = configure(&env, EchoMessageSource::Signal).await;
+    let second_key = additional_group(&env, &key).await;
+    let mut request = payload(&key, "issue-4103-late-failure");
+    request.additional_signal_group_master_keys = vec![second_key];
+    let before = outbox_count(&env.dbx).await;
+    let messages_before = signal_message::Entity::find()
+        .count(&env.dbx)
+        .await
+        .unwrap();
+    let links_before = signal_message_group::Entity::find()
+        .count(&env.dbx)
+        .await
+        .unwrap();
+    env.dbx
+        .execute_unprepared(
+            r#"
+            create or replace function issue_4103_reject_second_delivery()
+            returns trigger language plpgsql as $$
+            begin
+                if (select count(*) from echo_outbox_message
+                    where body = 'issue-4103-late-failure') = 2 then
+                    raise exception 'issue-4103-second-delivery-failed';
+                end if;
+                return new;
+            end;
+            $$;
+            drop trigger if exists issue_4103_reject_second_delivery
+                on echo_outbox_message_instance;
+            create trigger issue_4103_reject_second_delivery
+            before insert on echo_outbox_message_instance
+            for each row execute function issue_4103_reject_second_delivery();
+            "#,
+        )
+        .await
+        .unwrap();
+    let result = bl::submit_signal_message(&login_id, &env, request).await;
+    env.dbx
+        .execute_unprepared(
+            r#"
+            drop trigger issue_4103_reject_second_delivery
+                on echo_outbox_message_instance;
+            drop function issue_4103_reject_second_delivery();
+            "#,
+        )
+        .await
+        .unwrap();
+    let error = result.unwrap_err();
+    assert!(format!("{error:?}").contains("issue-4103-second-delivery-failed"));
+    assert_eq!(outbox_count(&env.dbx).await, before);
+    assert_eq!(
+        signal_message::Entity::find()
+            .count(&env.dbx)
+            .await
+            .unwrap(),
+        messages_before
+    );
+    assert_eq!(
+        signal_message_group::Entity::find()
+            .count(&env.dbx)
+            .await
+            .unwrap(),
+        links_before
+    );
 }
 
 #[actix_web::test]
@@ -327,6 +414,101 @@ async fn issue_4103_shared_groups_choose_an_allowed_active_sender() {
             assert_eq!(instance.account_id, lock.account_id);
         }
     }
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_4103_removed_senders_and_memberships_are_not_used() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (login_id, key, first) =
+        configure(&env, EchoMessageSource::Signal).await;
+    let second = messenger(&env.dbx, EchoMessageSource::Signal).await;
+    crate::messenger::group::ensure_datasource_group_id(
+        &env.dbx,
+        key.clone(),
+        second.id,
+    )
+    .await
+    .unwrap();
+    let lock = echo_client_lock::Entity::find_by_id(
+        i32::try_from(first.echo_client_lock_id.unwrap()).unwrap(),
+    )
+    .one(&env.dbx)
+    .await
+    .unwrap()
+    .unwrap();
+    for (membership_deleted, client_deleted, removing) in [
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+    ] {
+        datasource_group::Entity::update_many()
+            .col_expr(
+                datasource_group::Column::Deleted,
+                Expr::value(membership_deleted),
+            )
+            .filter(datasource_group::Column::DatasourceId.eq(first.id))
+            .filter(datasource_group::Column::GroupMasterKey.eq(&key))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        echo_client::ActiveModel {
+            id: Set(lock.client_id),
+            deleted: Set(client_deleted),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        echo_client_lock::ActiveModel {
+            id: Set(lock.id),
+            remove_requested: Set(removing),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let before = outbox_count(&env.dbx).await;
+        bl::submit_signal_message(
+            &login_id,
+            &env,
+            payload(&key, "Only surviving senders"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(outbox_count(&env.dbx).await, before + 1);
+        let instance = echo_outbox_message_instance::Entity::find()
+            .order_by_desc(echo_outbox_message_instance::Column::Id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(instance.account_id, lock.account_id);
+    }
+    datasource_group::Entity::update_many()
+        .col_expr(datasource_group::Column::Deleted, Expr::value(true))
+        .filter(datasource_group::Column::GroupMasterKey.eq(&key))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    let before = outbox_count(&env.dbx).await;
+    bl::submit_signal_message(
+        &login_id,
+        &env,
+        payload(&key, "No surviving memberships"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(outbox_count(&env.dbx).await, before);
+    assert_eq!(
+        datasource_group::Entity::find()
+            .filter(datasource_group::Column::GroupMasterKey.eq(&key))
+            .filter(datasource_group::Column::Deleted.eq(false))
+            .count(&env.dbx)
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[actix_web::test]

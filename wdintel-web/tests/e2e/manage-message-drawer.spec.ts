@@ -28,8 +28,12 @@ async function dismissSettingsFailureNotifications(page: Page, host: ManageMessa
       .getByRole('alert')
       .filter({ hasText: 'System settings unavailable' });
     await expect(requestFailure).toBeVisible();
-    await requestFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
-    await expect(requestFailure).not.toBeVisible();
+    await expect(async () => {
+      if (await requestFailure.isVisible()) {
+        await requestFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
+      }
+      await expect(requestFailure).not.toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 5000 });
   }
 }
 
@@ -353,6 +357,25 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expect(staleEditor.getByRole('combobox', { name: 'Відправити в групу' })).toHaveValue(
         '',
       );
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem('echo_lastReportDestination')))
+        .toBeNull();
+      await staleEditor.getByRole('button', { name: 'Закрити', exact: true }).click();
+      await page.route('**/api/rer-importer/signal-group-batch', (route) =>
+        route.fulfill({
+          json: {
+            data: [
+              { master_key: 'e2e-group', name: 'e2e-group' },
+              { master_key: 'second-group', name: 'second-group' },
+            ],
+          },
+        }),
+      );
+      await page.reload();
+      const restoredEditor = await openReport();
+      await expect(
+        restoredEditor.getByRole('combobox', { name: 'Відправити в групу' }),
+      ).toHaveValue('');
     });
 
     test(`#3894 ${host} remembers a cleared device name after creating and reopening @regression`, async ({
@@ -764,7 +787,9 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         0,
       );
     });
-    test(`${host} edits an own report without accessible parents as a report`, async ({ page }) => {
+    test(`@regression #4103 ${host} edits an own report without changing the remembered creation destination`, async ({
+      page,
+    }) => {
       const drawer = await openLinkedMessageEditDrawer(
         page,
         host,
@@ -775,6 +800,14 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expectEmbeddedEditor(page);
       await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toHaveCount(0);
       expect(drawer.getCopyRequestCount()).toBe(0);
+      await page.evaluate(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
+      await page.getByRole('combobox', { name: 'Відправити в групу' }).click();
+      await page.getByRole('option', { name: 'e2e-group', exact: true }).click();
+      await page.getByRole('combobox', { name: 'Відправити в групу' }).click();
+      await page.getByRole('option', { name: 'Не відправляти', exact: true }).click();
+      expect(await page.evaluate(() => localStorage.getItem('echo_lastReportDestination'))).toBe(
+        'e2e-group',
+      );
     });
   }
 
@@ -1268,7 +1301,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       { width: 1440, fontSize: '14px' },
     ]) {
       await page.setViewportSize({ width: scenario.width, height: 900 });
-      await page.goto('/rer-analysis-neo?leftPanelOpen=false');
+      await page.goto('/rer-analysis-neo?leftPanelOpen=false&filterPanelOpen=false');
       await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
       await page.getByRole('button', { name: 'Додати повідомлення' }).click();
 
@@ -1303,7 +1336,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
   test('Analysis keeps the editor and Analytics mutually exclusive', async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 800 });
     await installAnalysisNeoApiMocks(page, { inboxResponse: createOverflowingInboxResponse() });
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=true');
     await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
     await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
     const dock = page.getByTestId('analysis-right-dock');

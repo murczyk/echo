@@ -3293,6 +3293,64 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it.each(['g-1', 'g-2'])(
+    '#4103 reconciles a removed destination %s after reference-data retry',
+    async (removedKey) => {
+      setRecentValues({});
+      const groups = [
+        { masterKey: 'g-1', name: 'Group 1' },
+        { masterKey: 'g-2', name: 'Group 2' },
+      ];
+      const survivingGroups = groups.filter((group) => group.masterKey !== removedKey);
+      referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1', 'g-2']);
+      referenceDataMocks.getGroupInfosBatch
+        .mockResolvedValueOnce(groups)
+        .mockResolvedValue(survivingGroups);
+      directSubmitMocks.searchPostNames.mockRejectedValueOnce(new Error('Reference data failed'));
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+          />,
+        );
+      });
+      await act(async () => {
+        autocompleteOnChangeByLabel.get('Група')?.(null, groups);
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'For surviving groups' } });
+      });
+      const retry = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Повторити завантаження',
+      );
+      expect(retry).toBeDefined();
+      await act(async () => retry!.click());
+      expect(autocompleteValuesByLabel.get('Група')).toEqual(survivingGroups);
+      expect(container.textContent).toContain('Обрана група більше недоступна.');
+      expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+      await act(async () => {
+        container
+          .querySelector('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+      expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signal_group_master_key: survivingGroups[0]!.masterKey,
+          additional_signal_group_master_keys: [],
+        }),
+      );
+      root.unmount();
+    },
+  );
+
   it('does not overwrite edit or report group state', async () => {
     referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1', 'g-2']);
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
