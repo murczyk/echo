@@ -20,6 +20,18 @@ deploy/config-backup.toml
 .direnv
 .idea
 docs/public
+# Documentation media is stored in B2; keep the site's favicon in Git.
+/docs/releases/*/media/
+/docs/static/**/*.[mM][pP]4
+/docs/static/**/*.[wW][eE][bB][mM]
+/docs/static/**/*.[jJ][pP][gG]
+/docs/static/**/*.[jJ][pP][eE][gG]
+/docs/static/**/*.[pP][nN][gG]
+/docs/static/**/*.[mM][pP]3
+/docs/static/**/*.[gG][iI][fF]
+/docs/static/**/*.[sS][vV][gG]
+/docs/static/**/*.[iI][cC][oO]
+!/docs/static/icon.png
 dosc/static/processed_images
 docs/echo-docs/target
 wdintel-rs/version.txt

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package documentation media and publish a copy to each Echo S3 destination."""
+"""Package, download, and publish documentation media in Echo S3 destinations."""
 
 import argparse
 import json
@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -146,6 +147,84 @@ def release(arguments):
         raise ValueError("incomplete destinations: " + ", ".join(failed))
 
 
+def download_roots(only):
+    if not only:
+        return SOURCE_ROOTS
+    root = Path(only)
+    root = root if root.is_absolute() else REPOSITORY / root
+    if not root.resolve().is_relative_to(REPOSITORY):
+        raise ValueError("media directory must be inside the repository")
+    relative = root.resolve().relative_to(REPOSITORY).as_posix()
+    if not any(relative == source or relative.startswith(source + "/") for source in SOURCE_ROOTS):
+        raise ValueError("download directory must be inside docs/releases or docs/static")
+    if any(character in relative for character in "\n\r\0\\*?["):
+        raise ValueError("invalid media directory")
+    return (relative,)
+
+
+def download_destination(relative):
+    if any(part in ("", ".", "..") for part in relative.split("/")) or any(
+        character in relative for character in "\n\r\0\\*?["
+    ):
+        raise ValueError("invalid documentation media path")
+    destination = REPOSITORY / relative
+    if destination.is_symlink() or destination.resolve() != destination:
+        raise ValueError("media symlinks are not supported")
+    return destination
+
+
+def download_file(config, remote, destination, force):
+    if destination.exists() and not force:
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".doc-media-", dir=destination.parent) as directory:
+        temporary = Path(directory) / destination.name
+        result = s5cmd(config, "cp", remote, str(temporary))
+        if result.returncode:
+            raise ValueError("media download failed")
+        if force:
+            temporary.replace(destination)
+        else:
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                return False
+    return True
+
+
+def download(arguments):
+    for command in ("ssh", "tq", "s5cmd"):
+        if not shutil.which(command):
+            raise ValueError(f"required command is missing: {command}")
+    server = arguments.server
+    if not server or server.startswith("-") or any(character in server for character in "/\\\n\r\0"):
+        raise ValueError("invalid or empty source server")
+    roots = download_roots(arguments.only)
+    config = server_config(server, arguments.config_dir)
+    source = f"s3://{config['s3_bucket'].rstrip('/')}/doc-media/"
+    files = {}
+    for root in roots:
+        for remote in sorted(existing_keys(server, config, source + root + "/")):
+            relative = remote.removeprefix(source)
+            if Path(relative).suffix.lower().lstrip(".") in EXTENSIONS.split():
+                files[relative] = download_destination(relative)
+    if not files:
+        raise ValueError("no documentation media selected")
+    downloaded = skipped = failed = 0
+    for relative, destination in files.items():
+        try:
+            if download_file(config, source + relative, destination, arguments.force):
+                downloaded += 1
+            else:
+                skipped += 1
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            failed += 1
+            print(f"{server}: download failed: {relative}", file=sys.stderr)
+    print(f"{server}: selected={len(files)} downloaded={downloaded} skipped={skipped} failed={failed}")
+    if failed:
+        raise ValueError("incomplete downloads")
+
+
 def prepare(arguments):
     files = media_files(REPOSITORY, None, EXTENSIONS.split())
     roots = [Path(arguments.cache)]
@@ -178,6 +257,12 @@ def main():
     publish.add_argument("--force", action="store_true")
     publish.add_argument("--config-dir", default=os.environ.get("DOC_MEDIA_CONFIG_DIR"))
     publish.set_defaults(run=release)
+    fetch = commands.add_parser("download")
+    fetch.add_argument("--server", required=True)
+    fetch.add_argument("--only")
+    fetch.add_argument("--force", action="store_true")
+    fetch.add_argument("--config-dir", default=os.environ.get("DOC_MEDIA_CONFIG_DIR"))
+    fetch.set_defaults(run=download)
     package = commands.add_parser("prepare")
     package.add_argument("--dist")
     package.add_argument("--docs-public")

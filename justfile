@@ -158,6 +158,18 @@ release-doc-media force="false" only="":
     if [[ -n "$2" ]]; then args+=(--only "$2"); fi
     python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
 
+# Restore documentation media from one server's B2 destination into this checkout.
+[arg('force', long='force', value='true')]
+[arg('only', long='only')]
+[arg('server', long='server')]
+download-doc-media server force="false" only="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(download --server "$1")
+    if [[ "$2" == "true" ]]; then args+=(--force); fi
+    if [[ -n "$3" ]]; then args+=(--only "$3"); fi
+    python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
+
 build-front:
     #!/bin/bash
     set -euxo pipefail

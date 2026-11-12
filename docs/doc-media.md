@@ -82,14 +82,49 @@ Private local configuration copies can be supplied with
 `DOC_MEDIA_CONFIG_DIR=/private/path`; files must be named `<server>.toml`.
 This avoids SSH and supports isolated validation. Never commit these files.
 
+## Editing locally
+
+Release media under `docs/releases/*/media/` and documentation media under
+`docs/static/` are stored in B2 and ignored by Git. The docs favicon
+`docs/static/icon.png`, styles, and theme assets remain tracked. Existing local
+media files are kept when removing them from Git's index.
+
+Use the same tools and configuration as publishing to restore media from one
+server's existing B2 destination into its original checkout paths:
+
+```bash
+just download-doc-media --server echo-pivnich
+just download-doc-media --server echo-pivnich --only docs/releases/2026-10-29/media
+just download-doc-media --server echo-pivnich --only docs/static --force
+```
+
+Downloads read B2 and write only to the local checkout. The default restores
+both source roots and skips existing files, preserving local edits. `--only`
+selects a directory within either source root, even if it does not exist yet.
+`--force` replaces selected local files; failed transfers leave existing files
+intact. No local or remote files are deleted. Unsafe object paths and local
+symlinks are rejected.
+
+Edit the downloaded files in place. After obtaining approval for the target
+servers and B2 destinations, upload replacements with the existing recipe:
+
+```bash
+just release-doc-media --force --only docs/releases/2026-10-29/media
+```
+
+Omit `--force` when publishing only new files. Local media remains ignored after
+editing; commit the Markdown references and other source changes normally.
+
 ## Packaging and rollout
 
-Stage 1 retains source media and bundles normalized copies in the `wdintel-rs`
-Debian package under `/usr/share/echo-docs/docs/`. The frontend build removes
-release-media copies from its public `/releases/` output; Zola image/video
-shortcodes point to the authenticated endpoint. The docs package retains its
-HTML, theme assets, and favicon. nginx proxies `/doc-media/` to Echo and blocks
-`/docs/docs/` so its filesystem alias cannot expose the media cache.
+Clean checkouts contain no release or documentation media. Downloads are
+optional for building: missing media is fetched from B2 when requested through
+the authenticated API. Media present locally is still bundled as normalized
+copies in the `wdintel-rs` Debian package under `/usr/share/echo-docs/docs/`.
+The frontend build removes release-media copies from its public `/releases/`
+output; Zola image/video shortcodes point to the authenticated endpoint. The docs
+package retains its HTML, theme assets, and favicon. nginx proxies `/doc-media/`
+to Echo and blocks `/docs/docs/` so its filesystem alias cannot expose the media cache.
 
 `just docs` always rebuilds the Zola pages and prepares documentation media,
 removing direct image/video copies from `docs/public/`. CI and local package
@@ -108,11 +143,11 @@ environment operation before running this sequence:
    downloads, and video range requests succeed. Test B2-only mode on an approved
    target and return the setting to the intended value.
 
-Do not remove packaged/source media until every destination is complete. Stage 2
-will remove media from source/package inputs and refresh local copies on demand
-once their last successful fetch/revalidation is at least six hours old. A
-replacement must be published to every configured destination using `--force`. Stage 3 may make
-B2-only delivery permanent; neither later stage is enabled by this change.
+Every destination must contain the published media before deploying packages
+built from a clean checkout. A replacement must be published to every configured
+destination using `--force`. Existing server-local copies still have no expiry;
+automatic refresh and permanent B2-only delivery are not enabled by removing
+media from Git.
 
 If publication is partial, retain successful objects and use the report to
 prepare a scoped retry. A B2-only outage can be mitigated by disabling that
@@ -123,6 +158,7 @@ refresh after a forced upload; use B2-only mode to inspect a replacement.
 ## Validation
 
 `python3 deploy/test_doc_media.py` runs the actual just recipe against isolated
-local configurations and a filesystem-backed upload-command substitute. Backend
+local configurations and a filesystem-backed transfer-command substitute,
+including local-edit preservation, failed downloads, and unsafe paths. Backend
 #3938 regressions cover cache fills, B2-only delivery/ranges, authorization, and
 unsafe paths. No validation command requires a real B2 upload.
