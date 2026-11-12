@@ -76,6 +76,7 @@ export function makeMessageSchema(
       signalGroupMasterKey: groupOptional
         ? z.string().optional().default('')
         : z.string().trim().min(1, 'Оберіть групу'),
+      additionalSignalGroupMasterKeys: z.array(z.string()).optional(),
       deviceName:
         !isEditMode && creationSettings?.deviceRequired
           ? z.string().trim().min(1, 'Вкажіть назву пристрою')
@@ -164,6 +165,7 @@ export type MessageFormData = z.infer<ReturnType<typeof makeMessageSchema>>;
 export const EMPTY_FORM_VALUES: MessageFormData = {
   text: '',
   signalGroupMasterKey: '',
+  additionalSignalGroupMasterKeys: [],
   deviceName: '',
   freq: '',
   coords: '',

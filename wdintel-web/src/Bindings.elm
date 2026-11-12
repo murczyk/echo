@@ -1304,6 +1304,7 @@ type alias NetworkMatchCandidate =
     { networkId : Int
     , certainty : Int
     , reason : String
+    , matchedCallsigns : List (String)
     }
 
 
@@ -1313,6 +1314,7 @@ networkMatchCandidateEncoder struct =
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "certainty", (Json.Encode.int) struct.certainty )
         , ( "reason", (Json.Encode.string) struct.reason )
+        , ( "matched_callsigns", (Json.Encode.list (Json.Encode.string)) struct.matchedCallsigns )
         ]
 
 
@@ -11954,6 +11956,7 @@ type alias DirectSubmitPayload =
     , network : Maybe (SubmitNetwork)
     , dmr : List (SubmitDmrMetadata)
     , signalGroupMasterKey : Maybe (String)
+    , additionalSignalGroupMasterKeys : List (String)
     , sourceSignalGroupMasterKey : Maybe (String)
     , deviceNameId : Maybe (Maybe (Int))
     , uploadUrls : Maybe (List (String))
@@ -11987,6 +11990,7 @@ directSubmitPayloadEncoder struct =
         , ( "network", (Maybe.withDefault Json.Encode.null << Maybe.map (submitNetworkEncoder)) struct.network )
         , ( "dmr", (Json.Encode.list (submitDmrMetadataEncoder)) struct.dmr )
         , ( "signal_group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalGroupMasterKey )
+        , ( "additional_signal_group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.additionalSignalGroupMasterKeys )
         , ( "source_signal_group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sourceSignalGroupMasterKey )
         , ( "device_name_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int))) struct.deviceNameId )
         , ( "upload_urls", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.uploadUrls )
@@ -12069,6 +12073,7 @@ type alias DirectSubmitParseRsp =
     , post : Maybe (String)
     , unit : Maybe (String)
     , unitV2 : Maybe (String)
+    , unitId : Maybe (Int)
     , locations : List (String)
     }
 
@@ -12087,6 +12092,7 @@ directSubmitParseRspEncoder struct =
         , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.post )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unit )
         , ( "unit_v2", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitV2 )
+        , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
         ]
 
@@ -21754,6 +21760,7 @@ networkMatchCandidateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "certainty" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reason" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matched_callsigns" (Json.Decode.list (Json.Decode.string))))
 
 
 inboxNetworkMatchDecoder : Json.Decode.Decoder InboxNetworkMatch
@@ -29025,6 +29032,7 @@ directSubmitPayloadDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network" (Json.Decode.nullable (submitNetworkDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dmr" (Json.Decode.list (submitDmrMetadataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "additional_signal_group_master_keys" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_signal_group_master_key" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_name_id" (Json.Decode.nullable (Json.Decode.nullable (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upload_urls" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -29079,6 +29087,7 @@ directSubmitParseRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_v2" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 

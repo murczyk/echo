@@ -169,16 +169,20 @@ async fn parse_missing_submit_unit(
         }
         None => None,
     };
-    let (parsed, unit_v2) = crate::unit::parse_message_unit(
+    let parsed = crate::unit::parse_message_unit(
         txn,
-        env.settlements.clone(),
+        env,
         &body,
         super::submit_item_callsigns(&item),
         aor_id,
     )
     .await
     .c(h!())?;
-    if let Some(unit) = unit_v2.or(parsed.unit) {
+    if let Some(unit) = parsed
+        .synonym
+        .or(parsed.unit_v2)
+        .or(parsed.unit_and_location.unit)
+    {
         item.unit = Some(unit);
     }
     Ok(item)
@@ -629,6 +633,31 @@ mod tests {
                 Some("98765 мсп"),
                 None,
             ),
+            (
+                json!({"full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял.")}),
+                Some(label),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": format!("{label}\n10.11.2026, 11:08 (МСК)\n-уточни где они имущество скинули?\n-примерно метров 700 от нас, в ложбину спуститься")}),
+                Some(label),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": "\r\n 24 ОББПС  РБПЛА\tВБПЛА КТ \r\n10.11.2026, 10:23 (МСК)\r\n- Принял."}),
+                Some("24 ОББПС  РБПЛА\tВБПЛА КТ"),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": format!("Невідомий заголовок\n10.11.2026, 10:23 (МСК)\n{label}")}),
+                None,
+                None,
+            ),
+            (
+                json!({"full_body": format!("{label} уточнення\n10.11.2026, 10:23 (МСК)\n- Принял.")}),
+                None,
+                None,
+            ),
             (json!({"full_body": "Звичайне повідомлення"}), None, None),
         ];
         for (overrides, expected_unit, expected_id) in cases {
@@ -654,6 +683,435 @@ mod tests {
             )
             .await;
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_preserves_duplicate_unit_name_link() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let name = "Підрозділ 4022";
+        let first =
+            seed_submit_unit(&env, name, "", "Перший синонім 4022").await;
+        let second =
+            seed_submit_unit(&env, name, "", "Другий синонім 4022").await;
+        for (label, unit_id) in [
+            ("Перший синонім 4022", first.id),
+            ("Другий синонім 4022", second.id),
+        ] {
+            let body = format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял.");
+            assert_submitted_unit(
+                &env_data,
+                &datasource,
+                &login.id,
+                json!({
+                    "full_body": body,
+                    "timestamp": "2026-11-10T07:23:00Z",
+                    "freq": "145.5000",
+                    "locations": ["Невідома локація 3920"],
+                    "group_names": ["SC1"],
+                }),
+                Some(label),
+                Some(unit_id),
+            )
+            .await;
+            let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+                &login.id,
+                &env,
+                crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                    full_body: body,
+                    signal_group_master_key: None,
+                    include_ai_callsigns: false,
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(parsed.unit.as_deref(), Some(label));
+            assert_eq!(parsed.unit_v2.as_deref(), Some(name));
+            assert_eq!(parsed.unit_id, Some(unit_id));
+        }
+        crate::sigint::unit::merge_units(
+            login.id, &env.dbx, second.id, first.id,
+        )
+        .await
+        .unwrap();
+        let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+            &login.id,
+            &env,
+            crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                full_body:
+                    "Другий синонім 4022\n10.11.2026, 10:23 (МСК)\n- Принял."
+                        .to_string(),
+                signal_group_master_key: None,
+                include_ai_callsigns: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed.unit_id, None);
+        assert_eq!(parsed.unit_v2, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_survives_reprocessing_and_backfill() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        seed_submit_unit(&env, label, "", "Інший синонім 4022").await;
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        let manual = seed_submit_unit(
+            &env,
+            "Ручний підрозділ 4022",
+            "",
+            "Ручний синонім 4022",
+        )
+        .await;
+        let body = format!("\r\n {label}\t\r\n10.11.2026, 11:08 (МСК)\r\n-уточни где они имущество скинули?\r\n-примерно метров 700 от нас, в ложбину спуститься");
+        let item = serde_json::from_value(json!({
+            "full_body": body,
+            "timestamp": "2026-11-10T08:08:00Z",
+            "freq": "145.5000",
+            "locations": ["Невідома локація 3920"],
+            "group_names": ["SC1"],
+        }))
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let submitted = submit_generic_inbox_item(
+            &Data::from(env.clone()),
+            &txn,
+            &datasource,
+            &login.id,
+            &vec![login.id],
+            item,
+        )
+        .await
+        .unwrap();
+        crate::inbox::construct_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            &env.rq,
+            &env.config,
+            submitted.inbox_id,
+            &mut TopKCache::new(10),
+            None,
+        )
+        .await
+        .unwrap();
+        let mut stored =
+            sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(stored.unit.as_deref(), Some(label));
+        assert_eq!(stored.unit_v2.as_deref(), Some(label));
+        txn.commit().await.unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        for selected in [&unit, &manual] {
+            if selected.id == manual.id {
+                let txn = env.dbx.begin().await.unwrap();
+                stored = sigint_inbox_item::ActiveModel {
+                    id: Set(stored.id),
+                    unit: Set(Some(manual.name.clone())),
+                    unit_v2: Set(Some(manual.name.clone())),
+                    ..Default::default()
+                }
+                .update(&txn)
+                .await
+                .unwrap();
+                crate::inbox::unit_selection::store_selection(
+                    &txn, &stored, manual.id,
+                )
+                .await
+                .unwrap();
+                txn.commit().await.unwrap();
+            }
+            crate::rer_importer::oneoff_reprocess_unit_names(
+                Mode::Test,
+                &crate::OneoffReprocessUnitNamesPs {
+                    since_ts: Some("2026-11-10T00:00:00Z".to_string()),
+                    only_group_master_key: None,
+                },
+            )
+            .await
+            .unwrap();
+            crate::inbox::unit_resolution::backfill_inbox_unit_links(
+                &env.dbx,
+                now - chrono::Duration::minutes(1),
+                now + chrono::Duration::minutes(1),
+                0,
+                None,
+            )
+            .await
+            .unwrap();
+            stored = sigint_inbox_item::Entity::find_by_id(stored.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected = if selected.id == unit.id {
+                label
+            } else {
+                &manual.name
+            };
+            assert_eq!(stored.unit.as_deref(), Some(expected));
+            assert_eq!(stored.unit_v2.as_deref(), Some(expected));
+            let links = sigint_inbox_item_unit::Entity::find()
+                .filter(sigint_inbox_item_unit::Column::ItemId.eq(stored.id))
+                .filter(
+                    sigint_inbox_item_unit::Column::Kind
+                        .eq(SigintInboxItemUnitKind::Parsed),
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].unit_id, selected.id);
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_takes_priority_over_another_unit_name() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        seed_submit_unit(&env, label, "", "Інший синонім 4022").await;
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        assert_submitted_unit(
+            &Data::from(env.clone()),
+            &datasource,
+            &login.id,
+            json!({
+                "full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял."),
+                "timestamp": "2026-11-10T07:23:00Z",
+                "freq": "145.5000",
+                "locations": ["Невідома локація 3920"],
+                "group_names": ["SC1"],
+            }),
+            Some(label),
+            Some(unit.id),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_revalidates_cached_label_mapping() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit = seed_submit_unit(
+            &env,
+            "Перший підрозділ 4022",
+            "",
+            "Інший синонім 4022",
+        )
+        .await;
+        let label = crate::sigint::unit::labels::insert_label(
+            &env.dbx,
+            unit.id,
+            "Власний синонім 4022",
+        )
+        .await
+        .unwrap();
+        let body =
+            "\n ВЛАСНИЙ  СИНОНІМ\t4022 \n10.11.2026, 10:23 (МСК)\n- Принял.";
+        assert_eq!(
+            env.unit_header_synonyms
+                .resolve(&env.dbx, body)
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            unit.id
+        );
+        label.delete(&env.dbx).await.unwrap();
+        for reassigned in [false, true] {
+            if reassigned {
+                seed_submit_unit(
+                    &env,
+                    "Другий підрозділ 4022",
+                    "",
+                    "власний синонім 4022",
+                )
+                .await;
+            }
+            let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+                &login.id,
+                &env,
+                crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                    full_body: body.to_string(),
+                    signal_group_master_key: None,
+                    include_ai_callsigns: false,
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(parsed.unit_id, None);
+            assert_eq!(parsed.unit_v2, None);
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4022_header_synonym_refresh_uses_submit_transaction() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        let mut options =
+            ConnectOptions::new(crate::mk_conn_string(&env.config));
+        options
+            .max_connections(1)
+            .acquire_timeout(std::time::Duration::from_secs(1));
+        let mut env = env.as_ref().clone();
+        env.dbx = Database::connect(options).await.unwrap();
+        let env = Data::new(env);
+        for elapsed in [
+            0,
+            0,
+            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS + 1,
+        ] {
+            advance_synonym_cache_time(elapsed).await;
+            assert_submitted_unit(
+                &env,
+                &datasource,
+                &login.id,
+                json!({
+                    "full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял."),
+                    "timestamp": "2026-11-10T07:23:00Z",
+                    "freq": "145.5000",
+                    "locations": ["Невідома локація 3920"],
+                    "group_names": ["SC1"],
+                }),
+                Some(label),
+                Some(unit.id),
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn header_synonym_snapshot_refreshes_after_expiry() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "Власний синонім 4022";
+        let request = json!({
+            "full_body": format!("{label}\n10.11.2026, 10:23 (МСК)\n- Принял."),
+            "timestamp": "2026-11-10T07:23:00Z",
+            "freq": "145.5000",
+            "locations": ["Невідома локація 3920"],
+            "group_names": ["SC1"],
+        });
+        assert_submitted_unit(
+            &env_data,
+            &datasource,
+            &login.id,
+            request.clone(),
+            None,
+            None,
+        )
+        .await;
+        let unit = seed_submit_unit(&env, "Підрозділ 4022", "", label).await;
+        assert_submitted_unit(
+            &env_data,
+            &datasource,
+            &login.id,
+            request.clone(),
+            None,
+            None,
+        )
+        .await;
+        advance_synonym_cache_time(
+            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS / 2,
+        )
+        .await;
+        let disconnected = DatabaseConnection::default();
+        assert_eq!(
+            env.unit_header_synonyms
+                .resolve(&disconnected, label)
+                .await
+                .unwrap(),
+            None
+        );
+        advance_synonym_cache_time(
+            crate::config::SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS / 2 + 1,
+        )
+        .await;
+        for active in [true, false] {
+            crate::entities::sigint_unit::ActiveModel {
+                id: Set(unit.id),
+                active: Set(active),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+            assert_submitted_unit(
+                &env_data,
+                &datasource,
+                &login.id,
+                request.clone(),
+                Some(label),
+                Some(unit.id),
+            )
+            .await;
+            assert_eq!(
+                env.unit_header_synonyms
+                    .resolve(&env.dbx, label)
+                    .await
+                    .unwrap(),
+                Some(crate::unit::header_synonyms::HeaderSynonymUnit {
+                    id: unit.id,
+                    name: unit.name.clone(),
+                })
+            );
+        }
+        crate::entities::sigint_unit::ActiveModel {
+            id: Set(unit.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+        let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+            &login.id,
+            &env,
+            crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                full_body: request["full_body"].as_str().unwrap().to_string(),
+                signal_group_master_key: None,
+                include_ai_callsigns: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed.unit_id, None);
+        assert_eq!(parsed.unit_v2, None);
+        assert_submitted_unit(
+            &env_data,
+            &datasource,
+            &login.id,
+            request,
+            None,
+            None,
+        )
+        .await;
+    }
+
+    async fn advance_synonym_cache_time(seconds: u64) {
+        tokio::time::pause();
+        tokio::time::advance(std::time::Duration::from_secs(seconds)).await;
+        tokio::time::resume();
     }
 
     async fn seed_submit_unit(

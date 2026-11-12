@@ -484,6 +484,7 @@ export type NetworkMatchCandidate = {
   networkId: number;
   certainty: number;
   reason: string;
+  matchedCallsigns: Array<string>;
 };
 
 export type InboxNetworkMatch = {
@@ -4634,6 +4635,7 @@ export type DirectSubmitPayload = {
   network: SubmitNetwork | null;
   dmr: Array<SubmitDmrMetadata>;
   signalGroupMasterKey: string | null;
+  additionalSignalGroupMasterKeys: Array<string>;
   sourceSignalGroupMasterKey: string | null;
   deviceNameId: number | null | null;
   uploadUrls: Array<string> | null;
@@ -4678,6 +4680,7 @@ export type DirectSubmitParseRsp = {
   post: string | null;
   unit: string | null;
   unitV2: string | null;
+  unitId: number | null;
   locations: Array<string>;
 };
 

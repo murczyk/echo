@@ -222,6 +222,14 @@ and `host:port` upstreams for direct transport. Request execution invokes only
 `/usr/local/bin/echo-ai-agent-runner`; there is no arbitrary command or argument
 facility.
 
+Instances are looked up with `incus query` (one instance, or a `recursion=1`
+listing without runtime state), so lookups stay fast however many backups the
+host retains. `start` on a running instance and `configure_proxies` whose
+devices, `user.echo.ai.*` settings and in-container `/etc/hosts` entry already
+match return `"changed": false` without taking the host-wide lifecycle lock.
+Echo skips its end-to-end connection test only for such an unchanged container
+that it already recorded as running.
+
 Cancellation closes or terminates the SSH child. The dispatcher then
 terminates, waits for, and if necessary kills the `incus exec` process so a Pi
 request is not orphaned.
@@ -270,8 +278,14 @@ typed request kind. Date-scoped analysis tools accept rolling hours, recent
 Kyiv calendar days, or an explicit inclusive Kyiv date range plus optional
 selected groups; the runner converts them to each endpoint's required
 epoch-millisecond bounds. Callsign-frequency matching additionally requires
-callsigns returned by another tool. Non-analysis POST tools may accept a
-bounded JSON body. Inbox tools also expose text search; [search behavior](SEARCH.md)
+callsigns returned by another tool. A passthrough (`json`) route carries a
+`requestSchema` that Echo generates from its Rust request type: it is the tool's
+parameters, and the arguments are sent as the body. Lossless variants (an old
+`body` wrapper, camelCase names, a UUID inside a citation link) are repaired
+first. In a period, empty values, a Europe/Kyiv time zone and fields that only
+describe it are dropped and logged as an `ignored_arguments` diagnostic; any
+other field might move the window, so it is rejected with the allowed fields
+and an example. Inbox tools also expose text search; [search behavior](SEARCH.md)
 describes complementary text/tag retrieval, syntax and bounded date expansion. Harness routes,
 redirects, arbitrary URLs, path traversal, other methods, built-in Pi shell,
 read, write, and edit tools are unavailable. The only additional tool is

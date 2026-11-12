@@ -63,6 +63,8 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub signal_group_master_key: Option<String>,
     #[serde(default)]
+    pub additional_signal_group_master_keys: Vec<String>,
+    #[serde(default)]
     pub source_signal_group_master_key: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_update")]
     pub device_name_id: Option<Option<i64>>,
@@ -188,6 +190,8 @@ pub struct DirectSubmitParseRsp {
     pub post: Option<String>,
     pub unit: Option<String>,
     pub unit_v2: Option<String>,
+    #[serde(default)]
+    pub unit_id: Option<i64>,
     pub locations: Vec<String>,
 }
 

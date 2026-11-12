@@ -158,6 +158,18 @@ release-doc-media force="false" only="":
     if [[ -n "$2" ]]; then args+=(--only "$2"); fi
     python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
 
+# Restore documentation media from one server's B2 destination into this checkout.
+[arg('force', long='force', value='true')]
+[arg('only', long='only')]
+[arg('server', long='server')]
+download-doc-media server force="false" only="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(download --server "$1")
+    if [[ "$2" == "true" ]]; then args+=(--force); fi
+    if [[ -n "$3" ]]; then args+=(--only "$3"); fi
+    python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
+
 build-front:
     #!/bin/bash
     set -euxo pipefail
@@ -305,6 +317,14 @@ gen-elm:
 
 gen-ts:
     (cd wdintel-rs && cargo run -- --mode=debug gen-ts)
+
+# Export AI agent request schemas from Rust request types; runner tests check them.
+gen-ai-agent-schemas:
+    (cd wdintel-rs && WDINTEL_SKIP_TEST_DB_INIT=1 ECHO_UPDATE_AGENT_REQUEST_SCHEMAS=1 cargo test --bin wdintel-rs ai_agent::request_schemas::tests::contract_file_is_current)
+
+# AI agent harness (runner) unit tests.
+test-ai-agent:
+    (cd echo-ai-agent && npm test)
 
 test-fe:
     #!/bin/bash
@@ -2505,6 +2525,7 @@ deploy-vector-conf:
 
 docs:
     cd docs && zola build
+    python3 deploy/doc_media.py prepare --docs-public docs/public
 
 dev-docs:
     cd docs && zola serve
@@ -2517,7 +2538,7 @@ builder-build-docs: prepare-workspace
     if [[ "{{ builder }}" == "echo-gpu" ]]; then
       ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
       ssh {{ builder }} '(cd ~/workspace/echo && just prepare-workspace)'
-      ssh {{ builder }} '(cd ~/workspace/echo/docs && zola build)'
+      ssh {{ builder }} '(cd ~/workspace/echo && just docs)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs/echo-docs && PATH=$HOME/.local/bin:$PATH /home/ubuntu/.cargo/bin/cargo deb)'
       rsync {{ builder }}:~/workspace/echo/docs/echo-docs/target/debian/echo-docs_0.1.0-1_amd64.deb ~/Downloads/
     else

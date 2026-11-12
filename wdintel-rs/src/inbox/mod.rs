@@ -274,14 +274,22 @@ where
         .chain(callsigns_alg2.clone())
         .unique()
         .collect_vec();
-    let unit_and_loc = crate::unit::parser::extract_unit_with_aor(
-        settlements.clone(),
-        &body,
-        all_callsigns,
-        m_aor_id,
-    )?;
+    let (unit_and_loc, is_synonym) =
+        crate::unit::extract_message_unit_with_aor(
+            txn,
+            settlements.clone(),
+            &body,
+            all_callsigns,
+            m_aor_id,
+        )
+        .await
+        .c(h!())?;
     let unit = unit_and_loc.unit;
-    let unit_v2 = find_unit_v2(txn, cache, &unit).await.c(h!())?;
+    let unit_v2 = if is_synonym {
+        unit.clone()
+    } else {
+        find_unit_v2(txn, cache, &unit).await.c(h!())?
+    };
     let location = unit_and_loc.locality.clone();
     let settlement_list =
         match (unit_and_loc.locality, unit_and_loc.locality_v2) {

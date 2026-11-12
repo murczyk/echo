@@ -211,6 +211,9 @@ pub const AI_CALLSIGN_MAX_CHARS: usize = 255;
 pub const AI_CALLSIGN_MAX_CONCURRENT_REQUESTS: usize = 4;
 pub const DIRECT_SUBMIT_AI_CALLSIGN_TIMEOUT_SECS: u64 = 10;
 pub const AI_CALLSIGN_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+/// Messages the callsign worker parses at once (#4123): one at a time could
+/// not keep up with ~120k messages a day.
+pub const AI_CALLSIGN_WORKER_CONCURRENCY: usize = 4;
 pub const AI_CALLSIGN_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_CALLSIGN_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
@@ -668,7 +671,7 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.10.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.11.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1082,6 +1085,7 @@ pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
     "Нижчий ешелон ORBIT";
 pub const SIGINT_UNIT_DYNAMIC_REGEX_SIZE_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 pub const SIGINT_UNIT_DYNAMIC_REGEX_CHUNK_SIZE: usize = 2_000;
+pub const SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS: u64 = 15 * 60;
 /// Ukraine boundaries WGS84
 pub const LAT_MIN: f64 = 40.0;
 pub const LAT_MAX: f64 = 60.0;

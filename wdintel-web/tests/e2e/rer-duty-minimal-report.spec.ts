@@ -80,6 +80,22 @@ function columnBoxes(page: Page) {
 }
 
 test.describe('#4008 minimal report window', () => {
+  test('@regression #4103 uses and displays the remembered report destination', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
+    await openThreeColumnDuty(page, true);
+    await openReportFromColumn(page, 1);
+    const panel = page.locator('[data-manage-message-presentation="minimal"]');
+    await expect(panel.getByText('Надсилання в групу «e2e-group».')).toBeVisible();
+    const body = panel.getByRole('textbox', { name: 'Текст розвіддонесення' });
+    await body.fill('Report for remembered group');
+    const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+    await body.press('Control+Enter');
+    expect((await submitted).postDataJSON().signal_group_master_key).toBe('e2e-group');
+    await expect(panel).toHaveCount(0);
+  });
+
   test('writes a report over the source column without moving the feeds', async ({ page }) => {
     await openThreeColumnDuty(page, true);
     const columnsBefore = await columnBoxes(page);

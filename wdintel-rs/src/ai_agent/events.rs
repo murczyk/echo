@@ -563,6 +563,7 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
             | "timeout"
             | "echo_redirect"
             | "invalid_response"
+            | "ignored_arguments"
     ) {
         return None;
     }
@@ -968,6 +969,25 @@ mod tests {
     }
 
     #[test]
+    fn issue_4125_kept_ignored_argument_names() {
+        let event = serde_json::json!({
+            "type": "tool_diagnostic", "tool": "echo_inbox_messages",
+            "reason": "ignored_arguments", "handledPrivately": false,
+            "fields": "period.timezone:ignored, period.other:ignored",
+            "arguments": {"period": {"timezone": "secret"}}
+        });
+        assert_eq!(
+            tool_diagnostic(&event).unwrap(),
+            serde_json::json!({
+                "tool": "echo_inbox_messages", "reason": "ignored_arguments",
+                "handledPrivately": false,
+                "fields": "period.timezone:ignored, period.other:ignored"
+            })
+        );
+        assert!(normalize_runner_event(event).is_none());
+    }
+
+    #[test]
     fn issue_3572_kept_tool_failure_diagnostics_private_and_allowlisted() {
         let event = serde_json::json!({
             "type": "tool_diagnostic", "tool": "echo_inbox_messages",
@@ -1105,7 +1125,11 @@ mod tests {
             level(serde_json::json!({"reason": "invalid_arguments"})),
             log::Level::Warn
         );
-        for reason in ["cancelled", "research_checkpoint_required"] {
+        for reason in [
+            "cancelled",
+            "research_checkpoint_required",
+            "ignored_arguments",
+        ] {
             assert_eq!(
                 level(serde_json::json!({"reason": reason})),
                 log::Level::Info

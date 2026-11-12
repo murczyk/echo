@@ -13,6 +13,7 @@ import {
   synthesizeBudgetEvidence,
   synthesisConversation,
   type ExecutionPolicy,
+  type AggregateEvidence,
   type BudgetEvidence,
   type ResearchLimitReason,
   providerFailureKind,
@@ -116,7 +117,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.10.2";
+const HARNESS_RELEASE = "2026.11.11.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -128,6 +129,13 @@ const TOOL_CONTEXT_CHARACTERS_PER_TOKEN = 4;
 const TOOL_DEFAULT_MAX_ITEMS = 64;
 const FREQUENCY_SUMMARY_LISTS = ["callsigns", "units", "locations"];
 const FREQUENCY_SUMMARY_LIST_LIMITS = [32, 16, 8, 4];
+// Tools whose results are statistics or lookups rather than cited messages; the
+// tool-free synthesis would otherwise see only that they ran.
+const AGGREGATE_EVIDENCE_SKILLS = new Set([
+  "frequency_summary", "daily_activity", "new_callsigns", "metadata_statistics", "network_statistics",
+  "callsign_relations", "direction_findings", "callsign_frequency_matches", "position_lookup", "unit_lookup",
+]);
+const MAX_AGGREGATE_EVIDENCE = 12;
 const PROVIDER_ID = "echo-vllm";
 const VLLM_BASE_URL = "http://127.0.0.1:18000/v1";
 const PROVIDER_GATEWAY_PATH = "/api/ai-agent/provider/v1";
@@ -189,6 +197,8 @@ interface SkillDefinition {
   path: string;
   skill: string;
   label: string;
+  /** JSON Schema of a passthrough route's body, generated from Echo's request type. */
+  requestSchema?: JsonObject;
   requestKind:
     | "workList"
     | "workRead"
@@ -608,11 +618,12 @@ export function validateSkill(value: unknown): SkillDefinition {
   if (
     Object.keys(route).some(
       (key) =>
-        !["method", "path", "skill", "label", "requestKind"].includes(key),
+        !["method", "path", "skill", "label", "requestKind", "requestSchema"].includes(key),
     )
   ) {
     throw new Error("route contains an unsupported field");
   }
+  const requestSchema = route.requestSchema === undefined ? undefined : validateRequestSchema(route.requestSchema, route.requestKind);
   const skill = requireString(route.skill, "skill", 55);
   const label = requireString(route.label, "skill label", 120);
   const name = `echo_${skill}`;
@@ -696,7 +707,24 @@ export function validateSkill(value: unknown): SkillDefinition {
     method: route.method,
     path,
     requestKind: route.requestKind,
+    ...(requestSchema ? { requestSchema } : {}),
   };
+}
+
+const MAX_REQUEST_SCHEMA_CHARS = 32_768;
+
+function validateRequestSchema(value: unknown, requestKind: unknown): JsonObject {
+  const schema = value as JsonObject;
+  if (
+    requestKind !== "json" ||
+    !schema || typeof schema !== "object" || Array.isArray(schema) ||
+    schema.type !== "object" ||
+    !schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties) ||
+    JSON.stringify(schema).length > MAX_REQUEST_SCHEMA_CHARS
+  ) {
+    throw new Error("skill requestSchema is invalid");
+  }
+  return schema;
 }
 
 export function createToolInvocationGuard(
@@ -1063,6 +1091,118 @@ export function kyivMidnightEpochMs(date: CalendarDate): number {
   throw new Error("failed to resolve Europe/Kyiv calendar boundary");
 }
 
+interface PeriodKind {
+  fields: readonly string[];
+  required: readonly string[];
+  example: JsonObject;
+}
+
+const DATE_RANGE_EXAMPLE = { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07" };
+const PERIOD_KINDS: Record<string, PeriodKind> = {
+  relative_hours: { fields: ["kind", "hours"], required: ["hours"], example: { kind: "relative_hours", hours: 24 } },
+  relative_days: { fields: ["kind", "days"], required: ["days"], example: { kind: "relative_days", days: 7 } },
+  days: { fields: ["kind", "days"], required: ["days"], example: { kind: "relative_days", days: 7 } },
+  date_range: { fields: ["kind", "sinceDate", "tillDateInclusive"], required: ["sinceDate", "tillDateInclusive"], example: DATE_RANGE_EXAMPLE },
+  sinceDate: { fields: ["kind", "sinceDate", "tillDateInclusive"], required: ["sinceDate"], example: DATE_RANGE_EXAMPLE },
+};
+const PERIOD_FIELDS = new Set(["kind", "hours", "days", "sinceDate", "tillDateInclusive", "start", "end"]);
+const PERIOD_TIME_ZONE_KEYS = new Set(["timezone", "timeZone", "time_zone", "tz"]);
+// Names only: EET and EEST are fixed offsets that differ from Kyiv for half the year.
+const KYIV_TIME_ZONE = /^(?:europe\/(?:kyiv|kiev)|kyiv|kiev)$/i;
+// Keys that only describe a period; any other key might anchor or bound it (an
+// `until`, an `asOf`), so it is rejected rather than silently dropped.
+const PERIOD_HARMLESS_KEYS = new Set(["label", "description", "title", "name", "comment", "note", "reason", "format", "granularity"]);
+// Key names a diagnostic may log; any other key the model invents stays unnamed.
+const PERIOD_DIAGNOSTIC_KEYS = new Set([
+  ...PERIOD_FIELDS, ...PERIOD_TIME_ZONE_KEYS, ...PERIOD_HARMLESS_KEYS, "from", "to", "until", "since", "till",
+  "startDate", "endDate", "fromDate", "toDate", "untilDate", "tillDate", "date", "asOf", "includeToday", "type", "unit",
+]);
+const MIDNIGHT_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T00:00(?::00(?:\.0+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/** The Kyiv date of a midnight timestamp. An offset must be Kyiv's own on that
+ * date; any other names a different instant, so it is left for rejection. A bare
+ * or `Z` midnight already means that calendar date to the period parser. */
+function kyivMidnightDate(value: string): string | undefined {
+  const match = MIDNIGHT_DATE_TIME.exec(value);
+  if (!match) return undefined;
+  const [, date, zone] = match;
+  if (!zone || zone === "Z") return date;
+  const instant = Date.parse(`${date}T00:00:00${zone.replace(/^([+-]\d{2})(\d{2})$/, "$1:$2")}`);
+  try {
+    return kyivMidnightEpochMs(parseCalendarDate(date, "period")) === instant ? date : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isEmptyArgument(value: unknown): boolean {
+  return value === null || value === "" ||
+    (Array.isArray(value) && value.length === 0) ||
+    (typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length === 0);
+}
+
+// Only when the period fields present are exactly one kind's: a stray bound
+// would otherwise be dropped and the request would read a different window.
+function inferPeriodKind(period: JsonObject): string | undefined {
+  const present = Object.keys(period).filter((key) => PERIOD_FIELDS.has(key)).sort().join(",");
+  return ({ hours: "relative_hours", days: "relative_days", "sinceDate,tillDateInclusive": "date_range" } as Record<string, string>)[present];
+}
+
+// Fields of another kind that cannot move this kind's window: two explicit dates
+// already fix the range, so a stray duration beside them is noise. Without an
+// end date the duration may be the intended end, so it is kept for rejection.
+function droppableOtherKindField(period: JsonObject, key: string): boolean {
+  return (key === "hours" || key === "days") && period.sinceDate !== undefined && period.tillDateInclusive !== undefined &&
+    (period.kind === "date_range" || period.kind === "sinceDate");
+}
+
+/** Repairs a period whose kind and required fields are valid: drops empty values,
+ * a Europe/Kyiv time zone, a duration beside explicit dates and keys that only
+ * describe it, and infers an omitted kind when only one fits. Any other key could
+ * move the window, so it is left for `kyivPeriodBoundaries` to reject precisely. */
+export function normalizePeriodArgument(value: unknown): { period: unknown; ignored: string[] } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { period: value, ignored: [] };
+  const period: JsonObject = { ...(value as JsonObject) };
+  const ignored: string[] = [];
+  for (const key of Object.keys(period)) {
+    if (isEmptyArgument(period[key])) {
+      delete period[key];
+      ignored.push(key);
+    }
+  }
+  period.kind ??= inferPeriodKind(period);
+  if (period.kind === undefined) delete period.kind;
+  const kind = typeof period.kind === "string" ? PERIOD_KINDS[period.kind] : undefined;
+  if (!kind || kind.required.some((key) => period[key] === undefined)) return { period: value, ignored: [] };
+  for (const key of Object.keys(period)) {
+    if (kind.fields.includes(key)) {
+      const date = typeof period[key] === "string" && key !== "kind" ? kyivMidnightDate(period[key] as string) : undefined;
+      if (date) period[key] = date;
+      continue;
+    }
+    const kyivZone = PERIOD_TIME_ZONE_KEYS.has(key) && typeof period[key] === "string" && KYIV_TIME_ZONE.test((period[key] as string).trim());
+    const harmless = PERIOD_FIELDS.has(key) ? droppableOtherKindField(period, key) : kyivZone || PERIOD_HARMLESS_KEYS.has(key);
+    if (!harmless) continue;
+    delete period[key];
+    ignored.push(key);
+  }
+  return { period, ignored };
+}
+
+/** A diagnostic name for a period key: known names only, never one the model invented. */
+export function periodDiagnosticKey(key: string): string {
+  return PERIOD_DIAGNOSTIC_KEYS.has(key) ? `period.${key}` : "period";
+}
+
+function unsupportedPeriodField(period: JsonObject, kindName: string): Error | undefined {
+  const kind = PERIOD_KINDS[kindName];
+  const extra = Object.keys(period).find((key) => !kind.fields.includes(key));
+  if (extra === undefined) return undefined;
+  return new Error(
+    `period has unsupported field ${JSON.stringify(extra.slice(0, 40))} for kind ${kindName}; allowed fields: ${kind.fields.join(", ")}. Example: ${JSON.stringify(kind.example)}`,
+  );
+}
+
 function kyivPeriodBoundaries(
   periodValue: unknown,
   timeContext: TimeContext,
@@ -1078,9 +1218,8 @@ function kyivPeriodBoundaries(
   }
   const period = periodValue as JsonObject;
   if (period.kind === "relative_hours") {
-    if (Object.keys(period).some((key) => !["kind", "hours"].includes(key))) {
-      throw new Error("recent hour period contains an unsupported field");
-    }
+    const unsupported = unsupportedPeriodField(period, "relative_hours");
+    if (unsupported) throw unsupported;
     const maxHours = maxDays * 24;
     if (
       !Number.isInteger(period.hours) ||
@@ -1098,9 +1237,8 @@ function kyivPeriodBoundaries(
   let sinceDate: CalendarDate;
   let tillDate: CalendarDate;
   if (period.kind === "relative_days" || period.kind === "days") {
-    if (Object.keys(period).some((key) => !["kind", "days"].includes(key))) {
-      throw new Error("recent Kyiv period contains an unsupported field");
-    }
+    const unsupported = unsupportedPeriodField(period, period.kind);
+    if (unsupported) throw unsupported;
     if (
       !Number.isInteger(period.days) ||
       (period.days as number) < 1 ||
@@ -1112,15 +1250,8 @@ function kyivPeriodBoundaries(
     sinceDate = shiftCalendarDate(today, 1 - (period.days as number));
     tillDate = shiftCalendarDate(today, 1);
   } else if (period.kind === "date_range" || period.kind === "sinceDate") {
-    if (
-      Object.keys(period).some(
-        (key) => !["kind", "sinceDate", "tillDateInclusive"].includes(key),
-      )
-    ) {
-      throw new Error(
-        "inclusive Kyiv date range contains an unsupported field",
-      );
-    }
+    const unsupported = unsupportedPeriodField(period, period.kind);
+    if (unsupported) throw unsupported;
     sinceDate = parseFlexibleCalendarDate(period.sinceDate, "period.sinceDate");
     const tillDateInclusive =
       period.tillDateInclusive === undefined && period.kind === "sinceDate"
@@ -1136,7 +1267,9 @@ function kyivPeriodBoundaries(
     sinceDate = parseFlexibleCalendarDate(period.start, "period.start");
     tillDate = parseFlexibleCalendarDate(period.end, "period.end");
   } else {
-    throw new Error(`${label} period kind is invalid`);
+    throw new Error(
+      `period kind is not supported; use kind relative_hours, relative_days or date_range. Example: ${JSON.stringify(PERIOD_KINDS.relative_days.example)}`,
+    );
   }
   if (period.kind !== "relative_days" && period.kind !== "days") {
     if (kyivMidnightEpochMs(sinceDate) >= kyivMidnightEpochMs(tillDate)) {
@@ -2445,6 +2578,7 @@ export function interceptionContextRequestBody(params: unknown): JsonObject {
 
 function routeDescription(route: SkillDefinition): string {
   if (route.skill === GROUP_LOOKUP_SKILL) return GROUP_LOOKUP_DESCRIPTION;
+  if (typeof route.requestSchema?.description === "string") return route.requestSchema.description;
   if (route.requestKind === "workList" || route.requestKind === "workRead") return WORK_DESCRIPTIONS[route.requestKind];
   if (route.requestKind in DEVICE_DESCRIPTIONS) return DEVICE_DESCRIPTIONS[route.requestKind];
   if (ATTACHMENT_DESCRIPTION[route.requestKind]) return ATTACHMENT_DESCRIPTION[route.requestKind];
@@ -2504,7 +2638,7 @@ function routeParameters(route: SkillDefinition) {
     case "unitLookup":
       return UNIT_LOOKUP_PARAMETERS;
     case "json":
-      return Type.Object({
+      return route.requestSchema ?? Type.Object({
         body: Type.Any({ description: "JSON request body" }),
       });
     default:
@@ -2549,8 +2683,89 @@ function routeRequestBody(
     case "unitLookup":
       return unitLookupRequestBody(params);
     default:
+      if (route.requestSchema) return params;
       return "body" in params ? params.body : undefined;
   }
+}
+
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Arguments for a route tool: generic repairs first, then the shapes models
+ * send for a schema-described body, or a repaired period. Never throws: what
+ * it cannot repair is left for validation to reject precisely. */
+export function prepareRouteArguments(
+  route: SkillDefinition,
+  args: unknown,
+  onIgnored: (fields: string) => void = () => {},
+): unknown {
+  const prepared = normalizeToolArguments(args);
+  if (!prepared || typeof prepared !== "object" || Array.isArray(prepared)) return prepared;
+  const input = prepared as JsonObject;
+  if (route.requestSchema) return schemaArguments(route.requestSchema, input);
+  if (input.period === undefined || !("period" in ((routeParameters(route) as { properties?: object }).properties ?? {}))) return input;
+  const { period, ignored } = normalizePeriodArgument(input.period);
+  if (ignored.length) onIgnored([...new Set(ignored.map((key) => `${periodDiagnosticKey(key)}:ignored`))].join(", "));
+  return { ...input, period };
+}
+
+const looseName = (name: string) => name.replace(/[_-]/g, "").toLowerCase();
+
+/** Lifts the shapes models use for a body described by a JSON Schema: the old
+ * `{body: {...}}` wrapper, camelCase names, one value where a list is expected,
+ * a bare id for a one-field object, and a UUID inside a citation link. */
+export function schemaArguments(schema: JsonObject, args: JsonObject): JsonObject {
+  const properties = (schema.properties ?? {}) as Record<string, JsonObject>;
+  let input = args;
+  if (Object.keys(input).length === 1 && input.body !== undefined && !("body" in properties)) {
+    let body = input.body;
+    if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch { /* left for validation */ }
+    }
+    if (body && typeof body === "object" && !Array.isArray(body)) input = body as JsonObject;
+  }
+  const byLooseName = new Map(Object.keys(properties).map((name) => [looseName(name), name]));
+  const result: JsonObject = {};
+  for (const [key, value] of Object.entries(input)) {
+    const name = key in properties ? key : byLooseName.get(looseName(key)) ?? key;
+    // Another spelling of a field already given stays as sent, so validation
+    // rejects it instead of one list silently replacing the other.
+    if (name !== key && (name in input || name in result)) {
+      result[key] = value;
+      continue;
+    }
+    result[name] = properties[name] ? schemaValue(properties[name], value) : value;
+  }
+  return result;
+}
+
+function schemaValue(schema: JsonObject, value: unknown): unknown {
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  if (types.includes("array") && value !== undefined && value !== null && !Array.isArray(value)) value = [value];
+  if (Array.isArray(value) && schema.items && typeof schema.items === "object") {
+    return value.map((item) => schemaItem(schema.items as JsonObject, item));
+  }
+  return schemaItem(schema, value);
+}
+
+function schemaItem(schema: JsonObject, value: unknown): unknown {
+  if (schema.format === "uuid" && typeof value === "string") return uuidArgument(value);
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  if (schema.properties && required.length === 1 && (typeof value === "number" || typeof value === "string")) {
+    return { [String(required[0])]: value };
+  }
+  if (schema.properties && value && typeof value === "object" && !Array.isArray(value)) {
+    return schemaArguments(schema, value as JsonObject);
+  }
+  return value;
+}
+
+/** A UUID written in a lossless variant: a citation link, braces, a URN or capitals. */
+export function uuidArgument(value: string): string {
+  const text = value.trim();
+  let candidate = /[?&]m=([^&#)\s]+)/.exec(text)?.[1] ?? text;
+  try { candidate = decodeURIComponent(candidate); } catch { return value; }
+  candidate = candidate.replace(/^urn:uuid:/i, "").replace(/^\{(.*)\}$/, "$1");
+  return UUID_TEXT.test(candidate) ? candidate.toLowerCase() : value;
 }
 
 function activityText(value: unknown): string | null {
@@ -2877,6 +3092,7 @@ function createRouteTools(
   recordSaved: (text: string, citations: string[]) => void = () => {},
   research?: FlashResearch,
   recordRetrieval: (skill: string) => void = () => {},
+  recordAggregate: (skill: string, request: unknown, text: string) => void = () => {},
 ) {
   const activity = createRouteActivityTracker();
   const groupRoute = payload.skills.find((route) => route.skill === GROUP_LOOKUP_SKILL);
@@ -2894,7 +3110,9 @@ function createRouteTools(
       description: routeDescription(route),
       parameters: routeParameters(route),
       executionMode: "sequential",
-      prepareArguments: (args: unknown) => normalizeToolArguments(args) as any,
+      prepareArguments: (args: unknown) => prepareRouteArguments(route, args, (fields) => emit({
+        type: "tool_diagnostic", tool: `echo_${route.skill}`, reason: "ignored_arguments", handledPrivately: false, fields,
+      })) as any,
       execute: async (_toolCallId, params, signal, onUpdate) => {
         countInvocation();
         const requestBody = routeToolRequestBody(
@@ -2943,6 +3161,7 @@ function createRouteTools(
           toolMaxItems(params),
         );
         research?.record(`echo_${route.skill}`, requestBody, JSON.parse(text));
+        if (AGGREGATE_EVIDENCE_SKILLS.has(route.skill)) recordAggregate(route.skill, params, text);
         const files = collectFileCitations(prepared.body).filter((citation) => text.includes(fileCitationHref(citation)));
         for (let offset = 0; offset < files.length; offset += 100) emit({ type: "file_citations", citations: files.slice(offset, offset + 100) });
         recordFiles(files, collectFileSections(JSON.parse(text)));
@@ -3289,6 +3508,7 @@ const VALIDATION_KINDS: readonly [RegExp, string][] = [
   [/allowed values|equal to|constant|anyOf/i, "enum"],
   [/characters|length|items|fewer|more than|at least|at most|[<>]=?/i, "size"],
   [/must be|expected|type/i, "type"],
+  [/match format|match pattern/i, "format"],
 ];
 
 type ToolParameterNames = ReadonlyMap<string, ReadonlySet<string>>;
@@ -3353,7 +3573,9 @@ function argumentCheckField(
   if (fixed) return fixed;
   const path = /^[A-Za-z][A-Za-z0-9_.]*/.exec(message)?.[0];
   const named = path && parameterNames.get(String(toolName))?.has(path.split(".")[0]) ? path : undefined;
-  const field = named ?? ARGUMENT_CHECK_SUBJECTS.find(([pattern]) => pattern.test(message))?.[1];
+  const periodKey = /^period has unsupported field "([^"]*)"/.exec(message)?.[1];
+  const field = (periodKey === undefined ? undefined : periodDiagnosticKey(periodKey)) ??
+    named ?? ARGUMENT_CHECK_SUBJECTS.find(([pattern]) => pattern.test(message))?.[1];
   if (!field) return undefined;
   const kind = ARGUMENT_CHECK_KINDS.find(([pattern]) => pattern.test(message))?.[1] ?? "invalid";
   return `${field}:${kind}`;
@@ -3644,7 +3866,7 @@ const NO_RETRIEVAL_RETRY_NOTICE = " The time budget ended before any search; add
 const NO_LIMIT_NOTICE = " No time, tool or budget limit stopped this work: never claim that one did, even if an earlier answer in the conversation says so.";
 const COVERAGE_GUIDANCE = "State remaining coverage limitations honestly without delaying the supported findings.";
 const FINAL_FINDINGS_GUIDANCE = "Report anything searched for and not found as a finding. Do not add a section about incomplete coverage.";
-const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference. groupsRead lists the groups really read, even when they returned nothing. groupProblems states group names that could not be read: report each as stated rather than as a failed search, unless groupsRead shows the same group under a corrected spelling. Never describe other groups as that group.";
+const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference. groupsRead lists the groups really read, even when they returned nothing. groupProblems states group names that could not be read: report each as stated rather than as a failed search, unless groupsRead shows the same group under a corrected spelling. Never describe other groups as that group. Evidence records with statisticsFrom are Echo statistics or lookups that the tool returned for its request: report their figures as statistics for that scope without message citations, and never present them as individual messages.";
 
 type SynthesisOutcome = {
   retrieved?: boolean;
@@ -4103,6 +4325,17 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     const recordMessages = (messages: CitedMessage[]) => {
       for (const message of messages) deliveredMessages.set(`${message.messageId}:${message.messageIdentifier}`, message);
     };
+    // Synthesis sees only delivered evidence, and statistics cite no message.
+    const deliveredAggregates = new Map<string, AggregateEvidence>();
+    const recordAggregate = (skill: string, request: unknown, text: string) => {
+      const key = `${skill}:${JSON.stringify(request)}`;
+      deliveredAggregates.delete(key);
+      deliveredAggregates.set(key, { tool: `echo_${skill}`, request, result: JSON.parse(text) });
+      for (const oldest of deliveredAggregates.keys()) {
+        if (deliveredAggregates.size <= MAX_AGGREGATE_EVIDENCE) break;
+        deliveredAggregates.delete(oldest);
+      }
+    };
     const journal = payload.workMemory ? new WorkJournal(
       async (record) => (await echoRequest(payload, authentication, "POST", WORK_APPEND_PATH, record, cancellation.signal)).body,
       () => ({ citations: [...new Map([...payload.history.flatMap((entry) => entry.citations ?? []), ...(payload.workMemory?.citations ?? []), ...deliveredCitationsThisTurn].map((source) => [source.messageIdentifier, source])).values()], fileCitations: [...deliveredFiles.values()] }),
@@ -4133,6 +4366,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         recordSaved,
         research,
         recordRetrieval,
+        recordAggregate,
       ),
       ...(payload.skills.some((route) => route.requestKind === "mapRecords") && payload.skills.some((route) => route.requestKind === "mapDocument")
         ? createMapTools(mapRegistry, async (path, body, signal) => {
@@ -4309,7 +4543,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
           ? research.directAnswer(reply ?? assistantMessageText(lastAssistantMessage(currentTurnAssistantMessages)), budget)
           : undefined;
         await completeLimitedResearch({ payload, budget, selectedEngine: selectedModel,
-          evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence },
+          evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence, aggregates: [...deliveredAggregates.values()] },
           deliveredCitationsThisTurn, deliveredFiles, mapRegistry, documentRegistry, cancellation: cancellation.signal,
           checkpoint: contextCompaction.latestCheckpoint(), research, toolRemaining: maxToolInvocations - toolInvocations, images, retrieved: echoRetrievals > 0, answer });
         return;
@@ -4458,6 +4692,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
           messages: [...deliveredMessages.values()],
           files: [...deliveredFileSections.values()],
           saved: savedEvidence,
+          aggregates: [...deliveredAggregates.values()],
         },
         deliveredCitationsThisTurn,
         deliveredFiles,

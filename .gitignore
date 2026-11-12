@@ -20,6 +20,18 @@ deploy/config-backup.toml
 .direnv
 .idea
 docs/public
+# Documentation media is stored in B2; keep the site's favicon in Git.
+/docs/releases/*/media/
+/docs/static/**/*.[mM][pP]4
+/docs/static/**/*.[wW][eE][bB][mM]
+/docs/static/**/*.[jJ][pP][gG]
+/docs/static/**/*.[jJ][pP][eE][gG]
+/docs/static/**/*.[pP][nN][gG]
+/docs/static/**/*.[mM][pP]3
+/docs/static/**/*.[gG][iI][fF]
+/docs/static/**/*.[sS][vV][gG]
+/docs/static/**/*.[iI][cC][oO]
+!/docs/static/icon.png
 dosc/static/processed_images
 docs/echo-docs/target
 wdintel-rs/version.txt
@@ -59,5 +71,58 @@ echo-iggy/deploy/iggy-server
 echo-iggy/test-cli/.env
 
 .specify
-.agents
+# Explicit team skills; keep personal agent state local.
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/echo-designer
+!/.agents/skills/echo-dev
+!/.agents/skills/echo-qa
+!/.agents/skills/echo-spec
+!/.agents/skills/playwright-best-practices
+!/.agents/skills/make-interfaces-feel-better
+!/.agents/skills/ponytail
+!/.agents/skills/brainstorming
+!/.agents/skills/systematic-debugging
+!/.agents/skills/verification-before-completion
+!/.agents/skills/impeccable/
+
+# Personal Impeccable configuration and state are not shared.
+/.impeccable/
+# Share only reviewed team configuration; keep local client state private.
+!/.codex/
+/.codex/*
+!/.codex/config.toml
+!/.codex/agents/
+/.codex/agents/*
+!/.codex/agents/designer.toml
+!/.codex/agents/dev.toml
+!/.codex/agents/qa.toml
+!/.codex/agents/spec.toml
+
+# Shared Claude Code configuration; personal settings and runtime state stay local.
+/.claude/*
+!/.claude/settings.json
+!/.claude/agents/
+/.claude/agents/*
+!/.claude/agents/spec.md
+!/.claude/agents/designer.md
+!/.claude/agents/dev.md
+!/.claude/agents/qa.md
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/echo-spec/
+!/.claude/skills/echo-designer/
+!/.claude/skills/echo-dev/
+!/.claude/skills/echo-qa/
+!/.claude/skills/brainstorming/
+!/.claude/skills/impeccable/
+!/.claude/skills/ponytail/
+!/.claude/skills/systematic-debugging/
+!/.claude/skills/verification-before-completion/
+!/.claude/skills/make-interfaces-feel-better/
+!/.claude/skills/playwright-best-practices/
+/.claude/skills/*/*
+!/.claude/skills/*/SKILL.md
+# Generated task specifications are local artifacts, not shared configuration.
 specs

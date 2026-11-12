@@ -1,7 +1,7 @@
 //! Single-instance queue worker; see README.md.
 
 use super::context::{self, MatchContext};
-use super::{inference, sql, NetworkMatchCandidate};
+use super::{inference, sql, StoredCertainty};
 use crate::config::{
     AI_NETWORK_MATCH_MAX_CANDIDATES, AI_NETWORK_MATCH_WORKER_IDLE_SLEEP_MS,
     AI_NETWORK_MATCH_WORKER_LEASE_SECS, AI_NETWORK_MATCH_WORKER_LOCK,
@@ -234,7 +234,7 @@ async fn score(
     ai_client: &crate::ai_engine::AiEngineClient,
     engines: &Engines,
     context: &MatchContext,
-) -> anyhow::Result<(Vec<NetworkMatchCandidate>, Uuid)> {
+) -> anyhow::Result<(Vec<StoredCertainty>, Uuid)> {
     let (candidates, engine) = crate::ai_worker::with_fallback(
         AI_NETWORK_MATCH_WORKER_NAME,
         &engines.primary,
@@ -262,7 +262,7 @@ pub(super) async fn complete(
     dbx: &DatabaseConnection,
     job: &ai_network_match_worker_job::Model,
     context: &MatchContext,
-    candidates: Vec<NetworkMatchCandidate>,
+    candidates: Vec<StoredCertainty>,
     engine_id: Uuid,
 ) -> anyhow::Result<bool> {
     let item_id = job.sigint_inbox_item_id;
@@ -350,7 +350,7 @@ async fn save_result(
     transaction: &DatabaseTransaction,
     item_id: i64,
     context: &MatchContext,
-    candidates: &[NetworkMatchCandidate],
+    candidates: &[StoredCertainty],
     engine_id: Uuid,
 ) -> anyhow::Result<()> {
     let certainties = serde_json::to_value(candidates).c(h!())?;

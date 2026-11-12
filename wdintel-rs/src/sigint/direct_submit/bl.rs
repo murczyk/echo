@@ -283,6 +283,7 @@ where
         }),
         dmr: vec![],
         signal_group_master_key: message.group_master_key.clone(),
+        additional_signal_group_master_keys: vec![],
         source_signal_group_master_key: None,
         device_name_id: Some(copy_inputs.inbox_item.device_name_id),
         upload_urls: None,
@@ -337,9 +338,14 @@ where
         crate::location::peleng::filter_allowed_peleng_coords(coords, dbx)
             .await
             .c(h!())?;
-    let (unit_and_location, unit_v2) = crate::unit::parse_message_unit(
+    let crate::unit::ParsedMessageUnit {
+        unit_and_location,
+        unit_v2,
+        unit_id,
+        ..
+    } = crate::unit::parse_message_unit(
         dbx,
-        env.settlements.clone(),
+        env,
         body,
         callsigns.clone(),
         aor_id,
@@ -400,6 +406,7 @@ where
         post: crate::rer_importer::post::extract_post(body)?,
         unit,
         unit_v2,
+        unit_id,
         locations: unit_and_location
             .locality
             .map(|l| {
@@ -559,6 +566,17 @@ async fn save_signal_message(
             None => None,
         }
     };
+    let signal_groups = super::destinations::resolve(
+        &txn,
+        login,
+        signal_group,
+        &payload,
+        is_new_message
+            && !is_intelligence_report
+            && payload.engaged_message_id.is_none(),
+    )
+    .await
+    .c(h!())?;
     let logins = crate::users::get_organism_login_ids_by_id(&txn, login)
         .await
         .c(h!())?;
@@ -755,7 +773,7 @@ async fn save_signal_message(
         env,
         &txn,
         signal_message_id,
-        signal_group,
+        signal_groups,
         &parent_signal_message_ids,
         &allowed_groups,
         login,
@@ -1216,7 +1234,7 @@ async fn persist_direct_submit_item(
     env: &Env,
     txn: &DatabaseTransaction,
     signal_message_id: Option<i64>,
-    signal_group: Option<crate::entities::signal_group::Model>,
+    signal_groups: Vec<crate::entities::signal_group::Model>,
     parent_signal_message_ids: &[i64],
     allowed_groups: &[String],
     login: &uuid::Uuid,
@@ -1226,60 +1244,27 @@ async fn persist_direct_submit_item(
     keep_timestamp_missing: bool,
     source_group_master_key: Option<&str>,
 ) -> Result<SubmittedInboxItem, AppError> {
-    let (datasource_id, groups) = match signal_group {
-        Some(signal_group) => {
-            if signal_message_id.is_none() {
-                crate::messenger::group::requirements::validate(
-                    &signal_group,
-                    &submit_item,
-                )
-                .c(h!())?;
-            }
-            crate::messenger::group::native::lock_for_publish_if_native(
-                txn,
-                &signal_group.master_key,
-                login,
-            )
-            .await
-            .c(h!())?;
-            let datasource_id = signal_group.datasource_id.unwrap_or(
-                query::resolve_datasource_id_for_group(
-                    txn,
-                    &signal_group.master_key,
-                )
-                .await
-                .c(h!())?,
-            );
-            let datasource_group_id =
-                crate::messenger::group::ensure_datasource_group_id(
-                    txn,
-                    signal_group.master_key.clone(),
-                    datasource_id,
-                )
-                .await
-                .c(h!())?;
-            (
-                Some(datasource_id),
-                vec![(signal_group.master_key, datasource_group_id)],
-            )
-        }
-        None => {
-            let datasource_id = if signal_message_id.is_some()
-                || parent_signal_message_ids.is_empty()
-            {
-                None
-            } else {
-                query::resolve_parent_datasource_id_or_none(
-                    txn,
-                    parent_signal_message_ids,
-                    allowed_groups,
-                )
-                .await
-                .c(h!())?
-            };
-            (datasource_id, vec![])
-        }
-    };
+    let (mut datasource_id, groups) = super::destinations::prepare(
+        txn,
+        login,
+        signal_groups,
+        &submit_item,
+        signal_message_id.is_none(),
+    )
+    .await
+    .c(h!())?;
+    if groups.is_empty()
+        && signal_message_id.is_none()
+        && !parent_signal_message_ids.is_empty()
+    {
+        datasource_id = query::resolve_parent_datasource_id_or_none(
+            txn,
+            parent_signal_message_ids,
+            allowed_groups,
+        )
+        .await
+        .c(h!())?;
+    }
     let linked_comment = if signal_message_id.is_none()
         && parent_signal_message_ids.is_empty()
     {
@@ -1926,6 +1911,7 @@ mod tests {
             network: None,
             dmr: vec![],
             signal_group_master_key: Some(TEST_SIGNAL_GROUP_KEY.to_string()),
+            additional_signal_group_master_keys: vec![],
             source_signal_group_master_key: None,
             device_name_id: None,
             upload_urls: None,

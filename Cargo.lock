@@ -2878,7 +2878,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 
 [[package]]
 name = "echo-gpu-client"
@@ -2967,7 +2967,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ce0222279ef36d09b3d24d
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3027,7 +3027,7 @@ dependencies = [
 
 [[package]]
 name = "echo-messengers"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3801,7 +3801,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -7651,8 +7651,22 @@ checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
 dependencies = [
  "dyn-clone",
  "ref-cast",
+ "schemars_derive",
  "serde",
  "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -7952,6 +7966,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.3",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -10013,7 +10038,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202611101146"
+version = "0.1.1-rc.202611102152"
 dependencies = [
  "actix-files",
  "actix-identity",
@@ -10102,6 +10127,7 @@ dependencies = [
  "rust-argon2",
  "rust_xlsxwriter",
  "rustls",
+ "schemars 1.2.1",
  "sea-orm",
  "sea-orm-migration",
  "sea-query-sqlx",

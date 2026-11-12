@@ -151,15 +151,28 @@ an automatic full-mirror resync.
 ## AI agent tool contracts
 
 Treat each `echo_*` tool and its backend route as one API across two codebases.
-Nothing generates the tool from the Rust request type, so a mismatch reaches
-production without a compile error. Apply this review to any change to a tool's
-parameters in `echo-ai-agent/runner/runner.ts`, and to any change to the request
-type behind a route in `wdintel-rs/src/ai_agent/route_registry.rs`.
+Echo generates a JSON Schema of each route's request type in
+`wdintel-rs/src/ai_agent/request_schemas.rs`. A passthrough route
+(`request_kind: "json"`) sends that schema with the route, and the runner uses it
+as the tool's parameters. Every other route keeps a model-facing TypeBox schema
+in `echo-ai-agent/runner/runner.ts`, a deliberate translation (periods, group
+names), and its schema is exported to `request_schemas.json`; the runner tests
+check each request builder's body against it. Apply this review to any change
+to a tool's parameters, and to any change to the request type behind a route in
+`wdintel-rs/src/ai_agent/route_registry.rs`.
+
+Never hand-write a TypeScript or TypeBox copy of a request type. Require a new
+route's request type to derive `schemars::JsonSchema` and to be listed in
+`request_schema()`. On a passthrough type, `///` field comments are what the
+model reads, and `#[schemars(skip)]` hides fields the agent must not send. A
+changed request type needs the regenerated export (`just gen-ai-agent-schemas`;
+the backend tests fail while it is stale) and, when a contract test fails, the
+matching request builder change.
 
 Require these to agree in the same pull request:
 
 - the filters the route applies, on both its analytics and PostgreSQL paths;
-- the tool's TypeBox parameters;
+- the tool's TypeBox parameters, or the generated schema of a passthrough route;
 - the field allowlist and body mapping in its request builder;
 - tool, parameter, and system guidance that names or implies those parameters.
 
@@ -185,7 +198,10 @@ compaction. Add a new tool diagnostic reason to the allowlists in
 
 Rejected arguments fail before reaching Echo and show the user a generic failed
 step, so a review of recurring `invalid_arguments` diagnostics should look for
-this drift before blaming the model.
+this drift before blaming the model. Prefer repairing a lossless mistake in
+`prepareRouteArguments` and logging it as `ignored_arguments` over rejecting the
+call, and make a rejection name the field, the allowed fields and an example.
+Never repair a value that changes what is read, such as a period bound.
 
 ## Admin settings over config.toml
 
