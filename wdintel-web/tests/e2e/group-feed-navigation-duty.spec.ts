@@ -313,10 +313,9 @@ test.describe('Duty group feed navigation', () => {
     });
     expect(panelStyle.background).toBe(panelStyle.contextualBackground);
     expect(panelStyle.borderWidth).toBe('0px');
-    const selectedMarker = await firstGroupPanel
-      .locator('[data-group-list-item][data-selected="true"]')
-      .evaluate((item) => getComputedStyle(item, '::before').content);
-    expect(selectedMarker).toBe('none');
+    await expect(
+      firstGroupPanel.locator('[data-group-list-item][data-selected="true"]'),
+    ).toHaveCount(0);
     const islandStyle = await firstIsland.evaluate((island) => {
       const probe = document.createElement('span');
       probe.style.backgroundColor =
@@ -344,6 +343,14 @@ test.describe('Duty group feed navigation', () => {
     await expect(columns.nth(0).getByText('Beta-only message')).toHaveCount(0);
     await expect(columns.nth(0).locator(cardGroups)).toHaveCount(0);
     await expect(columns.nth(1).locator(cardGroups)).toHaveCount(2);
+    await firstGroupsToggle.click();
+    const selectedGroup = firstGroupPanel.locator('[data-group-list-item][data-selected="true"]');
+    await expect(selectedGroup).toHaveAccessibleName('Group Alpha');
+    const selectedMarker = await selectedGroup.evaluate(
+      (item) => getComputedStyle(item, '::before').content,
+    );
+    expect(selectedMarker).toBe('none');
+    await columns.nth(0).getByRole('button', { name: 'Згорнути список груп' }).click();
     await columns.nth(0).getByRole('button', { name: 'Фільтри' }).click();
     const scopedFilterPanel = columns.nth(0).getByLabel('Панель фільтрів');
     await expect(scopedFilterPanel).toBeVisible();

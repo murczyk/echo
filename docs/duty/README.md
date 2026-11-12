@@ -150,6 +150,65 @@ Regression coverage:
 `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.search.spec.tsx`
 and `wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
 
+## Independent search panel
+
+[#3571](https://github.com/echoua/echo/issues/3571): when `enableDutySearch` is enabled,
+each column has a separate search action. Only one panel is open at a time. The
+lightweight results use the feed's filters and server search modes, creation-time
+ordering, paged cursors, and a separate total count. The default period covers all
+available history. The panel has no separate history-period control.
+An upper timestamp bounds both result and count requests, including all-history
+search. Search text never changes the main feed, its polling, or unread tracking.
+
+Selecting a result explicitly navigates its source feed using the existing linked
+message context/highlight flow and cancels live following. The panel stays open.
+Closing or switching panels retains query, mode, period, results, selection and
+list anchor within the current page; reopening refreshes without repeating feed
+navigation. Closed panels make no background search requests. Filter changes
+invalidate cached results, while preserving the query. Stale responses cannot
+replace a newer query or navigate the feed.
+
+Group navigation and search are mutually exclusive within a column: opening
+either closes the other while preserving the source feed's reading position.
+Switching to groups retains the search cache and moves focus to the selected
+group; it does not restore focus to the closed search trigger. Explicit close
+returns focus to the corresponding trigger. Search in one column can coexist
+with group navigation in another. Choosing a different group uses normal scope
+navigation and invalidates cached search results while retaining the query.
+
+Open panels refresh on batched inbox-change events, including arriving messages
+and edits/deletions. Idle feed polling and browser focus do not fetch search
+results or show a loading indicator. Server matching-filter checks reconcile
+edited/deleted cached results.
+Refreshes page through the oldest cached cursor to reconcile the loaded range
+without leaving burst gaps. Historical readers keep their visible row and
+selected result; new matches wait behind an explicit indicator. The result list
+never marks messages read and never mounts another MessageCard/media tree.
+Failed refreshes retain the cache; error/retry feedback appears in the page
+snackbar, outside the result panel.
+
+Desktop search adds a 270px track to the left of its source feed, below a shared
+full-width column header, with horizontal overflow. Results show group, sender,
+creation time and an emphasized matching snippet. Sibling feed widths remain
+stable. Selecting a result jumps to its message without animated scrolling,
+retaining the surrounding feed context. Narrow/editor active-only layouts still mount
+one feed and preserve its source width. Explicit close returns keyboard focus to
+the source search action. Search popups own Escape before the enclosing panel.
+The existing feed keyword filter remains **«Фільтр по ключовому слову»**. Applying
+a nonempty keyword closes the separate panel and disables its action until the
+keyword is cleared; clearing never reopens it automatically. Analysis search
+controls and behavior are unchanged. Duty mode selection uses the same
+autocomplete dropdown interaction as Analysis. In the search panel, the
+«Як працює пошук» link below its three mode options opens the explanation on
+request. Keyboard users can reach it with Tab; closing the explanation restores
+input focus without closing search. The keyword filter retains its information
+button. Close the search panel with its header action or Escape; the result
+navigation row contains only the previous/next arrows.
+
+Regression coverage:
+`wdintel-web/tests/e2e/rer-duty-search.spec.ts` and
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutySearch.spec.tsx`.
+
 ## Code map
 
 | Concern                                          | File                                                                                                                            |

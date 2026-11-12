@@ -179,6 +179,7 @@ spec_path (absolute Markdown path) / document revision / owner approval and deci
 plan_path (absolute Markdown path, when planning was requested) / input spec revision:
 cleanup_paths (exact temporary documents created for this task; retain until dev + QA verify pass):
 design_paths / design approval (when applicable):
+design references: actual Figma links/nodes and screenshot paths, versions/approval and applicable states
 output_preset / explicit task overrides:
 output_format / Figma target, permitted operations and synthetic input scope (when requested):
 revision / staged, unstaged and untracked starting changes:
@@ -374,6 +375,21 @@ read-only role smokes do not invoke dev/QA or authorize product verification.
 This is task authorization, not a tool ACL or permission-mode change, and never
 invokes another stage or a real environment implicitly.
 
+## Test selection policy
+
+During development, QA preparation, verification and repairs, run tests only for
+changed features and features affected by shared-code changes. Main identifies
+those consumers and records explicit suite/file selections in the handoff;
+unrelated application areas stay out of the run. For example, use
+`npm run test:ts -- src/ts/react/routes/rer-duty-neo` for Duty Vitest coverage
+and select affected Playwright spec files instead of running every browser test.
+Build/type/lint checks remain applicable under the owning contracts.
+
+Run the full test suite only as the pre-PR check coordinated by main. A local
+edit, dev completion, QA handoff or verification pass is not a full-suite trigger.
+Reuse a successful full run if the tested code has not changed; a subsequent
+code change requires fresh applicable validation before creating the PR.
+
 ## CPU throttling baseline
 
 Functionality is always developed with **CPU throttling: 4x slowdown** in mind.
@@ -396,12 +412,57 @@ local verification authorization and any explicit owner restrictions. Browser
 CPU slowdown does not emulate network latency
 or backend load, and does not replace other required checks or environment gates.
 
+## Design and functionality verification
+
+This check is mandatory for dev self-verification and QA verify; each role
+performs it itself. Main supplies the actual references and latest approved
+specification, including owner-approved amendments. A prior role's report,
+passing tests or a successful build does not replace direct inspection.
+
+- If Figma is supplied, open and inspect the relevant linked nodes and their
+  screenshots through the official read-only connection under [Figma access](figma-access.md).
+  If screenshots are supplied, view the actual images. Inspect both when both
+  are supplied; record which source/version and approved overrides apply.
+  Unapproved design proposals do not override approved requirements. Resolve
+  conflicting or ambiguous references through main before dependent changes.
+- Compare the rendered implementation with those references at corresponding
+  widths, themes and states. Check placement and side of panels, component
+  hierarchy, dimensions, spacing, typography, content and visible interaction
+  states. Record concrete expected/actual differences; do not infer visual
+  fidelity from source code or screenshots that were never opened.
+- Exercise the specification's user journeys and state transitions, including
+  relevant negative cases and preserved behavior. Map each new or changed
+  user-visible control, action and behavior to an approved requirement. Check
+  both that required functionality exists and that unspecified functionality
+  has not been added. Designs, backend capabilities, helpful ideas and tests
+  do not independently authorize new behavior. Missing requirements return
+  through main for an owner decision and specification update before dependent
+  implementation. Silence in a task spec is not permission to remove existing
+  behavior covered by the owning contracts; routine implementation details
+  within approved behavior do not need separate feature approval.
+- Dev fixes scoped discrepancies and repeats affected checks; QA reports
+  discrepancies to main without editing product code. Each returns concise
+  requirement/reference → observed outcome → pass/fail/not-run evidence,
+  including any unexpected functionality. QA must perform its own reference
+  comparison and behavioral checks, not adopt dev's verdict. QA prepare uses
+  these sources for coverage and expected outcomes, not an implementation pass.
+
+If reference access or required execution is unavailable, state the missing
+source/scenario and reason, continue independent permitted work, and mark the
+check unverified/not-run. Do not claim visual fidelity, functional completion
+or an overall QA pass while a required check is missing. An explicitly approved
+deviation must be recorded in the specification/approved reference; do not
+silently treat an observed mismatch as acceptable. This check grants no Figma
+writes, external uploads or real-environment mutations.
+
 ## Dev
 
 Require the approved spec, implementation authorization and QA-prepared or
 otherwise equivalent tests/coverage map. Trivial docs/static styling can have an
 explicitly justified no-behavior-tests entry under `CODE_REVIEW.md`. Test readiness
 is not a claim that tests passed. Inspect actual files and the starting dirty state.
+Apply [design and functionality verification](#design-and-functionality-verification)
+before returning dev results.
 
 1. Execute authorized preserved baseline tests before product edits. Important affected user journeys missing coverage need QA preparation first. Observe relevant RED for changed behavior; a bug reproduction is RED while preserved neighbors remain green. Setup failures/flakes are not RED. If the required baseline cannot run, stop dependent edits.
 2. Implement the whole approved scope in small coherent blocks. Use existing components/tokens and stack skills. Inspect cumulative staged/unstaged/untracked changes after each block. Explain every new area; update the impact map and checks before shared-component/API expansion. Resolve material product changes through main.
@@ -441,6 +502,8 @@ These sources are unchanged; this workflow adds no `.agents/skills` aliases for 
 Main assigns exactly one mode. Use the repository `playwright-best-practices` and
 [regression guidance](../../.github/skills/frontend-regression-safety/SKILL.md)
 within that mode; guidance cannot authorize product fixes or extra execution.
+Apply [design and functionality verification](#design-and-functionality-verification)
+within the assigned prepare/verify mode.
 
 Read repository [systematic-debugging](../../.github/skills/systematic-debugging/SKILL.md)
 for failures and [verification-before-completion](../../.github/skills/verification-before-completion/SKILL.md)

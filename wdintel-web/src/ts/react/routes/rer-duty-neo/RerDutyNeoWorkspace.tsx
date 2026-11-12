@@ -1,6 +1,6 @@
 import { Box, ButtonBase, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
@@ -13,7 +13,7 @@ import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { shouldUseActiveFeedLayout } from './duty-editor-layout';
-import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
+import { DUTY_SEARCH_PANEL_WIDTH_PX, DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
 import { MessageFeedSkeletons, type AnchorSnapshot } from '../shared/message-feed';
 
 function DutyNeoInitialLoadingSkeletonFeedHeader({
@@ -223,6 +223,7 @@ function DutyNeoInitialLoadingSkeleton({
 }
 
 type RerDutyNeoWorkspaceProps = {
+  searchFeedId?: string | null;
   activeFeedId: string | null;
   buildFeedColumnModel: (feed: MessageFeedState) => FeedColumnModel;
   columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
@@ -237,6 +238,7 @@ type RerDutyNeoWorkspaceProps = {
 };
 
 export function RerDutyNeoWorkspace({
+  searchFeedId = null,
   activeFeedId,
   buildFeedColumnModel,
   columnRefsRef,
@@ -250,6 +252,28 @@ export function RerDutyNeoWorkspace({
   editorEmbeddedOpen = false,
 }: RerDutyNeoWorkspaceProps) {
   const { ref: workspaceRef, width: availableWidth } = useObservedWidth<HTMLDivElement>();
+  const feedTracksRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!searchFeedId) return;
+    const frame = requestAnimationFrame(() => {
+      const tracks = feedTracksRef.current;
+      const column = tracks?.querySelector<HTMLElement>(
+        `[data-duty-feed-id="${CSS.escape(searchFeedId)}"]`,
+      );
+      if (!tracks || !column) return;
+      const viewport = tracks.getBoundingClientRect();
+      const rect = (
+        column.querySelector('[data-duty-search-panel]') ?? column
+      ).getBoundingClientRect();
+      const cssScale = viewport.width > 0 ? tracks.clientWidth / viewport.width : 1;
+      if (rect.right > viewport.right)
+        tracks.scrollLeft += (rect.right - viewport.right) * cssScale;
+      else if (rect.left < viewport.left)
+        tracks.scrollLeft += (rect.left - viewport.left) * cssScale;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchFeedId, availableWidth, narrowScreen, editorEmbeddedOpen]);
+  const trackWidth = feedTracksRef.current?.clientWidth || availableWidth;
   const feedScrollAnchorsRef = useRef(new Map<string, AnchorSnapshot>());
   const handleScrollAnchorSnapshotChange = useCallback(
     (feedId: string, snapshot: AnchorSnapshot | null) => {
@@ -309,7 +333,7 @@ export function RerDutyNeoWorkspace({
         <DutyNeoInitialLoadingSkeleton feedCount={messageFeeds.length} narrow={activeFeedOnly} />
       ) : (
         <Box
-          ref={editorEmbeddedOpen ? workspaceRef : undefined}
+          ref={editorEmbeddedOpen || searchFeedId ? workspaceRef : undefined}
           data-duty-workspace-main
           className="h-full min-h-0 w-full overflow-hidden flex gap-2"
           sx={{
@@ -442,6 +466,7 @@ export function RerDutyNeoWorkspace({
                 activeOnlyColumn && activeOnlyFeed ? (
                   <Box
                     key={activeOnlyFeed.id}
+                    ref={feedTracksRef}
                     data-duty-feed-column-active="true"
                     sx={{
                       position: 'absolute',
@@ -449,27 +474,50 @@ export function RerDutyNeoWorkspace({
                       display: 'flex',
                       minHeight: 0,
                       minWidth: 0,
+                      overflowX: 'auto',
                     }}
                   >
                     <FeedColumn
                       ref={(el) => {
                         columnRefsRef.current[activeOnlyFeed.id] = el;
                       }}
-                      column={activeOnlyColumn}
+                      column={{
+                        ...activeOnlyColumn,
+                        view: {
+                          ...activeOnlyColumn.view,
+                          searchBaseWidth: trackWidth ?? undefined,
+                          maxWidth:
+                            searchFeedId === activeOnlyFeed.id
+                              ? 'none'
+                              : activeOnlyColumn.view.maxWidth,
+                        },
+                      }}
                     />
                   </Box>
                 ) : null
               ) : (
                 <Box
-                  className="h-full min-h-0 w-full overflow-hidden"
+                  ref={feedTracksRef}
+                  data-duty-feed-tracks
+                  className="h-full min-h-0 w-full overflow-x-auto overflow-y-hidden"
                   sx={{
-                    display: messageFeeds.length <= 1 ? 'flex' : 'grid',
+                    display: 'grid',
                     alignItems: 'start',
                     justifyContent: messageFeeds.length <= 1 ? 'center' : 'stretch',
+                    justifyItems: messageFeeds.length <= 1 ? 'center' : 'stretch',
                     gap: messageFeeds.length <= 1 ? 1 : 2,
                     gridTemplateColumns:
-                      messageFeeds.length <= 1
-                        ? undefined
+                      (trackWidth ?? 0) > 0
+                        ? messageFeeds
+                            .map((feed) => {
+                              const base =
+                                messageFeeds.length === 1
+                                  ? Math.min(trackWidth ?? 0, DUTY_SINGLE_FEED_MAX_WIDTH_PX)
+                                  : ((trackWidth ?? 0) - (messageFeeds.length - 1) * 16) /
+                                    messageFeeds.length;
+                              return `${base + (feed.id === searchFeedId ? DUTY_SEARCH_PANEL_WIDTH_PX : 0)}px`;
+                            })
+                            .join(' ')
                         : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
                   }}
                 >
@@ -477,6 +525,7 @@ export function RerDutyNeoWorkspace({
                     const column = buildFeedColumnModel(feed);
                     const columnView: FeedColumnModel['view'] = {
                       ...column.view,
+                      maxWidth: feed.id === searchFeedId ? '100%' : column.view.maxWidth,
                       scrollTrackingEnabled: true,
                       workspaceFabAvoidance: 'none',
                       initialScrollAnchorSnapshot:

@@ -76,7 +76,7 @@ export function GroupPanel({
       <aside
         ref={panelRef}
         id={id}
-        className="group-navigation-panel"
+        className="group-navigation-panel echo-selectable-list-panel"
         data-group-panel
         data-variant="overlay"
         role="dialog"

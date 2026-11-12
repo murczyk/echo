@@ -18,6 +18,8 @@ import {
   resumeDutyNotificationAudioFromUserGesture,
   setStoredDutyNotificationSettingsForFeed,
 } from './notifications';
+import { DutySearchPanel } from './DutySearchPanel';
+import { DUTY_SEARCH_PANEL_WIDTH_PX } from './duty-layout';
 import { FeedColumnHeader } from './FeedColumnHeader';
 import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
@@ -203,12 +205,22 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     });
   }, [closeOtherPanels]);
   const onToggleGroups = useCallback(() => {
-    setShowGroups((open) => {
-      const next = !open;
-      if (next) closeOtherPanels('groups');
-      return next;
-    });
-  }, [closeOtherPanels]);
+    const next = !showGroups;
+    if (next) {
+      closeOtherPanels('groups');
+      if (column.search?.open) column.search.onClose({ restoreFocus: false });
+    }
+    setShowGroups(next);
+  }, [closeOtherPanels, column.search, showGroups]);
+  const onToggleSearch = useCallback(() => {
+    if (!column.search) return;
+    if (column.search.open) {
+      column.search.onClose();
+    } else {
+      setShowGroups(false);
+      column.search.onOpen();
+    }
+  }, [column.search]);
   const handleCloseAction = useCallback(() => {
     if (showFilters || showNotificationPanel || showKeywordsPanel || showGroups) {
       closeOpenPanels();
@@ -324,6 +336,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [groupNavigation],
   );
 
+  const searchOpen = column.search?.open === true;
   return (
     <Box
       ref={columnRef}
@@ -331,10 +344,13 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       data-duty-feed-id={feed.id}
       className={[
         'flex flex-col min-w-0 gap-0 min-h-0 h-full',
-        narrowScreen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
+        narrowScreen && !searchOpen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
       ].join(' ')}
       sx={{
-        width: '100%',
+        width:
+          searchOpen && view.searchBaseWidth
+            ? view.searchBaseWidth + DUTY_SEARCH_PANEL_WIDTH_PX
+            : '100%',
         maxWidth: maxWidth ?? '100%',
         position: 'relative',
         scrollSnapAlign: narrowScreen ? 'start' : undefined,
@@ -352,6 +368,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       }}
     >
       <FeedColumnHeader
+        search={column.search}
         narrowScreen={narrowScreen}
         feedCount={feedCount}
         canRemove={canRemove}
@@ -362,6 +379,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         dutyNotificationBellState={dutyNotificationBellState}
         onCreateFeed={onCreateFeed}
         onToggleGroups={onToggleGroups}
+        onToggleSearch={onToggleSearch}
         onToggleFilters={onToggleFilters}
         onToggleNotificationPanel={onToggleNotificationPanel}
         onToggleKeywordsPanel={onToggleKeywordsPanel}
@@ -382,53 +400,76 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNotificationStorageErrorChange={setNotificationStorageError}
         onNotificationStatusChanged={refreshNotificationStatus}
       />
-      {groupNavigation.showSelectedGroups ? (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 40,
-            left: '50%',
-            zIndex: 1,
-            maxWidth: 'calc(100% - 24px)',
-            transform: 'translateX(-50%)',
+      <div className="flex min-h-0 min-w-0 flex-1">
+        {searchOpen && column.search ? (
+          <div
+            className="flex h-full min-h-0 shrink-0"
+            style={{ width: DUTY_SEARCH_PANEL_WIDTH_PX }}
+          >
+            <DutySearchPanel
+              search={column.search}
+              groupInfos={column.messageCard.groupInfos}
+              profiles={column.messageCard.profiles}
+            />
+          </div>
+        ) : null}
+        <div
+          data-duty-feed-main
+          className="relative flex h-full min-h-0 min-w-0 flex-col"
+          style={{
+            flex: '1 1 0',
+            width: searchOpen ? `calc(100% - ${DUTY_SEARCH_PANEL_WIDTH_PX}px)` : '100%',
           }}
         >
-          <GroupIsland group={islandGroup} />
-        </Box>
-      ) : null}
-      <Box
-        data-duty-feed-body
-        className="flex flex-col flex-1 min-h-0"
-        sx={{ position: 'relative' }}
-      >
-        <FeedColumnContent ref={contentRef} column={column} />
-        <GroupPanel
-          id={`duty-group-panel-${feed.id}`}
-          open={showGroups}
-          groups={dutyGroups}
-          scope={groupNavigation.scope}
-          onSelect={handleGroupSelect}
-          onClose={() => setShowGroups(false)}
-          triggerRef={groupsTriggerRef}
-          loading={filterPanel.toggles.groupCatalogLoading}
-          error={filterPanel.toggles.groupCatalogError?.message}
-          onRetry={filterPanel.actions.onReloadGroupCatalog}
-        />
-      </Box>
-      {actions.onCreateMessage && !panelOpen ? (
-        <Box
-          data-duty-column-create-message
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 4,
-            pointerEvents: 'none',
-            '& .MuiFab-root': { pointerEvents: 'auto' },
-          }}
-        >
-          <CreateMessageFab onClick={actions.onCreateMessage} />
-        </Box>
-      ) : null}
+          {groupNavigation.showSelectedGroups ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 8,
+                left: '50%',
+                zIndex: 1,
+                maxWidth: 'calc(100% - 24px)',
+                transform: 'translateX(-50%)',
+              }}
+            >
+              <GroupIsland group={islandGroup} />
+            </Box>
+          ) : null}
+          <Box
+            data-duty-feed-body
+            className="flex flex-col flex-1 min-h-0"
+            sx={{ position: 'relative' }}
+          >
+            <FeedColumnContent ref={contentRef} column={column} />
+            <GroupPanel
+              id={`duty-group-panel-${feed.id}`}
+              open={showGroups}
+              groups={dutyGroups}
+              scope={groupNavigation.scope}
+              onSelect={handleGroupSelect}
+              onClose={() => setShowGroups(false)}
+              triggerRef={groupsTriggerRef}
+              loading={filterPanel.toggles.groupCatalogLoading}
+              error={filterPanel.toggles.groupCatalogError?.message}
+              onRetry={filterPanel.actions.onReloadGroupCatalog}
+            />
+          </Box>
+          {actions.onCreateMessage && !panelOpen ? (
+            <Box
+              data-duty-column-create-message
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 4,
+                pointerEvents: 'none',
+                '& .MuiFab-root': { pointerEvents: 'auto' },
+              }}
+            >
+              <CreateMessageFab onClick={actions.onCreateMessage} />
+            </Box>
+          ) : null}
+        </div>
+      </div>
       {removeConfirmationOpen ? (
         <ConfirmDangerDialog
           open

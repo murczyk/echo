@@ -1,4 +1,8 @@
 import { Badge, Box, Button, IconButton, Tooltip } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import { PowerIconButton } from '../../components/PowerIconButton';
+import { DUTY_SEARCH_BLOCKED_TEXT } from './useDutySearch';
+import type { DutySearchColumn } from './useDutySearch';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -28,6 +32,7 @@ export const DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS = 4;
 export const DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS = 4;
 
 type FeedColumnHeaderProps = {
+  search?: DutySearchColumn;
   narrowScreen: boolean;
   feedCount: number;
   canRemove: boolean;
@@ -38,6 +43,7 @@ type FeedColumnHeaderProps = {
   dutyNotificationBellState: DutyNotificationBellState;
   onCreateFeed?: () => void;
   onToggleGroups: () => void;
+  onToggleSearch: () => void;
   onToggleFilters: () => void;
   onToggleNotificationPanel: () => void;
   onToggleKeywordsPanel: () => void;
@@ -193,6 +199,7 @@ function HeaderPanelToggle({
 }
 
 export function FeedColumnHeader({
+  search,
   narrowScreen,
   feedCount,
   canRemove,
@@ -203,6 +210,7 @@ export function FeedColumnHeader({
   dutyNotificationBellState,
   onCreateFeed,
   onToggleGroups,
+  onToggleSearch,
   onToggleFilters,
   onToggleNotificationPanel,
   onToggleKeywordsPanel,
@@ -305,6 +313,36 @@ export function FeedColumnHeader({
             alignItems: 'stretch',
           }}
         >
+          {search ? (
+            <div className="flex min-w-0 flex-1 items-stretch border-r border-solid border-echo-divider">
+              <Tooltip
+                title={
+                  search.blocked ? DUTY_SEARCH_BLOCKED_TEXT : search.open ? '' : 'Пошук у стрічці'
+                }
+              >
+                <span className="flex w-full items-stretch">
+                  <PowerIconButton
+                    className="duty-header-panel-toggle"
+                    id={`duty-search-trigger-${feedId}`}
+                    aria-label="Пошук у стрічці"
+                    aria-expanded={search.open}
+                    disabled={search.blocked}
+                    size="small"
+                    onClick={onToggleSearch}
+                    sx={{
+                      ...headerIconButtonSx,
+                      ...(narrowScreen ? { height: 36, maxHeight: 36 } : {}),
+                      width: '100%',
+                      maxWidth: '100%',
+                      color: search.open ? 'primary.light' : 'text.primary',
+                    }}
+                  >
+                    <SearchIcon fontSize="small" />
+                  </PowerIconButton>
+                </span>
+              </Tooltip>
+            </div>
+          ) : null}
           <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
             <HeaderPanelToggle
               mobile={narrowScreen}

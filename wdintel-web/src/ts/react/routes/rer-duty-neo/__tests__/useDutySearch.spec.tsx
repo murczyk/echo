@@ -1,0 +1,410 @@
+/** @vitest-environment happy-dom */
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InboxMessagesReq } from '../../../../../Bindings';
+import { useDutySearch } from '../useDutySearch';
+import { buildInboxReq, emptyFilter, type MessageFeedState, type MessageItem } from '../utils';
+import { minimalInboxMessage } from '../inbox-message-mocks';
+
+const api = vi.hoisted(() => ({
+  list: vi.fn(),
+  count: vi.fn(),
+  matching: vi.fn(),
+}));
+vi.mock('../../../services/api/inbox-messages', () => ({
+  fetchInboxMessages: api.list,
+  fetchInboxCount: api.count,
+}));
+vi.mock('../../../services/api/analysis', () => ({
+  fetchMessagesByIdsMatchingFilters: api.matching,
+}));
+
+type Dependencies = Parameters<typeof useDutySearch>[0];
+type Search = ReturnType<typeof useDutySearch>;
+let search: Search;
+function Harness({ dependencies }: { dependencies: Dependencies }) {
+  search = useDutySearch(dependencies);
+  return null;
+}
+
+function item(id: number, text = `needle ${id}`): MessageItem {
+  return [id, minimalInboxMessage({ text, createdAt: id * 1000, createdAtOrder: id * 1000000 })];
+}
+function response(items: MessageItem[]) {
+  return {
+    inboxItems: items,
+    pageLimit: 2,
+    callsigns: [],
+    signalProfiles: {},
+    signalGroups: [],
+    freqPelengsSummary: null,
+  };
+}
+
+describe('#3571 independent Duty search concurrency and membership', () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  let dependencies: Dependencies;
+  let messages: MessageItem[];
+  const column = () => search.columnFor(dependencies.messageFeeds[0])!;
+  const render = async () =>
+    act(async () => {
+      root.render(<Harness dependencies={dependencies} />);
+    });
+  const tick = async () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+  const open = async (query = 'needle') => {
+    await act(async () => {
+      column().onOpen();
+    });
+    await act(async () => {
+      column().onChange({ search: query });
+    });
+    await tick();
+  };
+  const refresh = async () =>
+    act(async () => {
+      window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [5] } }));
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    const feed = { id: 'a', filter: emptyFilter(), historySinceMs: 100000 } as MessageFeedState;
+    dependencies = {
+      messageFeeds: [feed],
+      enabled: true,
+      pollIntervalMs: 2000,
+      buildReqForFeed: (feed, opts) =>
+        buildInboxReq({ filter: feed.filter, sinceDateInclusiveMs: feed.historySinceMs, ...opts }),
+      navigate: vi.fn(),
+      cancelNavigation: vi.fn(),
+      onError: vi.fn(),
+    };
+    messages = [item(1), item(2), item(3), item(4), item(5)];
+    const matches = (req: InboxMessagesReq) =>
+      messages.filter(([, message]) => message.text?.includes(req.search ?? ''));
+    api.list.mockImplementation(async (req: InboxMessagesReq) =>
+      response(
+        matches(req)
+          .filter(
+            ([id]) =>
+              (!req.beforeIdNoninclusive || id < req.beforeIdNoninclusive) &&
+              (!req.sinceIdNoninclusive || id > req.sinceIdNoninclusive),
+          )
+          .slice()
+          .reverse()
+          .slice(0, 2),
+      ),
+    );
+    api.count.mockImplementation(async (req) => ({
+      quantity: matches(req).length,
+      firstElementTs: null,
+    }));
+    api.matching.mockImplementation(async (ids: number[], req) =>
+      matches(req).filter(([id]) => ids.includes(id)),
+    );
+    await render();
+  });
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('keeps total and older cursor independent of loaded length and adaptive feed history', async () => {
+    await open();
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    expect(column().state.total).toBe(5);
+    expect(api.list.mock.calls[0][0]).toMatchObject({
+      sinceDateInclusiveMs: null,
+      sortBy: 'IMSCreatedAt',
+    });
+    expect(api.count.mock.calls[0][0].tillDateInclusiveMs).toBeTypeOf('number');
+    await act(async () => {
+      column().onLoadOlder();
+    });
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 3, 2]);
+    expect(column().state.total).toBe(5);
+    expect(column().state.hasMore).toBe(true);
+    await act(async () => {
+      column().onLoadOlder();
+    });
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 3, 2, 1]);
+    expect(column().state.hasMore).toBe(false);
+    expect(dependencies.messageFeeds[0].filter.search).toBeFalsy();
+  });
+
+  it('#3571 refreshes on inbox changes rather than idle feed polling or browser focus', async () => {
+    await open();
+    const calls = api.list.mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new Event('echo-duty-poll'));
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(api.list).toHaveBeenCalledTimes(calls);
+    messages.push(item(6));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [6] } }));
+    });
+    expect(api.list.mock.calls.length).toBeGreaterThan(calls);
+    expect(column().state.items.map(([id]) => id)).toContain(6);
+  });
+
+  it('discards a late response after query replacement and cancels hidden requests', async () => {
+    let release!: (value: ReturnType<typeof response>) => void;
+    api.list.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    await open('old');
+    const oldSignal = api.list.mock.calls[0][1].signal;
+    await act(async () => {
+      column().onChange({ search: 'needle' });
+    });
+    expect(oldSignal.aborted).toBe(true);
+    await tick();
+    await act(async () => {
+      release(response([item(99, 'old')]));
+    });
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    await act(async () => {
+      column().onClose();
+    });
+    const calls = api.list.mock.calls.length;
+    await refresh();
+    await tick();
+    expect(api.list).toHaveBeenCalledTimes(calls);
+    await act(async () => {
+      column().onOpen();
+    });
+    expect(column().state.search).toBe('needle');
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    expect(dependencies.navigate).not.toHaveBeenCalled();
+  });
+
+  it('removes edited nonmatches and deletions using server membership, preserving selection only while valid', async () => {
+    await open();
+    await act(async () => {
+      column().onSelect(column().state.items[0]);
+    });
+    messages = [item(1), item(2), item(3), item(5, 'edited away')];
+    await refresh();
+    expect(api.matching).toHaveBeenCalled();
+    expect(column().state.items.map(([id]) => id)).toEqual([3, 2]);
+    expect(column().state.selectedId).toBe(null);
+    expect(column().state.total).toBe(3);
+  });
+
+  it('bridges a burst larger than one page without moving historical rows until new results are requested', async () => {
+    await open();
+    await act(async () => {
+      column().onScroll(100, [{ id: 4, offset: 10 }]);
+    });
+    messages = Array.from({ length: 12 }, (_, index) => item(index + 1));
+    await refresh();
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    expect(column().state.pendingItems.map(([id]) => id)).toEqual([12, 11, 10, 9, 8, 7, 6]);
+    expect(column().state.total).toBe(12);
+    expect(column().state.anchors).toEqual([{ id: 4, offset: 10 }]);
+    await act(async () => {
+      column().onShowNew();
+      column().onLoadOlder();
+    });
+    expect(column().state.items.map(([id]) => id)).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
+    expect(new Set(column().state.items.map(([id]) => id)).size).toBe(11);
+  });
+
+  it('discovers an edited new match inside loaded history without skipping it at the next older cursor', async () => {
+    messages = [item(1), item(2), item(3, 'other text'), item(4), item(5)];
+    await open();
+    await act(async () => {
+      column().onLoadOlder();
+    });
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 2, 1]);
+    await act(async () => {
+      column().onScroll(100, [{ id: 2, offset: 0 }]);
+    });
+    messages = [item(1), item(2), item(3), item(4), item(5)];
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [3] } }));
+    });
+    expect(column().state.pendingItems.map(([id]) => id)).toEqual([3]);
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 2, 1]);
+    expect(column().state.total).toBe(5);
+    await act(async () => {
+      column().onShowNew();
+    });
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 3, 2, 1]);
+  });
+
+  it('invalidates another filter scope and closes on an applied keyword without background requests', async () => {
+    await open();
+    dependencies = {
+      ...dependencies,
+      messageFeeds: [
+        { ...dependencies.messageFeeds[0], filter: { ...emptyFilter(), groupsSelected: ['b'] } },
+      ],
+    };
+    await render();
+    expect(column().state.items).toEqual([]);
+    expect(column().state.search).toBe('needle');
+    await tick();
+    dependencies = {
+      ...dependencies,
+      messageFeeds: [
+        { ...dependencies.messageFeeds[0], filter: { ...emptyFilter(), search: 'keyword' } },
+      ],
+    };
+    await render();
+    expect(column().open).toBe(false);
+    expect(column().blocked).toBe(true);
+    const calls = api.list.mock.calls.length;
+    await refresh();
+    await act(async () => {
+      column().onOpen();
+    });
+    await tick();
+    expect(api.list).toHaveBeenCalledTimes(calls);
+    dependencies = {
+      ...dependencies,
+      messageFeeds: [{ ...dependencies.messageFeeds[0], filter: emptyFilter() }],
+    };
+    await render();
+    expect(column().open).toBe(false);
+    expect(column().blocked).toBe(false);
+  });
+
+  it('retains cached rows on refresh failure and retries failed older paging at the same cursor', async () => {
+    await open();
+    api.list.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => {
+      column().onLoadOlder();
+    });
+    expect(column().state.error).toBeTruthy();
+    expect(dependencies.onError).toHaveBeenCalledWith(
+      expect.stringContaining('Показано попередні результати'),
+      expect.any(Function),
+    );
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    await act(async () => {
+      vi.mocked(dependencies.onError).mock.calls.at(-1)![1]();
+    });
+    expect(api.list.mock.calls.at(-1)![0].beforeIdNoninclusive).toBe(4);
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 3, 2]);
+    expect(column().state.error).toBe(null);
+  });
+
+  it('#3571 retries the current failed search from an earlier snackbar for the same query', async () => {
+    await open();
+    api.list.mockRejectedValueOnce(new Error('offline'));
+    await refresh();
+    const retry = vi.mocked(dependencies.onError).mock.calls.at(-1)![1];
+    api.list.mockRejectedValueOnce(new Error('offline again'));
+    await refresh();
+    const requests = api.list.mock.calls.length;
+    await act(async () => retry());
+    expect(api.list.mock.calls.length).toBeGreaterThan(requests);
+    expect(column().state.error).toBe(null);
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    await act(async () => column().onChange({ search: 'replacement' }));
+    api.list.mockRejectedValueOnce(new Error('replacement failed'));
+    await tick();
+    const replacementRequests = api.list.mock.calls.length;
+    await act(async () => retry());
+    expect(api.list).toHaveBeenCalledTimes(replacementRequests);
+    expect(column().state.error).toBeTruthy();
+  });
+
+  it.each(['reopen', 'inbox change'] as const)(
+    '#3571 discovers historical edits on %s',
+    async (mode) => {
+      messages = Array.from({ length: 50 }, (_, index) =>
+        item(550 + index, 550 + index === 570 ? 'other text' : `needle ${550 + index}`),
+      );
+      api.list.mockImplementation(async (req: InboxMessagesReq) => ({
+        ...response(
+          messages
+            .filter(
+              ([id, message]) =>
+                message.text?.includes(req.search ?? '') &&
+                (!req.beforeIdNoninclusive || id < req.beforeIdNoninclusive) &&
+                (!req.sinceIdNoninclusive || id > req.sinceIdNoninclusive),
+            )
+            .slice()
+            .reverse()
+            .slice(0, 20),
+        ),
+        pageLimit: 20,
+      }));
+      await open();
+      await act(async () => column().onLoadOlder());
+      const cachedIds = column().state.items.map(([id]) => id);
+      expect(cachedIds).toHaveLength(40);
+      expect(cachedIds.at(-1)).toBe(559);
+      expect(cachedIds).not.toContain(570);
+      await act(async () => {
+        column().onSelect(column().state.items.find(([id]) => id === 575)!);
+        column().onScroll(400, [{ id: 575, offset: -10 }]);
+      });
+      if (mode === 'reopen') await act(async () => column().onClose());
+      messages = messages.map(([id, message]) => (id === 570 ? item(id) : [id, message]));
+      if (mode === 'reopen') {
+        const calls = [
+          api.list.mock.calls.length,
+          api.count.mock.calls.length,
+          api.matching.mock.calls.length,
+        ];
+        await refresh();
+        await tick();
+        expect([
+          api.list.mock.calls.length,
+          api.count.mock.calls.length,
+          api.matching.mock.calls.length,
+        ]).toEqual(calls);
+        await act(async () => column().onOpen());
+        await tick();
+      } else await refresh();
+      expect(column().state.total).toBe(50);
+      expect(column().state.pendingItems.map(([id]) => id)).toEqual([570]);
+      expect(column().state.items.map(([id]) => id)).toEqual(cachedIds);
+      expect(column().state.selectedId).toBe(575);
+      expect(column().state.anchors).toEqual([{ id: 575, offset: -10 }]);
+      expect(dependencies.navigate).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        column().onShowNew();
+        column().onLoadOlder();
+      });
+      expect(column().state.items.map(([id]) => id)).toEqual(
+        Array.from({ length: 50 }, (_, index) => 599 - index),
+      );
+      expect(column().state.hasMore).toBe(false);
+    },
+  );
+
+  it('#3571 keeps an initial historical change event from skipping unloaded result pages', async () => {
+    await act(async () => column().onOpen());
+    await act(async () => column().onChange({ search: 'needle' }));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [1] } }));
+    });
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    expect(column().state.total).toBe(5);
+    expect(column().state.hasMore).toBe(true);
+    await act(async () => column().onLoadOlder());
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 3, 2]);
+    await act(async () => column().onLoadOlder());
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 3, 2, 1]);
+    expect(column().state.hasMore).toBe(false);
+  });
+});

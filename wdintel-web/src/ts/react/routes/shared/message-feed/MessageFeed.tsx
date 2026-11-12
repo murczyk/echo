@@ -276,6 +276,7 @@ function MessageFeedInner<T>(
     shown.showLoadingSkeleton && shown.isLoading && visibleItems.length > 0;
   const showAboveSkeleton = visibleItems.length > 0 && shown.hasMoreAbove;
   const showBelowSkeleton = visibleItems.length > 0 && shown.hasMoreBelow;
+  const RefreshContainer = listTag === 'ul' ? 'li' : 'div';
   return (
     <MessageFeedItemRegistration setItemRef={scroll.setItemRef}>
       <MessageFeedViewport
@@ -310,18 +311,14 @@ function MessageFeedInner<T>(
             scrollerProps?.onScroll?.(event);
           },
         }}
-        beforeList={
-          <>
-            {beforeList}
-            {showRefreshSkeleton ? (
-              <div className="message-feed-refresh-overlay">
-                <MessageFeedSkeletons count={skeletonCount} position="refresh" />
-              </div>
-            ) : null}
-          </>
-        }
+        beforeList={beforeList}
         beforeMessages={
           <>
+            {showRefreshSkeleton ? (
+              <RefreshContainer className="message-feed-refresh-overlay">
+                <MessageFeedSkeletons count={skeletonCount} position="refresh" />
+              </RefreshContainer>
+            ) : null}
             {showAboveSkeleton ? (
               <MessageFeedSkeletons
                 listTag={listTag}

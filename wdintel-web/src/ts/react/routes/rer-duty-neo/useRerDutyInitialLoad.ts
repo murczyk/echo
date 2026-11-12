@@ -195,14 +195,13 @@ export function useRerDutyInitialLoad(params: Params) {
         overrides?.beforeIdNoninclusive ?? initialTarget?.beforeIdNoninclusive ?? null;
       const effectiveLoadLatest =
         overrides?.loadLatest ?? (effectiveBeforeId != null ? false : true);
-      const effectiveFeed = overrides
-        ? {
-            ...feed,
-            ...(overrides.highlightSignalsEnabled === undefined
-              ? {}
-              : { highlightSignalsEnabled: overrides.highlightSignalsEnabled }),
-          }
-        : feed;
+      const effectiveFeed = {
+        ...feed,
+        ...(initialTarget ? { historySinceMs: null, historyPeriodMs: null } : {}),
+        ...(overrides?.highlightSignalsEnabled === undefined
+          ? {}
+          : { highlightSignalsEnabled: overrides.highlightSignalsEnabled }),
+      };
       current.setMessageFeeds((previous) =>
         previous.map((candidate) =>
           candidate.id === feedId
