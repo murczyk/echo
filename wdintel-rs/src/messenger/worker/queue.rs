@@ -140,6 +140,7 @@ async fn process_queue_inner_iteration(
                 signal_message_queue_attachment::Column::MessageId
                     .eq_any(signal_message_queue_ids),
             )
+            .order_by_asc(signal_message_queue_attachment::Column::Id)
             .all(dbx)
             .await
             .c(h!())?

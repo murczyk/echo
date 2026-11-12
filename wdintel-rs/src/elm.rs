@@ -671,6 +671,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::direct_submit::types::DirectSubmitAttachmentUpdates,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentRename,
+            crate::sigint::direct_submit::types::DirectSubmitAttachmentOrder,
             crate::sigint::direct_submit::types::DirectSubmitParsePayload,
             crate::sigint::direct_submit::types::DirectSubmitParseRsp,
             crate::sigint::device_name::types::DeviceNameResolveReq,
@@ -1705,6 +1706,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::direct_submit::types::DirectSubmitAttachmentUpdates,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentRename,
+            crate::sigint::direct_submit::types::DirectSubmitAttachmentOrder,
             crate::sigint::direct_submit::types::DirectSubmitParsePayload,
             crate::sigint::direct_submit::types::DirectSubmitParseRsp,
             crate::sigint::device_name::types::DeviceNameResolveReq,
@@ -2388,6 +2390,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             r#"Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "order_f64" (Json.Decode.nullable (Json.Decode.float))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "order_f64" (Json.Decode.nullable (Json.Decode.float)), Json.Decode.succeed Nothing ]"#,
         )
         .replace(
             r#"Json.Decode.field "unit_display" (Json.Decode.nullable (Json.Decode.string))"#,

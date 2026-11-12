@@ -138,6 +138,7 @@ export function makeMessageSchema(
       ),
       deleted_media_ids: z.array(z.string()).optional(),
       attachment_file_names: z.record(z.string()).optional(),
+      attachment_orders: z.record(z.number().finite()).optional(),
     })
     .superRefine((data, ctx) => {
       if (
@@ -183,4 +184,5 @@ export const EMPTY_FORM_VALUES: MessageFormData = {
   dmr: [],
   deleted_media_ids: [],
   attachment_file_names: {},
+  attachment_orders: {},
 };

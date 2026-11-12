@@ -1388,3 +1388,55 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(page.locator('#analysis-groups-title')).toBeVisible();
   });
 });
+
+for (const legacy of [false, true]) {
+  test(`#3931 @regression message attachment reordering legacy=${legacy}`, async ({ page }) => {
+    const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
+      messageText: 'Attachment order #3931',
+    });
+    const message = inboxResponse.inbox_items[0]![1] as Record<string, unknown>;
+    message.media = [1, 2, 3].map((position) => ({
+      id: `attachment-${position}`,
+      order_f64: legacy ? null : position,
+      file_name: `${position}.png`,
+      content_type: 'image/png',
+      size_bytes: 10,
+      href: `/test-assets/message-card-media-preview/e2e-image-${position === 3 ? 1 : position}.png`,
+    }));
+    message.images = [];
+    await installMessageCardMediaPreviewAssetRoutes(page);
+    await installAnalysisNeoApiMocks(page, { inboxResponse, signalGroups: ['e2e-group'] });
+    const submissions: Array<Record<string, unknown>> = [];
+    await page.route('**/api/1.1/message/*/edit', async (route) => {
+      submissions.push(route.request().postDataJSON());
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ signal_message_id: 101 }),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+    await expect(page.getByText('Attachment order #3931', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Більше дій', exact: true }).first().click();
+    await page.getByRole('menuitem', { name: 'Редагувати', exact: true }).first().click();
+    const editor = page.locator('[data-manage-message-presentation]');
+    const move = editor.getByRole('button', { name: 'Перемістити 3.png вище', exact: true });
+    await move.focus();
+    await move.press('Enter');
+    await expect(editor.getByRole('button', { name: /^Більше дій для/ })).toHaveCount(3);
+    expect(
+      await editor
+        .getByRole('button', { name: /^Більше дій для/ })
+        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+    ).toEqual(['Більше дій для 1.png', 'Більше дій для 3.png', 'Більше дій для 2.png']);
+    await editor.getByRole('button', { name: 'Зберегти', exact: true }).click();
+    await expect.poll(() => submissions.length).toBe(1);
+    const orders = legacy
+      ? [
+          { media_id: 'attachment-1', upload_url: null, order_f64: 1 },
+          { media_id: 'attachment-2', upload_url: null, order_f64: 2 },
+          { media_id: 'attachment-3', upload_url: null, order_f64: 1.5 },
+        ]
+      : [{ media_id: 'attachment-3', upload_url: null, order_f64: 1.5 }];
+    expect(submissions[0]!.attachment_updates).toEqual({ replacements: [], renames: [], orders });
+  });
+}

@@ -34,6 +34,7 @@ fn config(directory: &Path) -> Config {
 
 fn media(key: &str, size: i64) -> signal_message_media::Model {
     signal_message_media::Model {
+        order_f64: None,
         id: Uuid::now_v7(),
         signal_message_id: 0,
         signal_message_uuid: None,

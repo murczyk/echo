@@ -98,6 +98,7 @@ export type InboxMessageMetadataRaw = Partial<InboxMessageMetadata> & {
 
 export type MessageMediaInfoRaw = Partial<MessageMediaInfo> & {
   content_type?: string;
+  order_f64?: MessageMediaInfo['orderF64'];
   file_name?: string | null;
   size_bytes?: number;
   kmz_conversion_status?: string | null;
@@ -108,6 +109,7 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
   const raw = m as Record<string, unknown>;
   return {
     id: String(m.id ?? raw.id ?? ''),
+    orderF64: m.orderF64 ?? m.order_f64 ?? null,
     contentType: String(m.contentType ?? raw.content_type ?? ''),
     fileName: (m.fileName ?? raw.file_name ?? null) as string | null,
     sizeBytes: Number(m.sizeBytes ?? raw.size_bytes ?? 0),

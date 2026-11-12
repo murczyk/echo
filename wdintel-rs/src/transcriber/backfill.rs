@@ -419,6 +419,7 @@ mod tests {
         let mut rows = Vec::new();
         let exact_id = Uuid::now_v7();
         rows.push(signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(exact_id),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -432,6 +433,7 @@ mod tests {
         });
         for _ in 0..ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE {
             rows.push(signal_message_media::ActiveModel {
+                order_f64: Set(None),
                 id: Set(Uuid::now_v7()),
                 signal_message_id: Set(message.id),
                 signal_message_uuid: Set(message.id_uuid),
@@ -445,6 +447,7 @@ mod tests {
             });
         }
         rows.push(signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -457,6 +460,7 @@ mod tests {
             created_at: Set(since),
         });
         rows.push(signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -469,6 +473,7 @@ mod tests {
             created_at: Set(since),
         });
         rows.push(signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),

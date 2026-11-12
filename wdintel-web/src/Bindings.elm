@@ -9516,6 +9516,7 @@ datasourceEncoder struct =
 
 type alias MessageMediaInfo =
     { id : String
+    , orderF64 : Maybe (Float)
     , contentType : String
     , fileName : Maybe (String)
     , sizeBytes : Int
@@ -9533,6 +9534,7 @@ messageMediaInfoEncoder : MessageMediaInfo -> Json.Encode.Value
 messageMediaInfoEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
+        , ( "order_f64", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.orderF64 )
         , ( "content_type", (Json.Encode.string) struct.contentType )
         , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
         , ( "size_bytes", (Json.Encode.int) struct.sizeBytes )
@@ -12006,6 +12008,7 @@ directSubmitPayloadEncoder struct =
 type alias DirectSubmitAttachmentUpdates =
     { replacements : List (DirectSubmitAttachmentReplacement)
     , renames : List (DirectSubmitAttachmentRename)
+    , orders : List (DirectSubmitAttachmentOrder)
     }
 
 
@@ -12014,6 +12017,7 @@ directSubmitAttachmentUpdatesEncoder struct =
     Json.Encode.object
         [ ( "replacements", (Json.Encode.list (directSubmitAttachmentReplacementEncoder)) struct.replacements )
         , ( "renames", (Json.Encode.list (directSubmitAttachmentRenameEncoder)) struct.renames )
+        , ( "orders", (Json.Encode.list (directSubmitAttachmentOrderEncoder)) struct.orders )
         ]
 
 
@@ -12042,6 +12046,22 @@ directSubmitAttachmentRenameEncoder struct =
     Json.Encode.object
         [ ( "media_id", (Json.Encode.string) struct.mediaId )
         , ( "file_name", (Json.Encode.string) struct.fileName )
+        ]
+
+
+type alias DirectSubmitAttachmentOrder =
+    { mediaId : Maybe (String)
+    , uploadUrl : Maybe (String)
+    , orderF64 : Float
+    }
+
+
+directSubmitAttachmentOrderEncoder : DirectSubmitAttachmentOrder -> Json.Encode.Value
+directSubmitAttachmentOrderEncoder struct =
+    Json.Encode.object
+        [ ( "media_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mediaId )
+        , ( "upload_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.uploadUrl )
+        , ( "order_f64", (Json.Encode.float) struct.orderF64 )
         ]
 
 
@@ -27342,6 +27362,7 @@ messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
 messageMediaInfoDecoder =
     Json.Decode.succeed MessageMediaInfo
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "order_f64" (Json.Decode.nullable (Json.Decode.float)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" (Json.Decode.int)))
@@ -29061,6 +29082,7 @@ directSubmitAttachmentUpdatesDecoder =
     Json.Decode.succeed DirectSubmitAttachmentUpdates
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "replacements" (Json.Decode.list (directSubmitAttachmentReplacementDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "renames" (Json.Decode.list (directSubmitAttachmentRenameDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orders" (Json.Decode.list (directSubmitAttachmentOrderDecoder))))
 
 
 directSubmitAttachmentReplacementDecoder : Json.Decode.Decoder DirectSubmitAttachmentReplacement
@@ -29075,6 +29097,14 @@ directSubmitAttachmentRenameDecoder =
     Json.Decode.succeed DirectSubmitAttachmentRename
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.string)))
+
+
+directSubmitAttachmentOrderDecoder : Json.Decode.Decoder DirectSubmitAttachmentOrder
+directSubmitAttachmentOrderDecoder =
+    Json.Decode.succeed DirectSubmitAttachmentOrder
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upload_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "order_f64" (Json.Decode.float)))
 
 
 directSubmitParsePayloadDecoder : Json.Decode.Decoder DirectSubmitParsePayload
