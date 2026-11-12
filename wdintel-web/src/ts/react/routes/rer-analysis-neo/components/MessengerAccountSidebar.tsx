@@ -8,7 +8,8 @@ import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { Collapse, IconButton, Switch, Tooltip } from '@mui/material';
-import { useState, type ElementType, type ReactNode } from 'react';
+import { Fragment, useState, type ElementType, type ReactNode } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 
 import { SidePanelToggleButton } from '../../../components/SidePanelToggleButton';
 import { useLocalStorage } from '../../../hooks/use-local-storage';
@@ -95,16 +96,65 @@ function useAccountSidebarOpen(): [boolean, (open: boolean) => void] {
   return [open, update];
 }
 
+// The chats of one kind, in the scroll area of the sidebar (`scroller`). A long list is virtualized (only the rows near the
+// view are in the DOM), which keeps a sidebar with thousands of chats smooth; `container` is the box of the rows and
+// `gap` the space under a row (a virtual list has no `gap`, the rows carry it). The rows of a short list stay plain DOM.
+// shortcut: a virtual list has no ul/li semantics, and the 90 is a guess: lower it if a short list scrolls badly.
+const VIRTUALIZE_FROM = 90;
+function ChatRows({
+  chats,
+  scroller,
+  container,
+  gap,
+  semantic = false,
+  render,
+}: {
+  chats: MessengerChat[];
+  scroller: HTMLElement | null;
+  container: string;
+  gap: { plain: string; row: string };
+  semantic?: boolean;
+  render: (chat: MessengerChat) => ReactNode;
+}) {
+  if (scroller != null && chats.length >= VIRTUALIZE_FROM) {
+    return (
+      <div className={container} data-messenger-virtual-list>
+        <Virtuoso
+          customScrollParent={scroller}
+          data={chats}
+          computeItemKey={(_, chat) => chat.id}
+          increaseViewportBy={400}
+          itemContent={(_, chat) => <div className={gap.row}>{render(chat)}</div>}
+        />
+      </div>
+    );
+  }
+  const Box = semantic ? 'ul' : 'div';
+  return (
+    <Box className={`${container} flex flex-col ${gap.plain}`}>
+      {chats.map((chat) =>
+        semantic ? (
+          <li key={chat.id}>{render(chat)}</li>
+        ) : (
+          <Fragment key={chat.id}>{render(chat)}</Fragment>
+        ),
+      )}
+    </Box>
+  );
+}
+
 function ChatSection({
   title,
   Icon,
   chats,
+  scroller,
   selectedChatId,
   onSelectChat,
 }: {
   title: string;
   Icon: ElementType;
   chats: MessengerChat[];
+  scroller: HTMLElement | null;
   selectedChatId: string | null;
   onSelectChat: (chatId: string) => void;
 }) {
@@ -133,34 +183,37 @@ function ChatSection({
         {chats.length === 0 ? (
           <p className="px-4 pt-1 pb-3 text-xs opacity-60">Немає чатів</p>
         ) : (
-          <ul className="m-0 flex list-none flex-col gap-1 px-2 pt-0 pb-2">
-            {chats.map((chat) => (
-              <li key={chat.id}>
-                <button
-                  type="button"
-                  className="group-navigation-list-item !px-2"
-                  data-messenger-chat
-                  data-selected={chat.id === selectedChatId ? 'true' : 'false'}
-                  aria-current={chat.id === selectedChatId ? 'true' : undefined}
-                  onClick={() => onSelectChat(chat.id)}
-                >
-                  <MessengerAccountAvatar
-                    account={{ id: chat.id, name: chatLabel(chat), phone: '' }}
-                  />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="group-navigation-name" title={chatLabel(chat)}>
-                      {chatLabel(chat)}
-                    </span>
-                    {chat.lastMessageDate != null ? (
-                      <span className="group-navigation-name text-xs opacity-60">
-                        {formatChatDate(chat.lastMessageDate)}
-                      </span>
-                    ) : null}
+          <ChatRows
+            chats={chats}
+            scroller={scroller}
+            semantic
+            container="m-0 list-none px-2 pt-0 pb-2"
+            gap={{ plain: 'gap-1', row: 'pb-1' }}
+            render={(chat) => (
+              <button
+                type="button"
+                className="group-navigation-list-item !px-2"
+                data-messenger-chat
+                data-selected={chat.id === selectedChatId ? 'true' : 'false'}
+                aria-current={chat.id === selectedChatId ? 'true' : undefined}
+                onClick={() => onSelectChat(chat.id)}
+              >
+                <MessengerAccountAvatar
+                  account={{ id: chat.id, name: chatLabel(chat), phone: '' }}
+                />
+                <span className="flex min-w-0 flex-col">
+                  <span className="group-navigation-name" title={chatLabel(chat)}>
+                    {chatLabel(chat)}
                   </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+                  {chat.lastMessageDate != null ? (
+                    <span className="group-navigation-name text-xs opacity-60">
+                      {formatChatDate(chat.lastMessageDate)}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            )}
+          />
         )}
       </Collapse>
     </section>
@@ -189,6 +242,7 @@ function ExpandedSidebar({
   hidden,
 }: SidebarProps & { className: string; hidden: boolean }) {
   const [query, setQuery] = useState('');
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const accountOpen = selectedChatId == null && !contactsOpen;
   const needle = query.trim().toLowerCase();
   const visible = needle
@@ -200,6 +254,7 @@ function ExpandedSidebar({
     : chats;
   return (
     <aside
+      ref={setScroller}
       aria-label="Навігація акаунту"
       className={`${className} slim-scrollbar flex flex-col gap-2 overflow-y-auto py-2`}
       // A hidden layer is neither clicked nor tabbed to nor read out.
@@ -332,6 +387,7 @@ function ExpandedSidebar({
               title={title}
               Icon={Icon}
               chats={visible.filter((chat) => chatSectionOf(chat) === key)}
+              scroller={scroller}
               selectedChatId={selectedChatId}
               onSelectChat={onSelectChat}
             />
@@ -405,6 +461,7 @@ function CollapsedSidebar({
   hidden,
 }: SidebarProps & { className: string; hidden: boolean }) {
   const accountOpen = selectedChatId == null && !contactsOpen;
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const [openSections, setOpenSections] = useState<ReadonlySet<MessengerChatSection>>(new Set());
   const toggleSection = (key: MessengerChatSection) =>
     setOpenSections((current) => {
@@ -421,9 +478,12 @@ function CollapsedSidebar({
   ].filter(Boolean);
   return (
     <aside
+      ref={setScroller}
       aria-label="Навігація акаунту (згорнуто)"
       data-messenger-sidebar-rail
-      className={`${className} slim-scrollbar flex flex-col items-center gap-2 overflow-y-auto py-2`}
+      // No scrollbar: it would take its width from the rail (the kind buttons are sized to the whole width for 4 digits), the
+      // wheel and touch still scroll. Not `slim-scrollbar`: its unlayered rule would beat a utility.
+      className={`${className} flex flex-col items-center gap-2 overflow-y-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
       {...(hidden ? ({ inert: '', 'aria-hidden': true } as object) : {})}
     >
       {/* Lit like the account info of the full sidebar, from the top of the layer (below the toggle) to the line. The `!` on the margins is needed for the same reason as on the radius above: the global reset gives buttons margin 0. */}
@@ -485,16 +545,13 @@ function CollapsedSidebar({
                 data-messenger-rail-section={key}
               >
                 <Separator name={`section-${key}`} />
+                {/* The button fills the whole area between the lines, for hover (grey) and for lit (green) alike: the negative margins
+                    take back the gaps of the column (`!`: the global reset gives buttons margin 0 and a rounded corner), and 3.5 pads
+                    the button to the height of the area (8 + 32 + 8 px). */}
                 <Tooltip placement="right" title={`${title} (${sectionChats.length})`}>
                   <button
                     type="button"
-                    className={`flex w-full cursor-pointer items-center justify-center gap-0.5 px-1 text-xs group-data-[mobile=true]/sidebar:!px-0.5 whitespace-nowrap ${
-                      lit
-                        ? // Fills the whole area between the lines: the margins take back the gaps of the column (`!`: the global
-                          // reset gives buttons margin 0), and 3.5 pads the button to the height of the area (8 + 32 + 8 px).
-                          `!-my-2 !rounded-none py-3.5 ${RAIL_CHAT_LOOK}`
-                        : `!rounded-lg py-1.5 ${RAIL_ICON_LOOK}`
-                    }`}
+                    className={`flex w-full cursor-pointer items-center justify-between whitespace-nowrap !-my-2 !rounded-none py-3.5 pl-0.5 pr-[3.75px] group-data-[mobile=true]/sidebar:!pl-px group-data-[mobile=true]/sidebar:!pr-[3px] ${RAIL_CHAT_LOOK}`}
                     aria-expanded={open}
                     aria-label={`${title}: ${sectionChats.length}`}
                     data-selected={lit ? 'true' : 'false'}
@@ -504,10 +561,21 @@ function CollapsedSidebar({
                       if (!empty) toggleSection(key);
                     }}
                   >
-                    <Icon fontSize="small" className="opacity-70" />
-                    <span className="opacity-70">{sectionChats.length}</span>
+                    {/* From the left edge of the rail: icon, a small gap, the count, then the free space, and the chevron near the right
+                        edge. Sized for a count of 4 digits (9999) in a 56 px rail, 47.5 px on a phone: the sizes are set on the parts,
+                        not on the button (the global reset gives the button its own font size, and the MUI icon sets its own, hence the `!`).
+                        Width, desktop: 1.75 + 15 + 1 + 22.9 (4 digits at 10 px) + 11 + 3.75 = 55.4 of 56 px. */}
+                    <span className="flex min-w-0 items-center gap-px">
+                      <Icon
+                        fontSize="small"
+                        className="!size-[15px] shrink-0 opacity-70 group-data-[mobile=true]/sidebar:!size-[13px]"
+                      />
+                      <span className="text-[10px] leading-none opacity-70 group-data-[mobile=true]/sidebar:text-[8.5px]">
+                        {sectionChats.length}
+                      </span>
+                    </span>
                     <ExpandMoreIcon
-                      className={`!size-3 shrink-0 opacity-60 transition-transform duration-200 motion-reduce:transition-none ${
+                      className={`!size-[11px] shrink-0 opacity-60 transition-transform duration-200 group-data-[mobile=true]/sidebar:!size-[9px] motion-reduce:transition-none ${
                         open ? '' : '-rotate-90'
                       }`}
                     />
@@ -516,10 +584,13 @@ function CollapsedSidebar({
                 {/* Opens and closes like the sections of the full sidebar. The negative margin takes back the gap above it, which
                     is there even at zero height. */}
                 <Collapse in={open} unmountOnExit className="-mt-2 w-full">
-                  <div className="flex w-full flex-col items-center gap-2 pt-2">
-                    {sectionChats.map((chat) => (
+                  <ChatRows
+                    chats={sectionChats}
+                    scroller={scroller}
+                    container="w-full pt-2"
+                    gap={{ plain: 'gap-2', row: 'pb-2' }}
+                    render={(chat) => (
                       <RailButton
-                        key={chat.id}
                         avatar
                         label={chatLabel(chat)}
                         selected={chat.id === selectedChatId}
@@ -535,8 +606,8 @@ function CollapsedSidebar({
                           className={RAIL_AVATAR_SIZE}
                         />
                       </RailButton>
-                    ))}
-                  </div>
+                    )}
+                  />
                 </Collapse>
               </div>
             );

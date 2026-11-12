@@ -438,10 +438,15 @@ describe('the account sidebar of the messenger workspace', () => {
       expect(header.className).toContain('items-center');
       expect(header.className).not.toContain('flex-col');
       expect(header.className).toContain('whitespace-nowrap');
+      // The icon and the number are one group on the left, the chevron is on the right edge.
+      expect(header.className).toContain('justify-between');
       expect([...header.children].map((child) => child.tagName.toLowerCase())).toEqual([
-        'svg',
         'span',
         'svg',
+      ]);
+      expect([...header.children[0].children].map((child) => child.tagName.toLowerCase())).toEqual([
+        'svg',
+        'span',
       ]);
     });
   });
