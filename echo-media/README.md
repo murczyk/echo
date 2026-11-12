@@ -50,7 +50,7 @@ sandbox separately.
    - the working directory is `/` and stdin is `/dev/null`;
    - each child gets a new session. A timeout or a dropped `Running` kills the
      whole process group;
-   - stderr is captured in full, with control characters replaced and remote
+   - stderr keeps its last 64 KiB, with control characters replaced and remote
      URLs redacted. stdout is captured in full when a job reads it.
 3. **Child sandbox** (`sandbox/child.rs`, Linux-only steps in
    `sandbox/linux.rs`). It runs between `fork` and `exec`, using only
@@ -289,8 +289,8 @@ ECHO_MEDIA_TEST_SANDBOX=best-effort cargo test -p echo-media  # Linux without La
 ECHO_MEDIA_TEST_SANDBOX=mount-namespace unshare -r cargo test -p echo-media --offline
 ```
 
-Tests find ffmpeg on `PATH`. On macOS, `tests/sandbox.rs` and
-`sandbox_alone_blocks_the_playlist` are compiled out; the rest runs without
+Tests find ffmpeg on `PATH`. On macOS, `tests/sandbox.rs` and the G1 and
+image2 tests in `tests/hostile.rs` are compiled out; the rest runs without
 the sandbox. macOS builds have not been compiled or run yet.
 
 - `tests/sandbox.rs` checks enforcement with `/bin/sh` and coreutils:
@@ -303,7 +303,5 @@ the sandbox. macOS builds have not been compiled or run yet.
 - `tests/hostile.rs`:
   - runs HLS, concat, `subfile:` and ffconcat payloads, under six names,
     against all nine jobs;
-  - includes a control test showing that unprotected ffmpeg really leaks the
-    secret;
   - checks that the sandbox alone, without whitelists, blocks the leak;
   - covers image2 `%d` names and a 65535×65535 PNG pixel flood.
