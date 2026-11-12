@@ -1,0 +1,6 @@
+interface:
+  display_name: "Echo Spec"
+  short_description: "Prepare Echo requirements and acceptance criteria"
+  default_prompt: "Use $echo-spec to prepare this feature's requirements, business rules, scenarios and acceptance criteria for approval."
+policy:
+  allow_implicit_invocation: false

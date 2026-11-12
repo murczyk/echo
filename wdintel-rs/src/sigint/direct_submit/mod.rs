@@ -3,6 +3,7 @@ use crate::users::login_id_from_identity;
 mod api_error;
 pub mod bl;
 mod callsigns;
+mod destinations;
 pub mod query;
 pub mod types;
 mod units;

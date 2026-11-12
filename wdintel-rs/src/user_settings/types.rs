@@ -53,6 +53,7 @@ pub enum MessageTextPreviewLines {
     Clone,
     Copy,
     Default,
+    schemars::JsonSchema,
 )]
 pub enum MessageTimeBasis {
     #[default]

@@ -1,0 +1,11 @@
+[mcp_servers.echo_figma]
+url = "https://mcp.figma.com/mcp"
+enabled_tools = [
+  "whoami",
+  "create_session",
+  "get_figma_skill",
+  "get_metadata",
+  "get_design_context",
+  "get_screenshot",
+  "get_variable_defs",
+]

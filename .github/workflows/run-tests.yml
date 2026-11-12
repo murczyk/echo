@@ -27,6 +27,14 @@ jobs:
           python-version: '3.12'
       - run: python3 -m unittest discover -s deploy/ai-control-panel -p 'test_*.py' -v
       - run: python3 -m unittest discover -s echo-ai-agent/tests -p test_control_panel.py -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # Includes the request contract against schemas generated from Rust;
+      # the backend tests fail when that export is stale.
+      - name: AI agent harness tests
+        working-directory: echo-ai-agent
+        run: npm ci && npm test
 
   iggy-storage-policy:
     name: Iggy storage policy safeguards

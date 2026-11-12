@@ -345,6 +345,7 @@ pub struct AiPositionKnowledgeListRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+#[derive(schemars::JsonSchema)]
 pub struct AiPositionLookupReq {
     pub name: Option<String>,
     pub coordinates: Option<String>,

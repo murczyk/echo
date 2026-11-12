@@ -4635,6 +4635,7 @@ export type DirectSubmitPayload = {
   network: SubmitNetwork | null;
   dmr: Array<SubmitDmrMetadata>;
   signalGroupMasterKey: string | null;
+  additionalSignalGroupMasterKeys: Array<string>;
   sourceSignalGroupMasterKey: string | null;
   deviceNameId: number | null | null;
   uploadUrls: Array<string> | null;

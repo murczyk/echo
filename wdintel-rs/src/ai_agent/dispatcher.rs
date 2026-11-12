@@ -18,7 +18,7 @@ use sea_orm::sea_query::OnConflict;
 use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait};
 use serde_json::{Map, Value};
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, ChildStdout, Command};
 use tokio_util::codec::{FramedRead, LinesCodec};
@@ -139,7 +139,8 @@ impl DispatcherClient {
         agent_id: Option<Uuid>,
         payload: Value,
     ) -> Result<DispatcherResponse, AppError> {
-        tokio::time::timeout(
+        let started = Instant::now();
+        let result = tokio::time::timeout(
             Duration::from_secs(AI_AGENT_DISPATCHER_CONTROL_TIMEOUT_SEC),
             self.call_bounded(operation, agent_id, payload),
         )
@@ -147,7 +148,15 @@ impl DispatcherClient {
         .map_err(|_| AppError::ServiceUnavailable {
             msg: "AI agent dispatcher timed out".to_string(),
             retry_after_secs: 5,
-        })?
+        })
+        .and_then(|result| result);
+        info!(
+            "AI agent dispatcher call op={operation} agent_id={} duration_ms={} ok={}",
+            agent_id.map(|id| id.to_string()).unwrap_or_default(),
+            started.elapsed().as_millis(),
+            result.is_ok()
+        );
+        result
     }
 
     pub async fn start_stream(

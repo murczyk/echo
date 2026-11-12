@@ -76,9 +76,16 @@ export function useUpdatesPage(): UseUpdatesPageState {
     };
   }, [selectedReleaseId]);
 
-  const selectRelease = useCallback((releaseId: string) => {
-    setSelectedReleaseId((prev) => (prev === releaseId ? prev : releaseId));
-  }, []);
+  const selectRelease = useCallback(
+    (releaseId: string) => {
+      if (releaseId === selectedReleaseId) return;
+      setRelease(null);
+      setReleaseLoadInProgress(true);
+      setReleaseLoadError(null);
+      setSelectedReleaseId(releaseId);
+    },
+    [selectedReleaseId],
+  );
 
   const jumpToSection = useCallback((id: string) => {
     const el = document.getElementById(id);

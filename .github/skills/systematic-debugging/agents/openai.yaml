@@ -1,0 +1,6 @@
+interface:
+  display_name: "Systematic Debugging (Echo)"
+  short_description: "Root-cause investigation within Echo role scope"
+  default_prompt: "Use $systematic-debugging to investigate this Echo failure within the assigned role and environment."
+policy:
+  allow_implicit_invocation: false

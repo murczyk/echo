@@ -35,6 +35,15 @@
 - `![alt](media/file.png)`
 - `{{ video(id="media/file.webm") }}`
 
+Медіа зберігаються в B2 та ігноруються Git. Щоб відредагувати наявні файли,
+завантажте їх у локальний каталог:
+
+```bash
+just download-doc-media --server echo-pivnich --only docs/releases/YYYY-MM-DD/media
+```
+
+Наявні локальні файли пропускаються; `--force` замінює їх копіями з B2.
+
 ## 3) Оновіть `docs/releases/index.json`
 
 Додайте новий реліз у верх списку:
