@@ -166,6 +166,12 @@ export function useMessageSubmit({
         pendingIds,
         data.attachment_orders ?? {},
       );
+      for (const file of files) {
+        const mediaId = file.meta?.replaces_media_id;
+        if (typeof mediaId === 'string' && replacedMediaIds.has(mediaId)) {
+          positions.set(file.id, positions.get(mediaId)!);
+        }
+      }
       const hasReorder = Object.keys(data.attachment_orders ?? {}).length > 0;
       const replacementUploads: { media_id: string; upload_url: string }[] = [];
 
@@ -275,6 +281,7 @@ export function useMessageSubmit({
               .filter(
                 (media) =>
                   !deletedMediaIds.has(media.id) &&
+                  (!isReportCreateMode || !replacedMediaIds.has(media.id)) &&
                   (data.attachment_orders?.[media.id] != null ||
                     (isReportCreateMode && hasReorder)),
               )

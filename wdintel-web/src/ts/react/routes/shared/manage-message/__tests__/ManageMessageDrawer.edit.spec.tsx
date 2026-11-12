@@ -4648,6 +4648,97 @@ describe('ManageMessageDrawer edit mode', () => {
     },
   );
 
+  it.each([2, 3])(
+    '#3931 preserves a report replacement position after moving source attachment %i',
+    async (moved) => {
+      directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+        payloads: [
+          {
+            full_body: 'original body',
+            retained_media_ids: ['source-1', 'source-2', 'source-3'],
+            parent_signal_message_ids: [42],
+          },
+        ],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+            reportSource={{
+              id: 42,
+              message: buildMessage({
+                media: [1, 2, 3].map((position) => ({
+                  id: `source-${position}`,
+                  orderF64: position,
+                  contentType: 'image/png',
+                  fileName: `${position}.png`,
+                  sizeBytes: 11,
+                  href: `/media/source-${position}`,
+                  transcription: null,
+                })),
+              }),
+            }}
+          />,
+        );
+      });
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(`button[aria-label="Перемістити ${moved}.png вище"]`)!
+          .click();
+      });
+      await act(async () => {
+        uppyMocks.latest!.addFile({
+          name: 'edited.png',
+          type: 'image/png',
+          size: 11,
+          data: new File(['replacement'], 'edited.png', { type: 'image/png' }),
+          meta: { replaces_media_id: 'source-2' },
+          uploadURL: '/upload/report-image',
+        });
+        textFieldPropsByLabel
+          .get('Текст розвіддонесення')
+          ?.onChange?.({ target: { value: 'report body' } });
+        const noSendOption = autocompleteOptionsByLabel
+          .get('Відправити в групу')
+          ?.find((option) => (option as { name?: string }).name === 'Не відправляти');
+        autocompleteOnChangeByLabel.get('Відправити в групу')?.(null, noSendOption);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        container
+          .querySelector('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+
+      expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          upload_urls: ['/upload/report-image'],
+          retained_media_ids: ['source-1', 'source-3'],
+          attachment_updates: {
+            replacements: [],
+            renames: [],
+            orders: [
+              { media_id: 'source-1', upload_url: null, order_f64: 1 },
+              { media_id: 'source-3', upload_url: null, order_f64: moved === 3 ? 1.5 : 3 },
+              {
+                media_id: null,
+                upload_url: '/upload/report-image',
+                order_f64: moved === 2 ? 0 : 2,
+              },
+            ],
+          },
+        }),
+      );
+      root.unmount();
+    },
+  );
+
   it('#3931 interleaves a pending upload with existing attachments', async () => {
     directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 42 });
     const container = document.createElement('div');
