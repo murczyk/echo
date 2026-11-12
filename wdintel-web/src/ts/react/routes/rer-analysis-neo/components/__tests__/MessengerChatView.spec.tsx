@@ -13,6 +13,11 @@ const apiMock = vi.hoisted(() => ({
   listMessengersMessages: vi.fn(),
 }));
 vi.mock('../../../../services/api/analysis-messengers', () => apiMock);
+const snackbar = vi.hoisted(() => ({ notify: vi.fn() }));
+vi.mock('../../../../components/PowerSnackbar', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../components/PowerSnackbar')>()),
+  useOptionalPowerSnackbar: () => snackbar,
+}));
 
 // The real feed needs layout to ask for edge pages; here the test asks for them itself.
 const feedProps = vi.hoisted(() => ({ current: null as unknown }));
@@ -77,6 +82,7 @@ describe('MessengerChatView', () => {
       '/rer-analysis-neo?leftPanelTab=messenger&messengerAccount=a1',
     );
     feedProps.current = null;
+    snackbar.notify.mockReset();
     apiMock.listMessengersChatMembers.mockReset().mockResolvedValue({ items: [] });
     apiMock.listMessengersMessages.mockReset();
     container = document.createElement('div');
@@ -146,6 +152,31 @@ describe('MessengerChatView', () => {
     await act(async () => void latestFeed().scrollOptions.onLoadNewer?.());
 
     expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+  });
+
+  describe('a link to a message', () => {
+    it('says so when the message is gone and the chat opens at its end', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue({
+        items: [message('m2')],
+        olderCursor: null,
+        newerCursor: null,
+      });
+      await mount('gone');
+      expect(snackbar.notify).toHaveBeenCalledTimes(1);
+      expect(snackbar.notify.mock.calls[0][0]).toMatchObject({ severity: 'warning' });
+    });
+
+    it('says nothing when the message is there, or when there is no anchor', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue({
+        items: [message('m1'), message('m2')],
+        olderCursor: null,
+        newerCursor: null,
+      });
+      await mount('m1');
+      expect(snackbar.notify).not.toHaveBeenCalled();
+      await mount(null);
+      expect(snackbar.notify).not.toHaveBeenCalled();
+    });
   });
 
   describe('position in the address bar', () => {

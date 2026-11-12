@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent 
 import type { MessengersMessageItem } from '../../../../../Bindings';
 import { copyTextToClipboard } from '../../../../copy-to-clipboard';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import {
   MessageFeed,
   type MessageFeedHandle,
@@ -99,6 +100,18 @@ export function MessengerChatView({
       initialAnchorId != null && messages.some((message) => message.id === initialAnchorId);
   }
   const landedOnAnchor = landedOnAnchorRef.current === true;
+  // A link to a message that is gone (deleted, or never seen by this login) opens the chat at its end; say so.
+  const { notify } = useOptionalPowerSnackbar();
+  const anchorMissing =
+    !loading && chatState.error == null && initialAnchorId != null && !landedOnAnchor;
+  useEffect(() => {
+    if (anchorMissing) {
+      notify({
+        severity: 'warning',
+        message: 'Повідомлення не знайдено, можливо, його видалено. Чат відкрито з кінця.',
+      });
+    }
+  }, [anchorMissing, notify]);
 
   const navigationTarget = useMemo(
     () =>
