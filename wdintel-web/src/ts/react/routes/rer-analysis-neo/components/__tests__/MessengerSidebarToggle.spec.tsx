@@ -10,6 +10,8 @@ const apiMock = vi.hoisted(() => ({
   listMessengersChatMembers: vi.fn(),
   listMessengersMessages: vi.fn(),
   listMessengersContacts: vi.fn(),
+  listMessengersAttachments: vi.fn(),
+  countMessengersAttachments: vi.fn(),
 }));
 vi.mock('../../../../services/api/analysis-messengers', () => apiMock);
 const clipboardMock = vi.hoisted(() => ({ copyTextToClipboard: vi.fn() }));
@@ -71,6 +73,10 @@ describe('the account sidebar of the messenger workspace', () => {
     apiMock.listMessengersMessages
       .mockReset()
       .mockResolvedValue({ items: [], olderCursor: null, newerCursor: null });
+    apiMock.listMessengersAttachments
+      .mockReset()
+      .mockResolvedValue({ items: [], olderCursor: null, newerCursor: null });
+    apiMock.countMessengersAttachments.mockReset().mockResolvedValue({ items: [] });
     apiMock.listMessengersContacts
       .mockReset()
       .mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100 });
@@ -193,10 +199,14 @@ describe('the account sidebar of the messenger workspace', () => {
       expect(row.className).toContain('grid-cols-[7rem_minmax(0,1fr)]');
     });
 
-    it('closes on the contacts and on the account cards too', async () => {
+    it('closes on the contacts, the gallery and the account cards too', async () => {
       await mount();
       await expand();
       await click('[data-messenger-nav="contacts"]');
+      expect(wrapper().dataset.open).toBe('false');
+      await expand();
+      await click('[data-messenger-nav="gallery"]');
+      expect(container.querySelector('[data-messenger-gallery-view]')).not.toBeNull();
       expect(wrapper().dataset.open).toBe('false');
       await expand();
       await click('[data-messenger-account-avatar]');

@@ -167,6 +167,11 @@ describe('messenger view URL state', () => {
     expect(parseMessengerViewFromWindow('a2')).toBeNull();
   });
 
+  it('knows the gallery view', () => {
+    url('leftPanelTab=messenger&messengerAccount=a1&messengerView=gallery');
+    expect(parseMessengerViewFromWindow('a1')).toBe('gallery');
+  });
+
   it('ignores an unknown view and lets a chat win over the view', () => {
     url('messengerAccount=a1&messengerView=nope');
     expect(parseMessengerViewFromWindow('a1')).toBeNull();

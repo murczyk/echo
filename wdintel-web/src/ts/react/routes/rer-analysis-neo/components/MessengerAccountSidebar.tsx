@@ -24,7 +24,6 @@ import { CopyValue } from './CopyValue';
 import { MessengerAccountAvatar, type MessengerAccountItem } from './MessengerAccountList';
 import { MessengerSearchField } from './MessengerSearchField';
 
-// shortcut: the gallery is not wired yet, its item does nothing.
 const GALLERY_NAV_ITEM = 'Галерея';
 const CONTACTS_NAV_ITEM = 'Контакти';
 const CHAT_SECTIONS: ReadonlyArray<{
@@ -225,8 +224,10 @@ type SidebarProps = {
   chatsState: ReturnType<typeof useMessengerChats>;
   selectedChatId: string | null;
   contactsOpen: boolean;
+  galleryOpen: boolean;
   onSelectChat: (chatId: string) => void;
   onOpenContacts: () => void;
+  onOpenGallery: () => void;
   onOpenAccount: () => void;
 };
 
@@ -235,15 +236,17 @@ function ExpandedSidebar({
   chatsState: { chats, loading, error, retry },
   selectedChatId,
   contactsOpen,
+  galleryOpen,
   onSelectChat,
   onOpenContacts,
+  onOpenGallery,
   onOpenAccount,
   className,
   hidden,
 }: SidebarProps & { className: string; hidden: boolean }) {
   const [query, setQuery] = useState('');
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
-  const accountOpen = selectedChatId == null && !contactsOpen;
+  const accountOpen = selectedChatId == null && !contactsOpen && !galleryOpen;
   const needle = query.trim().toLowerCase();
   const visible = needle
     ? chats.filter((chat) =>
@@ -320,9 +323,11 @@ function ExpandedSidebar({
       <nav className="flex flex-col gap-1 px-2">
         <button
           type="button"
-          className={`!rounded-lg !px-2 py-2 text-start text-sm ${SELECTED_LOOK}`}
+          className={`!rounded-lg !px-2 py-2 text-start text-sm data-[selected=true]:font-medium ${SELECTED_LOOK}`}
           data-messenger-nav="gallery"
-          data-selected="false"
+          data-selected={galleryOpen ? 'true' : 'false'}
+          aria-current={galleryOpen ? 'true' : undefined}
+          onClick={onOpenGallery}
         >
           {GALLERY_NAV_ITEM}
         </button>
@@ -454,13 +459,15 @@ function CollapsedSidebar({
   chatsState: { chats, loading, error },
   selectedChatId,
   contactsOpen,
+  galleryOpen,
   onSelectChat,
   onOpenContacts,
+  onOpenGallery,
   onOpenAccount,
   className,
   hidden,
 }: SidebarProps & { className: string; hidden: boolean }) {
-  const accountOpen = selectedChatId == null && !contactsOpen;
+  const accountOpen = selectedChatId == null && !contactsOpen && !galleryOpen;
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const [openSections, setOpenSections] = useState<ReadonlySet<MessengerChatSection>>(new Set());
   const toggleSection = (key: MessengerChatSection) =>
@@ -510,7 +517,12 @@ function CollapsedSidebar({
         </button>
       </Tooltip>
       <Separator name="account-pages" />
-      <RailButton label={GALLERY_NAV_ITEM} data-messenger-rail-nav="gallery">
+      <RailButton
+        label={GALLERY_NAV_ITEM}
+        selected={galleryOpen}
+        onClick={onOpenGallery}
+        data-messenger-rail-nav="gallery"
+      >
         <PhotoLibraryOutlinedIcon fontSize="small" />
       </RailButton>
       <RailButton
@@ -625,7 +637,7 @@ function CollapsedSidebar({
 // with the box to the top of the rail.
 //
 // On a phone (below the `sm` breakpoint, like the rest of the page) the open sidebar takes the whole width and hides the
-// page beside it, and whatever leads somewhere (a chat, the contacts, the account cards) closes it to show the place.
+// page beside it, and whatever leads somewhere (a chat, the contacts, the gallery, the account cards) closes it to show the place.
 // That state is not remembered: it starts closed and does not touch the choice made on a wide screen.
 export function MessengerAccountSidebar({ mobile, ...props }: SidebarProps & { mobile: boolean }) {
   const [desktopOpen, setDesktopOpen] = useAccountSidebarOpen();
@@ -643,6 +655,10 @@ export function MessengerAccountSidebar({ mobile, ...props }: SidebarProps & { m
     },
     onOpenContacts: () => {
       props.onOpenContacts();
+      closeOnPhone();
+    },
+    onOpenGallery: () => {
+      props.onOpenGallery();
       closeOnPhone();
     },
     onOpenAccount: () => {

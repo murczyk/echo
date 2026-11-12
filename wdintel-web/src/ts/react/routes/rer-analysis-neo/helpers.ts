@@ -61,7 +61,7 @@ const MESSENGER_CHAT_PARAM = 'messengerChat';
 const MESSENGER_ANCHOR_PARAM = 'messengerAnchor';
 // A view of the account other than a chat, e.g. `contacts`. The chat and the view exclude each other.
 const MESSENGER_VIEW_PARAM = 'messengerView';
-const MESSENGER_VIEWS = ['contacts'] as const;
+const MESSENGER_VIEWS = ['contacts', 'gallery'] as const;
 const MESSENGER_PANEL_PARAM = 'messengerPanel';
 const MESSENGER_PANEL_TABS = ['media', 'members'] as const;
 

@@ -16,6 +16,7 @@ import type { MessengerAccountItem } from './MessengerAccountList';
 import { chatLabel, MessengerAccountSidebar } from './MessengerAccountSidebar';
 import { MessengerChatView } from './MessengerChatView';
 import { MessengerContactsView } from './MessengerContactsView';
+import { MessengerGalleryView } from './MessengerGalleryView';
 import { MessengerInfoCard } from './MessengerInfoCard';
 import { MessengerNoteCard } from './MessengerNoteCard';
 import type { MessengerOpenChat } from './MessengerRightPanel';
@@ -174,8 +175,10 @@ function MessengerAccountWorkspace({
         chatsState={chatsState}
         selectedChatId={selected.chatId}
         contactsOpen={view === 'contacts' && chat == null}
+        galleryOpen={view === 'gallery' && chat == null}
         onSelectChat={selectChat}
         onOpenContacts={() => openView('contacts')}
+        onOpenGallery={() => openView('gallery')}
         onOpenAccount={() => {
           selectChat(null);
           openView(null);
@@ -197,6 +200,13 @@ function MessengerAccountWorkspace({
         <p className="p-4 opacity-60" role="status">
           Завантажуємо чат…
         </p>
+      ) : view === 'gallery' ? (
+        <MessengerGalleryView
+          account={account}
+          refreshToken={refreshToken}
+          onOpenMessage={openMessage}
+          onBack={() => openView(null)}
+        />
       ) : view === 'contacts' ? (
         <MessengerContactsView
           account={account}
