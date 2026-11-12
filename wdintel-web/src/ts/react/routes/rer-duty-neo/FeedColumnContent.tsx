@@ -130,6 +130,8 @@ function withImportanceOfMyOrganism(msg: InboxMessage): InboxMessage {
 type DutyMessageCardItemProps = {
   id: number;
   msg: InboxMessage;
+  searchMatch?: InboxMessage;
+  searchText?: string;
   hideGroupName: boolean;
   feedId: string;
   tagsLayout: TagsLayoutVariant;
@@ -182,6 +184,8 @@ type DutyMessageCardItemProps = {
 const DutyMessageCardItem = memo(function DutyMessageCardItem({
   id,
   msg,
+  searchMatch,
+  searchText,
   hideGroupName,
   feedId,
   tagsLayout,
@@ -234,10 +238,13 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
     [msg.messageComments, authUserName],
   );
 
-  const cardMsg = useMemo(
-    () => (importantOnlyMyOrganism ? withImportanceOfMyOrganism(msg) : msg),
-    [msg, importantOnlyMyOrganism],
-  );
+  const matchingResult = searchMatch?.text === msg.text ? searchMatch : undefined;
+  const cardMsg = useMemo(() => {
+    const cardMsg = importantOnlyMyOrganism ? withImportanceOfMyOrganism(msg) : msg;
+    return matchingResult?.textMarked?.length
+      ? { ...cardMsg, textMarked: matchingResult.textMarked }
+      : cardMsg;
+  }, [msg, importantOnlyMyOrganism, matchingResult]);
 
   return (
     <DutyMessageCard
@@ -251,7 +258,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       mediaSummaryEnabled={mediaSummaryEnabled}
       messageTextPreviewLines={messageTextPreviewLines}
       messageTimeBasis="creation"
-      searchText={filterState.search}
+      searchText={matchingResult ? searchText : filterState.search}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
       onMarkBotTagWrong={onMarkBotTagWrong}
@@ -330,6 +337,8 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
 // See ./AGENTS.md before adding structural component abstractions.
 type DutyMessageListProps = {
   items: [number, InboxMessage][];
+  searchMatches?: Map<number, InboxMessage>;
+  searchText?: string;
   hideGroupName: boolean;
   unreadBoundaryMessageId?: number | null;
   feedId: string;
@@ -386,6 +395,8 @@ type DutyMessageListProps = {
 const DutyMessageList = memo(
   function DutyMessageList({
     items,
+    searchMatches,
+    searchText,
     hideGroupName,
     unreadBoundaryMessageId,
     feedId,
@@ -441,6 +452,8 @@ const DutyMessageList = memo(
                 <DutyMessageCardItem
                   id={id}
                   msg={msg}
+                  searchMatch={searchMatches?.get(id)}
+                  searchText={searchMatches?.has(id) ? searchText : undefined}
                   hideGroupName={hideGroupName}
                   feedId={feedId}
                   tagsLayout={tagsLayout}
@@ -495,6 +508,8 @@ const DutyMessageList = memo(
   },
   (prev, next) =>
     prev.items === next.items &&
+    prev.searchMatches === next.searchMatches &&
+    prev.searchText === next.searchText &&
     prev.hideGroupName === next.hideGroupName &&
     prev.unreadBoundaryMessageId === next.unreadBoundaryMessageId &&
     prev.feedId === next.feedId &&
@@ -671,6 +686,12 @@ export const FeedColumnContent = memo(
     ref,
   ) {
     const { feed, view, messageCard, actions } = column;
+    const searchText = column.search?.open ? column.search.state.search : undefined;
+    const searchItems = column.search?.state.items;
+    const searchMatches = useMemo(
+      () => (searchText?.trim() ? new Map(searchItems) : undefined),
+      [searchText, searchItems],
+    );
     const cardFilterState = useMemo(
       () =>
         view.enableDutySearch ? feed.filter : { ...feed.filter, search: null, searchMode: null },
@@ -851,6 +872,8 @@ export const FeedColumnContent = memo(
       ) : (
         <DutyMessageList
           items={feed.items}
+          searchMatches={searchMatches}
+          searchText={searchText}
           hideGroupName={feed.filter.groupsSelected?.length === 1}
           unreadBoundaryMessageId={view.unreadBoundaryMessageId}
           feedId={feed.id}
@@ -995,6 +1018,16 @@ export const FeedColumnContent = memo(
     );
   }),
   (prevProps, nextProps) => {
+    const prevSearch = prevProps.column.search;
+    const nextSearch = nextProps.column.search;
+    if (
+      prevSearch?.open !== nextSearch?.open ||
+      (nextSearch?.open &&
+        (prevSearch?.state.items !== nextSearch.state.items ||
+          prevSearch?.state.search !== nextSearch.state.search))
+    ) {
+      return false;
+    }
     if (!feedListRenderStateEqual(prevProps.column.feed, nextProps.column.feed)) {
       return false;
     }

@@ -27,6 +27,7 @@ import {
   parseDutyMessageUidFromWindow,
   resolveDutyTargetMessageIds,
   stableStringify,
+  type MessageItem,
 } from './utils';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { useDutySearch } from './useDutySearch';
@@ -35,7 +36,7 @@ import { useDutyFeedColumnModel, type DutyFeedColumnModelDeps } from './useDutyF
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { PowerButton } from '../../components/PowerButton';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
-import type { InboxMessage } from '../../../../Bindings';
+import type { InboxItemContextRsp, InboxMessage } from '../../../../Bindings';
 import type { ManageMessageEditorHandle } from '../shared/manage-message/ManageMessageDrawer';
 import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
@@ -313,7 +314,9 @@ export function RerDutyNeoPage({
     feedId: string;
     reference: string;
     behavior: ScrollBehavior;
+    searchTarget?: MessageItem;
   } | null>(null);
+  const [searchNavigationFeedId, setSearchNavigationFeedId] = useState<string | null>(null);
   const targetMessageUid = replyNavigation?.reference ?? initialTargetMessageUid;
   const messageFeedsRef = useRef(messageFeeds);
   const applyFilterRef = useRef(applyFilter);
@@ -427,6 +430,7 @@ export function RerDutyNeoPage({
         return false;
       },
       invalidateNavigation: () => {
+        setSearchNavigationFeedId(null);
         linkedNavigationPendingRef.current = false;
         targetFilterSignatureRef.current = null;
         pendingLinkedMessageRef.current?.resolve(null);
@@ -441,6 +445,7 @@ export function RerDutyNeoPage({
     linkedMessageControllerRef.current = createMessageNavigationController(
       () => linkedMessageHostRef.current!,
       (outcome) => {
+        setSearchNavigationFeedId(null);
         linkedNavigationPendingRef.current = false;
         const message =
           replyNavigationRef.current && outcome.status === 'landing-error'
@@ -453,14 +458,26 @@ export function RerDutyNeoPage({
 
   useEffect(() => {
     if (!targetMessageUid || !targetFeedId) return;
-    targetFilterSignatureRef.current = stableStringify(
-      messageFeedsRef.current.find((feed) => feed.id === targetFeedId)?.filter,
-    );
+    const feed = messageFeedsRef.current.find((feed) => feed.id === targetFeedId);
+    targetFilterSignatureRef.current = stableStringify(feed?.filter);
     linkedNavigationPendingRef.current = true;
     setActiveFeedId(targetFeedId);
     setWatchModeByFeedId((prev) => ({ ...prev, [targetFeedId]: false }));
     cancelFollowTail(targetFeedId);
-    void linkedMessageControllerRef.current?.navigate(targetMessageUid);
+    const searchTarget = replyNavigation?.searchTarget;
+    const resolvedContext: InboxItemContextRsp | undefined = searchTarget
+      ? {
+          message: searchTarget,
+          sigintInboxItemIds: [searchTarget[0]],
+          groupMasterKeys: [],
+          sinceTs: null,
+          tillTs: null,
+        }
+      : undefined;
+    void linkedMessageControllerRef.current?.navigate(targetMessageUid, resolvedContext);
+    setSearchNavigationFeedId(
+      searchTarget && !feed?.items.some(([id]) => id === searchTarget[0]) ? targetFeedId : null,
+    );
     return () => linkedMessageControllerRef.current?.cancel();
   }, [targetMessageUid, targetFeedId, replyNavigation, setWatchModeByFeedId, cancelFollowTail]);
 
@@ -488,21 +505,28 @@ export function RerDutyNeoPage({
   }, [messageFeeds, targetFeedId, error, errorNotificationVersion]);
 
   const navigateInFeed = useCallback(
-    (feedId: string, reference: string, behavior: ScrollBehavior = 'smooth') => {
+    (
+      feedId: string,
+      reference: string,
+      behavior: ScrollBehavior = 'smooth',
+      searchTarget?: MessageItem,
+    ) => {
       setLinkedMessageFocus(null);
-      setReplyNavigation({ feedId, reference, behavior });
+      setReplyNavigation({ feedId, reference, behavior, searchTarget });
     },
     [],
   );
   const cancelSearchNavigation = useCallback(() => {
     linkedMessageControllerRef.current?.cancel();
+    setSearchNavigationFeedId(null);
   }, []);
   const dutySearch = useDutySearch({
     messageFeeds,
     enabled: feeds.enableDutySearch,
     buildReqForFeed: feeds.buildReqForFeed,
     pollIntervalMs: feeds.pollIntervalMs,
-    navigate: (feedId, reference) => navigateInFeed(feedId, reference, 'auto'),
+    navigate: (feedId, reference, item) => navigateInFeed(feedId, reference, 'auto', item),
+    navigatingFeedId: searchNavigationFeedId,
     cancelNavigation: cancelSearchNavigation,
     activateFeed: setActiveFeedId,
     onError: (message, retry) =>
@@ -557,7 +581,13 @@ export function RerDutyNeoPage({
     [setGroupScope],
   );
   const { buildFeedColumnModel, dismissUnreadBoundary } = useDutyFeedColumnModel({
-    feeds,
+    feeds: {
+      ...feeds,
+      handleArrowClick: (feedId) => {
+        dutySearch.clearSelection(feedId);
+        return feeds.handleArrowClick(feedId);
+      },
+    },
     searchColumnFor: dutySearch.columnFor,
     editorSourceFeedId,
     editorHighlightedMessageId,

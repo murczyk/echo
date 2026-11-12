@@ -43,6 +43,7 @@ type SearchState = {
 export type DutySearchColumn = {
   open: boolean;
   blocked: boolean;
+  navigating: boolean;
   state: SearchState;
   onOpen: () => void;
   onClose: (options?: { restoreFocus?: boolean }) => void;
@@ -60,7 +61,8 @@ type Dependencies = {
   buildReqForFeed: (feed: MessageFeedState, opts: { loadLatest?: boolean }) => InboxMessagesReq;
   pollIntervalMs: number;
   activateFeed?: (feedId: string) => void;
-  navigate: (feedId: string, reference: string) => void;
+  navigate: (feedId: string, reference: string, item: MessageItem) => void;
+  navigatingFeedId?: string | null;
   cancelNavigation: () => void;
   onError: (message: string, retry: () => void) => void;
 };
@@ -423,6 +425,7 @@ export function useDutySearch(dependencies: Dependencies) {
     return {
       open: activeFeedId === feed.id && !feed.filter.search?.trim(),
       blocked: Boolean(feed.filter.search?.trim()),
+      navigating: dependencies.navigatingFeedId === feed.id,
       state,
       onOpen: () => {
         if (feed.filter.search?.trim()) return;
@@ -469,6 +472,7 @@ export function useDutySearch(dependencies: Dependencies) {
         dependenciesRef.current.navigate(
           feed.id,
           item[1].messageUid ?? item[1].messageUuid ?? String(item[0]),
+          item,
         );
       },
       onScroll: (scrollTop, anchors) => {
@@ -493,5 +497,13 @@ export function useDutySearch(dependencies: Dependencies) {
     dependenciesRef.current.cancelNavigation();
     setActiveFeedId(null);
   }, [cancel]);
-  return { activeFeedId, columnFor, close };
+  const clearSelection = useCallback(
+    (feedId: string) => {
+      if (dependenciesRef.current.navigatingFeedId === feedId)
+        dependenciesRef.current.cancelNavigation();
+      update(feedId, (state) => ({ ...state, selectedId: null }));
+    },
+    [update],
+  );
+  return { activeFeedId, columnFor, close, clearSelection };
 }

@@ -190,7 +190,7 @@ export function DutySearchPanel({
         }
       }}
     >
-      <div className="shrink-0 border-b border-solid border-echo-text/15 p-echo-md">
+      <div className="relative shrink-0 border-b border-solid border-echo-text/15 p-echo-md">
         <DutySearchControls queryState={state} updateQueryState={search.onChange} autoFocus panel />
         <div className="mt-echo-sm flex items-center justify-between gap-echo-xs">
           <span
@@ -218,10 +218,13 @@ export function DutySearchPanel({
             </PowerIconButton>
           </div>
         </div>
+        {state.loading || state.loadingOlder ? (
+          <LinearProgress
+            aria-label="Завантаження результатів пошуку"
+            sx={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
+          />
+        ) : null}
       </div>
-      {state.loading || state.loadingOlder ? (
-        <LinearProgress aria-label="Завантаження результатів пошуку" />
-      ) : null}
       {state.pendingItems.length > 0 ? (
         <PowerButton
           size="small"
@@ -245,7 +248,11 @@ export function DutySearchPanel({
           });
         }}
       >
-        {!state.search.trim() ? <p className="p-echo-sm">Введіть запит для пошуку</p> : null}
+        {!state.search.trim() ? (
+          <p className="m-0 px-echo-md py-echo-lg text-center text-echo-text/50">
+            Введіть запит для пошуку
+          </p>
+        ) : null}
         {state.search.trim() &&
         state.total === 0 &&
         state.items.length === 0 &&

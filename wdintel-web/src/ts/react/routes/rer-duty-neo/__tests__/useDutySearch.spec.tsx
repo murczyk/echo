@@ -141,6 +141,24 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     expect(dependencies.messageFeeds[0].filter.search).toBeFalsy();
   });
 
+  it.each(['a', 'b', null])(
+    'clears only selection and cancels only the same feed pending navigation (%s)',
+    async (navigatingFeedId) => {
+      await open();
+      await act(async () => {
+        column().onSelect(column().state.items[0]);
+        column().onScroll(60, [{ id: 4, offset: -10 }]);
+      });
+      const before = { ...column().state };
+      dependencies = { ...dependencies, navigatingFeedId };
+      await render();
+      vi.mocked(dependencies.cancelNavigation).mockClear();
+      await act(async () => search.clearSelection('a'));
+      expect(column().state).toEqual({ ...before, selectedId: null });
+      expect(dependencies.cancelNavigation).toHaveBeenCalledTimes(navigatingFeedId === 'a' ? 1 : 0);
+    },
+  );
+
   it('#3571 refreshes on inbox changes rather than idle feed polling or browser focus', async () => {
     await open();
     const calls = api.list.mock.calls.length;

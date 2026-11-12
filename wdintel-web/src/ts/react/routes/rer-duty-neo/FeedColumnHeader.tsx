@@ -1,6 +1,7 @@
 import { Badge, Box, Button, IconButton, Tooltip } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import { PowerIconButton } from '../../components/PowerIconButton';
+import { PowerButton } from '../../components/PowerButton';
 import { DUTY_SEARCH_BLOCKED_TEXT } from './useDutySearch';
 import type { DutySearchColumn } from './useDutySearch';
 import AddIcon from '@mui/icons-material/Add';
@@ -232,6 +233,7 @@ export function FeedColumnHeader({
   onNotificationStatusChanged,
 }: FeedColumnHeaderProps) {
   const iconOnlyHeader = narrowScreen || feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
+  const SearchToggle = iconOnlyHeader ? PowerIconButton : PowerButton;
   const hasActiveFilter = filterPanel.hasActiveFilter;
 
   return (
@@ -321,24 +323,37 @@ export function FeedColumnHeader({
                 }
               >
                 <span className="flex w-full items-stretch">
-                  <PowerIconButton
+                  <SearchToggle
                     className="duty-header-panel-toggle"
                     id={`duty-search-trigger-${feedId}`}
                     aria-label="Пошук у стрічці"
                     aria-expanded={search.open}
-                    disabled={search.blocked}
+                    disabled={
+                      search.blocked || showFilters || showNotificationPanel || showKeywordsPanel
+                    }
                     size="small"
+                    {...(!iconOnlyHeader
+                      ? { variant: 'text' as const, startIcon: <SearchIcon fontSize="small" /> }
+                      : {})}
                     onClick={onToggleSearch}
                     sx={{
                       ...headerIconButtonSx,
                       ...(narrowScreen ? { height: 36, maxHeight: 36 } : {}),
                       width: '100%',
                       maxWidth: '100%',
+                      ...(!iconOnlyHeader
+                        ? {
+                            minWidth: 0,
+                            px: 1,
+                            backgroundColor: 'transparent',
+                            '& .MuiButton-startIcon': { flexShrink: 0, mr: 0.25 },
+                          }
+                        : {}),
                       color: search.open ? 'primary.light' : 'text.primary',
                     }}
                   >
-                    <SearchIcon fontSize="small" />
-                  </PowerIconButton>
+                    {iconOnlyHeader ? <SearchIcon fontSize="small" /> : 'Пошук'}
+                  </SearchToggle>
                 </span>
               </Tooltip>
             </div>

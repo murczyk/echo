@@ -50,6 +50,53 @@ async function openDutySearch(column: Locator): Promise<Locator> {
   return query;
 }
 
+test('#3571 highlights backend search matches in the source feed only @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  const source = responseWithMessages([
+    { id: 1, text: 'Нова позиція' },
+    { id: 2, text: 'Контекст' },
+  ]);
+  source.inbox_items[0][1].textMarked = [{ CNTextC: { text: 'Нова позиція', begin: 0, end: 12 } }];
+  const found = responseWithMessages([{ id: 1, text: 'Нова позиція' }]);
+  found.inbox_items[0][1].textMarked = [
+    { CNHighlightC: { text: 'Нова', begin: 0, end: 4 } },
+    { CNTextC: { text: ' позиція', begin: 4, end: 12 } },
+  ];
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    signalGroups: ['g1', 'g2'],
+    inboxResponseForRequest: (body) => ((body as Record<string, unknown>).search ? found : source),
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto(`/rer-duty-neo?state=${stateForGroups(['g1', 'g2'])}`);
+  const columns = page.locator('[data-duty-feed-column]');
+  const column = columns.first();
+  const marks = column.locator('[data-duty-message-id="1"] .badge-highlighed-token');
+  const query = await openDutySearch(column);
+  await query.fill('новий');
+  await query.press('Escape');
+  await expect(marks).toHaveText(['Нова']);
+  await expect(
+    columns.nth(1).locator('[data-duty-message-id="1"] .badge-highlighed-token'),
+  ).toHaveCount(0);
+  await expect(column.locator('[data-duty-message-id]')).toHaveCount(2);
+  await column.locator('[data-duty-search-result="1"]').click();
+  await expect(marks).toHaveText(['Нова']);
+  await page.screenshot({ path: test.info().outputPath('source-search-highlight.png') });
+  await column.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+  await expect(marks).toHaveCount(0);
+  // The header button suppresses repeated clicks for 400ms.
+  await page.waitForTimeout(400);
+  const reopened = await openDutySearch(column);
+  await expect(marks).toHaveText(['Нова']);
+  await reopened.fill('');
+  await expect(marks).toHaveCount(0);
+  await expect(column.locator('[data-duty-message-id]')).toHaveCount(2);
+});
+
 test('#3571 search below saved filters pages through empty periods @regression', async ({
   page,
 }) => {
@@ -181,11 +228,70 @@ test('#3571 blocks Duty panel search while the keyword filter is applied @regres
   await cpu.detach();
 });
 
+for (const width of [1600, 390]) {
+  test(`#3571 disables search beneath feed settings at ${width}px @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 950 });
+    const groups = width === 1600 ? ['group-1', 'group-2'] : ['group-1'];
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      signalGroups: groups,
+      inboxResponse: response([1]),
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.goto(`/rer-duty-neo?state=${stateForGroups(groups)}`);
+    const columns = page.locator('[data-duty-feed-column]');
+    const column = columns.first();
+    const header = column.locator('[data-duty-feed-header-layout]');
+    const search = header.getByRole('button', { name: 'Пошук у стрічці', exact: true });
+    const panels = [/^Фільтри/, /^Сповіщення(?: —|$)/, /^Підсвітка$/];
+    for (const name of panels) {
+      const toggle = header.getByRole('button', { name });
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(search).toBeDisabled();
+      await expect(column.locator('[data-duty-search-panel]')).toHaveCount(0);
+      if (width === 1600)
+        await expect(
+          columns.nth(1).getByRole('button', { name: 'Пошук у стрічці', exact: true }),
+        ).toBeEnabled();
+      await toggle.click();
+      await expect(search).toBeEnabled();
+    }
+    const query = await openDutySearch(column);
+    await query.fill('needle');
+    await query.press('Escape');
+    for (const name of panels) {
+      const toggle = header.getByRole('button', { name });
+      await toggle.click();
+      await expect(search).toBeDisabled();
+      await expect(query).toHaveValue('needle');
+      await toggle.click();
+      await expect(search).toBeEnabled();
+      await expect(query).toHaveValue('needle');
+    }
+    await search.click();
+    await expect(column.locator('[data-duty-search-panel]')).toHaveCount(0);
+    await cpu.detach();
+  });
+}
+
 test('#3571 searches independently and lands in the source feed with context @regression', async ({
   page,
 }) => {
   const groups = ['group-1', 'group-2'];
   const requests: Array<Record<string, unknown>> = [];
+  const navigationRequests: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.url().endsWith('/inbox-item-context') ||
+      (request.url().endsWith('/messages-by-id-matching-filters') &&
+        request.postDataJSON().inbox_req?.search == null)
+    )
+      navigationRequests.push(request.url());
+  });
   const targetResponse = responseWithMessages([{ id: 2, text: 'needle match' }]);
   targetResponse.inbox_items[0][1].messageUuid = 'duty-msg-2';
   targetResponse.inbox_items[0][1].groupMasterKey = 'group-1';
@@ -244,6 +350,8 @@ test('#3571 searches independently and lands in the source feed with context @re
     ),
   ).toBe(true);
   const scroller = columns.nth(0).locator('[data-duty-feed-scroller]');
+  await page.evaluate(() => document.fonts.ready);
+  await expect(scroller).toHaveAttribute('aria-busy', 'false');
   await scroller.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
     element.dispatchEvent(new Event('scroll', { bubbles: true }));
@@ -269,6 +377,7 @@ test('#3571 searches independently and lands in the source feed with context @re
         '[data-duty-message-id="2"][data-message-feed-highlighted], [data-duty-message-id="2"] [data-message-feed-highlighted]',
       ),
   ).toHaveCount(1);
+  expect(navigationRequests).toEqual([]);
   const positions = await scrollSamples;
   const initial = positions[0];
   const final = positions.at(-1)!;
@@ -287,6 +396,13 @@ test('#3571 searches independently and lands in the source feed with context @re
         (request.selected_groups as string[] | null)?.includes('group-1') && request.search == null,
     ),
   ).toBe(true);
+  await expect(result).toHaveAttribute('aria-pressed', 'true');
+  await columns
+    .nth(0)
+    .getByRole('button', { name: 'Завантажити нові та перейти вниз', exact: true })
+    .click();
+  await expect(result).toHaveAttribute('aria-pressed', 'false');
+  await expect(searchA).toHaveValue('needle');
   await cpu.detach();
 });
 
@@ -299,6 +415,11 @@ test('#3571 lands an unloaded 40-day result beyond adaptive history with filtere
   const groups = ['group-1'];
   const contextRequests: Array<Record<string, unknown>> = [];
   const listRequests: Array<Record<string, unknown>> = [];
+  let contextLookups = 0;
+  let releaseValidation!: () => void;
+  const validationReady = new Promise<void>((resolve) => {
+    releaseValidation = resolve;
+  });
   const messages = [
     [4, 'before historical context', targetTime - 1000, 'group-1', 'sender-a'],
     [5, 'needle 40 days ago', targetTime, 'group-1', 'sender-a'],
@@ -366,8 +487,9 @@ test('#3571 lands an unloaded 40-day result beyond adaptive history with filtere
       );
     },
   });
-  await page.route('**/api/rer-importer/inbox-item-context', (route) =>
-    route.fulfill({
+  await page.route('**/api/rer-importer/inbox-item-context', (route) => {
+    contextLookups += 1;
+    return route.fulfill({
       json: {
         message: target,
         group_master_keys: groups,
@@ -375,11 +497,14 @@ test('#3571 lands an unloaded 40-day result beyond adaptive history with filtere
         since_ts: null,
         till_ts: null,
       },
-    }),
-  );
+    });
+  });
   await page.route('**/api/rer-importer/messages-by-id-matching-filters', async (route) => {
     const request = (await route.request().postDataJSON()).inbox_req as Record<string, unknown>;
-    if (request.search == null) contextRequests.push(request);
+    if (request.search == null) {
+      contextRequests.push(request);
+      await validationReady;
+    }
     await route.fulfill({ json: { messages: matches(request, target) ? [target] : [] } });
   });
   await page.route('**/api/rer-importer/messages-by-id-with-metadata', async (route) => {
@@ -428,6 +553,11 @@ test('#3571 lands an unloaded 40-day result beyond adaptive history with filtere
   await expect(result.locator('strong')).toHaveText('needle');
   await query.press('Escape');
   await result.click();
+  await expect.poll(() => contextRequests.length).toBe(1);
+  await expect(column.locator('[data-duty-search-panel]').getByRole('progressbar')).toHaveCount(0);
+  await expect(column.locator('[data-duty-message-id="90"]')).toBeVisible();
+  expect(contextLookups).toBe(0);
+  releaseValidation();
   await expect(
     column.locator(
       '[data-duty-message-id="5"][data-message-feed-highlighted], [data-duty-message-id="5"] [data-message-feed-highlighted]',
@@ -440,6 +570,7 @@ test('#3571 lands an unloaded 40-day result beyond adaptive history with filtere
     column.locator('[data-duty-message-id="7"], [data-duty-message-id="8"]'),
   ).toHaveCount(0);
   await expect(query).toBeVisible();
+  await expect(column.getByRole('progressbar', { name: 'Перехід до повідомлення' })).toHaveCount(0);
   expect(contextRequests).toHaveLength(1);
   expect(contextRequests[0]).toMatchObject({
     since_date_inclusive_ms: null,
@@ -459,6 +590,173 @@ test('#3571 lands an unloaded 40-day result beyond adaptive history with filtere
       search: null,
     });
   await cpu.detach();
+});
+
+for (const outcome of ['close', 'missing', 'error', 'replace', 'newest'] as const) {
+  test(`#3571 clears pending search navigation on ${outcome} without landing a stale result @regression`, async ({
+    page,
+  }) => {
+    const current = responseWithMessages(
+      outcome === 'newest'
+        ? Array.from({ length: 20 }, (_, index) => ({
+            id: index + 10,
+            text: index === 1 ? 'needle loaded result' : `current context ${index}`,
+          }))
+        : [
+            { id: 10, text: 'current context' },
+            { id: 11, text: 'needle loaded result' },
+          ],
+    );
+    const target = responseWithMessages([{ id: 5, text: 'needle historical result' }]);
+    let releaseValidation!: () => void;
+    const validationReady = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const navigationReloads: unknown[] = [];
+    let validationRequests = 0;
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      signalGroups: ['group-1'],
+      inboxCountResponseForRequest: (body) => ({
+        quantity: (body as Record<string, unknown>).search ? 2 : current.inbox_items.length,
+        first_element_ts: null,
+      }),
+      inboxResponseForRequest: (body) => {
+        const request = body as Record<string, unknown>;
+        if (request.before_id_noninclusive === 5 || request.since_id_noninclusive === 5)
+          navigationReloads.push(request);
+        return request.search
+          ? { ...target, inbox_items: [...target.inbox_items, current.inbox_items[1]] }
+          : current;
+      },
+    });
+    await page.route('**/api/rer-importer/messages-by-id-matching-filters', async (route) => {
+      const request = route.request().postDataJSON();
+      if (request.inbox_req?.search != null)
+        return route.fulfill({ json: { messages: target.inbox_items } });
+      validationRequests += 1;
+      await validationReady;
+      if (outcome === 'error')
+        return route.fulfill({ status: 500, body: 'Synthetic navigation failure' });
+      return route.fulfill({ json: { messages: outcome === 'missing' ? [] : target.inbox_items } });
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.goto(`/rer-duty-neo?state=${stateForGroups(['group-1'])}`);
+    const column = page.locator('[data-duty-feed-column]').first();
+    const query = await openDutySearch(column);
+    if (outcome === 'newest') {
+      await column.locator('[data-duty-feed-scroller]').evaluate((element) => {
+        element.scrollTop = 1000;
+        element.dispatchEvent(new Event('scroll', { bubbles: true }));
+      });
+    }
+    await query.fill('needle');
+    await query.press('Escape');
+    await column.getByRole('button', { name: 'needle historical result', exact: true }).click();
+    const progress = column.locator('[data-duty-search-panel]').getByRole('progressbar');
+    await expect.poll(() => validationRequests).toBe(1);
+    await expect(progress).toHaveCount(0);
+    const aborted = ['close', 'replace', 'newest'].includes(outcome)
+      ? page.waitForEvent('requestfailed', {
+          predicate: (request) =>
+            request.url().endsWith('/messages-by-id-matching-filters') &&
+            request.postDataJSON().inbox_req?.search == null,
+        })
+      : null;
+    if (outcome === 'close')
+      await column.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+    if (outcome === 'replace') {
+      await column.getByRole('button', { name: 'needle loaded result', exact: true }).click();
+      await expect(
+        column.locator('[data-duty-message-id="11"][data-message-feed-highlighted]'),
+      ).toHaveCount(1);
+    }
+    if (outcome === 'newest') {
+      await column
+        .getByRole('button', { name: 'Завантажити нові та перейти вниз', exact: true })
+        .click();
+      await expect(
+        column.getByRole('button', { name: 'needle historical result', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'false');
+      await expect(query).toHaveValue('needle');
+    }
+    if (aborted) await aborted;
+    releaseValidation();
+    if (outcome === 'missing')
+      await expect(
+        page.getByText(
+          'Повідомлення поза поточними фільтрами. Змініть фільтри, щоб побачити його.',
+          { exact: true },
+        ),
+      ).toBeVisible();
+    if (outcome === 'error')
+      await expect(
+        page.getByText('Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.', {
+          exact: true,
+        }),
+      ).toBeVisible();
+    await expect(progress).toHaveCount(0);
+    await expect(column.locator('[data-duty-message-id="5"]')).toHaveCount(0);
+    await expect(
+      column.locator('[data-duty-message-id="10"], [data-duty-message-id="11"]'),
+    ).toHaveCount(2);
+    expect(navigationReloads).toEqual([]);
+    await cpu.detach();
+  });
+}
+
+test('#3571 keeps search list geometry stable while loading results and older pages @regression', async ({
+  page,
+}) => {
+  let release!: () => void;
+  let pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    inboxCountResponseForRequest: () => ({ quantity: 21, first_element_ts: null }),
+    inboxResponseForRequest: async (body) => {
+      const request = body as Record<string, unknown>;
+      if (!request.search) return response([50]);
+      await pending;
+      return response(
+        request.before_id_noninclusive == null ? Array.from({ length: 20 }, (_, i) => 20 - i) : [0],
+      );
+    },
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/rer-duty-neo');
+  const column = page.locator('[data-duty-feed-column]').first();
+  const query = await openDutySearch(column);
+  const panel = column.locator('[data-duty-search-panel]');
+  const list = panel.locator('[data-duty-search-list]');
+  const geometry = () =>
+    list.evaluate((n) => {
+      const { y, height } = n.getBoundingClientRect();
+      return { y, height };
+    });
+  const initial = await geometry();
+  const progress = panel.getByRole('progressbar', { name: 'Завантаження результатів пошуку' });
+  await query.fill('needle');
+  await query.press('Escape');
+  await expect(progress).toBeVisible();
+  expect(await geometry()).toEqual(initial);
+  release();
+  await expect(panel.locator('[data-duty-search-result]')).toHaveCount(20);
+  await expect(progress).toHaveCount(0);
+  expect(await geometry()).toEqual(initial);
+  pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await panel.getByRole('button', { name: 'Завантажити ще результати', exact: true }).click();
+  await expect(progress).toBeVisible();
+  expect(await geometry()).toEqual(initial);
+  release();
+  await expect(panel.locator('[data-duty-search-result]')).toHaveCount(21);
+  await expect(progress).toHaveCount(0);
+  expect(await geometry()).toEqual(initial);
 });
 
 test('#3571 refreshes only on inbox updates and reports search failures in a snackbar @regression', async ({

@@ -194,6 +194,16 @@ stable. Selecting a result jumps to its message without animated scrolling,
 retaining the surrounding feed context. Narrow/editor active-only layouts still mount
 one feed and preserve its source width. Explicit close returns keyboard focus to
 the source search action. Search popups own Escape before the enclosing panel.
+Search results reuse their known message ID without a context-lookup request.
+Loaded messages land directly; unloaded messages retain the readable feed during
+source-filter validation, then use the feed skeleton while loading surrounding
+messages. The search panel's progress bar only indicates result loading and does
+not change the list's geometry. Closing, changing the query or selecting another
+result cancels the previous landing; unavailable results and API errors use the
+page snackbar.
+The explicit newest-message action clears that feed's selected search result
+and cancels its pending search landing, retaining the query, results and list
+position. Other feeds' search selections remain unchanged.
 The existing feed keyword filter remains **«Фільтр по ключовому слову»**. Applying
 a nonempty keyword closes the separate panel and disables its action until the
 keyword is cleared; clearing never reopens it automatically. Analysis search
