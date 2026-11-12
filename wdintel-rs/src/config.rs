@@ -592,6 +592,18 @@ pub const AI_AGENT_WORKER_LEASE_TAKEOVER_GRACE_SEC: u64 =
         + AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC
         + 1;
 pub const AI_AGENT_IDLE_STOP_MINUTES: i64 = 5;
+/// A container prewarmed while the user types stops this long after start if
+/// no request uses it (#4139).
+pub const AI_AGENT_PREWARM_UNUSED_MINUTES: i64 = 3;
+/// Running-container slots a prewarm must leave free for real requests,
+/// which fail instead of waiting when capacity runs out.
+pub const AI_AGENT_PREWARM_RESERVED_SLOTS: u64 = 2;
+/// Below the composer's one-minute interval, so its keep-alives get through.
+pub const AI_AGENT_PREWARM_THROTTLE_SEC: u64 = 45;
+pub const AI_AGENT_PREWARM_REDIS_PREFIX: &str = "ai-agent:prewarm:";
+/// How long a lifecycle operation waits for the same user's container start
+/// (a request or a prewarm) instead of failing at the server `lock_timeout`.
+pub const AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS: u64 = 30_000;
 pub const AI_AGENT_DESTROY_STOPPED_DAYS: i64 = 7;
 pub const AI_AGENT_REVIEW_MAX_ATTEMPTS: i32 = 8;
 pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
@@ -671,7 +683,7 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.11.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.12.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;

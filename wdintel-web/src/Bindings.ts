@@ -6749,6 +6749,10 @@ export type AiAgentConversationDetail = {
   messages: Array<AiAgentMessageItem>;
 };
 
+export type AiAgentPrewarmReq = {
+  aiEngineId: string | null;
+};
+
 export type AiAgentRequestCreateReq = {
   reasoningPreset: AiAgentReasoningPreset | null;
   conversationId: string | null;
