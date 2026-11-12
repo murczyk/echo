@@ -1405,19 +1405,20 @@ pub async fn effective_snapshot_attachments(
         .await
         .c(h!())? as usize;
     if !snapshot.attachments.is_empty() {
-        return Ok(trim_echo_attachment_batch_for_edit(
-            crate::messenger::attachments::order_echo_snapshot(
-                txn,
-                datasource_id,
-                snapshot.internal_id,
-                snapshot.attachments.clone(),
-            )
-            .await
-            .c(h!())?,
+        let attachments = trim_echo_attachment_batch_for_edit(
+            snapshot.attachments.clone(),
             previous_attachment_count,
             datasource_id,
             snapshot.internal_id,
-        ));
+        );
+        return crate::messenger::attachments::order_echo_snapshot(
+            txn,
+            datasource_id,
+            snapshot.internal_id,
+            attachments,
+        )
+        .await
+        .c(h!());
     }
     if let Some(attachments) =
         crate::messenger::attachments::load_latest_echo_attachment_batch(

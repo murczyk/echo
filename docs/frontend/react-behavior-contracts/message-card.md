@@ -342,11 +342,14 @@ and visible lookup errors. Regression coverage:
 `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
 and `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardCoordinateAttachment.spec.tsx`.
 
-
 ## Attachment order
 
 Attachment arrays and the mixed-media preview carousel follow persisted `order_f64`, with UUID as the tie-breaker. Null positions sort last by UUID; messages with all positions null retain their UUID order. Existing media categories remain grouped on the card.
 
+Legacy galleries without explicit positions retain the original image order, including image URLs without media rows; enriching an image with media metadata does not move it. Explicit positions control gallery and carousel order once available.
+
+Both React and Elm accept media responses without `order_f64` as legacy attachments with an unset position.
+
 The message editor displays a single ordered attachment list. Its up/down controls work with the keyboard, include pending uploads, remain disabled during submission, and save through the existing message-edit request. On the first move of legacy attachments, positions are assigned to the whole message; later moves use a fractional position and preserve unaffected values. Positions are renumbered only if floating-point precision leaves no space between neighbors. Replacement images retain their original attachment's position; copied messages preserve source order independently.
 
-Regressions: `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`, `wdintel-web/tests/e2e/manage-message-drawer.spec.ts`, and `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.
+Regressions: `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`, `wdintel-web/tests/e2e/manage-message-drawer.spec.ts`, and `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.

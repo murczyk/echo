@@ -2555,6 +2555,17 @@ for (const host of ['analysis', 'duty'] as const) {
   });
 }
 
+for (const host of ['duty', 'analysis'] as const) {
+  test(`#3931 @regression ${host} legacy Elm accepts attachments without positions`, async ({
+    page,
+  }) => {
+    await openLegacyKmlPreviewHost(page, host);
+    await page.getByRole('button', { name: 'legacy-route.kml', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+    await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+  });
+}
+
 test('#3931 @regression mixed gallery and carousel preserve attachment order', async ({ page }) => {
   const response = buildMessageCardMediaPreviewInboxResponse();
   const media = (response.inbox_items[0]![1] as { media: Array<Record<string, unknown>> }).media;

@@ -1273,18 +1273,16 @@ async fn load_copy_media(
         .into_iter()
         .filter(|id| !deleted_media_ids.contains(id))
         .collect::<HashSet<_>>();
-    let mut source_media_by_id = source_media
+    if retained_media_ids
+        .iter()
+        .any(|media_id| !source_media_ids.contains(media_id))
+    {
+        return Err(AppError::NotFound);
+    }
+    Ok(source_media
         .into_iter()
-        .map(|media| (media.id, media))
-        .collect::<BTreeMap<_, _>>();
-    retained_media_ids
-        .into_iter()
-        .map(|media_id| {
-            source_media_by_id
-                .remove(&media_id)
-                .ok_or(AppError::NotFound)
-        })
-        .collect()
+        .filter(|media| retained_media_ids.contains(&media.id))
+        .collect())
 }
 
 fn parse_media_ids(media_ids: &[String]) -> Result<Vec<Uuid>, AppError> {
@@ -3768,6 +3766,38 @@ mod tests {
         )
         .await
         .is_err());
+
+        let mut report = direct_submit_payload("copied attachments #3931");
+        report.parent_signal_message_ids = vec![created.signal_message_id];
+        report.retained_media_ids =
+            Some(ids.iter().rev().map(ToString::to_string).collect());
+        let copied = submit_signal_message(&login_id, &env, report.clone())
+            .await
+            .unwrap()
+            .message
+            .unwrap()
+            .media;
+        assert_eq!(
+            copied
+                .iter()
+                .map(|media| media.file_name.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["0.txt", "2.txt", "1.txt"]
+        );
+        report.deleted_media_ids = Some(vec![ids[0].to_string()]);
+        let copied = submit_signal_message(&login_id, &env, report)
+            .await
+            .unwrap()
+            .message
+            .unwrap()
+            .media;
+        assert_eq!(
+            copied
+                .iter()
+                .map(|media| media.file_name.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["2.txt", "1.txt"]
+        );
     }
 
     #[tokio::test]

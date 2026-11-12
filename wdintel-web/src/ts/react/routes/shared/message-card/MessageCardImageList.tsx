@@ -31,7 +31,11 @@ export function MessageCardImageList({
 
   if (imageCount === 0 && videoCount === 0 && trailingContent == null) return null;
 
-  const positions = new Map(attachmentOrder.map((media, index) => [media.id, index]));
+  const positions = new Map(
+    attachmentOrder.some((media) => media.orderF64 != null)
+      ? attachmentOrder.map((media, index) => [media.id, index] as const)
+      : [],
+  );
   const rank = (key: string | number | null) =>
     positions.get(String(key)) ?? Number.MAX_SAFE_INTEGER;
   return (

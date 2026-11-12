@@ -576,7 +576,12 @@ export function MessageCardMessageBody({
   const isCoordinateVisible = !collapseMediaPreviews || activeAttachmentSection === 'coordinates';
   const isAudioVisible = !collapseMediaPreviews || activeAttachmentSection === 'audio';
   const attachmentPositionsById = useMemo(
-    () => new Map((msg.media ?? []).map((media, index) => [media.id, index])),
+    () =>
+      new Map(
+        (msg.media ?? []).some((media) => media.orderF64 != null)
+          ? (msg.media ?? []).map((media, index) => [media.id, index] as const)
+          : [],
+      ),
     [msg.media],
   );
   const cardSummaryItems = useMemo<CardSummaryItem[]>(

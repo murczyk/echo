@@ -47,6 +47,8 @@ export function collectMessageImages(msg: InboxMessage): MessageCardImage[] {
     add(mapMessageMediaImage(attachment));
   }
 
+  if (!(msg.media ?? []).some((media) => media.orderF64 != null))
+    return Array.from(imagesByHref.values());
   const positions = new Map((msg.media ?? []).map((media, index) => [media.id, index]));
   return Array.from(imagesByHref.values()).sort(
     (a, b) =>

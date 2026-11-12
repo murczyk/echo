@@ -3,36 +3,56 @@ use crate::types::*;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
 
+#[derive(FromQueryResult)]
+struct EchoAttachmentOrder {
+    id: i32,
+    path: String,
+    name: Option<String>,
+}
+
 pub(crate) async fn order_echo_snapshot(
     txn: &impl ConnectionTrait,
     datasource_id: i64,
     echo_inbox_message_id: i32,
-    mut attachments: Vec<MessageAttachmentF1>,
+    attachments: Vec<MessageAttachmentF1>,
 ) -> anyhow::Result<Vec<MessageAttachmentF1>> {
     if attachments.len() < 2 {
         return Ok(attachments);
     }
-    let Some(account_id) = datasource_echo_account_id(txn, datasource_id)
-        .await
-        .c(h!())?
-    else {
-        return Ok(attachments);
-    };
-    let stored = echo_attachment::Entity::find()
-        .filter(echo_attachment::Column::MessageId.eq(echo_inbox_message_id))
-        .filter(echo_attachment::Column::AccountId.eq(account_id))
-        .order_by_asc(echo_attachment::Column::Id)
-        .all(txn)
-        .await
-        .c(h!())?;
-    let positions = stored
+    let stored = EchoAttachmentOrder::find_by_statement(
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select attachment.id, attachment.path, attachment.name from datasource join echo_client_lock on echo_client_lock.id = datasource.echo_client_lock_id join echo_attachment attachment on attachment.account_id = echo_client_lock.account_id where datasource.id = $1 and attachment.message_id = $2 order by attachment.id",
+            [datasource_id.into(), echo_inbox_message_id.into()],
+        ),
+    )
+    .all(txn)
+    .await
+    .c(h!())?;
+    let mut positions = std::collections::HashMap::<_, Vec<_>>::new();
+    for attachment in stored {
+        positions
+            .entry((attachment.path, attachment.name))
+            .or_default()
+            .push(attachment.id);
+    }
+    let mut ordered = attachments
         .into_iter()
-        .map(|attachment| (attachment.path, attachment.id))
-        .collect::<std::collections::HashMap<_, _>>();
-    attachments.sort_by_key(|attachment| {
-        positions.get(&attachment.path).copied().unwrap_or(i32::MAX)
-    });
-    Ok(attachments)
+        .rev()
+        .map(|attachment| {
+            let position = positions
+                .get_mut(&(attachment.path.clone(), attachment.name.clone()))
+                .and_then(|positions| positions.pop())
+                .unwrap_or(i32::MAX);
+            (position, attachment)
+        })
+        .collect::<Vec<_>>();
+    ordered.reverse();
+    ordered.sort_by_key(|(position, _)| *position);
+    Ok(ordered
+        .into_iter()
+        .map(|(_, attachment)| attachment)
+        .collect())
 }
 
 pub async fn load_latest_echo_attachment_batch(
@@ -40,8 +60,9 @@ pub async fn load_latest_echo_attachment_batch(
     datasource_id: i64,
     echo_inbox_message_id: i32,
 ) -> anyhow::Result<Option<Vec<MessageAttachmentF1>>> {
-    let Some(account_id) =
-        datasource_echo_account_id(txn, datasource_id).await?
+    let Some(account_id) = datasource_echo_account_id(txn, datasource_id)
+        .await
+        .c(h!())?
     else {
         return Ok(None);
     };
