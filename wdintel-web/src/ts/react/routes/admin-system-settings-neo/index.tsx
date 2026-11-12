@@ -1476,7 +1476,7 @@ export function AdminSystemSettingsNeoPage() {
               />
               <Tab
                 value="replay"
-                label="Відтворення"
+                label="Реплей"
                 id="system-settings-neo-tab-replay"
                 aria-controls="system-settings-neo-panel-replay"
               />
