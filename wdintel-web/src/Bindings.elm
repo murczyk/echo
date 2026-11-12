@@ -17131,6 +17131,18 @@ aiAgentConversationDetailEncoder struct =
         ]
 
 
+type alias AiAgentPrewarmReq =
+    { aiEngineId : Maybe (String)
+    }
+
+
+aiAgentPrewarmReqEncoder : AiAgentPrewarmReq -> Json.Encode.Value
+aiAgentPrewarmReqEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        ]
+
+
 type alias AiAgentRequestCreateReq =
     { reasoningPreset : Maybe (AiAgentReasoningPreset)
     , conversationId : Maybe (String)
@@ -31990,6 +32002,12 @@ aiAgentConversationDetailDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiAgentMessageItemDecoder))))
+
+
+aiAgentPrewarmReqDecoder : Json.Decode.Decoder AiAgentPrewarmReq
+aiAgentPrewarmReqDecoder =
+    Json.Decode.succeed AiAgentPrewarmReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentRequestCreateReqDecoder : Json.Decode.Decoder AiAgentRequestCreateReq

@@ -20,9 +20,9 @@ from typing import Any, NoReturn
 INSTANCE_PREFIX = "echo-ai-agent-"
 TEMPLATE_NAME = "echo-ai-agent-019fc7f7-9770-7f83-9c1a-211af29b02e6"
 PROFILE_NAME = "echo-ai-agent"
-HARNESS_RELEASE = "2026.11.11.2"
+HARNESS_RELEASE = "2026.11.12.2"
 COMPATIBLE_RUNNER_RELEASES = frozenset(
-    {HARNESS_RELEASE, "2026.11.11.1", "2026.11.10.2", "2026.11.10.1", "2026.11.08.1", "2026.11.07.2", "2026.11.07.1", "2026.11.06.4", "2026.11.06.3", "2026.11.06.2", "2026.11.06.1", "2026.11.05.3", "2026.11.05.2", "2026.11.05.1", "2026.11.03.4", "2026.11.03.3", "2026.11.03.2", "2026.11.03.1", "2026.11.01.1", "2026.10.30.3", "2026.10.30.2", "2026.10.30.1", "2026.10.29.4", "2026.10.29.3", "2026.10.29.2", "2026.10.29.1", "2026.10.11.2", "2026.10.11.1", "2026.10.10.5", "2026.10.10.4", "2026.10.10.3", "2026.10.10.2", "2026.10.10.1", "2026.10.09.15", "2026.10.09.14", "2026.10.09.13", "2026.10.09.12", "2026.10.09.11", "2026.10.09.10", "2026.10.09.9", "2026.10.09.8", "2026.10.09.7", "2026.10.09.6", "2026.10.09.5", "2026.10.09.4", "2026.10.09.3", "2026.10.09.2", "2026.10.09.1", "2026.10.08.3", "2026.10.08.2", "2026.10.08.1", "2026.10.06.1", "2026.10.05.2", "2026.10.05.1", "2026.10.04.1", "2026.10.03.1", "2026.10.01.6", "2026.10.01.5", "2026.10.01.4", "2026.10.01.3", "2026.10.01.2", "2026.10.01.1", "2026.09.29.9", "2026.09.29.8", "2026.09.29.7", "2026.09.29.6", "2026.09.29.5", "2026.09.29.4", "2026.09.29.3", "2026.09.29.2", "2026.09.29.1", "2026.09.28.1", "2026.09.27.3", "2026.09.27.2", "2026.09.27.1", "2026.08.25.2", "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
+    {HARNESS_RELEASE, "2026.11.12.1", "2026.11.11.2", "2026.11.11.1", "2026.11.10.2", "2026.11.10.1", "2026.11.08.1", "2026.11.07.2", "2026.11.07.1", "2026.11.06.4", "2026.11.06.3", "2026.11.06.2", "2026.11.06.1", "2026.11.05.3", "2026.11.05.2", "2026.11.05.1", "2026.11.03.4", "2026.11.03.3", "2026.11.03.2", "2026.11.03.1", "2026.11.01.1", "2026.10.30.3", "2026.10.30.2", "2026.10.30.1", "2026.10.29.4", "2026.10.29.3", "2026.10.29.2", "2026.10.29.1", "2026.10.11.2", "2026.10.11.1", "2026.10.10.5", "2026.10.10.4", "2026.10.10.3", "2026.10.10.2", "2026.10.10.1", "2026.10.09.15", "2026.10.09.14", "2026.10.09.13", "2026.10.09.12", "2026.10.09.11", "2026.10.09.10", "2026.10.09.9", "2026.10.09.8", "2026.10.09.7", "2026.10.09.6", "2026.10.09.5", "2026.10.09.4", "2026.10.09.3", "2026.10.09.2", "2026.10.09.1", "2026.10.08.3", "2026.10.08.2", "2026.10.08.1", "2026.10.06.1", "2026.10.05.2", "2026.10.05.1", "2026.10.04.1", "2026.10.03.1", "2026.10.01.6", "2026.10.01.5", "2026.10.01.4", "2026.10.01.3", "2026.10.01.2", "2026.10.01.1", "2026.09.29.9", "2026.09.29.8", "2026.09.29.7", "2026.09.29.6", "2026.09.29.5", "2026.09.29.4", "2026.09.29.3", "2026.09.29.2", "2026.09.29.1", "2026.09.28.1", "2026.09.27.3", "2026.09.27.2", "2026.09.27.1", "2026.08.25.2", "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
 )
 RUNNER_PROTOCOL_VERSION = 1
 NODE_VERSION = "24.19.0"
@@ -60,7 +60,7 @@ OPERATION_FIELDS = {
     "list": BASE_REQUEST_FIELDS,
     "status": BASE_REQUEST_FIELDS | {"agent_id"},
     "clone": BASE_REQUEST_FIELDS | {"agent_id", "template_id"},
-    "start": BASE_REQUEST_FIELDS | {"agent_id"},
+    "start": BASE_REQUEST_FIELDS | {"agent_id", "reserved_slots"},
     "stop": BASE_REQUEST_FIELDS | {"agent_id", "timeout_seconds"},
     "destroy": BASE_REQUEST_FIELDS | {"agent_id"},
     "stats": BASE_REQUEST_FIELDS | {"agent_id"},
@@ -431,6 +431,7 @@ def op_preflight(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
         "template_ready": True,
         "running": running_agent_count(),
         "max_running": MAX_RUNNING,
+        "start_reserved_slots": True,
     }
 
 
@@ -497,12 +498,25 @@ def precheck_start(namespace: str, body: dict[str, Any]) -> dict[str, Any] | Non
     return None
 
 
+def requested_reserved_slots(body: dict[str, Any]) -> int:
+    """Slots an optional start (a prewarm) must leave free for requests.
+
+    Checked under the host-wide lock with the running count, so concurrent
+    prewarms from any namespace cannot consume the reserve.
+    """
+    reserved = body.get("reserved_slots", 0)
+    if isinstance(reserved, bool) or not isinstance(reserved, int) or not 0 <= reserved < MAX_RUNNING:
+        fail("reserved_slots must be an integer below the running limit")
+    return reserved
+
+
 def op_start(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     name = instance_name(body)
+    reserved = requested_reserved_slots(body)
     record = require_instance(name, namespace)
     if str(record.get("status", "")).upper() == "RUNNING":
         return {"instance": agent_summary(record), "changed": False}
-    if running_agent_count() >= MAX_RUNNING:
+    if running_agent_count() + reserved >= MAX_RUNNING:
         fail("running-container limit reached")
     run(["incus", "start", name])
     return {"instance": agent_summary(require_instance(name, namespace)), "changed": True}
@@ -609,14 +623,29 @@ def proxies_match(record: dict[str, Any], settings: ProxySettings) -> bool:
     return devices.get(VLLM_PROXY_DEVICE) == proxy_device(VLLM_PROXY_PORT, settings.vllm_upstream)
 
 
-def echo_hostname_mapped(name: str, echo_hostname: str) -> bool:
-    # /etc/hosts lives in the container and may be rewritten on boot, so the
-    # instance config alone does not prove the mapping is still present.
-    mapped = run(
-        ["incus", "exec", name, "--", "grep", "-qxF", echo_hosts_line(echo_hostname), "/etc/hosts"],
+def container_network_ready(name: str, echo_hostname: str) -> bool:
+    """Whether the in-container side of the proxy needs no reconfiguration.
+
+    /etc/hosts may be rewritten on boot, so the instance config alone does not
+    prove the mapping. Right after a start nginx may still be activating; the
+    full path's `systemctl reload nginx` then waits for it, so a connection
+    test that follows cannot race the boot.
+    """
+    ready = run(
+        [
+            "incus",
+            "exec",
+            name,
+            "--",
+            "sh",
+            "-c",
+            'grep -qxF -- "$1" /etc/hosts && systemctl is-active --quiet nginx',
+            "sh",
+            echo_hosts_line(echo_hostname),
+        ],
         check=False,
     )
-    return mapped.returncode == 0
+    return ready.returncode == 0
 
 
 def running_agent_record(namespace: str, body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -630,7 +659,7 @@ def running_agent_record(namespace: str, body: dict[str, Any]) -> tuple[str, dic
 def unchanged_proxies_result(
     name: str, record: dict[str, Any], settings: ProxySettings
 ) -> dict[str, Any] | None:
-    if not proxies_match(record, settings) or not echo_hostname_mapped(name, settings.echo_hostname):
+    if not proxies_match(record, settings) or not container_network_ready(name, settings.echo_hostname):
         return None
     return {"instance": agent_summary(record), "changed": False}
 

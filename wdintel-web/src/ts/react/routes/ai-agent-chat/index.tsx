@@ -124,6 +124,7 @@ import {
 } from '../../services/api/ai-agent';
 import { HttpRequestError } from '../../services/api/client';
 import { streamAiAgentEventsWithReconnect } from './stream';
+import { usePrewarmWhileComposing } from './use-prewarm-while-composing';
 import { AttachFileButton, ComposerAttachments, MessageAttachments } from './ComposerAttachments';
 import {
   AI_CHAT_UPLOAD_MAX_PER_MESSAGE,
@@ -1856,6 +1857,12 @@ export function AiAgentChat({
   ) : null;
   const composerDisabled =
     submitting || loadingConversation || conversationLoadFailed || !selectedProvider;
+  usePrewarmWhileComposing({
+    draft,
+    attachmentCount: composerAttachments.attachments.length,
+    providerId,
+    enabled: Boolean(configuration?.enabled) && !composerDisabled,
+  });
 
   if (unavailable && error) {
     return <AiAgentChatUnavailable message={error} onRetry={() => void loadPage()} />;
