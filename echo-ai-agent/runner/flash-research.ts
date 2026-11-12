@@ -286,6 +286,17 @@ function answerIssue(text: string, sources: Sources): AnswerIssue | undefined {
     : undefined;
 }
 
+/**
+ * The part of a cut-off answer that was finished: its last line may stop mid-sentence
+ * or mid-link, and a trailing heading would introduce nothing.
+ */
+export function completedLines(text: string): string {
+  const lines = text.split("\n").slice(0, -1);
+  while (lines.length && (!lines.at(-1)!.trim() || /^\s*#{1,6}\s/.test(lines.at(-1)!)))
+    lines.pop();
+  return lines.join("\n").trimEnd();
+}
+
 export function validatedFlashAnswer(
   text: string | null,
   sources: Sources,
@@ -357,11 +368,15 @@ export class FlashResearch {
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
   private researchStartedAt?: number;
+  // The longest validated part of a synthesis the finalization deadline cut off.
+  private partial?: string;
   private readonly sources: () => Sources;
   private readonly journal?: WorkJournal;
   private readonly diagnostic: (event: CompletionDiagnostic) => void;
   private readonly tuning: ResearchTuning;
   usedFallback = false;
+  /** The answer is the finished part of a synthesis cut off by the deadline. */
+  usedPartial = false;
 
   constructor(
     sources: () => Sources,
@@ -510,6 +525,24 @@ export class FlashResearch {
         remainingMs: budget.remainingFinalizationMs(),
       });
     return answer;
+  }
+
+  /**
+   * Research that wrote the cited answer after its tools already did synthesis's work;
+   * rewriting it would spend the time left on the same evidence (incident 01a1d04a).
+   * Only a report longer than any draft counts: a shorter text may be the completion
+   * note research ends with, and the draft or synthesis covers it. It must cite a source
+   * this request's tools returned, so an answer repeated from history is not one.
+   */
+  researchReport(
+    text: string,
+    budget: ResearchBudget,
+    retrieved: ReadonlySet<string>,
+  ): string | undefined {
+    return text.trim().length > DRAFT_CHARACTERS &&
+      markdownLinks(text).some((href) => retrieved.has(href))
+      ? this.directAnswer(text, budget)
+      : undefined;
   }
 
   hasGaps(): boolean {
@@ -692,14 +725,30 @@ export class FlashResearch {
       correction = this.correctionInstructions(result.outcome);
     }
     this.usedFallback = true;
-    const answer = this.fallback();
+    const draft = this.fallback();
+    // Either is validated; the longer one keeps more of the cited findings.
+    this.usedPartial = Boolean(
+      this.partial &&
+        (draft === FLASH_INABILITY || this.partial.length > draft.length),
+    );
+    const answer = this.usedPartial ? this.partial! : draft;
     this.diagnostic({
       stage: "answer",
-      outcome: answer === FLASH_INABILITY ? "inability" : "fallback",
+      outcome: this.usedPartial
+        ? "partial"
+        : answer === FLASH_INABILITY
+          ? "inability"
+          : "fallback",
       textCharacters: answer.length,
       remainingMs: budget.remainingFinalizationMs(),
     });
     return answer;
+  }
+
+  private notePartial(text: string): void {
+    const answer = validatedFlashAnswer(completedLines(text), this.sources());
+    if (answer && answer.length > (this.partial?.length ?? 0))
+      this.partial = answer;
   }
 
   private async synthesisAttempt(
@@ -715,6 +764,7 @@ export class FlashResearch {
     let durationMs = 0;
     const candidate = await synthesizeBudgetEvidence({
       ...options,
+      onPartial: (text) => this.notePartial(text),
       onOutcome: (event) => {
         outcome = event.outcome as CompletionStatus;
         durationMs = event.durationMs ?? 0;

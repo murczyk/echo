@@ -7,6 +7,7 @@ import {
   SynthesisAuthorizationError,
   SynthesisContentFilterError,
   BUDGET_INABILITY,
+  PARTIAL_GRACE_MS,
   budgetFallback,
   chooseBudgetAnswer,
   synthesizeBudgetEvidence,
@@ -163,6 +164,53 @@ test("#3724 returns a short notice, never raw excerpts, when synthesis ignores c
   assert.ok(!fallback.includes("Verified source text"));
   assert.ok(!fallback.includes("уривки джерел"));
   assert.ok(!fallback.includes("/rer-analysis-neo"));
+});
+
+test("incident 01a1d054: a cut-off synthesis hands over what it wrote, waiting only briefly", async () => {
+  for (const [settles, rawStopReason] of [[true, undefined], [false, undefined], [true, "content_filter"]] as const) {
+    const handsOver = settles && rawStopReason === undefined;
+    const cancellation = new AbortController();
+    const partials: string[] = [];
+    const outcomes: any[] = [];
+    const response = synthesizeBudgetEvidence(
+      {
+        engine,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Report",
+        evidence,
+        maxTokens: 8192,
+        signal: cancellation.signal,
+        onPartial: (text) => partials.push(text),
+        onOutcome: (outcome) => outcomes.push(outcome),
+      },
+      (_engine, _context, options) =>
+        new Promise((resolve) => {
+          // As pi-ai does: the aborted message keeps what was streamed, hidden thinking apart.
+          if (settles)
+            options!.signal!.addEventListener("abort", () =>
+              resolve({
+                stopReason: "aborted",
+                ...(rawStopReason ? { rawStopReason } : {}),
+                content: [
+                  { type: "thinking", thinking: "PRIVATE_THINKING" },
+                  { type: "text", text: "Written so far" },
+                ],
+              } as any),
+            );
+        }),
+    );
+    const abortedAt = Date.now();
+    cancellation.abort();
+    assert.equal(await response, null);
+    // A provider that ignores the abort delays the fallback by the grace period only.
+    assert.ok(Date.now() - abortedAt < PARTIAL_GRACE_MS + 500);
+    // Filtered text is never handed over, even when the stream stayed open past it.
+    assert.deepEqual(partials, handsOver ? ["Written so far"] : []);
+    assert.equal(outcomes.at(-1).outcome, "aborted");
+    assert.equal(outcomes.at(-1).textCharacters, handsOver ? 14 : undefined);
+  }
 });
 
 test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds context", async () => {

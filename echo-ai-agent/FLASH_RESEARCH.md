@@ -81,7 +81,14 @@ map, file and document link safeguards; synthesis could only rewrite it from a
 narrower view (incident 01a1c4a5, where it turned CSV processing rules set in the
 first message into a summary). An empty or invalid reply, any tool call, and document
 requests still go to synthesis. On Deep the reply to the request is used, not the
-completion note the search reminder asks for. A last draft refresh
+completion note the search reminder asks for. Research that ran tools and then ended
+on a reply without a tool call, longer than any draft (8,000 characters) and citing a
+source this request's tools returned, has written the answer itself: it is delivered
+the same way, without a draft refresh or synthesis (incident 01a1d04a, where GLM-5.3
+wrote a 16,000-character report and a synthesis rewriting it ran out of time). A
+shorter reply may be the completion note research ends with, and one citing only
+sources from history or restored work memory is not new; both still go to synthesis.
+A last draft refresh
 runs only after four or more retrievals, because it is a fallback that costs
 research-effort turns.
 
@@ -105,8 +112,13 @@ The retry asks for a shorter complete answer or corrected exact citations;
 authorization failures, filtering and cancellation remain terminal.
 Intermediate assistant text and private-tool events never
 enter the streamed answer; public progress and source activity remain visible.
-An unfinished synthesis uses the latest completed draft only if its links still
-validate against the available citations. Without a validated draft, it returns a
+When the finalization deadline cuts a synthesis off, the provider hands over the text
+it streamed so far, after a wait of at most 300 ms. A last line without a final
+newline may be unfinished and is dropped, together with any trailing heading. The
+finished lines then count as an answer if their links validate (incident 01a1d054,
+where the deadline discarded 73 seconds of a cited report). An unfinished synthesis returns whichever of that part and the latest
+completed draft is longer, when its links still validate against the available
+citations. A cut-off part says the time limit cut it. Without either, it returns a
 short inability notice. Answers grounded solely in user-provided text need no
 invented citation, and registered map links remain supported. It never
 substitutes raw source excerpts. Unread cursors,
@@ -137,8 +149,9 @@ stage/outcome/finish-reason values and numeric usage, duration and remaining
 budget fields, correlated with the request ID. These frames are never stored as
 chat events or sent to the frontend. Source text, tool arguments, credentials
 and hidden reasoning are excluded. This also records successful requests that
-returned a fallback draft instead of a completed synthesis, and `research_text`
-answers that research wrote without tools.
+returned a fallback draft instead of a completed synthesis, `research_text`
+answers that research wrote itself, and `partial` answers cut off by the deadline,
+whose synthesis diagnostic is `aborted` with the characters streamed before the cut.
 
 When a provider failure or content filter ends a run on any path, including
 OpenAI models outside bounded research, the runner reports it with stage
