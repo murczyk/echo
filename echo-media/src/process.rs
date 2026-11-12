@@ -4,6 +4,7 @@
 
 use crate::constants::*;
 use crate::error::{MediaError, Result};
+use crate::limits::ECHO_MEDIA_STDERR_TAIL_BYTES;
 use crate::sandbox::{Policy, SandboxMode};
 use anyhow::Context;
 use rustix::process::{kill_process_group, Pid, Signal};
@@ -99,7 +100,9 @@ pub fn spawn(spec: Spec) -> Result<Running> {
         .spawn()
         .with_context(|| format!("spawn {}", spec.program.display()))?;
     let group = Group(child.id().and_then(|pid| Pid::from_raw(pid as i32)));
-    let stderr = child.stderr.take().map(|pipe| tokio::spawn(read_all(pipe)));
+    let stderr = child.stderr.take().map(|pipe| {
+        tokio::spawn(read_tail(pipe, ECHO_MEDIA_STDERR_TAIL_BYTES))
+    });
     Ok(Running {
         group,
         stdout: child.stdout.take(),
@@ -229,10 +232,28 @@ impl Drop for Group {
     }
 }
 
-async fn read_all(mut pipe: impl AsyncRead + Unpin) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    let _ = pipe.read_to_end(&mut bytes).await;
-    bytes
+/// Drains `pipe` to EOF, keeping only its last `limit` bytes so a chatty
+/// decoder cannot grow memory for the whole job. A truncated tail starts at
+/// the next full line, so a cut-off secret cannot escape redaction.
+async fn read_tail(mut pipe: impl AsyncRead + Unpin, limit: usize) -> Vec<u8> {
+    let mut tail = Vec::with_capacity(limit.min(ECHO_MEDIA_READ_CHUNK_BYTES));
+    let mut buffer = [0u8; ECHO_MEDIA_READ_CHUNK_BYTES];
+    let mut truncated = false;
+    while let Ok(length @ 1..) = pipe.read(&mut buffer).await {
+        tail.extend_from_slice(&buffer[..length]);
+        if tail.len() > limit {
+            tail.drain(..tail.len() - limit);
+            truncated = true;
+        }
+    }
+    if truncated {
+        let line_start = tail
+            .iter()
+            .position(|&byte| byte == b'\n')
+            .map_or(tail.len(), |newline| newline + 1);
+        tail.drain(..line_start);
+    }
+    tail
 }
 
 /// Removes secrets and control characters from decoder stderr before it
@@ -256,5 +277,21 @@ mod tests {
         let stderr = b"open https://s3/x?sig=abc failed\x1b[31m\r\nnext";
         let clean = sanitize(stderr, &["https://s3/x?sig=abc".to_string()]);
         assert_eq!(clean, "open <redacted> failed?[31m?\nnext");
+    }
+
+    #[tokio::test]
+    async fn read_tail_keeps_last_full_lines() {
+        let line = b"open https://s3/x?sig=abc failed\n";
+        let input = line.repeat(10_000);
+        let tail = read_tail(input.as_slice(), 1000).await;
+        assert!(tail.len() <= 1000);
+        assert!(tail.starts_with(b"open "));
+        assert!(input.ends_with(&tail));
+
+        let tail = read_tail(&b"short"[..], 1000).await;
+        assert_eq!(tail, b"short");
+
+        let tail = read_tail(&[b'x'; 5000][..], 1000).await;
+        assert!(tail.is_empty());
     }
 }

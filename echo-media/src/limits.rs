@@ -2,6 +2,9 @@
 
 use std::time::Duration;
 
+/// Decoder stderr kept per process; older bytes are drained and dropped.
+pub const ECHO_MEDIA_STDERR_TAIL_BYTES: usize = 64 * 1024;
+
 pub const ECHO_MEDIA_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub const ECHO_MEDIA_THUMBNAIL_TIMEOUT: Duration = Duration::from_secs(120);
