@@ -18,9 +18,11 @@
 
 use crate::entities::message_replay_session;
 use crate::error::AppError;
+use crate::h;
 use crate::message_replay::types::{
     MessageReplayShiftMode, MessageReplaySpeed,
 };
+use crate::types::ShortContext;
 use chrono::{Duration, LocalResult, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 
@@ -193,15 +195,16 @@ pub fn resolve_plan(
     manual_shift_ms: Option<i64>,
     speed: &MessageReplaySpeed,
     now: NaiveDateTime,
-) -> Result<ReplayPlan, AppError> {
-    validate_window(window_from, window_to, now)?;
+) -> anyhow::Result<ReplayPlan> {
+    validate_window(window_from, window_to, now).c(h!())?;
     let start_position = resolve_start_position(
         window_from,
         mode,
         manual_shift_ms,
         now,
         crate::config::get_tz(),
-    )?;
+    )
+    .c(h!())?;
     if start_position >= window_to {
         return Err(bl_error(
             "Обраний зсув починає відтворення після кінця вікна: немає повідомлень для відтворення",
@@ -219,7 +222,7 @@ fn validate_window(
     window_from: NaiveDateTime,
     window_to: NaiveDateTime,
     now: NaiveDateTime,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     if window_from >= window_to {
         return Err(bl_error("Початок вікна має бути раніше за його кінець"));
     }
@@ -236,7 +239,7 @@ fn resolve_start_position(
     manual_shift_ms: Option<i64>,
     now: NaiveDateTime,
     tz: Tz,
-) -> Result<NaiveDateTime, AppError> {
+) -> anyhow::Result<NaiveDateTime> {
     match mode {
         MessageReplayShiftMode::WindowStart => Ok(window_from),
         MessageReplayShiftMode::SameTimeOfDay => {
@@ -258,10 +261,11 @@ fn manual_start_position(
     window_from: NaiveDateTime,
     manual_shift_ms: Option<i64>,
     now: NaiveDateTime,
-) -> Result<NaiveDateTime, AppError> {
+) -> anyhow::Result<NaiveDateTime> {
     let shift_ms = manual_shift_ms
         .filter(|shift_ms| *shift_ms > 0)
-        .ok_or_else(|| bl_error("Вкажіть додатний зсув часу"))?;
+        .ok_or_else(|| bl_error("Вкажіть додатний зсув часу"))
+        .c(h!())?;
     Duration::try_milliseconds(shift_ms)
         .and_then(|shift| now.checked_sub_signed(shift))
         .filter(|start| *start >= window_from - MAX_MANUAL_START_LEAD)
@@ -279,7 +283,7 @@ fn same_time_of_day_start(
     window_from: NaiveDateTime,
     now: NaiveDateTime,
     tz: Tz,
-) -> Result<NaiveDateTime, AppError> {
+) -> anyhow::Result<NaiveDateTime> {
     let now_local = utc_to_local(now, tz);
     let from_local = utc_to_local(window_from, tz);
     let mut days = (now_local.date() - from_local.date()).num_days();
@@ -293,13 +297,14 @@ fn same_time_of_day_start(
             bl_error(
                 "Зсув на цілі доби можливий, лише якщо вікно почалося щонайменше добу тому",
             )
-        })?;
+        }).c(h!())?;
     // The DST gap fallback can land just before the window start.
     Ok(start.max(window_from))
 }
 
-fn bl_error(msg: &str) -> AppError {
+fn bl_error(msg: &str) -> anyhow::Error {
     AppError::BL {
         msg: msg.to_string(),
     }
+    .into()
 }

@@ -1,7 +1,6 @@
 //! Pushes one source message through the regular ingest pipeline, the same
 //! entry point messenger messages use, moved onto the replay timeline.
 
-use crate::error::AppError;
 use crate::h;
 use crate::message_queue::{
     process_signal_message_queue_item_with_staged_media_and_options,
@@ -38,8 +37,8 @@ pub async fn emit_source(
     txn: &DatabaseTransaction,
     clock: &ReplayClock,
     source: &ReplaySource,
-) -> Result<EmittedReplay, AppError> {
-    let message = replay_message(clock, source)?;
+) -> anyhow::Result<EmittedReplay> {
+    let message = replay_message(clock, source).c(h!())?;
     let shown_at = message.timestamp;
     let mut changed_inbox_item_ids = vec![];
     let processed =
@@ -81,7 +80,7 @@ pub async fn emit_source(
 fn replay_message(
     clock: &ReplayClock,
     source: &ReplaySource,
-) -> Result<Message, AppError> {
+) -> anyhow::Result<Message> {
     let source_ts = source.message.timestamp.c(h!())?;
     let body = source.message.body.clone().unwrap_or_default();
     Ok(Message {
@@ -117,7 +116,7 @@ async fn copy_media(
     signal_message_id: i64,
     signal_message_uuid: Option<uuid::Uuid>,
     source: &ReplaySource,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     if source.media.is_empty() {
         return Ok(());
     }

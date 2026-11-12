@@ -12,7 +12,6 @@ use crate::config::{
     MESSAGE_REPLAY_PROGRESS_LOG_SEC, MESSAGE_REPLAY_TICK_SEC,
 };
 use crate::entities::message_replay_session;
-use crate::error::AppError;
 use crate::h;
 use crate::message_replay::clock::ReplayClock;
 use crate::message_replay::emit::EmittedReplay;
@@ -72,7 +71,7 @@ pub async fn run_message_replay_worker_nofail(env: Arc<Env>) {
 async fn run_iteration(
     env: &Env,
     redis: &mut ConnectionManager,
-) -> Result<Batch, AppError> {
+) -> anyhow::Result<Batch> {
     let mut changed_inbox_item_ids = vec![];
     let result = run_steps(env, redis, &mut changed_inbox_item_ids).await;
     crate::inbox::fanout_inbox_changes(redis, changed_inbox_item_ids)
@@ -85,9 +84,9 @@ async fn run_steps(
     env: &Env,
     redis: &mut ConnectionManager,
     changed_inbox_item_ids: &mut Vec<i64>,
-) -> Result<Batch, AppError> {
+) -> anyhow::Result<Batch> {
     for _ in 0..MESSAGE_REPLAY_EMIT_BATCH_SIZE {
-        match run_step(env, redis).await? {
+        match run_step(env, redis).await.c(h!())? {
             Step::Progress(ids) => changed_inbox_item_ids.extend(ids),
             Step::Idle => return Ok(Batch::Drained),
         }
@@ -98,9 +97,10 @@ async fn run_steps(
 async fn run_step(
     env: &Env,
     redis: &mut ConnectionManager,
-) -> Result<Step, AppError> {
+) -> anyhow::Result<Step> {
     let txn = env.dbx.begin().await.c(h!())?;
-    let Some(replay_session) = session::lock_for_worker(&txn).await? else {
+    let Some(replay_session) = session::lock_for_worker(&txn).await.c(h!())?
+    else {
         txn.commit().await.c(h!())?;
         return Ok(Step::Idle);
     };
@@ -121,7 +121,7 @@ async fn emit_next(
     redis: &mut ConnectionManager,
     txn: DatabaseTransaction,
     replay_session: message_replay_session::Model,
-) -> Result<Step, AppError> {
+) -> anyhow::Result<Step> {
     let clock = ReplayClock::from_session(&replay_session);
     let now = session::now_utc();
     let position = clock.position(now);
@@ -130,10 +130,12 @@ async fn emit_next(
         session::cursor(&replay_session),
         position.min(replay_session.window_to),
     )
-    .await?
+    .await
+    .c(h!())?
     else {
         if position >= replay_session.window_to {
-            let rewound = session::rewind(&txn, replay_session, now).await?;
+            let rewound =
+                session::rewind(&txn, replay_session, now).await.c(h!())?;
             txn.commit().await.c(h!())?;
             log_rewind(&rewound);
         } else {
@@ -141,7 +143,9 @@ async fn emit_next(
         }
         return Ok(Step::Idle);
     };
-    let emitted = emit_or_skip(env, redis, &txn, &clock, source_key).await?;
+    let emitted = emit_or_skip(env, redis, &txn, &clock, source_key)
+        .await
+        .c(h!())?;
     let replayed_count =
         replay_session.replayed_count + i64::from(emitted.is_some());
     session::advance_cursor(
@@ -150,7 +154,8 @@ async fn emit_next(
         source_key,
         emitted.is_some(),
     )
-    .await?;
+    .await
+    .c(h!())?;
     txn.commit().await.c(h!())?;
     let Some(emitted) = emitted else {
         return Ok(Step::Progress(vec![]));
@@ -167,7 +172,7 @@ async fn emit_or_skip(
     txn: &DatabaseTransaction,
     clock: &ReplayClock,
     source_key: SourceKey,
-) -> Result<Option<EmittedReplay>, AppError> {
+) -> anyhow::Result<Option<EmittedReplay>> {
     let savepoint = txn.begin().await.c(h!())?;
     match emit_source(env, redis, &savepoint, clock, source_key).await {
         Ok(emitted) => {
@@ -191,7 +196,7 @@ async fn emit_source(
     txn: &DatabaseTransaction,
     clock: &ReplayClock,
     source_key: SourceKey,
-) -> Result<EmittedReplay, AppError> {
+) -> anyhow::Result<EmittedReplay> {
     let source = source::load_source(txn, source_key.id).await?.c(h!())?;
     emit::emit_source(env, redis, txn, clock, &source).await
 }
@@ -199,11 +204,11 @@ async fn emit_source(
 async fn purge_next(
     txn: DatabaseTransaction,
     replay_session: message_replay_session::Model,
-) -> Result<Step, AppError> {
-    let purged_ids = purge::purge_batch(&txn).await?;
+) -> anyhow::Result<Step> {
+    let purged_ids = purge::purge_batch(&txn).await.c(h!())?;
     if purged_ids.is_empty() {
         let session_id = replay_session.id;
-        session::delete(&txn, replay_session).await?;
+        session::delete(&txn, replay_session).await.c(h!())?;
         txn.commit().await.c(h!())?;
         info!(
             "message_replay: session {session_id} stopped, all replays purged"
@@ -260,8 +265,8 @@ struct ProgressLog {
 }
 
 impl ProgressLog {
-    async fn log(&mut self, env: &Env) -> Result<(), AppError> {
-        let replay_session = session::load(&env.dbx).await?;
+    async fn log(&mut self, env: &Env) -> anyhow::Result<()> {
+        let replay_session = session::load(&env.dbx).await.c(h!())?;
         let seen = replay_session
             .as_ref()
             .map(|session| (session.id, session.state.clone()));
@@ -292,12 +297,12 @@ impl ProgressLog {
 async fn log_summary(
     env: &Env,
     replay_session: message_replay_session::Model,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     if replay_session.state == session::STATE_STOPPING {
         info!(
             "message_replay: session {} stopping, {} replays left to purge",
             replay_session.id,
-            source::count_stored_replays(&env.dbx).await?
+            source::count_stored_replays(&env.dbx).await.c(h!())?
         );
         return Ok(());
     }
@@ -308,7 +313,8 @@ async fn log_summary(
         session::cursor(&replay_session),
         replay_session.window_to,
     )
-    .await?
+    .await
+    .c(h!())?
     .map(|next| next.timestamp);
     let next = next_due_ts.map_or_else(
         || "none".to_string(),

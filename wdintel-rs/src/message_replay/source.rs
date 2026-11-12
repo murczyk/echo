@@ -4,7 +4,6 @@
 //! keyset, so every worker tick scans only the messages that became due.
 
 use crate::entities::*;
-use crate::error::AppError;
 use crate::h;
 use crate::message_replay::types::MessageReplayActivityBucket;
 use crate::types::ShortContext;
@@ -45,7 +44,7 @@ pub async fn next_due_source<C>(
     dbx: &C,
     cursor: SourceKey,
     due_until: NaiveDateTime,
-) -> Result<Option<SourceKey>, AppError>
+) -> anyhow::Result<Option<SourceKey>>
 where
     C: ConnectionTrait,
 {
@@ -78,7 +77,7 @@ pub async fn count_window<C>(
     window_from: NaiveDateTime,
     window_to: NaiveDateTime,
     first_replayed_ts: NaiveDateTime,
-) -> Result<WindowCounts, AppError>
+) -> anyhow::Result<WindowCounts>
 where
     C: ConnectionTrait,
 {
@@ -118,7 +117,7 @@ pub async fn activity<C>(
     from: NaiveDateTime,
     to: NaiveDateTime,
     bucket: &MessageReplayActivityBucket,
-) -> Result<Vec<(NaiveDateTime, i64)>, AppError>
+) -> anyhow::Result<Vec<(NaiveDateTime, i64)>>
 where
     C: ConnectionTrait,
 {
@@ -172,7 +171,7 @@ where
 /// every replay.
 pub async fn extent<C>(
     dbx: &C,
-) -> Result<(Option<NaiveDateTime>, Option<NaiveDateTime>), AppError>
+) -> anyhow::Result<(Option<NaiveDateTime>, Option<NaiveDateTime>)>
 where
     C: ConnectionTrait,
 {
@@ -196,7 +195,7 @@ where
 pub async fn load_source<C>(
     dbx: &C,
     source_id: i64,
-) -> Result<Option<ReplaySource>, AppError>
+) -> anyhow::Result<Option<ReplaySource>>
 where
     C: ConnectionTrait,
 {
@@ -234,7 +233,7 @@ where
 }
 
 /// Replayed messages still stored; served by `signal_message_external_id_idx`.
-pub async fn count_stored_replays<C>(dbx: &C) -> Result<i64, AppError>
+pub async fn count_stored_replays<C>(dbx: &C) -> anyhow::Result<i64>
 where
     C: ConnectionTrait,
 {

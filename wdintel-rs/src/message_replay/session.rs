@@ -26,7 +26,7 @@ pub fn now_utc() -> NaiveDateTime {
 
 pub async fn load<C>(
     dbx: &C,
-) -> Result<Option<message_replay_session::Model>, AppError>
+) -> anyhow::Result<Option<message_replay_session::Model>>
 where
     C: ConnectionTrait,
 {
@@ -38,7 +38,7 @@ where
 
 pub async fn lock_for_update(
     txn: &DatabaseTransaction,
-) -> Result<Option<message_replay_session::Model>, AppError> {
+) -> anyhow::Result<Option<message_replay_session::Model>> {
     Ok(message_replay_session::Entity::find()
         .lock_exclusive()
         .one(txn)
@@ -48,7 +48,7 @@ pub async fn lock_for_update(
 
 pub async fn lock_for_worker(
     txn: &DatabaseTransaction,
-) -> Result<Option<message_replay_session::Model>, AppError> {
+) -> anyhow::Result<Option<message_replay_session::Model>> {
     Ok(message_replay_session::Entity::find()
         .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
         .one(txn)
@@ -100,8 +100,8 @@ pub async fn pause(
     txn: &DatabaseTransaction,
     session: message_replay_session::Model,
     now: NaiveDateTime,
-) -> Result<message_replay_session::Model, AppError> {
-    ensure_state(&session, STATE_RUNNING, "Відтворення не запущене")?;
+) -> anyhow::Result<message_replay_session::Model> {
+    ensure_state(&session, STATE_RUNNING, "Відтворення не запущене").c(h!())?;
     let clock = ReplayClock::from_session(&session).paused(now);
     update_clock(txn, session, STATE_PAUSED, clock, now).await
 }
@@ -110,8 +110,8 @@ pub async fn resume(
     txn: &DatabaseTransaction,
     session: message_replay_session::Model,
     now: NaiveDateTime,
-) -> Result<message_replay_session::Model, AppError> {
-    ensure_state(&session, STATE_PAUSED, "Відтворення не на паузі")?;
+) -> anyhow::Result<message_replay_session::Model> {
+    ensure_state(&session, STATE_PAUSED, "Відтворення не на паузі").c(h!())?;
     let clock = ReplayClock::from_session(&session).resumed(now);
     update_clock(txn, session, STATE_RUNNING, clock, now).await
 }
@@ -122,11 +122,12 @@ pub async fn set_speed(
     session: message_replay_session::Model,
     speed: &MessageReplaySpeed,
     now: NaiveDateTime,
-) -> Result<message_replay_session::Model, AppError> {
+) -> anyhow::Result<message_replay_session::Model> {
     if session.state == STATE_STOPPING {
         return Err(AppError::BL {
             msg: "Відтворення зупиняється".to_string(),
-        });
+        })
+        .c(h!());
     }
     let clock =
         ReplayClock::from_session(&session).with_speed(speed.pct(), now);
@@ -140,7 +141,7 @@ async fn update_clock(
     state: &str,
     clock: ReplayClock,
     now: NaiveDateTime,
-) -> Result<message_replay_session::Model, AppError> {
+) -> anyhow::Result<message_replay_session::Model> {
     let mut session = session.into_active_model();
     session.state = Set(state.to_string());
     session.anchor_ts = Set(clock.anchor_ts);
@@ -156,7 +157,7 @@ pub async fn stop(
     txn: &DatabaseTransaction,
     session: message_replay_session::Model,
     now: NaiveDateTime,
-) -> Result<message_replay_session::Model, AppError> {
+) -> anyhow::Result<message_replay_session::Model> {
     if session.state == STATE_STOPPING {
         return Ok(session);
     }
@@ -171,7 +172,7 @@ pub async fn advance_cursor(
     session: message_replay_session::Model,
     source: SourceKey,
     replayed: bool,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     let replayed_count = session.replayed_count + i64::from(replayed);
     let cycle_processed_count = session.cycle_processed_count + 1;
     let mut session = session.into_active_model();
@@ -191,14 +192,15 @@ pub async fn rewind(
     txn: &DatabaseTransaction,
     session: message_replay_session::Model,
     now: NaiveDateTime,
-) -> Result<message_replay_session::Model, AppError> {
+) -> anyhow::Result<message_replay_session::Model> {
     let cycle_source_count = source::count_window(
         txn,
         session.window_from,
         session.window_to,
         session.window_from,
     )
-    .await?
+    .await
+    .c(h!())?
     .window_count;
     let pause = MessageReplayOnEnd::from_db(&session.on_end)
         == MessageReplayOnEnd::Pause;
@@ -211,7 +213,8 @@ pub async fn rewind(
     let completed_cycles = session.completed_cycles + 1;
     let state = if pause { STATE_PAUSED } else { STATE_RUNNING };
     let mut session = update_clock(txn, session, state, clock, now)
-        .await?
+        .await
+        .c(h!())?
         .into_active_model();
     session.cursor_ts = Set(window_from);
     session.cursor_id = Set(0);
@@ -224,7 +227,7 @@ pub async fn rewind(
 pub async fn delete(
     txn: &DatabaseTransaction,
     session: message_replay_session::Model,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     session.into_active_model().delete(txn).await.c(h!())?;
     Ok(())
 }
@@ -233,13 +236,14 @@ fn ensure_state(
     session: &message_replay_session::Model,
     expected: &str,
     msg: &str,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     if session.state == expected {
         return Ok(());
     }
     Err(AppError::BL {
         msg: msg.to_string(),
     })
+    .c(h!())
 }
 
 /// Polled every few seconds by every open admin tab, so it never counts a
@@ -247,17 +251,17 @@ fn ensure_state(
 /// counts are kept on the session row, and stored replays are counted only
 /// with no session (leftovers, normally none) or while stopping (the purge
 /// progress, shrinking batch by batch).
-pub async fn status<C>(dbx: &C) -> Result<MessageReplayStatusRsp, AppError>
+pub async fn status<C>(dbx: &C) -> anyhow::Result<MessageReplayStatusRsp>
 where
     C: ConnectionTrait,
 {
-    let session = load(dbx).await?;
+    let session = load(dbx).await.c(h!())?;
     let stored_replay_count = match &session {
         Some(session) if session.state != STATE_STOPPING => None,
-        _ => Some(source::count_stored_replays(dbx).await?),
+        _ => Some(source::count_stored_replays(dbx).await.c(h!())?),
     };
     let session = match session {
-        Some(session) => Some(session_rsp(dbx, session).await?),
+        Some(session) => Some(session_rsp(dbx, session).await.c(h!())?),
         None => None,
     };
     Ok(MessageReplayStatusRsp {
@@ -278,7 +282,7 @@ pub fn remaining_count(session: &message_replay_session::Model) -> i64 {
 async fn session_rsp<C>(
     dbx: &C,
     session: message_replay_session::Model,
-) -> Result<MessageReplaySessionRsp, AppError>
+) -> anyhow::Result<MessageReplaySessionRsp>
 where
     C: ConnectionTrait,
 {
@@ -286,7 +290,8 @@ where
     let clock = ReplayClock::from_session(&session);
     let next_due_ts =
         source::next_due_source(dbx, cursor(&session), session.window_to)
-            .await?
+            .await
+            .c(h!())?
             .map(|next| next.timestamp);
     let remaining = remaining_count(&session);
     Ok(MessageReplaySessionRsp {

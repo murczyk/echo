@@ -39,9 +39,11 @@ pub async fn activity(
 ) -> Result<Json<MessageReplayActivityRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let (from, to) =
-        parse_window(req.from_ms, req.to_ms, req.bucket.max_range_days())?;
+        parse_window(req.from_ms, req.to_ms, req.bucket.max_range_days())
+            .c(h!())?;
     let points = source::activity(&env.dbx, from, to, &req.bucket)
-        .await?
+        .await
+        .c(h!())?
         .into_iter()
         .map(|(bucket, count)| MessageReplayActivityPoint {
             ts_ms: to_ms(bucket),
@@ -60,7 +62,7 @@ pub async fn extent(
     env: Data<Env>,
 ) -> Result<Json<MessageReplayExtentRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let (first, last) = source::extent(&env.dbx).await?;
+    let (first, last) = source::extent(&env.dbx).await.c(h!())?;
     Ok(Json(MessageReplayExtentRsp {
         first_ms: first.map(to_ms),
         last_ms: last.map(to_ms),
@@ -75,14 +77,15 @@ pub async fn preview(
 ) -> Result<Json<MessageReplayPreviewRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let now = now_utc();
-    let plan = plan_from_req(&req, now)?;
+    let plan = plan_from_req(&req, now).c(h!())?;
     let counts = source::count_window(
         &env.dbx,
         plan.window_from,
         plan.window_to,
         plan.first_replayed_ts(),
     )
-    .await?;
+    .await
+    .c(h!())?;
     let clock = plan.clock(now);
     let first = counts.first_replayed_ts;
     Ok(Json(MessageReplayPreviewRsp {
@@ -105,11 +108,11 @@ pub async fn start(
     req: Json<MessageReplayPlanReq>,
 ) -> Result<Json<MessageReplayStatusRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let login_id = login_id_from_identity(&user)?;
+    let login_id = login_id_from_identity(&user).c(h!())?;
     let now = now_utc();
-    let plan = plan_from_req(&req, now)?;
+    let plan = plan_from_req(&req, now).c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    if session::lock_for_update(&txn).await?.is_some() {
+    if session::lock_for_update(&txn).await.c(h!())?.is_some() {
         return Err(session_exists_error());
     }
     let counts = source::count_window(
@@ -118,12 +121,14 @@ pub async fn start(
         plan.window_to,
         plan.first_replayed_ts(),
     )
-    .await?;
+    .await
+    .c(h!())?;
     let cycle_source_count = counts.window_count - counts.skipped_count;
     insert_session(&txn, login_id, &plan, &req, cycle_source_count, now)
-        .await?;
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
-    Ok(Json(session::status(&env.dbx).await?))
+    Ok(Json(session::status(&env.dbx).await.c(h!())?))
 }
 
 #[post("/api/admin/message-replay/pause")]
@@ -133,10 +138,12 @@ pub async fn pause(
 ) -> Result<Json<MessageReplayStatusRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let replay_session = lock_session(&txn).await?;
-    session::pause(&txn, replay_session, now_utc()).await?;
+    let replay_session = lock_session(&txn).await.c(h!())?;
+    session::pause(&txn, replay_session, now_utc())
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
-    Ok(Json(session::status(&env.dbx).await?))
+    Ok(Json(session::status(&env.dbx).await.c(h!())?))
 }
 
 #[post("/api/admin/message-replay/resume")]
@@ -146,10 +153,12 @@ pub async fn resume(
 ) -> Result<Json<MessageReplayStatusRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let replay_session = lock_session(&txn).await?;
-    session::resume(&txn, replay_session, now_utc()).await?;
+    let replay_session = lock_session(&txn).await.c(h!())?;
+    session::resume(&txn, replay_session, now_utc())
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
-    Ok(Json(session::status(&env.dbx).await?))
+    Ok(Json(session::status(&env.dbx).await.c(h!())?))
 }
 
 /// Changes the speed of a running or paused replay from its current
@@ -162,10 +171,12 @@ pub async fn speed(
 ) -> Result<Json<MessageReplayStatusRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let replay_session = lock_session(&txn).await?;
-    session::set_speed(&txn, replay_session, &req.speed, now_utc()).await?;
+    let replay_session = lock_session(&txn).await.c(h!())?;
+    session::set_speed(&txn, replay_session, &req.speed, now_utc())
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
-    Ok(Json(session::status(&env.dbx).await?))
+    Ok(Json(session::status(&env.dbx).await.c(h!())?))
 }
 
 #[post("/api/admin/message-replay/stop")]
@@ -175,10 +186,12 @@ pub async fn stop(
 ) -> Result<Json<MessageReplayStatusRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let replay_session = lock_session(&txn).await?;
-    session::stop(&txn, replay_session, now_utc()).await?;
+    let replay_session = lock_session(&txn).await.c(h!())?;
+    session::stop(&txn, replay_session, now_utc())
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
-    Ok(Json(session::status(&env.dbx).await?))
+    Ok(Json(session::status(&env.dbx).await.c(h!())?))
 }
 
 #[post("/api/admin/message-replay/status")]
@@ -187,15 +200,16 @@ pub async fn status(
     env: Data<Env>,
 ) -> Result<Json<MessageReplayStatusRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(session::status(&env.dbx).await?))
+    Ok(Json(session::status(&env.dbx).await.c(h!())?))
 }
 
 fn plan_from_req(
     req: &MessageReplayPlanReq,
     now: NaiveDateTime,
-) -> Result<ReplayPlan, AppError> {
+) -> anyhow::Result<ReplayPlan> {
     let (from, to) =
-        parse_window(req.from_ms, req.to_ms, MESSAGE_REPLAY_MAX_RANGE_DAYS)?;
+        parse_window(req.from_ms, req.to_ms, MESSAGE_REPLAY_MAX_RANGE_DAYS)
+            .c(h!())?;
     resolve_plan(
         from,
         to,
@@ -211,28 +225,34 @@ fn parse_window(
     from_ms: i64,
     to_ms: i64,
     max_days: i64,
-) -> Result<(NaiveDateTime, NaiveDateTime), AppError> {
+) -> anyhow::Result<(NaiveDateTime, NaiveDateTime)> {
     let from = dt_from_millis(from_ms).c(h!())?;
     let to = dt_from_millis(to_ms).c(h!())?;
     if from >= to {
         return Err(AppError::BL {
             msg: "Початок вікна має бути раніше за його кінець".to_string(),
-        });
+        })
+        .c(h!());
     }
     if to - from > chrono::Duration::days(max_days) {
         return Err(AppError::BL {
             msg: format!("Період не може перевищувати {max_days} днів"),
-        });
+        })
+        .c(h!());
     }
     Ok((from, to))
 }
 
 async fn lock_session(
     txn: &DatabaseTransaction,
-) -> Result<crate::entities::message_replay_session::Model, AppError> {
-    session::lock_for_update(txn).await?.ok_or(AppError::BL {
-        msg: "Відтворення не запущене".to_string(),
-    })
+) -> anyhow::Result<crate::entities::message_replay_session::Model> {
+    session::lock_for_update(txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::BL {
+            msg: "Відтворення не запущене".to_string(),
+        })
+        .c(h!())
 }
 
 /// The singleton index also rejects a session started concurrently.
@@ -243,7 +263,7 @@ async fn insert_session(
     req: &MessageReplayPlanReq,
     cycle_source_count: i64,
     now: NaiveDateTime,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     match session::insert_running(
         txn,
         login_id,
@@ -261,7 +281,7 @@ async fn insert_session(
                 Some(SqlErr::UniqueConstraintViolation(_))
             ) =>
         {
-            Err(session_exists_error())
+            Err(session_exists_error()).c(h!())
         }
         Err(e) => Err(e).c(h!())?,
     }

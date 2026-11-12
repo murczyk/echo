@@ -6,7 +6,6 @@
 
 use crate::config::MESSAGE_REPLAY_PURGE_BATCH_SIZE;
 use crate::entities::*;
-use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
 use sea_orm::*;
@@ -15,8 +14,8 @@ use sea_orm::*;
 /// once no replay is left.
 pub async fn purge_batch(
     txn: &DatabaseTransaction,
-) -> Result<Vec<i64>, AppError> {
-    let message_ids = load_replay_batch(txn).await?;
+) -> anyhow::Result<Vec<i64>> {
+    let message_ids = load_replay_batch(txn).await.c(h!())?;
     if message_ids.is_empty() {
         return Ok(message_ids);
     }
@@ -34,8 +33,8 @@ pub async fn purge_batch(
     )
     .await
     .c(h!())?;
-    delete_blocking_children(txn, &message_ids).await?;
-    delete_messages(txn, &message_ids).await?;
+    delete_blocking_children(txn, &message_ids).await.c(h!())?;
+    delete_messages(txn, &message_ids).await.c(h!())?;
     crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
         txn,
         network_freq_ids,
@@ -47,7 +46,7 @@ pub async fn purge_batch(
 
 async fn load_replay_batch(
     txn: &DatabaseTransaction,
-) -> Result<Vec<i64>, AppError> {
+) -> anyhow::Result<Vec<i64>> {
     Ok(signal_message::Entity::find()
         .filter(signal_message::Column::ExternalId.lt(0))
         .order_by_asc(signal_message::Column::ExternalId)
@@ -65,7 +64,7 @@ async fn load_replay_batch(
 async fn delete_blocking_children(
     txn: &DatabaseTransaction,
     message_ids: &[i64],
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     sigint_peleng::Entity::delete_many()
         .filter(
             sigint_peleng::Column::SourceInboxItemId
@@ -103,7 +102,7 @@ async fn delete_blocking_children(
 async fn delete_messages(
     txn: &DatabaseTransaction,
     message_ids: &[i64],
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     sigint_inbox_item::Entity::delete_many()
         .filter(sigint_inbox_item::Column::Id.is_in(message_ids.to_vec()))
         .exec(txn)
