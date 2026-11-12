@@ -2,6 +2,8 @@
 //! `signal_message.timestamp` and served by `signal_message_timestamp_idx` /
 //! `signal_message_timestamp_id_idx`; the cursor is a `(timestamp, id)`
 //! keyset, so every worker tick scans only the messages that became due.
+//! The activity histogram spans up to a year, so it goes per datasource
+//! group through an index that skips deleted rows.
 
 use crate::entities::*;
 use crate::h;
@@ -112,15 +114,21 @@ where
 /// Message counts per bucket, as `(bucket start, count)`. Day buckets are
 /// Kyiv days, rolled up from hourly bins so the time zone is converted once
 /// per hour instead of once per message (Kyiv offsets are whole hours).
-pub async fn activity<C>(
-    dbx: &C,
+///
+/// Counted one datasource group at a time through
+/// `signal_message_group_ts_desc_idx` (`where deleted = false`), so
+/// soft-deleted messages are never read; a plain timestamp range visits
+/// every deleted row in it (on a production copy, a mostly deleted year took
+/// 17-40 s that way and 0.2 s per group). The grouped lateral subquery cannot
+/// be flattened into a join, which would let the planner fall back to the
+/// timestamp range. JIT is off: the per-group estimates add up to a cost
+/// that triggers compilation, which took 190 of the 250 ms there.
+pub async fn activity(
+    dbx: &DatabaseConnection,
     from: NaiveDateTime,
     to: NaiveDateTime,
     bucket: &MessageReplayActivityBucket,
-) -> anyhow::Result<Vec<(NaiveDateTime, i64)>>
-where
-    C: ConnectionTrait,
-{
+) -> anyhow::Result<Vec<(NaiveDateTime, i64)>> {
     let bin_sec = match bucket {
         MessageReplayActivityBucket::Day1 => {
             MessageReplayActivityBucket::Hour1.seconds()
@@ -128,12 +136,18 @@ where
         bucket => bucket.seconds(),
     };
     let bins = format!(
-        "select date_bin(make_interval(secs => $3), timestamp,
-                         timestamp '2000-01-01') as bucket,
-                count(*)::bigint as count
-         from signal_message
-         where timestamp >= $1 and timestamp < $2
-           and {}
+        "select group_bins.bucket, sum(group_bins.count)::bigint as count
+         from datasource_group
+         cross join lateral (
+             select date_bin(make_interval(secs => $3), timestamp,
+                             timestamp '2000-01-01') as bucket,
+                    count(*) as count
+             from signal_message
+             where datasource_group_id = datasource_group.id
+               and timestamp >= $1 and timestamp < $2
+               and {}
+             group by 1
+         ) group_bins
          group by 1",
         REPLAYABLE_FILTER
     );
@@ -153,7 +167,12 @@ where
         }
         _ => format!("{bins} order by 1"),
     };
-    let rows = dbx.query_all_raw(statement(&sql, values)).await.c(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
+    txn.execute_unprepared("set local jit = off")
+        .await
+        .c(h!())?;
+    let rows = txn.query_all_raw(statement(&sql, values)).await.c(h!())?;
+    txn.commit().await.c(h!())?;
     rows.into_iter()
         .map(|row| {
             Ok((
