@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
@@ -19,9 +20,9 @@ from typing import Any, NoReturn
 INSTANCE_PREFIX = "echo-ai-agent-"
 TEMPLATE_NAME = "echo-ai-agent-019fc7f7-9770-7f83-9c1a-211af29b02e6"
 PROFILE_NAME = "echo-ai-agent"
-HARNESS_RELEASE = "2026.11.11.1"
+HARNESS_RELEASE = "2026.11.11.2"
 COMPATIBLE_RUNNER_RELEASES = frozenset(
-    {HARNESS_RELEASE, "2026.11.10.2", "2026.11.10.1", "2026.11.08.1", "2026.11.07.2", "2026.11.07.1", "2026.11.06.4", "2026.11.06.3", "2026.11.06.2", "2026.11.06.1", "2026.11.05.3", "2026.11.05.2", "2026.11.05.1", "2026.11.03.4", "2026.11.03.3", "2026.11.03.2", "2026.11.03.1", "2026.11.01.1", "2026.10.30.3", "2026.10.30.2", "2026.10.30.1", "2026.10.29.4", "2026.10.29.3", "2026.10.29.2", "2026.10.29.1", "2026.10.11.2", "2026.10.11.1", "2026.10.10.5", "2026.10.10.4", "2026.10.10.3", "2026.10.10.2", "2026.10.10.1", "2026.10.09.15", "2026.10.09.14", "2026.10.09.13", "2026.10.09.12", "2026.10.09.11", "2026.10.09.10", "2026.10.09.9", "2026.10.09.8", "2026.10.09.7", "2026.10.09.6", "2026.10.09.5", "2026.10.09.4", "2026.10.09.3", "2026.10.09.2", "2026.10.09.1", "2026.10.08.3", "2026.10.08.2", "2026.10.08.1", "2026.10.06.1", "2026.10.05.2", "2026.10.05.1", "2026.10.04.1", "2026.10.03.1", "2026.10.01.6", "2026.10.01.5", "2026.10.01.4", "2026.10.01.3", "2026.10.01.2", "2026.10.01.1", "2026.09.29.9", "2026.09.29.8", "2026.09.29.7", "2026.09.29.6", "2026.09.29.5", "2026.09.29.4", "2026.09.29.3", "2026.09.29.2", "2026.09.29.1", "2026.09.28.1", "2026.09.27.3", "2026.09.27.2", "2026.09.27.1", "2026.08.25.2", "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
+    {HARNESS_RELEASE, "2026.11.11.1", "2026.11.10.2", "2026.11.10.1", "2026.11.08.1", "2026.11.07.2", "2026.11.07.1", "2026.11.06.4", "2026.11.06.3", "2026.11.06.2", "2026.11.06.1", "2026.11.05.3", "2026.11.05.2", "2026.11.05.1", "2026.11.03.4", "2026.11.03.3", "2026.11.03.2", "2026.11.03.1", "2026.11.01.1", "2026.10.30.3", "2026.10.30.2", "2026.10.30.1", "2026.10.29.4", "2026.10.29.3", "2026.10.29.2", "2026.10.29.1", "2026.10.11.2", "2026.10.11.1", "2026.10.10.5", "2026.10.10.4", "2026.10.10.3", "2026.10.10.2", "2026.10.10.1", "2026.10.09.15", "2026.10.09.14", "2026.10.09.13", "2026.10.09.12", "2026.10.09.11", "2026.10.09.10", "2026.10.09.9", "2026.10.09.8", "2026.10.09.7", "2026.10.09.6", "2026.10.09.5", "2026.10.09.4", "2026.10.09.3", "2026.10.09.2", "2026.10.09.1", "2026.10.08.3", "2026.10.08.2", "2026.10.08.1", "2026.10.06.1", "2026.10.05.2", "2026.10.05.1", "2026.10.04.1", "2026.10.03.1", "2026.10.01.6", "2026.10.01.5", "2026.10.01.4", "2026.10.01.3", "2026.10.01.2", "2026.10.01.1", "2026.09.29.9", "2026.09.29.8", "2026.09.29.7", "2026.09.29.6", "2026.09.29.5", "2026.09.29.4", "2026.09.29.3", "2026.09.29.2", "2026.09.29.1", "2026.09.28.1", "2026.09.27.3", "2026.09.27.2", "2026.09.27.1", "2026.08.25.2", "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
 )
 RUNNER_PROTOCOL_VERSION = 1
 NODE_VERSION = "24.19.0"
@@ -37,6 +38,11 @@ STDERR_CHUNK_CHARACTERS = 4096
 STDERR_TAIL_BYTES = 8 * 1024
 LOCK_PATH = Path("/run/lock/echo-ai-agent-dispatcher.lock")
 LOCK_WAIT_SECONDS = 45
+COMMAND_TIMEOUT_SECONDS = 120
+ECHO_PROXY_DEVICE = "echo-upstream"
+ECHO_PROXY_PORT = 18443
+VLLM_PROXY_DEVICE = "vllm-upstream"
+VLLM_PROXY_PORT = 18000
 DEPLOY_LOCK_PATH = Path("/run/lock/echo-ai-agent-deploy.lock")
 NAMESPACE_RELEASES = Path("/etc/echo-ai-agent/namespace-releases")
 ROLLOUT_LOCK_ROOT = Path("/run/lock/echo-ai-agent-rollout")
@@ -99,15 +105,20 @@ def run(
     *,
     input_text: str | None = None,
     check: bool = True,
+    timeout: float | None = COMMAND_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        args,
-        input=input_text,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            args,
+            input=input_text,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        fail(f"command timed out ({args[0]} {args[1] if len(args) > 1 else ''})")
     if check and result.returncode != 0:
         detail = result.stderr.strip().splitlines()
         suffix = f": {detail[-1]}" if detail else ""
@@ -167,15 +178,35 @@ def instance_name(body: dict[str, Any]) -> str:
     return f"{INSTANCE_PREFIX}{agent_id}"
 
 
-def incus_instances() -> list[dict[str, Any]]:
-    value = run_json(["incus", "list", "--format=json"])
+def incus_instances(status: str | None = None) -> list[dict[str, Any]]:
+    # recursion=1 returns name, status, config and profiles without the
+    # per-instance runtime state that makes `incus list` slow on hosts with
+    # many retained backups.
+    path = "/1.0/instances?recursion=1"
+    if status is not None:
+        path += "&filter=" + urllib.parse.quote(f"status eq {status}")
+    value = run_json(["incus", "query", path])
     if not isinstance(value, list):
         fail("unexpected Incus instance list")
     return value
 
 
 def instance_record(name: str) -> dict[str, Any] | None:
-    return next((item for item in incus_instances() if item.get("name") == name), None)
+    path = "/1.0/instances/" + urllib.parse.quote(name, safe="")
+    result = run(["incus", "query", path], check=False)
+    if result.returncode != 0:
+        if "instance not found" in result.stderr.lower():
+            return None
+        detail = result.stderr.strip().splitlines()
+        suffix = f": {detail[-1]}" if detail else ""
+        fail(f"command failed (incus query){suffix}")
+    try:
+        record = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        fail("invalid JSON returned by incus")
+    if not isinstance(record, dict) or record.get("name") != name:
+        fail("unexpected Incus instance record")
+    return record
 
 
 def require_instance(name: str, namespace: str) -> dict[str, Any]:
@@ -221,7 +252,7 @@ def namespace_agents(namespace: str) -> list[dict[str, Any]]:
 def running_agent_count() -> int:
     count = 0
     by_namespace: dict[str, int] = {}
-    for record in incus_instances():
+    for record in incus_instances(status="Running"):
         name = str(record.get("name", ""))
         config = record.get("config") or {}
         if (
@@ -418,7 +449,12 @@ def op_clone(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
         fail("agent instance already exists")
     template = require_template(body, namespace)
     template_name = str(template["name"])
-    run(["incus", "copy", template_name, name, "--profile", PROFILE_NAME])
+    # No CLI timeout: killing the client does not cancel the daemon's copy,
+    # which could then finish without the ownership settings below.
+    run(
+        ["incus", "copy", template_name, name, "--profile", PROFILE_NAME],
+        timeout=None,
+    )
     try:
         run(
             [
@@ -454,6 +490,13 @@ def op_clone(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     return {"instance": agent_summary(record)}
 
 
+def precheck_start(namespace: str, body: dict[str, Any]) -> dict[str, Any] | None:
+    record = require_instance(instance_name(body), namespace)
+    if str(record.get("status", "")).upper() == "RUNNING":
+        return {"instance": agent_summary(record), "changed": False}
+    return None
+
+
 def op_start(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     name = instance_name(body)
     record = require_instance(name, namespace)
@@ -473,7 +516,10 @@ def op_stop(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     timeout = body.get("timeout_seconds", 30)
     if not isinstance(timeout, int) or not 1 <= timeout <= 120:
         fail("timeout_seconds must be between 1 and 120")
-    run(["incus", "stop", name, "--timeout", str(timeout), "--force"])
+    run(
+        ["incus", "stop", name, "--timeout", str(timeout), "--force"],
+        timeout=timeout + COMMAND_TIMEOUT_SECONDS,
+    )
     return {"instance": agent_summary(require_instance(name, namespace)), "changed": True}
 
 
@@ -502,11 +548,15 @@ def op_stats(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def op_configure_proxies(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
-    name = instance_name(body)
-    record = require_instance(name, namespace)
-    if str(record.get("status", "")).upper() != "RUNNING":
-        fail("agent instance must be running to configure proxies")
+@dataclass(frozen=True)
+class ProxySettings:
+    echo_hostname: str
+    echo_upstream: str
+    provider_transport: str
+    vllm_upstream: str | None
+
+
+def requested_proxy_settings(body: dict[str, Any]) -> ProxySettings:
     echo_hostname = body.get("echo_hostname")
     if not isinstance(echo_hostname, str) or not HOSTNAME_RE.fullmatch(echo_hostname):
         fail("echo_hostname must be a lowercase fully qualified hostname")
@@ -514,17 +564,98 @@ def op_configure_proxies(namespace: str, body: dict[str, Any]) -> dict[str, Any]
     if provider_transport not in {"direct_http", "echo_gateway"}:
         fail("provider_transport is not supported")
     echo_host, echo_port = resolve_endpoint(body.get("echo_upstream"), "echo_upstream")
-    vllm_endpoint = None
+    vllm_upstream = None
     if provider_transport == "direct_http":
-        vllm_endpoint = resolve_endpoint(body.get("vllm_upstream"), "vllm_upstream")
+        vllm_host, vllm_port = resolve_endpoint(body.get("vllm_upstream"), "vllm_upstream")
+        vllm_upstream = f"{vllm_host}:{vllm_port}"
     elif body.get("vllm_upstream") is not None:
         fail("vllm_upstream is not allowed for echo_gateway")
-    replace_proxy(name, "echo-upstream", 18443, f"{echo_host}:{echo_port}")
-    if vllm_endpoint is None:
-        remove_proxy(name, "vllm-upstream")
+    return ProxySettings(
+        echo_hostname=echo_hostname,
+        echo_upstream=f"{echo_host}:{echo_port}",
+        provider_transport=provider_transport,
+        vllm_upstream=vllm_upstream,
+    )
+
+
+def proxy_device(listen_port: int, upstream: str) -> dict[str, str]:
+    return {
+        "bind": "instance",
+        "connect": f"tcp:{upstream}",
+        "listen": f"tcp:127.0.0.1:{listen_port}",
+        "type": "proxy",
+    }
+
+
+def echo_hosts_line(echo_hostname: str) -> str:
+    return f"127.0.0.1 {echo_hostname} # echo-ai-agent"
+
+
+def proxies_match(record: dict[str, Any], settings: ProxySettings) -> bool:
+    config = record.get("config") or {}
+    devices = record.get("devices") or {}
+    expected_config = {
+        "user.echo.ai.echo_hostname": settings.echo_hostname,
+        "user.echo.ai.echo_upstream": settings.echo_upstream,
+        "user.echo.ai.provider_transport": settings.provider_transport,
+        "user.echo.ai.vllm_upstream": settings.vllm_upstream,
+    }
+    if any(config.get(key) != value for key, value in expected_config.items()):
+        return False
+    if devices.get(ECHO_PROXY_DEVICE) != proxy_device(ECHO_PROXY_PORT, settings.echo_upstream):
+        return False
+    if settings.vllm_upstream is None:
+        return VLLM_PROXY_DEVICE not in devices
+    return devices.get(VLLM_PROXY_DEVICE) == proxy_device(VLLM_PROXY_PORT, settings.vllm_upstream)
+
+
+def echo_hostname_mapped(name: str, echo_hostname: str) -> bool:
+    # /etc/hosts lives in the container and may be rewritten on boot, so the
+    # instance config alone does not prove the mapping is still present.
+    mapped = run(
+        ["incus", "exec", name, "--", "grep", "-qxF", echo_hosts_line(echo_hostname), "/etc/hosts"],
+        check=False,
+    )
+    return mapped.returncode == 0
+
+
+def running_agent_record(namespace: str, body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    name = instance_name(body)
+    record = require_instance(name, namespace)
+    if str(record.get("status", "")).upper() != "RUNNING":
+        fail("agent instance must be running to configure proxies")
+    return name, record
+
+
+def unchanged_proxies_result(
+    name: str, record: dict[str, Any], settings: ProxySettings
+) -> dict[str, Any] | None:
+    if not proxies_match(record, settings) or not echo_hostname_mapped(name, settings.echo_hostname):
+        return None
+    return {"instance": agent_summary(record), "changed": False}
+
+
+def precheck_configure_proxies(namespace: str, body: dict[str, Any]) -> dict[str, Any] | None:
+    name, record = running_agent_record(namespace, body)
+    return unchanged_proxies_result(name, record, requested_proxy_settings(body))
+
+
+def op_configure_proxies(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
+    name, record = running_agent_record(namespace, body)
+    settings = requested_proxy_settings(body)
+    unchanged = unchanged_proxies_result(name, record, settings)
+    if unchanged is not None:
+        return unchanged
+    apply_proxy_settings(name, settings)
+    return {"instance": agent_summary(require_instance(name, namespace)), "changed": True}
+
+
+def apply_proxy_settings(name: str, settings: ProxySettings) -> None:
+    replace_proxy(name, ECHO_PROXY_DEVICE, ECHO_PROXY_PORT, settings.echo_upstream)
+    if settings.vllm_upstream is None:
+        remove_proxy(name, VLLM_PROXY_DEVICE)
     else:
-        vllm_host, vllm_port = vllm_endpoint
-        replace_proxy(name, "vllm-upstream", 18000, f"{vllm_host}:{vllm_port}")
+        replace_proxy(name, VLLM_PROXY_DEVICE, VLLM_PROXY_PORT, settings.vllm_upstream)
     run(
         [
             "incus",
@@ -532,21 +663,20 @@ def op_configure_proxies(namespace: str, body: dict[str, Any]) -> dict[str, Any]
             name,
             "--",
             "/usr/local/sbin/echo-ai-agent-configure-network",
-            echo_hostname,
+            settings.echo_hostname,
         ]
     )
-    settings = [
+    config = [
         "incus",
         "config",
         "set",
         name,
-        f"user.echo.ai.echo_hostname={echo_hostname}",
-        f"user.echo.ai.echo_upstream={echo_host}:{echo_port}",
-        f"user.echo.ai.provider_transport={provider_transport}",
+        f"user.echo.ai.echo_hostname={settings.echo_hostname}",
+        f"user.echo.ai.echo_upstream={settings.echo_upstream}",
+        f"user.echo.ai.provider_transport={settings.provider_transport}",
     ]
-    if vllm_endpoint is not None:
-        vllm_host, vllm_port = vllm_endpoint
-        settings.append(f"user.echo.ai.vllm_upstream={vllm_host}:{vllm_port}")
+    if settings.vllm_upstream is not None:
+        config.append(f"user.echo.ai.vllm_upstream={settings.vllm_upstream}")
     else:
         run(
             [
@@ -558,8 +688,7 @@ def op_configure_proxies(namespace: str, body: dict[str, Any]) -> dict[str, Any]
             ],
             check=False,
         )
-    run(settings)
-    return {"instance": agent_summary(require_instance(name, namespace))}
+    run(config)
 
 
 def read_runner_event_line(stream: Any) -> str:
@@ -790,6 +919,22 @@ def dispatch_with_rollout_lock(request: Request, namespace: str, lock_file: Any)
         return dispatch_with_instance_lock(request, namespace, lock_file)
 
 
+def no_change_result(request: Request, namespace: str) -> dict[str, Any] | None:
+    """Answers mutations that would change nothing without the host-wide lock.
+
+    The caller holds this instance's exclusive lock, so the read-only check
+    cannot race another operation on the same instance, and a no-op cannot
+    affect host capacity. Warm chats therefore no longer queue behind other
+    agents' starts and stops.
+    """
+    prechecks = {
+        "start": precheck_start,
+        "configure_proxies": precheck_configure_proxies,
+    }
+    precheck = prechecks.get(request.operation)
+    return precheck(namespace, request.body) if precheck else None
+
+
 def dispatch_with_instance_lock(request: Request, namespace: str, lock_file: Any) -> dict[str, Any]:
     instance_lock = Path.home() / f"{instance_name(request.body)}.lock"
     deadline = time.monotonic() + LOCK_WAIT_SECONDS
@@ -798,6 +943,9 @@ def dispatch_with_instance_lock(request: Request, namespace: str, lock_file: Any
         wait_for_lock(instance_lease, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH, deadline)
         if not exclusive:
             return dispatch(request, namespace)
+        unchanged = no_change_result(request, namespace)
+        if unchanged is not None:
+            return unchanged
         wait_for_lock(lock_file, fcntl.LOCK_EX, deadline)
         try:
             return dispatch(request, namespace)
