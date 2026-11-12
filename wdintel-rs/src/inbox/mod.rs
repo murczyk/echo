@@ -167,22 +167,18 @@ where
         }
         _ => Local::now().with_timezone(&tz),
     };
-    let (mut m_dt, meow_format) = if is_messenger_ingest {
+    let (m_dt, meow_format) = if is_messenger_ingest {
         (None, None)
     } else {
         let allow_kraken_audio =
             message_has_other_interseption_group(txn, &message).await?;
-        extract_message_datetime(lnow, &body, allow_kraken_audio)?
+        extract_message_datetime_with_precision(lnow, &body, allow_kraken_audio)
+            .c(h!())?
     };
-    if m_dt.is_none() {
-        if let Some(ref timestamp) = message.timestamp {
-            let dt2: DateTime<Utc> =
-                DateTime::from_naive_utc_and_offset(*timestamp, Utc);
-            m_dt = Some(dt2.with_timezone(&Kyiv));
-        };
-    }
-    let datetime_from_body =
-        m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
+    let date_only = m_dt.as_ref().is_some_and(|datetime| !datetime.has_time);
+    let datetime_from_body = m_dt
+        .as_ref()
+        .map(|datetime| datetime.datetime.with_timezone(&Utc).naive_utc());
     let freq = crate::rer_importer::frequency::extract_freq(&body)?
         .map(|v| crate::rer_importer::frequency::etalon(&v));
     let is_aviation_group =
@@ -335,11 +331,21 @@ where
     let (default_date_v, default_time_v) = match datetime_to_store {
         Some(dt) => {
             let (date, time) = format_date_time_fields(dt);
+            let time = if date_only {
+                format!("{SIGINT_MESSAGE_DATE_ONLY_HOUR:02}:00:00")
+            } else {
+                time
+            };
             (Some(date), Some(time))
         }
         None => (None, None),
     };
 
+    let is_time_null = date_only
+        && matches!(
+            datetime_override,
+            None | Some(InboxDatetimeOverride::ReferenceTime { .. })
+        );
     let (date_v, time_v, datetime) = match datetime_override {
         Some(InboxDatetimeOverride::Historical { datetime, .. }) => {
             let (date, time) = format_date_time_fields(datetime);
@@ -378,7 +384,7 @@ where
         .c(h!())?;
     }
     let result = sigint_inbox_item::ActiveModel {
-        is_time_null: sea_orm::NotSet,
+        is_time_null: Set(Some(is_time_null)),
         id: Set(message.id),
         id_uuid: Set(message.id_uuid),
         date: Set(date_v),
@@ -577,11 +583,12 @@ where
     Ok(ConstructInboxItemResult::changed(message.id))
 }
 
-fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 20] {
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
         sigint_inbox_item::Column::Datetime,
+        sigint_inbox_item::Column::IsTimeNull,
         sigint_inbox_item::Column::Freq,
         sigint_inbox_item::Column::Coords,
         sigint_inbox_item::Column::Lat,
@@ -602,6 +609,7 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 20] {
     ]
 }
 
+#[cfg(test)]
 fn extract_message_datetime(
     lnow: DateTime<Tz>,
     body: &str,
@@ -1368,6 +1376,64 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn construct_inbox_item_preserves_parsed_datetime_precision() {
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Kyiv.with_ymd_and_hms(2026, 11, 12, 15, 0, 0).unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                timestamp: Set(Some(now.naive_utc())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut cache = TopKCache::<String, String>::new(64);
+
+        for (header, date, time) in [
+            ("12.11", "2026-11-12", None),
+            ("12.11.2026 00:30 МСК", "2026-11-11", Some("23:30:00")),
+            ("7.05", "2026-05-07", None),
+        ] {
+            let mut updated_message = message.clone().into_active_model();
+            updated_message.body = Set(Some(format!("{header}\nПерехоплення")));
+            updated_message.update(&env.dbx).await.unwrap();
+            construct_inbox_item_with_datetime(
+                env.settlements.clone(),
+                &env.dbx,
+                &env.rq,
+                &env.config,
+                message.id,
+                &mut cache,
+                Some(InboxDatetimeOverride::ReferenceTime {
+                    reference_time: now,
+                }),
+            )
+            .await
+            .unwrap();
+
+            let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(inbox_item.date.as_deref(), Some(date));
+            let stored_time = time.unwrap_or("12:00:00");
+            assert_eq!(inbox_item.time.as_deref(), Some(stored_time));
+            assert_eq!(inbox_item.is_time_null, Some(time.is_none()));
+            assert_eq!(
+                inbox_item.datetime,
+                datetime::from_date_time_text(Some(date), Some(stored_time))
+                    .unwrap()
+            );
+        }
     }
 
     #[tokio::test]
