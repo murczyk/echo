@@ -12,8 +12,9 @@ use crate::messengers::chats::resolve_chat;
 use crate::messengers::paging::{page_limit, parse_cursor_page, CursorPage};
 use crate::messengers::types::{
     MessengersAttachment, MessengersAttachmentItem,
-    MessengersAttachmentsListReq, MessengersAttachmentsListRsp,
-    MessengersTelegramMedia,
+    MessengersAttachmentTypeCount, MessengersAttachmentsCountsReq,
+    MessengersAttachmentsCountsRsp, MessengersAttachmentsListReq,
+    MessengersAttachmentsListRsp, MessengersTelegramMedia,
 };
 use crate::rer_importer::highlight::CNPosition;
 use crate::rer_importer::inbox::bl::{
@@ -116,8 +117,14 @@ pub(crate) async fn list_attachments(
         AttachmentPosition::decode,
     )
     .c(h!())?;
-    let attachment_scope =
-        resolve_attachment_scope(env, scope, &req).await.c(h!())?;
+    let attachment_scope = resolve_attachment_scope(
+        env,
+        scope,
+        &req.account_id,
+        req.chat_id.as_deref(),
+    )
+    .await
+    .c(h!())?;
     let attachments =
         visible_attachments(attachment_scope, req.telegram_media_types);
     let page = load_page(&env.dbx, attachments, page_request, limit)
@@ -131,15 +138,53 @@ pub(crate) async fn list_attachments(
     })
 }
 
+/// The number of attachments of the scope for each Telegram media type, the
+/// same attachments `list_attachments` pages through. Media without a
+/// Telegram media type is counted under `null`.
+pub(crate) async fn count_attachments(
+    env: &Env,
+    scope: &MessengersScope,
+    req: MessengersAttachmentsCountsReq,
+) -> Result<MessengersAttachmentsCountsRsp, AppError> {
+    let attachment_scope = resolve_attachment_scope(
+        env,
+        scope,
+        &req.account_id,
+        req.chat_id.as_deref(),
+    )
+    .await
+    .c(h!())?;
+    let counts = visible_attachments(attachment_scope, None)
+        .select_only()
+        .column(messenger_media_meta::Column::TelegramMediaType)
+        .column_as(messenger_media_meta::Column::Id.count(), "count")
+        .group_by(messenger_media_meta::Column::TelegramMediaType)
+        .order_by_asc(messenger_media_meta::Column::TelegramMediaType)
+        .into_tuple::<(Option<String>, i64)>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    Ok(MessengersAttachmentsCountsRsp {
+        items: counts
+            .into_iter()
+            .map(
+                |(telegram_media_type, count)| MessengersAttachmentTypeCount {
+                    telegram_media_type,
+                    count,
+                },
+            )
+            .collect(),
+    })
+}
+
 async fn resolve_attachment_scope(
     env: &Env,
     scope: &MessengersScope,
-    req: &MessengersAttachmentsListReq,
+    account_id: &str,
+    chat_id: Option<&str>,
 ) -> Result<AttachmentScope, AppError> {
-    let account = resolve_account(&env.dbx, scope, &req.account_id)
-        .await
-        .c(h!())?;
-    let Some(chat_id) = &req.chat_id else {
+    let account = resolve_account(&env.dbx, scope, account_id).await.c(h!())?;
+    let Some(chat_id) = chat_id else {
         return Ok(AttachmentScope::Account(account.id));
     };
     let chat = resolve_chat(&env.dbx, &account, chat_id).await.c(h!())?;
@@ -932,6 +977,103 @@ mod tests {
         let error = list_attachments(&fixture.env, &outsider, req)
             .await
             .unwrap_err();
+        assert!(matches!(error, AppError::NotFound), "{error:?}");
+    }
+
+    async fn counts(
+        fixture: &Fixture,
+        chat_id: Option<Uuid>,
+    ) -> BTreeMap<Option<String>, i64> {
+        let rsp = count_attachments(
+            &fixture.env,
+            &fixture.scope,
+            MessengersAttachmentsCountsReq {
+                account_id: fixture.account_id.to_string(),
+                chat_id: chat_id.map(|chat_id| chat_id.to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        rsp.items
+            .into_iter()
+            .map(|item| (item.telegram_media_type, item.count))
+            .collect()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn attachments_count_the_scope_by_telegram_media_type() {
+        let fixture = fixture().await;
+        let types = [
+            Some("photo"),
+            Some("photo"),
+            Some("voice"),
+            None,
+            Some("photo"),
+        ];
+        for ((_, media_id, _), media_type) in fixture.timeline.iter().zip(types)
+        {
+            messenger_media_meta::Entity::update_many()
+                .col_expr(
+                    messenger_media_meta::Column::TelegramMediaType,
+                    Expr::value(media_type.map(str::to_string)),
+                )
+                .filter(messenger_media_meta::Column::Id.eq(*media_id))
+                .exec(&fixture.env.dbx)
+                .await
+                .unwrap();
+        }
+        let expected = |chat_id: Option<Uuid>| {
+            let mut expected = BTreeMap::new();
+            for ((_, _, chat), media_type) in fixture.timeline.iter().zip(types)
+            {
+                if chat_id.is_none() || chat_id == Some(*chat) {
+                    *expected
+                        .entry(media_type.map(str::to_string))
+                        .or_insert(0) += 1;
+                }
+            }
+            expected
+        };
+        assert_eq!(counts(&fixture, None).await, expected(None));
+        let chat_id = fixture.chats[0];
+        assert_eq!(
+            counts(&fixture, Some(chat_id)).await,
+            expected(Some(chat_id))
+        );
+
+        // The same attachments the list leaves out are not counted.
+        let (deleted_message, _, _) = fixture.timeline[0];
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(deleted_message))
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        messenger_chat::Entity::update_many()
+            .col_expr(messenger_chat::Column::Deleted, Expr::value(true))
+            .filter(messenger_chat::Column::Id.eq(fixture.chats[1]))
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        let remaining = counts(&fixture, None).await;
+        let listed = walk_older(&fixture, None).await.len() as i64;
+        assert_eq!(remaining.values().sum::<i64>(), listed);
+
+        let outsider = MessengersScope {
+            login_id: fixture.scope.login_id,
+            group_master_keys: vec![],
+        };
+        let error = count_attachments(
+            &fixture.env,
+            &outsider,
+            MessengersAttachmentsCountsReq {
+                account_id: fixture.account_id.to_string(),
+                chat_id: None,
+            },
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(error, AppError::NotFound), "{error:?}");
     }
 

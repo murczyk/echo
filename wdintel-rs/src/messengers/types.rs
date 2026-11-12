@@ -195,6 +195,29 @@ pub struct MessengersAttachmentsListRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct MessengersAttachmentsCountsReq {
+    pub account_id: String,
+    pub chat_id: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersAttachmentsCountsRsp {
+    pub items: Vec<MessengersAttachmentTypeCount>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersAttachmentTypeCount {
+    pub telegram_media_type: Option<String>,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct MessengersAttachmentItem {
     pub chat_id: String,
     pub message_id: String,

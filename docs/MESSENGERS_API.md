@@ -24,6 +24,7 @@ are removed from the RER inbox and analysis feeds; see
 | `POST /contacts/list` | Implemented | `MessengersContactsListReq` | `MessengersContactsListRsp` |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 | `POST /attachments/list` | Implemented | `MessengersAttachmentsListReq` | `MessengersAttachmentsListRsp` |
+| `POST /attachments/counts` | Implemented | `MessengersAttachmentsCountsReq` | `MessengersAttachmentsCountsRsp` |
 
 Every route is a read except `accounts/update`, the only write, which changes
 only fields owned by Echo users; collected data stays read-only. Requests use `POST` with a JSON body, like
@@ -517,6 +518,40 @@ Semantics:
   and however rare the type. A filter with several types cannot read the type
   indexes in timeline order, so it reads every attachment of those types in
   the scope, or walks the scope's timeline past the other types.
+
+### `POST /attachments/counts`
+
+The number of attachments of one chat, or of every chat of an account, for
+each Telegram media type, for the labels of the tabs of a media gallery
+("Photos (12)"). It counts the attachments `attachments/list` pages through, so
+the numbers match what scrolling shows.
+
+```ts
+type MessengersAttachmentsCountsReq = {
+  account_id: string
+  chat_id: string | null                // null: every chat of the account
+}
+
+type MessengersAttachmentsCountsRsp = {
+  items: MessengersAttachmentTypeCount[]   // by telegram_media_type, null last
+}
+
+type MessengersAttachmentTypeCount = {
+  telegram_media_type: string | null    // null: media without a Telegram type
+  count: number
+}
+```
+
+Semantics:
+
+- A type with no attachments has no item. The client adds the types of a tab
+  up and shows 0 for a tab none of them is in.
+- Attachments of messages deleted in Echo are left out, and in the account
+  scope also those of deleted chats, as in `attachments/list`.
+- Access is checked as in `attachments/list`: an account or chat the login
+  cannot see is `404`.
+- The route reads every attachment of the scope, not a page: about 30 ms for
+  3,400 attachments, growing with their number.
 
 ## Changes to RER endpoints
 

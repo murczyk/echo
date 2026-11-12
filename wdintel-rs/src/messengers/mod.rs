@@ -13,7 +13,8 @@ use crate::h;
 use crate::messengers::access::ensure_messengers_access;
 use crate::messengers::types::{
     MessengersAccountUpdateReq, MessengersAccountsListReq,
-    MessengersAccountsListRsp, MessengersAttachmentsListReq,
+    MessengersAccountsListRsp, MessengersAttachmentsCountsReq,
+    MessengersAttachmentsCountsRsp, MessengersAttachmentsListReq,
     MessengersAttachmentsListRsp, MessengersChatMembersListReq,
     MessengersChatMembersListRsp, MessengersChatsListReq,
     MessengersChatsListRsp, MessengersContactsListReq,
@@ -98,6 +99,19 @@ pub async fn messages_list(
 ) -> Result<Json<MessengersMessagesListRsp>, AppError> {
     let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
     let rsp = messages::list_messages(&env, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messengers/attachments/counts")]
+pub async fn attachments_counts(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengersAttachmentsCountsReq>,
+) -> Result<Json<MessengersAttachmentsCountsRsp>, AppError> {
+    let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
+    let rsp = attachments::count_attachments(&env, &scope, req.into_inner())
         .await
         .c(h!())?;
     Ok(Json(rsp))

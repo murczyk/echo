@@ -3022,6 +3022,46 @@ messengersAttachmentsListRspEncoder struct =
         ]
 
 
+type alias MessengersAttachmentsCountsReq =
+    { accountId : String
+    , chatId : Maybe (String)
+    }
+
+
+messengersAttachmentsCountsReqEncoder : MessengersAttachmentsCountsReq -> Json.Encode.Value
+messengersAttachmentsCountsReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.chatId )
+        ]
+
+
+type alias MessengersAttachmentTypeCount =
+    { telegramMediaType : Maybe (String)
+    , count : Int
+    }
+
+
+messengersAttachmentTypeCountEncoder : MessengersAttachmentTypeCount -> Json.Encode.Value
+messengersAttachmentTypeCountEncoder struct =
+    Json.Encode.object
+        [ ( "telegram_media_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.telegramMediaType )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias MessengersAttachmentsCountsRsp =
+    { items : List (MessengersAttachmentTypeCount)
+    }
+
+
+messengersAttachmentsCountsRspEncoder : MessengersAttachmentsCountsRsp -> Json.Encode.Value
+messengersAttachmentsCountsRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersAttachmentTypeCountEncoder)) struct.items )
+        ]
+
+
 type alias BatchMessageCommentsReq =
     { messages : List (MessageCommentsReq)
     }
@@ -23264,6 +23304,26 @@ messengersAttachmentsListRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAttachmentItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "older_cursor" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newer_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersAttachmentsCountsReqDecoder : Json.Decode.Decoder MessengersAttachmentsCountsReq
+messengersAttachmentsCountsReqDecoder =
+    Json.Decode.succeed MessengersAttachmentsCountsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersAttachmentTypeCountDecoder : Json.Decode.Decoder MessengersAttachmentTypeCount
+messengersAttachmentTypeCountDecoder =
+    Json.Decode.succeed MessengersAttachmentTypeCount
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram_media_type" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+messengersAttachmentsCountsRspDecoder : Json.Decode.Decoder MessengersAttachmentsCountsRsp
+messengersAttachmentsCountsRspDecoder =
+    Json.Decode.succeed MessengersAttachmentsCountsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAttachmentTypeCountDecoder))))
 
 
 signalGroupEntryDecoder : Json.Decode.Decoder SignalGroupEntry

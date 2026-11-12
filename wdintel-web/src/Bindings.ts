@@ -1170,6 +1170,20 @@ export type MessengersAttachmentsListRsp = {
   newerCursor: string | null;
 };
 
+export type MessengersAttachmentsCountsReq = {
+  accountId: string;
+  chatId: string | null;
+};
+
+export type MessengersAttachmentTypeCount = {
+  telegramMediaType: string | null;
+  count: number;
+};
+
+export type MessengersAttachmentsCountsRsp = {
+  items: Array<MessengersAttachmentTypeCount>;
+};
+
 export type BatchMessageCommentsReq = {
   messages: Array<MessageCommentsReq>;
 };
