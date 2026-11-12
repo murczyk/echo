@@ -230,6 +230,12 @@ match return `"changed": false` without taking the host-wide lifecycle lock.
 Echo skips its end-to-end connection test only for such an unchanged container
 that it already recorded as running.
 
+`start` accepts an optional `reserved_slots` (below the running limit): the
+start is refused unless that many slots stay free afterwards, checked under the
+host-wide lock together with the running count. Echo uses it to prewarm a
+container while the user types without consuming capacity that requests from
+any namespace need; `preflight` reports `"start_reserved_slots": true`.
+
 Cancellation closes or terminates the SSH child. The dispatcher then
 terminates, waits for, and if necessary kills the `incus exec` process so a Pi
 request is not orphaned.

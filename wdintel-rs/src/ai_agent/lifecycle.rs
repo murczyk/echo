@@ -6,6 +6,7 @@ use crate::config::{
     AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_LINKED_LOGIN_SUFFIX,
     AI_AGENT_MAX_RUNNING_CONTAINERS, AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER,
     AI_AGENT_ROLE_RER, AI_AGENT_TEMPLATE_LOGIN_NAME,
+    AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS,
 };
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::{
@@ -1431,6 +1432,14 @@ pub async fn lock_user_lifecycle(
     crate::ai_control_panel::probe::lock_lifecycle(txn)
         .await
         .c(h!())?;
+    // A request start or prewarm holds this lock for a whole container start,
+    // which can outlast the server's `lock_timeout`; a submission then waits
+    // for the start instead of failing.
+    txn.execute_unprepared(&format!(
+        "set local lock_timeout = {AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS}"
+    ))
+    .await
+    .c(h!())?;
     txn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "select pg_advisory_xact_lock($1)",
@@ -1438,6 +1447,9 @@ pub async fn lock_user_lifecycle(
     ))
     .await
     .c(h!())?;
+    txn.execute_unprepared("set local lock_timeout to default")
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -1585,6 +1597,68 @@ where
         login: agent,
         container,
     })
+}
+
+/// Result of starting a stopped container with the dispatcher's atomic slot
+/// reservation (#4139).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReservedStart {
+    Started,
+    /// Starting would use slots kept free for real requests.
+    Refused,
+    /// No stopped instance to start; the normal start path handles it.
+    NotApplicable,
+}
+
+/// Starts the user's stopped container only if `reserved_slots` stay free on
+/// the agent host afterwards. The caller holds the user's lifecycle lock and
+/// completes the start with [`start_for_user_locked`].
+pub(crate) async fn start_reserving_slots(
+    env: &Env,
+    human_login_id: Uuid,
+    reserved_slots: u64,
+) -> Result<ReservedStart, AppError> {
+    let linked = match load_linked_agent(env, human_login_id).await {
+        Ok(linked) => linked,
+        Err(AppError::NotFound) => return Ok(ReservedStart::NotApplicable),
+        Err(err) => return Err(err).context(h!())?,
+    };
+    let dispatcher = DispatcherClient::from_env(env).await.context(h!())?;
+    let Ok(status) = dispatcher
+        .call("status", Some(linked.login.id), json!({}))
+        .await
+    else {
+        return Ok(ReservedStart::NotApplicable);
+    };
+    let status =
+        validate_linked_instance(&status.result, &linked, &dispatcher, None)
+            .context(h!())?;
+    if status != "stopped" {
+        return Ok(ReservedStart::NotApplicable);
+    }
+    let started = dispatcher
+        .call(
+            "start",
+            Some(linked.login.id),
+            json!({ "reserved_slots": reserved_slots }),
+        )
+        .await;
+    if started.as_ref().is_err_and(is_capacity_refusal) {
+        return Ok(ReservedStart::Refused);
+    }
+    let started = started.context(h!())?;
+    validate_linked_instance(
+        &started.result,
+        &linked,
+        &dispatcher,
+        Some("running"),
+    )
+    .context(h!())?;
+    Ok(ReservedStart::Started)
+}
+
+fn is_capacity_refusal(err: &AppError) -> bool {
+    matches!(err, AppError::BL { msg } if msg.ends_with("running-container limit reached"))
 }
 
 pub async fn refresh_container_stats(
@@ -1908,6 +1982,47 @@ mod tests {
         reconciliation.rollback().await.unwrap();
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn lifecycle_lock_outwaits_the_server_lock_timeout() {
+        crate::tests::test::init().await;
+        let dbx = crate::new_pg_pool_from_mode(crate::types::Mode::Test)
+            .await
+            .unwrap();
+        let human_login_id = Uuid::now_v7();
+        let start = dbx.begin().await.unwrap();
+        lock_user_lifecycle(&start, human_login_id).await.unwrap();
+        let submission = dbx.begin().await.unwrap();
+        submission
+            .execute_unprepared("set local lock_timeout = 50")
+            .await
+            .unwrap();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            start.rollback().await.unwrap();
+        });
+
+        lock_user_lifecycle(&submission, human_login_id)
+            .await
+            .unwrap();
+        release.await.unwrap();
+        let restored = submission
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "select current_setting('lock_timeout') as value",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<String>("", "value")
+            .unwrap();
+        assert_ne!(
+            restored,
+            format!("{AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS}ms")
+        );
+        submission.rollback().await.unwrap();
+    }
+
     #[test]
     fn stop_failures_are_aggregated_after_safety_steps() {
         let mut failures = StopFailures::default();
@@ -2036,6 +2151,18 @@ mod tests {
         assert!(needs_connection_test(StartPath::Warm, &older_dispatcher));
         assert!(needs_connection_test(StartPath::Started, &unchanged));
         assert!(needs_connection_test(StartPath::Cloned, &unchanged));
+    }
+
+    #[test]
+    fn only_the_dispatcher_capacity_error_refuses_a_reserved_start() {
+        assert!(is_capacity_refusal(&AppError::BL {
+            msg: "AI agent dispatcher: running-container limit reached"
+                .to_string(),
+        }));
+        assert!(!is_capacity_refusal(&AppError::BL {
+            msg: "AI agent dispatcher: agent operation is busy".to_string(),
+        }));
+        assert!(!is_capacity_refusal(&AppError::NotFound));
     }
 
     #[test]

@@ -139,7 +139,20 @@ async fn prewarm_locked(
             .context(h!())?;
         return Ok(PrewarmOutcome::KeptAlive);
     }
-    if !capacity_allows_prewarm(env).await.context(h!())? {
+    let Some(atomic_reserve) = prewarm_capacity(env).await.context(h!())?
+    else {
+        return Ok(PrewarmOutcome::NoCapacity);
+    };
+    if atomic_reserve
+        && lifecycle::start_reserving_slots(
+            env,
+            human_login_id,
+            AI_AGENT_PREWARM_RESERVED_SLOTS,
+        )
+        .await
+        .context(h!())?
+            == lifecycle::ReservedStart::Refused
+    {
         return Ok(PrewarmOutcome::NoCapacity);
     }
     let linked =
@@ -202,7 +215,10 @@ fn kept_alive_activity(
     last_activity_at.map_or(typing, |last| last.max(typing))
 }
 
-async fn capacity_allows_prewarm(env: &Env) -> Result<bool, AppError> {
+/// `None` when a prewarm would leave fewer than the reserved slots free;
+/// otherwise whether the dispatcher enforces that reserve atomically when
+/// starting. Older dispatchers only get this advisory check.
+async fn prewarm_capacity(env: &Env) -> Result<Option<bool>, AppError> {
     let echo_running = ai_agent_container::Entity::find()
         .filter(
             ai_agent_container::Column::State.is_in(["starting", "running"]),
@@ -211,11 +227,11 @@ async fn capacity_allows_prewarm(env: &Env) -> Result<bool, AppError> {
         .await
         .c(h!())?;
     if !leaves_reserved_slots(echo_running, AI_AGENT_MAX_RUNNING_CONTAINERS) {
-        return Ok(false);
+        return Ok(None);
     }
-    let (host_running, host_max_running) =
-        host_capacity(env).await.context(h!())?;
-    Ok(leaves_reserved_slots(host_running, host_max_running))
+    let host = host_capacity(env).await.context(h!())?;
+    Ok(leaves_reserved_slots(host.running, host.max_running)
+        .then_some(host.atomic_reserve))
 }
 
 /// Starting one more container must still leave the reserved slots free for
@@ -224,8 +240,14 @@ fn leaves_reserved_slots(running: u64, max_running: u64) -> bool {
     running + 1 + AI_AGENT_PREWARM_RESERVED_SLOTS <= max_running
 }
 
+struct HostCapacity {
+    running: u64,
+    max_running: u64,
+    atomic_reserve: bool,
+}
+
 /// Running containers across every Echo namespace on the shared agent host.
-async fn host_capacity(env: &Env) -> Result<(u64, u64), AppError> {
+async fn host_capacity(env: &Env) -> Result<HostCapacity, AppError> {
     let settings = access::settings(&env.dbx).await.context(h!())?;
     let template_login_id =
         access::template_login_id(&settings).context(h!())?;
@@ -241,12 +263,23 @@ async fn host_capacity(env: &Env) -> Result<(u64, u64), AppError> {
     let count = |field: &str| {
         preflight.result.get(field).and_then(|value| value.as_u64())
     };
-    match (count("running"), count("max_running")) {
-        (Some(running), Some(max_running)) => Ok((running, max_running)),
-        _ => Err(AppError::BL {
+    let (Some(running), Some(max_running)) =
+        (count("running"), count("max_running"))
+    else {
+        return Err(AppError::BL {
             msg: "AI agent dispatcher did not report its capacity".to_string(),
-        }),
-    }
+        });
+    };
+    let atomic_reserve = preflight
+        .result
+        .get("start_reserved_slots")
+        .and_then(|value| value.as_bool())
+        == Some(true);
+    Ok(HostCapacity {
+        running,
+        max_running,
+        atomic_reserve,
+    })
 }
 
 #[cfg(test)]
