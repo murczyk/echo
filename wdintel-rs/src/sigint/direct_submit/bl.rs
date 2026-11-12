@@ -370,6 +370,12 @@ where
         )
         .c(h!())?;
     let timestamp = extracted_dt.as_ref().and_then(|dt| {
+        if let Some(datetime) = dt.utc_datetime {
+            return Some(
+                Utc.from_utc_datetime(&datetime)
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
+            );
+        }
         timezone
             .from_local_datetime(&dt.datetime)
             .single()
@@ -2568,6 +2574,20 @@ mod tests {
         assert_eq!(parsed_no_time.unit.as_deref(), Some(label));
         assert_eq!(parsed_no_time.is_time_null, Some(true));
         assert!(parsed_no_time.timestamp.is_some());
+
+        let parsed_moscow = parse_signal_message_body(
+            &env,
+            &env.dbx,
+            "25.10.2026_03:30:42 МСК\nПерехоплення",
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            parsed_moscow.timestamp.as_deref(),
+            Some("2026-10-25T00:30:42Z")
+        );
     }
 
     #[tokio::test]

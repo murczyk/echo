@@ -9,6 +9,7 @@ use regex::{Captures, Regex};
 pub struct ExtractedDateTime {
     pub datetime: NaiveDateTime,
     pub has_time: bool,
+    pub utc_datetime: Option<NaiveDateTime>,
 }
 
 type ProcessorFn =
@@ -24,12 +25,9 @@ pub fn extract_datetime_with_precision(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<Option<ExtractedDateTime>, AppError> {
-    if let Some(timestamp) = trailing_datetime(body) {
-        if let Ok(timestamp) = validate_datetime(lnow, timestamp) {
-            return Ok(Some(ExtractedDateTime {
-                datetime: timestamp,
-                has_time: true,
-            }));
+    if let Some(timestamp) = trailing_datetime_with_precision(body) {
+        if validate_datetime(lnow, timestamp.datetime).is_ok() {
+            return Ok(Some(timestamp));
         }
     }
     if let Some(zp_peleng) =
@@ -39,6 +37,7 @@ pub fn extract_datetime_with_precision(
             return Ok(Some(ExtractedDateTime {
                 datetime: timestamp,
                 has_time: true,
+                utc_datetime: None,
             }));
         }
     }
@@ -51,8 +50,14 @@ pub fn extract_datetime_with_precision(
             return Ok(Some(ExtractedDateTime {
                 datetime: timestamp,
                 has_time: true,
+                utc_datetime: None,
             }));
         }
+    }
+
+    let buran_datetime = extract_buran_datetime(lnow, body).c(h!())?;
+    if buran_datetime.is_some_and(|datetime| datetime.utc_datetime.is_some()) {
+        return Ok(buran_datetime);
     }
 
     lazy_static! {
@@ -63,8 +68,8 @@ pub fn extract_datetime_with_precision(
             ),
             // Work with formats like DD.MM.YYYY_HH:MI
             (
-                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})").unwrap(),
-                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
+                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})(?:[ \t]*:(?P<second>\d{2}))?").unwrap(),
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, capts.name("second").is_some()) },
             ),
             // Work with formats like DD.MM.YYYY, HH:MI:SS
             (
@@ -73,8 +78,8 @@ pub fn extract_datetime_with_precision(
             ),
             // Work with formats like YYYY-MM-DD_HH:MI
             (
-                Regex::new(r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})").unwrap(),
-                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
+                Regex::new(r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})(?:[ \t]*:(?P<second>\d{2}))?").unwrap(),
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, capts.name("second").is_some()) },
             ),
             // Work with formats like YYYY-MM-DDTHH:MI:SS
             (
@@ -161,74 +166,7 @@ pub fn extract_datetime_with_precision(
         }
     }
 
-    // Special case
-    // Work with formats like Дата: 2024-02-21; and Час: 17:28; in different lines
-    lazy_static! {
-        static ref RE_DATE_BURAN: Regex = Regex::new(
-            r"Дата: (?P<year>\d\d\d\d)-(?P<mon>\d\d)-(?P<day>\d\d);?"
-        )
-        .unwrap();
-        static ref RE_TIME_BURAN: Regex =
-            Regex::new(r"Час: (?P<hour>\d\d):(?P<minute>\d\d);?").unwrap();
-    }
-    '_if: {
-        if let Some(capts_ymd) = RE_DATE_BURAN.captures(body) {
-            let Some(day) = capts_ymd.name("day") else {
-                break '_if;
-            };
-            let day: u32 = day.as_str().parse().c(h!())?;
-            let Some(mon) = capts_ymd.name("mon") else {
-                break '_if;
-            };
-            let mon: u32 = mon.as_str().parse().c(h!())?;
-            let Some(year) = capts_ymd.name("year") else {
-                break '_if;
-            };
-            let year: i32 = year.as_str().parse().c(h!())?;
-
-            let capts_hm = RE_TIME_BURAN.captures(body);
-            let has_time = capts_hm.is_some();
-            let (hour, minute) = if let Some(ref capts_hm) = capts_hm {
-                let Some(hour) = capts_hm.name("hour") else {
-                    break '_if;
-                };
-                let hour: u32 = hour.as_str().parse().c(h!())?;
-                let Some(minute) = capts_hm.name("minute") else {
-                    break '_if;
-                };
-                let minute: u32 = minute.as_str().parse().c(h!())?;
-                (hour, minute)
-            } else {
-                (0, 0)
-            };
-
-            let Some(res) = NaiveDate::from_ymd_opt(year, mon, day) else {
-                break '_if;
-            };
-            let Some(res) = res.and_hms_opt(hour, minute, 0) else {
-                break '_if;
-            };
-            let mut res: NaiveDateTime = res;
-            let Some(res_tz) =
-                lnow.timezone().from_local_datetime(&res).earliest()
-            else {
-                break '_if;
-            };
-            if has_time && res_tz > lnow {
-                res -= chrono::Duration::days(1);
-            }
-            let lmax = lnow + chrono::Duration::days(2);
-            if res_tz > lmax {
-                break '_if;
-            }
-            return Ok(Some(ExtractedDateTime {
-                datetime: res,
-                has_time,
-            }));
-        }
-    };
-
-    Ok(None)
+    Ok(buran_datetime)
 }
 
 /// Витягує дату та час з тіла повідомлення.
@@ -255,12 +193,23 @@ pub fn without_trailing_datetime(body: &str) -> &str {
 }
 
 pub fn trailing_datetime(body: &str) -> Option<NaiveDateTime> {
+    trailing_datetime_with_precision(body).map(|datetime| datetime.datetime)
+}
+
+fn trailing_datetime_with_precision(body: &str) -> Option<ExtractedDateTime> {
     let body = body.trim_end_matches(['\r', '\n']);
     let last_line = body.rsplit('\n').next()?.trim_end_matches('\r').trim();
-    parse_full_datetime_line(last_line)
+    parse_full_datetime_line_with_precision(last_line)
 }
 
 pub fn parse_full_datetime_line(line: &str) -> Option<NaiveDateTime> {
+    parse_full_datetime_line_with_precision(line)
+        .map(|datetime| datetime.datetime)
+}
+
+fn parse_full_datetime_line_with_precision(
+    line: &str,
+) -> Option<ExtractedDateTime> {
     lazy_static! {
         static ref TIME_DATE_RE: Regex = Regex::new(
             r"^(?P<hour>\d{1,2})\s*:\s*(?P<minute>\d{2})(?:\s*:\s*(?P<second>\d{2}))?\s+(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})$"
@@ -291,15 +240,18 @@ pub fn parse_full_datetime_line(line: &str) -> Option<NaiveDateTime> {
     let datetime = NaiveDate::from_ymd_opt(year, month, day)?
         .and_hms_opt(hour, minute, second)?;
     if moscow_suffix.is_some() {
-        return Some(
-            Moscow
-                .from_local_datetime(&datetime)
-                .earliest()?
-                .with_timezone(&Kyiv)
-                .naive_local(),
-        );
+        let datetime = Moscow.from_local_datetime(&datetime).earliest()?;
+        return Some(ExtractedDateTime {
+            datetime: datetime.with_timezone(&Kyiv).naive_local(),
+            has_time: true,
+            utc_datetime: Some(datetime.naive_utc()),
+        });
     }
-    Some(datetime)
+    Some(ExtractedDateTime {
+        datetime,
+        has_time: true,
+        utc_datetime: None,
+    })
 }
 
 fn parse_captured_datetime(
@@ -308,16 +260,7 @@ fn parse_captured_datetime(
     capts: &Captures,
     processor: ProcessorFn,
 ) -> anyhow::Result<ExtractedDateTime> {
-    let timestamp_end = capts
-        .iter()
-        .skip(1)
-        .flatten()
-        .map(|field| field.end())
-        .max()
-        .context(h!())?;
-    let is_moscow = MOSCOW_SUFFIX
-        .find(&body[timestamp_end..])
-        .is_some_and(|suffix| suffix.start() == 0);
+    let is_moscow = has_moscow_suffix(body, capts);
     let source_now = if is_moscow {
         lnow.with_timezone(&Moscow)
     } else {
@@ -325,14 +268,132 @@ fn parse_captured_datetime(
     };
     let mut datetime = processor(source_now, capts).c(h!())?;
     if is_moscow && datetime.has_time {
-        datetime.datetime = Moscow
+        let source_datetime = Moscow
             .from_local_datetime(&datetime.datetime)
             .earliest()
-            .context(h!())?
+            .context(h!())?;
+        datetime.utc_datetime = Some(source_datetime.naive_utc());
+        datetime.datetime = source_datetime
             .with_timezone(&lnow.timezone())
             .naive_local();
     }
     Ok(datetime)
+}
+
+pub(crate) fn has_moscow_suffix(body: &str, capts: &Captures) -> bool {
+    let timestamp_end = capts
+        .iter()
+        .skip(1)
+        .flatten()
+        .map(|field| field.end())
+        .max()
+        .unwrap_or(0);
+    MOSCOW_SUFFIX
+        .find(&body[timestamp_end..])
+        .is_some_and(|suffix| suffix.start() == 0)
+}
+
+fn extract_buran_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<Option<ExtractedDateTime>, AppError> {
+    // Special case
+    // Work with formats like Дата: 2024-02-21; and Час: 17:28; in different lines
+    lazy_static! {
+        static ref RE_DATE_BURAN: Regex = Regex::new(
+            r"Дата: (?P<year>\d\d\d\d)-(?P<mon>\d\d)-(?P<day>\d\d);?"
+        )
+        .unwrap();
+        static ref RE_TIME_BURAN: Regex = Regex::new(
+            r"Час: (?P<hour>\d\d):(?P<minute>\d\d)(?::(?P<second>\d\d))?;?"
+        )
+        .unwrap();
+    }
+    '_if: {
+        if let Some(capts_ymd) = RE_DATE_BURAN.captures(body) {
+            let Some(day) = capts_ymd.name("day") else {
+                break '_if;
+            };
+            let day: u32 = day.as_str().parse().c(h!())?;
+            let Some(mon) = capts_ymd.name("mon") else {
+                break '_if;
+            };
+            let mon: u32 = mon.as_str().parse().c(h!())?;
+            let Some(year) = capts_ymd.name("year") else {
+                break '_if;
+            };
+            let year: i32 = year.as_str().parse().c(h!())?;
+
+            let capts_hm = RE_TIME_BURAN.captures(body);
+            let has_time = capts_hm.is_some();
+            let is_moscow = capts_hm
+                .as_ref()
+                .is_some_and(|capts| has_moscow_suffix(body, capts));
+            let source_now = if is_moscow {
+                lnow.with_timezone(&Moscow)
+            } else {
+                lnow
+            };
+            let (hour, minute) = if let Some(ref capts_hm) = capts_hm {
+                let Some(hour) = capts_hm.name("hour") else {
+                    break '_if;
+                };
+                let hour: u32 = hour.as_str().parse().c(h!())?;
+                let Some(minute) = capts_hm.name("minute") else {
+                    break '_if;
+                };
+                let minute: u32 = minute.as_str().parse().c(h!())?;
+                (hour, minute)
+            } else {
+                (0, 0)
+            };
+            let second = capts_hm
+                .as_ref()
+                .and_then(|captures| captures.name("second"))
+                .map_or(Ok(0), |second| second.as_str().parse())
+                .c(h!())?;
+
+            let Some(res) = NaiveDate::from_ymd_opt(year, mon, day) else {
+                break '_if;
+            };
+            let Some(res) = res.and_hms_opt(hour, minute, second) else {
+                break '_if;
+            };
+            let mut res: NaiveDateTime = res;
+            let Some(res_tz) =
+                source_now.timezone().from_local_datetime(&res).earliest()
+            else {
+                break '_if;
+            };
+            if has_time && res_tz > lnow {
+                res -= chrono::Duration::days(1);
+            }
+            let lmax = lnow + chrono::Duration::days(2);
+            if res_tz > lmax {
+                break '_if;
+            }
+            let source_datetime = if is_moscow {
+                Some(
+                    Moscow
+                        .from_local_datetime(&res)
+                        .earliest()
+                        .context(h!())?,
+                )
+            } else {
+                None
+            };
+            return Ok(Some(ExtractedDateTime {
+                datetime: source_datetime.map_or(res, |datetime| {
+                    datetime.with_timezone(&lnow.timezone()).naive_local()
+                }),
+                has_time,
+                utc_datetime: source_datetime
+                    .map(|datetime| datetime.naive_utc()),
+            }));
+        }
+    };
+
+    Ok(None)
 }
 
 fn validate_datetime(
@@ -439,6 +500,7 @@ fn parse_datetime(
     Ok(ExtractedDateTime {
         datetime: res_tz.naive_local(),
         has_time,
+        utc_datetime: None,
     })
 }
 
@@ -475,6 +537,7 @@ fn parse_date_only(
     Ok(ExtractedDateTime {
         datetime: res_tz.naive_local(),
         has_time: false,
+        utc_datetime: None,
     })
 }
 
@@ -509,6 +572,7 @@ fn parse_datetime_short_year(
     Ok(ExtractedDateTime {
         datetime: res_tz.naive_local(),
         has_time: true,
+        utc_datetime: None,
     })
 }
 
@@ -569,6 +633,8 @@ mod tests {
                 Kyiv.with_ymd_and_hms(2026, month, day, 15, 0, 0).unwrap();
             for timestamp in [
                 format!("12.{month:02}.2026_12:34"),
+                format!("12.{month:02}.2026_12:34:00"),
+                format!("2026-{month:02}-12_12:34:00"),
                 format!("12.{month:02}.2026, 12:34:00"),
                 format!("12.{month:02}.2026 12:34"),
                 format!("2026-{month:02}-12T12:34:00"),
@@ -576,6 +642,7 @@ mod tests {
                 format!("Час: 12.{month:02}.26 12:34"),
                 format!("12.{month:02}, 12:34:00"),
                 "Час: 12:34:00".to_string(),
+                format!("Дата: 2026-{month:02}-12;\nЧас: 12:34"),
             ] {
                 for suffix in [" МСК", " (МСК)", " мск", " (мСк)"] {
                     let body = format!("{timestamp}{suffix}\nПерехоплення");
@@ -604,6 +671,49 @@ mod tests {
             "01.01.2027 00:30:15 МСК\nПерехоплення",
         ] {
             assert_eq!(extract_datetime(now, body).unwrap(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn moscow_timestamps_preserve_instant_during_repeated_kyiv_hour_3896() {
+        let now = Kyiv.with_ymd_and_hms(2026, 11, 12, 15, 0, 0).unwrap();
+        let expected_utc = NaiveDate::from_ymd_opt(2026, 10, 25)
+            .unwrap()
+            .and_hms_opt(0, 30, 42)
+            .unwrap();
+        for body in [
+            "25.10.2026_03:30:42 МСК\nПерехоплення",
+            "2026-10-25_03:30:42 (мск)\nПерехоплення",
+            "Перехоплення\n25.10.2026 03:30:42 МСК",
+            "Перехоплення\n03:30:42 25.10.2026 (мск)",
+        ] {
+            let parsed =
+                extract_datetime_with_precision(now, body).unwrap().unwrap();
+            assert_eq!(parsed.utc_datetime, Some(expected_utc), "{body}");
+            assert_eq!(
+                parsed.datetime,
+                expected_utc + chrono::Duration::hours(3),
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn buran_moscow_timestamps_keep_the_explicit_date_3896() {
+        let now = Kyiv.with_ymd_and_hms(2026, 11, 12, 15, 0, 0).unwrap();
+        for suffix in [" МСК", " (мск)"] {
+            let body =
+                format!("Дата: 2026-10-25;\nЧас: 03:30{suffix};\nПерехоплення");
+            let parsed = extract_datetime_with_precision(now, &body)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                parsed.utc_datetime,
+                NaiveDate::from_ymd_opt(2026, 10, 25)
+                    .unwrap()
+                    .and_hms_opt(0, 30, 0)
+            );
+            assert!(parsed.has_time);
         }
     }
 
@@ -869,7 +979,7 @@ mod tests {
         let expected = Some(
             NaiveDate::from_ymd_opt(2023, 9, 4)
                 .unwrap()
-                .and_hms_opt(20, 17, 0)
+                .and_hms_opt(20, 17, 25)
                 .unwrap(),
         );
         assert_eq!(res, expected);
