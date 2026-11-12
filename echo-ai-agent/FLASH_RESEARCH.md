@@ -113,7 +113,8 @@ authorization failures, filtering and cancellation remain terminal.
 Intermediate assistant text and private-tool events never
 enter the streamed answer; public progress and source activity remain visible.
 When the finalization deadline cuts a synthesis off, the provider hands over the text
-it streamed so far, after a wait of at most 300 ms. A last line without a final
+it streamed so far, after a wait of at most 300 ms. Text that a provider failure or
+a content filter ended is not used. A last line without a final
 newline may be unfinished and is dropped, together with any trailing heading. The
 finished lines then count as an answer if their links validate (incident 01a1d054,
 where the deadline discarded 73 seconds of a cited report). An unfinished synthesis returns whichever of that part and the latest

@@ -525,6 +525,9 @@ function synthesisContext(options: SynthesisOptions): Context | null {
 export const PARTIAL_GRACE_MS = 300;
 // Finish reasons, none yet included, after which a cut-off text is still the model's answer.
 const PARTIAL_FINISH_REASONS = new Set<string | undefined>([undefined, "stop", "length"]);
+// Endings of a cut-off text: the deadline's abort, or a finish that arrived as it fired.
+// "error" is a provider failure, which stays terminal.
+const PARTIAL_STOP_REASONS = new Set<string | undefined>(["aborted", "stop", "length"]);
 
 // Untrimmed: a cut-off text's final newline shows that its last line was finished.
 function messageText(message: unknown): string {
@@ -613,8 +616,12 @@ export async function synthesizeBudgetEvidence(
       ? (response ?? (await settledWithin(pending, PARTIAL_GRACE_MS)))
       : null;
     // The abort replaces stopReason, but a finish reason that already arrived stays: text
-    // a content filter or any other unexpected ending stopped is never an answer.
-    const partial = PARTIAL_FINISH_REASONS.has(cut?.rawStopReason) ? messageText(cut) : "";
+    // a content filter, a provider failure or any other unexpected ending stopped is never
+    // an answer.
+    const partial =
+      PARTIAL_STOP_REASONS.has(cut?.stopReason) && PARTIAL_FINISH_REASONS.has(cut?.rawStopReason)
+        ? messageText(cut)
+        : "";
     const written = partial.trim().length;
     report({ outcome: "aborted", ...(written ? { textCharacters: written } : {}) });
     if (written) options.onPartial?.(partial);

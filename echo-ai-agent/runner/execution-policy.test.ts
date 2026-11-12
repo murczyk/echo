@@ -167,8 +167,15 @@ test("#3724 returns a short notice, never raw excerpts, when synthesis ignores c
 });
 
 test("incident 01a1d054: a cut-off synthesis hands over what it wrote, waiting only briefly", async () => {
-  for (const [settles, rawStopReason] of [[true, undefined], [false, undefined], [true, "content_filter"]] as const) {
-    const handsOver = settles && rawStopReason === undefined;
+  const cases = [
+    [true, "aborted", undefined],
+    [false, "aborted", undefined],
+    [true, "aborted", "content_filter"],
+    // A provider failure that settles just after the deadline is not the deadline's cut.
+    [true, "error", undefined],
+  ] as const;
+  for (const [settles, stopReason, rawStopReason] of cases) {
+    const handsOver = settles && stopReason === "aborted" && rawStopReason === undefined;
     const cancellation = new AbortController();
     const partials: string[] = [];
     const outcomes: any[] = [];
@@ -191,7 +198,7 @@ test("incident 01a1d054: a cut-off synthesis hands over what it wrote, waiting o
           if (settles)
             options!.signal!.addEventListener("abort", () =>
               resolve({
-                stopReason: "aborted",
+                stopReason,
                 ...(rawStopReason ? { rawStopReason } : {}),
                 content: [
                   { type: "thinking", thinking: "PRIVATE_THINKING" },
@@ -206,7 +213,7 @@ test("incident 01a1d054: a cut-off synthesis hands over what it wrote, waiting o
     assert.equal(await response, null);
     // A provider that ignores the abort delays the fallback by the grace period only.
     assert.ok(Date.now() - abortedAt < PARTIAL_GRACE_MS + 500);
-    // Filtered text is never handed over, even when the stream stayed open past it.
+    // Filtered or failed text is never handed over, even when it settles after the cut.
     assert.deepEqual(partials, handsOver ? ["Written so far"] : []);
     assert.equal(outcomes.at(-1).outcome, "aborted");
     assert.equal(outcomes.at(-1).textCharacters, handsOver ? 14 : undefined);
