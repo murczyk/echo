@@ -396,14 +396,23 @@ async fn ensure_manual_start_allowed(
     lifecycle_lock: &DatabaseTransaction,
     human_login_id: Uuid,
 ) -> Result<(), AppError> {
-    let has_active = ai_agent_request::Entity::find()
+    let has_active = has_active_request(lifecycle_lock, human_login_id)
+        .await
+        .context(h!())?;
+    manual_start_guard(has_active)
+}
+
+pub(crate) async fn has_active_request(
+    lifecycle_lock: &DatabaseTransaction,
+    human_login_id: Uuid,
+) -> Result<bool, AppError> {
+    Ok(ai_agent_request::Entity::find()
         .filter(ai_agent_request::Column::HumanLoginId.eq(human_login_id))
         .filter(ai_agent_request::Column::State.is_in(["queued", "running"]))
         .one(lifecycle_lock)
         .await
         .c(h!())?
-        .is_some();
-    manual_start_guard(has_active)
+        .is_some())
 }
 
 fn manual_start_guard(has_active: bool) -> Result<(), AppError> {
@@ -417,7 +426,7 @@ fn manual_start_guard(has_active: bool) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn start_for_user_locked(
+pub(crate) async fn start_for_user_locked(
     env: &Env,
     human_login_id: Uuid,
     ai_engine: Option<&ai_engine::Model>,
@@ -1432,7 +1441,7 @@ pub async fn lock_user_lifecycle(
     Ok(())
 }
 
-async fn try_lock_user_lifecycle(
+pub(crate) async fn try_lock_user_lifecycle(
     txn: &DatabaseTransaction,
     human_login_id: Uuid,
 ) -> Result<bool, AppError> {

@@ -1467,6 +1467,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::update_conversation)
             .service(crate::ai_agent::delete_conversation)
             .service(crate::ai_agent::create_request)
+            .service(crate::ai_agent::prewarm::prewarm)
             .service(crate::ai_agent::cancel_request)
             .service(crate::ai_agent::uploads::api::create_upload)
             .service(crate::ai_agent::uploads::api::list_uploads)

@@ -592,6 +592,15 @@ pub const AI_AGENT_WORKER_LEASE_TAKEOVER_GRACE_SEC: u64 =
         + AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC
         + 1;
 pub const AI_AGENT_IDLE_STOP_MINUTES: i64 = 5;
+/// A container prewarmed while the user types stops this long after start if
+/// no request uses it (#4139).
+pub const AI_AGENT_PREWARM_UNUSED_MINUTES: i64 = 3;
+/// Running-container slots a prewarm must leave free for real requests,
+/// which fail instead of waiting when capacity runs out.
+pub const AI_AGENT_PREWARM_RESERVED_SLOTS: u64 = 2;
+/// Below the composer's one-minute interval, so its keep-alives get through.
+pub const AI_AGENT_PREWARM_THROTTLE_SEC: u64 = 45;
+pub const AI_AGENT_PREWARM_REDIS_PREFIX: &str = "ai-agent:prewarm:";
 pub const AI_AGENT_DESTROY_STOPPED_DAYS: i64 = 7;
 pub const AI_AGENT_REVIEW_MAX_ATTEMPTS: i32 = 8;
 pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
