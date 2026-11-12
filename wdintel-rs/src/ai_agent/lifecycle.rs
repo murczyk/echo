@@ -345,7 +345,7 @@ pub async fn start_for_user(
     if ai_engine.is_none() {
         ensure_manual_start_allowed(&lifecycle_lock, human_login_id).await?;
     }
-    let result = start_for_user_locked(env, human_login_id, ai_engine).await;
+    let result = start_for_user_locked(env, human_login_id, ai_engine, 0).await;
     lifecycle_lock.commit().await.c(h!())?;
     result
 }
@@ -364,7 +364,7 @@ pub async fn start_for_request(
     else {
         return Ok(None);
     };
-    let result = start_for_user_locked(env, human_login_id, Some(ai_engine))
+    let result = start_for_user_locked(env, human_login_id, Some(ai_engine), 0)
         .await
         .map(Some);
     lifecycle_lock.commit().await.c(h!())?;
@@ -427,10 +427,13 @@ fn manual_start_guard(has_active: bool) -> Result<(), AppError> {
     Ok(())
 }
 
+/// `reserved_slots` > 0 (a prewarm) makes the dispatcher refuse the start
+/// unless that many host slots stay free afterwards.
 pub(crate) async fn start_for_user_locked(
     env: &Env,
     human_login_id: Uuid,
     ai_engine: Option<&ai_engine::Model>,
+    reserved_slots: u64,
 ) -> Result<LinkedAgent, AppError> {
     crate::users::ensure_base_role_by_id(&env.dbx, &human_login_id)
         .await
@@ -441,7 +444,14 @@ pub(crate) async fn start_for_user_locked(
     enforce_running_limit(&env.dbx, linked.link.id).await?;
     set_container_state(env, &linked.container, "starting", None).await?;
     let started = Instant::now();
-    let path = match start_instance(env, template.id, &linked, ai_engine).await
+    let path = match start_instance(
+        env,
+        template.id,
+        &linked,
+        ai_engine,
+        reserved_slots,
+    )
+    .await
     {
         Ok(path) => path,
         Err(err) => {
@@ -490,6 +500,16 @@ async fn cleanup_failed_start(env: &Env, linked: &LinkedAgent, err: &AppError) {
         warn!(
             "Could not disable login after AI agent start failure: {cleanup_err:#?}"
         );
+    }
+    if is_capacity_refusal(err) {
+        // The dispatcher refused before starting anything; a prewarm then
+        // simply found no spare capacity.
+        if let Err(cleanup_err) =
+            set_container_stopped(env, &linked.container).await
+        {
+            warn!("Could not persist refused AI agent start: {cleanup_err:#?}");
+        }
+        return;
     }
     if let Ok(dispatcher) = DispatcherClient::from_env(env).await {
         if let Err(cleanup_err) = dispatcher
@@ -635,6 +655,7 @@ async fn start_instance(
     template_login_id: Uuid,
     linked: &LinkedAgent,
     requested_engine: Option<&ai_engine::Model>,
+    reserved_slots: u64,
 ) -> Result<StartPath, AppError> {
     let dispatcher = DispatcherClient::from_env(env).await.context(h!())?;
     let ai_engine = match requested_engine {
@@ -643,9 +664,14 @@ async fn start_instance(
     };
     let echo_proxy = enabled_echo_proxy(env).await.context(h!())?;
     let proxy_config = proxy_config(&echo_proxy, &ai_engine).context(h!())?;
-    let path = ensure_instance_running(&dispatcher, template_login_id, linked)
-        .await
-        .context(h!())?;
+    let path = ensure_instance_running(
+        &dispatcher,
+        template_login_id,
+        linked,
+        reserved_slots,
+    )
+    .await
+    .context(h!())?;
     let configured = dispatcher
         .call("configure_proxies", Some(linked.login.id), proxy_config)
         .await
@@ -660,6 +686,7 @@ async fn ensure_instance_running(
     dispatcher: &DispatcherClient,
     template_login_id: Uuid,
     linked: &LinkedAgent,
+    reserved_slots: u64,
 ) -> Result<StartPath, AppError> {
     let cloned = match dispatcher
         .call("status", Some(linked.login.id), json!({}))
@@ -686,7 +713,11 @@ async fn ensure_instance_running(
         }
     };
     let started = dispatcher
-        .call("start", Some(linked.login.id), json!({}))
+        .call(
+            "start",
+            Some(linked.login.id),
+            start_payload(reserved_slots),
+        )
         .await
         .context(h!())?;
     validate_linked_instance(
@@ -701,6 +732,15 @@ async fn ensure_instance_running(
     } else {
         StartPath::Started
     })
+}
+
+/// Requests send no reservation, so older dispatchers keep accepting them.
+fn start_payload(reserved_slots: u64) -> serde_json::Value {
+    if reserved_slots == 0 {
+        json!({})
+    } else {
+        json!({ "reserved_slots": reserved_slots })
+    }
 }
 
 /// A running instance is warm only if Echo also recorded it as running, i.e.
@@ -1599,65 +1639,7 @@ where
     })
 }
 
-/// Result of starting a stopped container with the dispatcher's atomic slot
-/// reservation (#4139).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ReservedStart {
-    Started,
-    /// Starting would use slots kept free for real requests.
-    Refused,
-    /// No stopped instance to start; the normal start path handles it.
-    NotApplicable,
-}
-
-/// Starts the user's stopped container only if `reserved_slots` stay free on
-/// the agent host afterwards. The caller holds the user's lifecycle lock and
-/// completes the start with [`start_for_user_locked`].
-pub(crate) async fn start_reserving_slots(
-    env: &Env,
-    human_login_id: Uuid,
-    reserved_slots: u64,
-) -> Result<ReservedStart, AppError> {
-    let linked = match load_linked_agent(env, human_login_id).await {
-        Ok(linked) => linked,
-        Err(AppError::NotFound) => return Ok(ReservedStart::NotApplicable),
-        Err(err) => return Err(err).context(h!())?,
-    };
-    let dispatcher = DispatcherClient::from_env(env).await.context(h!())?;
-    let Ok(status) = dispatcher
-        .call("status", Some(linked.login.id), json!({}))
-        .await
-    else {
-        return Ok(ReservedStart::NotApplicable);
-    };
-    let status =
-        validate_linked_instance(&status.result, &linked, &dispatcher, None)
-            .context(h!())?;
-    if status != "stopped" {
-        return Ok(ReservedStart::NotApplicable);
-    }
-    let started = dispatcher
-        .call(
-            "start",
-            Some(linked.login.id),
-            json!({ "reserved_slots": reserved_slots }),
-        )
-        .await;
-    if started.as_ref().is_err_and(is_capacity_refusal) {
-        return Ok(ReservedStart::Refused);
-    }
-    let started = started.context(h!())?;
-    validate_linked_instance(
-        &started.result,
-        &linked,
-        &dispatcher,
-        Some("running"),
-    )
-    .context(h!())?;
-    Ok(ReservedStart::Started)
-}
-
-fn is_capacity_refusal(err: &AppError) -> bool {
+pub(crate) fn is_capacity_refusal(err: &AppError) -> bool {
     matches!(err, AppError::BL { msg } if msg.ends_with("running-container limit reached"))
 }
 
@@ -2151,6 +2133,12 @@ mod tests {
         assert!(needs_connection_test(StartPath::Warm, &older_dispatcher));
         assert!(needs_connection_test(StartPath::Started, &unchanged));
         assert!(needs_connection_test(StartPath::Cloned, &unchanged));
+    }
+
+    #[test]
+    fn requests_send_older_dispatchers_no_reservation_field() {
+        assert_eq!(start_payload(0), json!({}));
+        assert_eq!(start_payload(2), json!({ "reserved_slots": 2 }));
     }
 
     #[test]

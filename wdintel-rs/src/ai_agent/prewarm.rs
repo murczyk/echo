@@ -35,6 +35,9 @@ enum PrewarmOutcome {
     LifecycleBusy,
     ActiveRequest,
     NoCapacity,
+    /// The dispatcher cannot keep the reserve atomically; prewarming could
+    /// take slots that real requests need.
+    NoAtomicReserve,
 }
 
 #[post("/api/ai-agent/prewarm")]
@@ -139,26 +142,27 @@ async fn prewarm_locked(
             .context(h!())?;
         return Ok(PrewarmOutcome::KeptAlive);
     }
-    let Some(atomic_reserve) = prewarm_capacity(env).await.context(h!())?
-    else {
-        return Ok(PrewarmOutcome::NoCapacity);
-    };
-    if atomic_reserve
-        && lifecycle::start_reserving_slots(
-            env,
-            human_login_id,
-            AI_AGENT_PREWARM_RESERVED_SLOTS,
-        )
-        .await
-        .context(h!())?
-            == lifecycle::ReservedStart::Refused
-    {
-        return Ok(PrewarmOutcome::NoCapacity);
+    match prewarm_capacity(env).await.context(h!())? {
+        PrewarmCapacity::Available => {}
+        PrewarmCapacity::Full => return Ok(PrewarmOutcome::NoCapacity),
+        PrewarmCapacity::NoAtomicReserve => {
+            return Ok(PrewarmOutcome::NoAtomicReserve)
+        }
     }
-    let linked =
-        lifecycle::start_for_user_locked(env, human_login_id, Some(ai_engine))
-            .await
-            .context(h!())?;
+    let linked = match lifecycle::start_for_user_locked(
+        env,
+        human_login_id,
+        Some(ai_engine),
+        AI_AGENT_PREWARM_RESERVED_SLOTS,
+    )
+    .await
+    {
+        Ok(linked) => linked,
+        Err(err) if lifecycle::is_capacity_refusal(&err) => {
+            return Ok(PrewarmOutcome::NoCapacity)
+        }
+        Err(err) => return Err(err).context(h!())?,
+    };
     set_last_activity(&env.dbx, linked.container, unused_prewarm_activity(now))
         .await
         .context(h!())?;
@@ -215,10 +219,15 @@ fn kept_alive_activity(
     last_activity_at.map_or(typing, |last| last.max(typing))
 }
 
-/// `None` when a prewarm would leave fewer than the reserved slots free;
-/// otherwise whether the dispatcher enforces that reserve atomically when
-/// starting. Older dispatchers only get this advisory check.
-async fn prewarm_capacity(env: &Env) -> Result<Option<bool>, AppError> {
+enum PrewarmCapacity {
+    Available,
+    Full,
+    NoAtomicReserve,
+}
+
+/// An advisory early exit; the dispatcher enforces the reserve atomically
+/// when the start happens.
+async fn prewarm_capacity(env: &Env) -> Result<PrewarmCapacity, AppError> {
     let echo_running = ai_agent_container::Entity::find()
         .filter(
             ai_agent_container::Column::State.is_in(["starting", "running"]),
@@ -227,11 +236,16 @@ async fn prewarm_capacity(env: &Env) -> Result<Option<bool>, AppError> {
         .await
         .c(h!())?;
     if !leaves_reserved_slots(echo_running, AI_AGENT_MAX_RUNNING_CONTAINERS) {
-        return Ok(None);
+        return Ok(PrewarmCapacity::Full);
     }
     let host = host_capacity(env).await.context(h!())?;
-    Ok(leaves_reserved_slots(host.running, host.max_running)
-        .then_some(host.atomic_reserve))
+    Ok(if !host.atomic_reserve {
+        PrewarmCapacity::NoAtomicReserve
+    } else if leaves_reserved_slots(host.running, host.max_running) {
+        PrewarmCapacity::Available
+    } else {
+        PrewarmCapacity::Full
+    })
 }
 
 /// Starting one more container must still leave the reserved slots free for
