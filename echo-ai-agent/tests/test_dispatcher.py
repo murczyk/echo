@@ -733,10 +733,11 @@ class DispatcherProxyNoChangeTests(unittest.TestCase):
                 "exec",
                 AGENT_NAME,
                 "--",
-                "grep",
-                "-qxF",
+                "sh",
+                "-c",
+                'grep -qxF -- "$1" /etc/hosts && systemctl is-active --quiet nginx',
+                "sh",
                 "127.0.0.1 echo.example.test # echo-ai-agent",
-                "/etc/hosts",
             ],
             check=False,
         )
@@ -744,7 +745,7 @@ class DispatcherProxyNoChangeTests(unittest.TestCase):
     @mock.patch.object(DISPATCHER, "apply_proxy_settings")
     @mock.patch.object(DISPATCHER, "run")
     @mock.patch.object(DISPATCHER, "require_instance")
-    def test_lost_hosts_mapping_reconfigures(self, require_instance, run, apply_proxy_settings):
+    def test_lost_hosts_mapping_or_booting_nginx_reconfigures(self, require_instance, run, apply_proxy_settings):
         require_instance.return_value = configured_record()
         run.return_value = completed(1)
 
