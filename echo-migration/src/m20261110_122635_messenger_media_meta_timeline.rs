@@ -49,6 +49,19 @@ create index if not exists messenger_media_meta_chat_timeline_idx
 create index if not exists messenger_media_meta_account_timeline_idx
     on messenger_media_meta (messenger_account_id, messenger_sent_at desc,
                              sigint_chat_message_id desc, id desc);
+
+-- The same timelines filtered by Telegram media type. A filter never
+-- matches null, so media without a Telegram type is left out.
+create index if not exists messenger_media_meta_chat_type_timeline_idx
+    on messenger_media_meta (messenger_chat_id, telegram_media_type,
+                             messenger_sent_at desc,
+                             sigint_chat_message_id desc, id desc)
+    where telegram_media_type is not null;
+create index if not exists messenger_media_meta_account_type_timeline_idx
+    on messenger_media_meta (messenger_account_id, telegram_media_type,
+                             messenger_sent_at desc,
+                             sigint_chat_message_id desc, id desc)
+    where telegram_media_type is not null;
                 "#,
             )
             .await
@@ -61,6 +74,8 @@ create index if not exists messenger_media_meta_account_timeline_idx
             .get_connection()
             .execute_unprepared(
                 r#"
+drop index if exists messenger_media_meta_account_type_timeline_idx;
+drop index if exists messenger_media_meta_chat_type_timeline_idx;
 drop index if exists messenger_media_meta_account_timeline_idx;
 drop index if exists messenger_media_meta_chat_timeline_idx;
 alter table messenger_media_meta

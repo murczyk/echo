@@ -118,7 +118,9 @@ pub(crate) async fn list_attachments(
     .c(h!())?;
     let attachment_scope =
         resolve_attachment_scope(env, scope, &req).await.c(h!())?;
-    let page = load_page(&env.dbx, attachment_scope, page_request, limit)
+    let attachments =
+        visible_attachments(attachment_scope, req.telegram_media_type);
+    let page = load_page(&env.dbx, attachments, page_request, limit)
         .await
         .c(h!())?;
     let items = attachment_items(env, scope, page.rows).await.c(h!())?;
@@ -146,30 +148,32 @@ async fn resolve_attachment_scope(
 
 async fn load_page(
     dbx: &DatabaseConnection,
-    scope: AttachmentScope,
+    attachments: Select<messenger_media_meta::Entity>,
     page_request: CursorPage<AttachmentPosition>,
     limit: u64,
 ) -> Result<AttachmentPage, AppError> {
     match page_request {
-        CursorPage::Latest => load_older_page(dbx, scope, None, limit).await,
-        CursorPage::Oldest => load_oldest_page(dbx, scope, limit).await,
+        CursorPage::Latest => {
+            load_older_page(dbx, attachments, None, limit).await
+        }
+        CursorPage::Oldest => load_oldest_page(dbx, attachments, limit).await,
         CursorPage::Older(position) => {
-            load_older_page(dbx, scope, Some(position), limit).await
+            load_older_page(dbx, attachments, Some(position), limit).await
         }
         CursorPage::Newer(position) => {
-            load_newer_page(dbx, scope, position, limit).await
+            load_newer_page(dbx, attachments, position, limit).await
         }
     }
 }
 
 async fn load_older_page(
     dbx: &DatabaseConnection,
-    scope: AttachmentScope,
+    attachments: Select<messenger_media_meta::Entity>,
     before: Option<AttachmentPosition>,
     limit: u64,
 ) -> Result<AttachmentPage, AppError> {
     let (rows, older) =
-        load_older_rows(dbx, scope, before, limit).await.c(h!())?;
+        load_older_rows(dbx, attachments, before, limit).await.c(h!())?;
     let newer = rows.first().map(AttachmentRow::position).or(before);
     Ok(AttachmentPage { rows, older, newer })
 }
@@ -177,10 +181,12 @@ async fn load_older_page(
 /// The start of the timeline, so nothing is older than this page.
 async fn load_oldest_page(
     dbx: &DatabaseConnection,
-    scope: AttachmentScope,
+    attachments: Select<messenger_media_meta::Entity>,
     limit: u64,
 ) -> Result<AttachmentPage, AppError> {
-    let rows = load_newer_rows(dbx, scope, None, limit).await.c(h!())?;
+    let rows = load_newer_rows(dbx, attachments, None, limit)
+        .await
+        .c(h!())?;
     let newer = rows.first().map(AttachmentRow::position);
     Ok(AttachmentPage {
         rows,
@@ -191,11 +197,11 @@ async fn load_oldest_page(
 
 async fn load_newer_page(
     dbx: &DatabaseConnection,
-    scope: AttachmentScope,
+    attachments: Select<messenger_media_meta::Entity>,
     after: AttachmentPosition,
     limit: u64,
 ) -> Result<AttachmentPage, AppError> {
-    let rows = load_newer_rows(dbx, scope, Some(after), limit)
+    let rows = load_newer_rows(dbx, attachments, Some(after), limit)
         .await
         .c(h!())?;
     let older = rows.last().map(AttachmentRow::position).or(Some(after));
@@ -206,11 +212,11 @@ async fn load_newer_page(
 /// Reads one row past the page to learn whether older attachments remain.
 async fn load_older_rows(
     dbx: &DatabaseConnection,
-    scope: AttachmentScope,
+    attachments: Select<messenger_media_meta::Entity>,
     before: Option<AttachmentPosition>,
     limit: u64,
 ) -> Result<(Vec<AttachmentRow>, Option<AttachmentPosition>), AppError> {
-    let mut query = visible_attachments(scope);
+    let mut query = attachments;
     if let Some(before) = before {
         query = query.filter(timeline_filter("<", before));
     }
@@ -236,11 +242,11 @@ async fn load_older_rows(
 /// timeline without it, newest first.
 async fn load_newer_rows(
     dbx: &DatabaseConnection,
-    scope: AttachmentScope,
+    attachments: Select<messenger_media_meta::Entity>,
     after: Option<AttachmentPosition>,
     limit: u64,
 ) -> Result<Vec<AttachmentRow>, AppError> {
-    let mut query = visible_attachments(scope);
+    let mut query = attachments;
     if let Some(after) = after {
         query = query.filter(timeline_filter(">", after));
     }
@@ -257,11 +263,13 @@ async fn load_newer_rows(
     Ok(rows)
 }
 
-/// Attachments of live messages in the scope. The joins are primary key
-/// lookups, so PostgreSQL walks the scope's timeline index and stops at the
-/// limit.
+/// Attachments of live messages in the scope, of the given Telegram media
+/// type unless it is empty. The joins are primary key lookups, so PostgreSQL
+/// walks the scope's timeline index, or its type timeline index, and stops at
+/// the limit.
 fn visible_attachments(
     scope: AttachmentScope,
+    media_type: Option<String>,
 ) -> Select<messenger_media_meta::Entity> {
     let signal_message_relation =
         messenger_media_meta::Entity::belongs_to(signal_message::Entity)
@@ -283,7 +291,16 @@ fn visible_attachments(
             messenger_media_meta::Relation::SigintChatMessage.def(),
         )
         .join(JoinType::InnerJoin, signal_message_relation)
-        .filter(signal_message::Column::Deleted.eq(false));
+        .filter(signal_message::Column::Deleted.eq(false))
+        .apply_if(
+            media_type.filter(|media_type| !media_type.is_empty()),
+            |query, media_type| {
+                query.filter(
+                    messenger_media_meta::Column::TelegramMediaType
+                        .eq(media_type),
+                )
+            },
+        );
     match scope {
         AttachmentScope::Chat(chat_id) => query
             .filter(messenger_media_meta::Column::MessengerChatId.eq(chat_id)),
@@ -732,6 +749,7 @@ mod tests {
             cursor,
             limit: Some(2),
             direction,
+            telegram_media_type: None,
         }
     }
 

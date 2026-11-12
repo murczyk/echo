@@ -2970,6 +2970,7 @@ type alias MessengersAttachmentsListReq =
     , cursor : Maybe (String)
     , limit : Maybe (Int)
     , direction : Maybe (MessengersMessagesDirection)
+    , telegramMediaType : Maybe (String)
     }
 
 
@@ -2981,6 +2982,7 @@ messengersAttachmentsListReqEncoder struct =
         , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "direction", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersMessagesDirectionEncoder)) struct.direction )
+        , ( "telegram_media_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.telegramMediaType )
         ]
 
 
@@ -23243,6 +23245,7 @@ messengersAttachmentsListReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.nullable (messengersMessagesDirectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram_media_type" (Json.Decode.nullable (Json.Decode.string))))
 
 
 messengersAttachmentItemDecoder : Json.Decode.Decoder MessengersAttachmentItem

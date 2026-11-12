@@ -180,6 +180,7 @@ pub struct MessengersAttachmentsListReq {
     pub cursor: Option<String>,
     pub limit: Option<i64>,
     pub direction: Option<MessengersMessagesDirection>,
+    pub telegram_media_type: Option<String>,
 }
 
 #[derive(
