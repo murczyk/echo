@@ -1153,7 +1153,7 @@ export type MessengersAttachmentsListReq = {
   cursor: string | null;
   limit: number | null;
   direction: MessengersMessagesDirection | null;
-  telegramMediaType: string | null;
+  telegramMediaTypes: Array<string> | null;
 };
 
 export type MessengersAttachmentItem = {

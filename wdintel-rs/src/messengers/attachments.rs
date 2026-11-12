@@ -119,7 +119,7 @@ pub(crate) async fn list_attachments(
     let attachment_scope =
         resolve_attachment_scope(env, scope, &req).await.c(h!())?;
     let attachments =
-        visible_attachments(attachment_scope, req.telegram_media_type);
+        visible_attachments(attachment_scope, req.telegram_media_types);
     let page = load_page(&env.dbx, attachments, page_request, limit)
         .await
         .c(h!())?;
@@ -264,12 +264,12 @@ async fn load_newer_rows(
 }
 
 /// Attachments of live messages in the scope, of the given Telegram media
-/// type unless it is empty. The joins are primary key lookups, so PostgreSQL
-/// walks the scope's timeline index, or its type timeline index, and stops at
-/// the limit.
+/// types unless there are none. The joins are primary key lookups, so
+/// PostgreSQL walks the scope's timeline index, or for one type its type
+/// timeline index, and stops at the limit.
 fn visible_attachments(
     scope: AttachmentScope,
-    media_type: Option<String>,
+    media_types: Option<Vec<String>>,
 ) -> Select<messenger_media_meta::Entity> {
     let signal_message_relation =
         messenger_media_meta::Entity::belongs_to(signal_message::Entity)
@@ -293,11 +293,11 @@ fn visible_attachments(
         .join(JoinType::InnerJoin, signal_message_relation)
         .filter(signal_message::Column::Deleted.eq(false))
         .apply_if(
-            media_type.filter(|media_type| !media_type.is_empty()),
-            |query, media_type| {
+            media_types.filter(|media_types| !media_types.is_empty()),
+            |query, media_types| {
                 query.filter(
                     messenger_media_meta::Column::TelegramMediaType
-                        .eq(media_type),
+                        .is_in(media_types),
                 )
             },
         );
@@ -749,7 +749,7 @@ mod tests {
             cursor,
             limit: Some(2),
             direction,
-            telegram_media_type: None,
+            telegram_media_types: None,
         }
     }
 

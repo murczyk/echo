@@ -428,7 +428,7 @@ type MessengersAttachmentsListReq = {
   cursor: string | null                 // from a previous response
   limit: number | null                  // default 50, at most 100
   direction: "Older" | "Newer" | "Oldest" | null   // default "Older"
-  telegram_media_type: string | null    // null or "": every type
+  telegram_media_types: string[] | null // null or []: every type
 }
 
 type MessengersAttachmentsListRsp = {
@@ -502,19 +502,21 @@ Semantics:
   `older_cursor` is only known to be final on `Older`, `Oldest` and newest
   pages.
 - A cursor does not record the scope or the filter. Keep `account_id`,
-  `chat_id` and `telegram_media_type` the same while paging; an attachment
+  `chat_id` and `telegram_media_types` the same while paging; an attachment
   cursor is not a `messages/list` cursor.
-- `telegram_media_type` keeps attachments whose `telegram.media_type` equals
-  it, so attachments without a Telegram media type are left out.
+- `telegram_media_types` keeps attachments whose `telegram.media_type` is one
+  of the values, so attachments without a Telegram media type are left out.
 - `message_id` works as `around_message_id` in `messages/list`, to open the
   message in its chat.
 - Attachments of messages deleted in Echo are left out, and in the account
   scope also those of deleted chats. They do not count towards `limit`.
 - `messenger_media_meta` keeps a copy of the message's account, chat and send
   time, which never change after ingest. Its chat and account timeline indexes
-  serve every page, and their media type variants serve filtered pages, so a
-  page reads about `limit` rows, however large the chat or account and however
-  rare the type.
+  serve every page, and their media type variants serve pages filtered by one
+  type, so a page reads about `limit` rows, however large the chat or account
+  and however rare the type. A filter with several types cannot read the type
+  indexes in timeline order, so it reads every attachment of those types in
+  the scope, or walks the scope's timeline past the other types.
 
 ## Changes to RER endpoints
 
