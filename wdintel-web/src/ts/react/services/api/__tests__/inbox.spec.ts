@@ -176,6 +176,7 @@ describe('inbox API normalization', () => {
     expect(message?.media).toEqual([
       {
         id: 'audio-1',
+        orderF64: null,
         contentType: 'audio/mpeg',
         fileName: 'recording.mp3',
         sizeBytes: 1024,
@@ -249,6 +250,7 @@ describe('normalizeMessageMediaInfo', () => {
       normalizeMessageMediaInfo({
         id: 'm1',
         content_type: 'audio/wav',
+        order_f64: 1.5,
         file_name: 'clip.wav',
         size_bytes: 2048,
         href: '/api/messenger/media/m1',
@@ -256,6 +258,7 @@ describe('normalizeMessageMediaInfo', () => {
     ).toEqual({
       id: 'm1',
       contentType: 'audio/wav',
+      orderF64: 1.5,
       fileName: 'clip.wav',
       sizeBytes: 2048,
       href: '/api/messenger/media/m1',

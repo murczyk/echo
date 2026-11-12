@@ -253,6 +253,8 @@ impl From<InboxInsertPayload> for InboxMessage {
 )]
 pub struct MessageMediaInfo {
     pub id: String,
+    #[serde(default)]
+    pub order_f64: Option<f64>,
     pub content_type: String,
     pub file_name: Option<String>,
     pub size_bytes: i64,

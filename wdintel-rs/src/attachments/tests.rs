@@ -251,6 +251,7 @@ pub(super) async fn fixture() -> (Env, String, i64) {
 
 pub(super) async fn attachment(env: &Env, message: i64, name: &str) -> Job {
     let media = signal_message_media::ActiveModel {
+        order_f64: Set(None),
         id: Set(Uuid::now_v7()),
         signal_message_id: Set(message),
         signal_message_uuid: Set(None),

@@ -1061,6 +1061,7 @@ pub async fn aggregate_to_inbox_messages(
             .iter()
             .map(|m| MessageMediaInfo {
                 id: m.id.to_string(),
+                order_f64: m.order_f64,
                 content_type: m.content_type.clone(),
                 file_name: m.file_name.clone(),
                 size_bytes: m.size_bytes,

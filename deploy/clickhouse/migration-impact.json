@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261112_141106_attachment_order": {
+      "changes": [
+        { "table": "public.signal_message_media", "strategy": "cdc_additive" },
+        { "table": "public.signal_message_audio_ref", "strategy": "cdc_additive" }
+      ]
+    },
     "echo:m20261110_100819_ai_network_match_job_generation": {
       "changes": [
         { "table": "public.ai_network_match_worker_job", "strategy": "excluded" }

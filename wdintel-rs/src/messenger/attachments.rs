@@ -3,6 +3,38 @@ use crate::types::*;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
 
+pub(crate) async fn order_echo_snapshot(
+    txn: &impl ConnectionTrait,
+    datasource_id: i64,
+    echo_inbox_message_id: i32,
+    mut attachments: Vec<MessageAttachmentF1>,
+) -> anyhow::Result<Vec<MessageAttachmentF1>> {
+    if attachments.len() < 2 {
+        return Ok(attachments);
+    }
+    let Some(account_id) = datasource_echo_account_id(txn, datasource_id)
+        .await
+        .c(h!())?
+    else {
+        return Ok(attachments);
+    };
+    let stored = echo_attachment::Entity::find()
+        .filter(echo_attachment::Column::MessageId.eq(echo_inbox_message_id))
+        .filter(echo_attachment::Column::AccountId.eq(account_id))
+        .order_by_asc(echo_attachment::Column::Id)
+        .all(txn)
+        .await
+        .c(h!())?;
+    let positions = stored
+        .into_iter()
+        .map(|attachment| (attachment.path, attachment.id))
+        .collect::<std::collections::HashMap<_, _>>();
+    attachments.sort_by_key(|attachment| {
+        positions.get(&attachment.path).copied().unwrap_or(i32::MAX)
+    });
+    Ok(attachments)
+}
+
 pub async fn load_latest_echo_attachment_batch(
     txn: &impl ConnectionTrait,
     datasource_id: i64,

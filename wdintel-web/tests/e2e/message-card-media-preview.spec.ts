@@ -2554,3 +2554,39 @@ for (const host of ['analysis', 'duty'] as const) {
     await expect(dialog).toContainText('Stored OCR');
   });
 }
+
+test('#3931 @regression mixed gallery and carousel preserve attachment order', async ({ page }) => {
+  const response = buildMessageCardMediaPreviewInboxResponse();
+  const media = (response.inbox_items[0]![1] as { media: Array<Record<string, unknown>> }).media;
+  const names: string[] = [
+    MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1,
+    MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2,
+    MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
+    MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video2,
+  ];
+  const name = (item: Record<string, unknown>) => String(item.fileName ?? item.file_name);
+  const ordered = [
+    ...names.map((fileName) => media.find((item) => name(item) === fileName)!),
+    ...media.filter((item) => !names.includes(name(item))),
+  ].map((item, index) => ({ ...item, order_f64: index + 1 }));
+  await openMessageCardPreviewHost(page, 'duty', {
+    messageOverrides: { media: ordered as never, images: [] },
+  });
+  const thumbnails = page
+    .locator('.message-card-gallery')
+    .getByRole('button', { name: /Відкрити (зображення|відео)/ });
+  expect(
+    await thumbnails.evaluateAll((buttons) =>
+      buttons.map((button) => button.getAttribute('aria-label')),
+    ),
+  ).toEqual(['Відкрити відео', 'Відкрити зображення', 'Відкрити зображення', 'Відкрити відео']);
+  await thumbnails.first().click();
+  const dialog = page.getByRole('dialog');
+  await expectPreviewCounter(dialog, '1 / 7');
+  await dialog.getByRole('button', { name: 'Наступне' }).click();
+  await expectPreviewCounter(dialog, '2 / 7');
+  await expect(dialog.getByRole('link', { name: 'Відкрити в новій вкладці' })).toHaveAttribute(
+    'href',
+    new RegExp(MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2),
+  );
+});

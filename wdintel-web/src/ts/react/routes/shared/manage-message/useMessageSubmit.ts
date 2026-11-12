@@ -10,7 +10,9 @@ import {
   editDirectSubmit,
   formatDirectSubmitError,
   type DirectSubmitResponse,
+  type DirectSubmitRequest,
 } from '../../../services/api/direct-submit';
+import { attachmentPositions } from './attachment-order';
 import type { RecentValues } from './useRecentValues';
 import {
   compatibleMessageUnitSelection,
@@ -155,6 +157,16 @@ export function useMessageSubmit({
 
       const files = uppy.getFiles();
       const uploadUrls: string[] = [];
+      const attachmentOrders: NonNullable<DirectSubmitRequest['attachment_updates']>['orders'] = [];
+      const pendingIds = files
+        .filter((file) => !replacedMediaIds.has(String(file.meta?.replaces_media_id)))
+        .map((file) => file.id);
+      const positions = attachmentPositions(
+        existingMedia,
+        pendingIds,
+        data.attachment_orders ?? {},
+      );
+      const hasReorder = Object.keys(data.attachment_orders ?? {}).length > 0;
       const replacementUploads: { media_id: string; upload_url: string }[] = [];
 
       if (files.length > 0) {
@@ -169,7 +181,9 @@ export function useMessageSubmit({
           throw new Error(formatMessageUploadError(uppy, failed[0]));
         }
 
-        for (const file of uppy.getFiles()) {
+        for (const file of [...uppy.getFiles()].sort(
+          (a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0),
+        )) {
           const url = file.tus?.uploadUrl || file.uploadURL || file.response?.uploadURL;
           if (url) {
             const replacesMediaId = file.meta?.replaces_media_id;
@@ -177,6 +191,12 @@ export function useMessageSubmit({
               replacementUploads.push({ media_id: replacesMediaId, upload_url: url });
             } else {
               uploadUrls.push(url);
+              if (hasReorder && (isEditMode || isReportCreateMode))
+                attachmentOrders.push({
+                  media_id: null,
+                  upload_url: url,
+                  order_f64: positions.get(file.id)!,
+                });
             }
           } else {
             throw new Error(`Помилка: не знайдено URL для файлу ${file.name}`);
@@ -250,6 +270,21 @@ export function useMessageSubmit({
           replacementUploads,
           isEditMode || isReportCreateMode,
           replacedMediaIds,
+          [
+            ...existingMedia
+              .filter(
+                (media) =>
+                  !deletedMediaIds.has(media.id) &&
+                  (data.attachment_orders?.[media.id] != null ||
+                    (isReportCreateMode && hasReorder)),
+              )
+              .map((media) => ({
+                media_id: media.id,
+                upload_url: null,
+                order_f64: positions.get(media.id)!,
+              })),
+            ...attachmentOrders,
+          ],
         ),
         freq: radioFeaturesAllowed
           ? data.freq || undefined
@@ -384,6 +419,7 @@ function buildAttachmentUpdates(
   replacements: { media_id: string; upload_url: string }[],
   includeExisting: boolean,
   excludedRenameIds: ReadonlySet<string>,
+  orders: NonNullable<DirectSubmitRequest['attachment_updates']>['orders'],
 ) {
   const replacementIds = new Set(replacements.map((replacement) => replacement.media_id));
   const renames = includeExisting
@@ -397,7 +433,9 @@ function buildAttachmentUpdates(
           : [];
       })
     : [];
-  return replacements.length || renames.length ? { replacements, renames } : undefined;
+  return replacements.length || renames.length || orders?.length
+    ? { replacements, renames, ...(orders?.length ? { orders } : {}) }
+    : undefined;
 }
 
 function optionalInteger(value: string | null | undefined): number | undefined {

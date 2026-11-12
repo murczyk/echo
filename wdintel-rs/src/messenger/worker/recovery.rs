@@ -340,6 +340,7 @@ async fn load_recovery_maps(
     } else {
         echo_attachment::Entity::find()
             .filter(echo_attachment::Column::MessageId.is_in(inbox_ids_i32))
+            .order_by_asc(echo_attachment::Column::Id)
             .all(dbx)
             .await
             .c(h!())?

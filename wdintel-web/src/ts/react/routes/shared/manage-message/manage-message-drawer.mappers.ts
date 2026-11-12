@@ -121,6 +121,7 @@ export function mapDirectSubmitCopyToForm(payload: DirectSubmitRequest): Message
       hash_id: metadata.hash_id ?? '',
     })),
     deleted_media_ids: [],
+    attachment_orders: {},
   };
 }
 

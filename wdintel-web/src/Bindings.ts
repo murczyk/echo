@@ -3682,6 +3682,7 @@ export type Datasource = {
 
 export type MessageMediaInfo = {
   id: string;
+  orderF64: number | null;
   contentType: string;
   fileName: string | null;
   sizeBytes: number;
@@ -4650,6 +4651,7 @@ export type DirectSubmitPayload = {
 export type DirectSubmitAttachmentUpdates = {
   replacements: Array<DirectSubmitAttachmentReplacement>;
   renames: Array<DirectSubmitAttachmentRename>;
+  orders: Array<DirectSubmitAttachmentOrder>;
 };
 
 export type DirectSubmitAttachmentReplacement = {
@@ -4660,6 +4662,12 @@ export type DirectSubmitAttachmentReplacement = {
 export type DirectSubmitAttachmentRename = {
   mediaId: string;
   fileName: string;
+};
+
+export type DirectSubmitAttachmentOrder = {
+  mediaId: string | null;
+  uploadUrl: string | null;
+  orderF64: number;
 };
 
 export type DirectSubmitParsePayload = {

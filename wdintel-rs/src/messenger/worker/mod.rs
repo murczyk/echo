@@ -1133,7 +1133,14 @@ async fn effective_queue_snapshot_attachments(
     }
     if !item.attachments.is_empty() {
         return Ok(trim_echo_attachment_batch_for_queue(
-            item.attachments.clone(),
+            crate::messenger::attachments::order_echo_snapshot(
+                txn,
+                datasource_id,
+                item.internal_id,
+                item.attachments.clone(),
+            )
+            .await
+            .c(h!())?,
             previous_attachment_count,
             datasource_id,
             item.internal_id,
@@ -2244,6 +2251,50 @@ mod tests {
         pool::process_queue(&mut pool, queue, attachments, datasources)
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3931_queue_propagates_echo_attachment_id_order() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let inbox = mk_echo_inbox_message(&env.dbx, account.id).await;
+        for path in ["/tmp/c.txt", "/tmp/a.txt", "/tmp/b.txt"] {
+            mk_echo_attachment(
+                &env.dbx,
+                account.id,
+                inbox.id,
+                path,
+                Some(path),
+            )
+            .await;
+        }
+        let mut snapshot =
+            test_message(inbox.id, "attachment order #3931", false);
+        snapshot.attachments = ["/tmp/b.txt", "/tmp/c.txt", "/tmp/a.txt"]
+            .iter()
+            .map(|path| echo_im::types::MessageAttachmentF1 {
+                path: String::from(*path),
+                name: Some(String::from(*path)),
+            })
+            .collect();
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(&snapshot, datasource.id, &txn)
+            .await
+            .unwrap();
+        let (_, attachments) =
+            load_signal_message_queue_snapshot(&txn, datasource.id, inbox.id)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            attachments
+                .iter()
+                .map(|attachment| attachment.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/tmp/c.txt", "/tmp/a.txt", "/tmp/b.txt"]
+        );
+        txn.rollback().await.unwrap();
     }
 
     #[tokio::test]

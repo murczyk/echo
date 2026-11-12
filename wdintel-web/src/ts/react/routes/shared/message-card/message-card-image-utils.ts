@@ -47,7 +47,12 @@ export function collectMessageImages(msg: InboxMessage): MessageCardImage[] {
     add(mapMessageMediaImage(attachment));
   }
 
-  return Array.from(imagesByHref.values());
+  const positions = new Map((msg.media ?? []).map((media, index) => [media.id, index]));
+  return Array.from(imagesByHref.values()).sort(
+    (a, b) =>
+      (positions.get(a.id ?? '') ?? Number.MAX_SAFE_INTEGER) -
+      (positions.get(b.id ?? '') ?? Number.MAX_SAFE_INTEGER),
+  );
 }
 
 function mapMessageMediaImage(attachment: MessageMediaInfo): MessageCardImage {

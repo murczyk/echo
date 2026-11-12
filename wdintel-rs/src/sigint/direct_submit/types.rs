@@ -99,6 +99,24 @@ pub struct DirectSubmitAttachmentUpdates {
     pub replacements: Vec<DirectSubmitAttachmentReplacement>,
     #[serde(default)]
     pub renames: Vec<DirectSubmitAttachmentRename>,
+    #[serde(default)]
+    pub orders: Vec<DirectSubmitAttachmentOrder>,
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    elm_rs::Elm,
+    elm_rs::ElmEncode,
+    elm_rs::ElmDecode,
+)]
+pub struct DirectSubmitAttachmentOrder {
+    pub media_id: Option<String>,
+    pub upload_url: Option<String>,
+    pub order_f64: f64,
 }
 
 #[derive(

@@ -8505,6 +8505,7 @@ mod tests {
 
         if let Some(content_type) = content_type {
             signal_message_media::ActiveModel {
+                order_f64: Set(None),
                 id: Set(Uuid::new_v4()),
                 signal_message_id: Set(message.id),
                 signal_message_uuid: Set(message.id_uuid),
