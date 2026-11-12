@@ -2043,10 +2043,9 @@ mod tests {
             .execute_unprepared(
                 r#"
 insert into system_settings (
-    rer_analysis_units_exact_match_only_default, rer_duty_test_enabled,
-    rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec,
+    rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec,
     messenger_media_cache_enabled, messenger_media_cache_min_free_gib
-) values (true, false, 0, 1, 5, true, 0)
+) values (true, 5, true, 0)
 "#,
             )
             .await

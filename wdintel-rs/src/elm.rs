@@ -15,11 +15,6 @@ const FILTER_TAGS_OPTION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x ->
 const FILTER_TAGS_OPTION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))"#;
 const FILTER_TAGS_OPTION_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder))))"#;
 const FILTER_TAGS_OPTION_COMPAT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder)), Json.Decode.succeed Nothing ]))"#;
-const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT: &str =
-    r#"Json.Decode.field "rer_duty_test_since_ms" Json.Decode.int"#;
-const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str =
-    r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.int)"#;
-const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)"#;
 const RER_DUTY_GROUP_SCOPES_STRICT_DECODER: &str = r#"Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string)))))"#;
 const RER_DUTY_GROUP_SCOPES_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))), Json.Decode.succeed Nothing ]"#;
 const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
@@ -850,7 +845,19 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::system_settings::types::SystemSettingsListRsp,
             crate::system_settings::types::CreateSystemSettingsReq,
             crate::system_settings::types::ActivateSystemSettingsReq,
-            crate::system_settings::types::RerDutyTestReplayStatusRsp,
+            crate::message_replay::types::MessageReplayShiftMode,
+            crate::message_replay::types::MessageReplayOnEnd,
+            crate::message_replay::types::MessageReplaySpeed,
+            crate::message_replay::types::MessageReplaySpeedReq,
+            crate::message_replay::types::MessageReplayActivityBucket,
+            crate::message_replay::types::MessageReplayExtentRsp,
+            crate::message_replay::types::MessageReplayActivityReq,
+            crate::message_replay::types::MessageReplayActivityPoint,
+            crate::message_replay::types::MessageReplayActivityRsp,
+            crate::message_replay::types::MessageReplayPlanReq,
+            crate::message_replay::types::MessageReplayPreviewRsp,
+            crate::message_replay::types::MessageReplaySessionRsp,
+            crate::message_replay::types::MessageReplayStatusRsp,
             crate::rer_report_admin::RerReportAccessListRsp,
             crate::rer_report_admin::ReplaceRerReportAccessListReq,
             crate::rer_report_admin::RerReportMetadataItem,
@@ -1870,7 +1877,19 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::system_settings::types::SystemSettingsListRsp,
             crate::system_settings::types::CreateSystemSettingsReq,
             crate::system_settings::types::ActivateSystemSettingsReq,
-            crate::system_settings::types::RerDutyTestReplayStatusRsp,
+            crate::message_replay::types::MessageReplayShiftMode,
+            crate::message_replay::types::MessageReplayOnEnd,
+            crate::message_replay::types::MessageReplaySpeed,
+            crate::message_replay::types::MessageReplaySpeedReq,
+            crate::message_replay::types::MessageReplayActivityBucket,
+            crate::message_replay::types::MessageReplayExtentRsp,
+            crate::message_replay::types::MessageReplayActivityReq,
+            crate::message_replay::types::MessageReplayActivityPoint,
+            crate::message_replay::types::MessageReplayActivityRsp,
+            crate::message_replay::types::MessageReplayPlanReq,
+            crate::message_replay::types::MessageReplayPreviewRsp,
+            crate::message_replay::types::MessageReplaySessionRsp,
+            crate::message_replay::types::MessageReplayStatusRsp,
             crate::rer_report_admin::RerReportAccessListRsp,
             crate::rer_report_admin::ReplaceRerReportAccessListReq,
             crate::rer_report_admin::RerReportMetadataItem,
@@ -2423,14 +2442,6 @@ fn patch_backward_compatible_decoders(
         .replace(
             FILTER_TAGS_OPTION_STRICT_DECODER,
             FILTER_TAGS_OPTION_COMPAT_DECODER,
-        )
-        .replace(
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT,
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
-        )
-        .replace(
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW,
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
         )
         .replace(
             RER_DUTY_GROUP_SCOPES_STRICT_DECODER,

@@ -15228,12 +15228,7 @@ deleteApiSenderReqEncoder struct =
 type alias SystemSettingsCurrentRsp =
     { id : Maybe (Int)
     , rerAnalysisUnitsExactMatchOnlyDefault : Bool
-    , rerDutyTestEnabled : Bool
-    , rerDutyInsertHistoricalInterceptions : Bool
-    , rerDutyTestSinceMs : Int
-    , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
-    , rerDutyTestReplayIntervalSec : Int
     , shortUrlEnabled : Bool
     , rerReportEnabled : Bool
     , supportNonRerInterceptions : Bool
@@ -15277,12 +15272,7 @@ systemSettingsCurrentRspEncoder struct =
     Json.Encode.object
         [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.id )
         , ( "rer_analysis_units_exact_match_only_default", (Json.Encode.bool) struct.rerAnalysisUnitsExactMatchOnlyDefault )
-        , ( "rer_duty_test_enabled", (Json.Encode.bool) struct.rerDutyTestEnabled )
-        , ( "rer_duty_insert_historical_interceptions", (Json.Encode.bool) struct.rerDutyInsertHistoricalInterceptions )
-        , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
-        , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
-        , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "rer_report_enabled", (Json.Encode.bool) struct.rerReportEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
@@ -15324,12 +15314,7 @@ systemSettingsCurrentRspEncoder struct =
 type alias SystemSettingsItem =
     { id : Int
     , rerAnalysisUnitsExactMatchOnlyDefault : Bool
-    , rerDutyTestEnabled : Bool
-    , rerDutyInsertHistoricalInterceptions : Bool
-    , rerDutyTestSinceMs : Int
-    , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
-    , rerDutyTestReplayIntervalSec : Int
     , createdAt : Int
     , updatedAt : Int
     , updatedByLoginId : Maybe (String)
@@ -15386,12 +15371,7 @@ systemSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "rer_analysis_units_exact_match_only_default", (Json.Encode.bool) struct.rerAnalysisUnitsExactMatchOnlyDefault )
-        , ( "rer_duty_test_enabled", (Json.Encode.bool) struct.rerDutyTestEnabled )
-        , ( "rer_duty_insert_historical_interceptions", (Json.Encode.bool) struct.rerDutyInsertHistoricalInterceptions )
-        , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
-        , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
-        , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "updated_at", (Json.Encode.int) struct.updatedAt )
         , ( "updated_by_login_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedByLoginId )
@@ -15457,12 +15437,7 @@ systemSettingsListRspEncoder struct =
 
 type alias CreateSystemSettingsReq =
     { rerAnalysisUnitsExactMatchOnlyDefault : Bool
-    , rerDutyTestEnabled : Bool
-    , rerDutyInsertHistoricalInterceptions : Bool
-    , rerDutyTestSinceMs : Int
-    , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
-    , rerDutyTestReplayIntervalSec : Int
     , shortUrlEnabled : Bool
     , rerReportEnabled : Bool
     , supportNonRerInterceptions : Bool
@@ -15514,12 +15489,7 @@ createSystemSettingsReqEncoder : CreateSystemSettingsReq -> Json.Encode.Value
 createSystemSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "rer_analysis_units_exact_match_only_default", (Json.Encode.bool) struct.rerAnalysisUnitsExactMatchOnlyDefault )
-        , ( "rer_duty_test_enabled", (Json.Encode.bool) struct.rerDutyTestEnabled )
-        , ( "rer_duty_insert_historical_interceptions", (Json.Encode.bool) struct.rerDutyInsertHistoricalInterceptions )
-        , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
-        , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
-        , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "rer_report_enabled", (Json.Encode.bool) struct.rerReportEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
@@ -15579,23 +15549,252 @@ activateSystemSettingsReqEncoder struct =
         ]
 
 
-type alias RerDutyTestReplayStatusRsp =
-    { status : String
-    , sourceCount : Int
-    , nextSourcePosition : Maybe (Int)
-    , generatedCount : Int
-    , nextEmitAtMs : Maybe (Int)
+type MessageReplayShiftMode
+    = WindowStart
+    | SameTimeOfDay
+    | Manual
+
+
+messageReplayShiftModeEncoder : MessageReplayShiftMode -> Json.Encode.Value
+messageReplayShiftModeEncoder enum =
+    case enum of
+        WindowStart ->
+            Json.Encode.string "WindowStart"
+        SameTimeOfDay ->
+            Json.Encode.string "SameTimeOfDay"
+        Manual ->
+            Json.Encode.string "Manual"
+
+type MessageReplayOnEnd
+    = Loop
+    | Pause
+
+
+messageReplayOnEndEncoder : MessageReplayOnEnd -> Json.Encode.Value
+messageReplayOnEndEncoder enum =
+    case enum of
+        Loop ->
+            Json.Encode.string "Loop"
+        Pause ->
+            Json.Encode.string "Pause"
+
+type MessageReplaySpeed
+    = Speed100
+    | Speed200
+    | Speed300
+    | Speed500
+    | Speed1000
+
+
+messageReplaySpeedEncoder : MessageReplaySpeed -> Json.Encode.Value
+messageReplaySpeedEncoder enum =
+    case enum of
+        Speed100 ->
+            Json.Encode.string "Speed100"
+        Speed200 ->
+            Json.Encode.string "Speed200"
+        Speed300 ->
+            Json.Encode.string "Speed300"
+        Speed500 ->
+            Json.Encode.string "Speed500"
+        Speed1000 ->
+            Json.Encode.string "Speed1000"
+
+type alias MessageReplaySpeedReq =
+    { speed : MessageReplaySpeed
     }
 
 
-rerDutyTestReplayStatusRspEncoder : RerDutyTestReplayStatusRsp -> Json.Encode.Value
-rerDutyTestReplayStatusRspEncoder struct =
+messageReplaySpeedReqEncoder : MessageReplaySpeedReq -> Json.Encode.Value
+messageReplaySpeedReqEncoder struct =
     Json.Encode.object
-        [ ( "status", (Json.Encode.string) struct.status )
-        , ( "source_count", (Json.Encode.int) struct.sourceCount )
-        , ( "next_source_position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextSourcePosition )
-        , ( "generated_count", (Json.Encode.int) struct.generatedCount )
-        , ( "next_emit_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextEmitAtMs )
+        [ ( "speed", (messageReplaySpeedEncoder) struct.speed )
+        ]
+
+
+type MessageReplayActivityBucket
+    = Minutes15
+    | Hour1
+    | Day1
+
+
+messageReplayActivityBucketEncoder : MessageReplayActivityBucket -> Json.Encode.Value
+messageReplayActivityBucketEncoder enum =
+    case enum of
+        Minutes15 ->
+            Json.Encode.string "Minutes15"
+        Hour1 ->
+            Json.Encode.string "Hour1"
+        Day1 ->
+            Json.Encode.string "Day1"
+
+type alias MessageReplayExtentRsp =
+    { firstMs : Maybe (Int)
+    , lastMs : Maybe (Int)
+    }
+
+
+messageReplayExtentRspEncoder : MessageReplayExtentRsp -> Json.Encode.Value
+messageReplayExtentRspEncoder struct =
+    Json.Encode.object
+        [ ( "first_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.firstMs )
+        , ( "last_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastMs )
+        ]
+
+
+type alias MessageReplayActivityReq =
+    { fromMs : Int
+    , toMs : Int
+    , bucket : MessageReplayActivityBucket
+    }
+
+
+messageReplayActivityReqEncoder : MessageReplayActivityReq -> Json.Encode.Value
+messageReplayActivityReqEncoder struct =
+    Json.Encode.object
+        [ ( "from_ms", (Json.Encode.int) struct.fromMs )
+        , ( "to_ms", (Json.Encode.int) struct.toMs )
+        , ( "bucket", (messageReplayActivityBucketEncoder) struct.bucket )
+        ]
+
+
+type alias MessageReplayActivityPoint =
+    { tsMs : Int
+    , count : Int
+    }
+
+
+messageReplayActivityPointEncoder : MessageReplayActivityPoint -> Json.Encode.Value
+messageReplayActivityPointEncoder struct =
+    Json.Encode.object
+        [ ( "ts_ms", (Json.Encode.int) struct.tsMs )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias MessageReplayActivityRsp =
+    { bucketSec : Int
+    , points : List (MessageReplayActivityPoint)
+    }
+
+
+messageReplayActivityRspEncoder : MessageReplayActivityRsp -> Json.Encode.Value
+messageReplayActivityRspEncoder struct =
+    Json.Encode.object
+        [ ( "bucket_sec", (Json.Encode.int) struct.bucketSec )
+        , ( "points", (Json.Encode.list (messageReplayActivityPointEncoder)) struct.points )
+        ]
+
+
+type alias MessageReplayPlanReq =
+    { fromMs : Int
+    , toMs : Int
+    , shiftMode : MessageReplayShiftMode
+    , manualShiftMs : Maybe (Int)
+    , speed : MessageReplaySpeed
+    , onEnd : MessageReplayOnEnd
+    }
+
+
+messageReplayPlanReqEncoder : MessageReplayPlanReq -> Json.Encode.Value
+messageReplayPlanReqEncoder struct =
+    Json.Encode.object
+        [ ( "from_ms", (Json.Encode.int) struct.fromMs )
+        , ( "to_ms", (Json.Encode.int) struct.toMs )
+        , ( "shift_mode", (messageReplayShiftModeEncoder) struct.shiftMode )
+        , ( "manual_shift_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.manualShiftMs )
+        , ( "speed", (messageReplaySpeedEncoder) struct.speed )
+        , ( "on_end", (messageReplayOnEndEncoder) struct.onEnd )
+        ]
+
+
+type alias MessageReplayPreviewRsp =
+    { windowCount : Int
+    , skippedCount : Int
+    , replayCount : Int
+    , offsetMs : Int
+    , startPositionMs : Int
+    , firstMessageMs : Maybe (Int)
+    , firstMessageEtaMs : Maybe (Int)
+    , firstMessageShownMs : Maybe (Int)
+    , cycleEndEtaMs : Int
+    }
+
+
+messageReplayPreviewRspEncoder : MessageReplayPreviewRsp -> Json.Encode.Value
+messageReplayPreviewRspEncoder struct =
+    Json.Encode.object
+        [ ( "window_count", (Json.Encode.int) struct.windowCount )
+        , ( "skipped_count", (Json.Encode.int) struct.skippedCount )
+        , ( "replay_count", (Json.Encode.int) struct.replayCount )
+        , ( "offset_ms", (Json.Encode.int) struct.offsetMs )
+        , ( "start_position_ms", (Json.Encode.int) struct.startPositionMs )
+        , ( "first_message_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.firstMessageMs )
+        , ( "first_message_eta_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.firstMessageEtaMs )
+        , ( "first_message_shown_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.firstMessageShownMs )
+        , ( "cycle_end_eta_ms", (Json.Encode.int) struct.cycleEndEtaMs )
+        ]
+
+
+type alias MessageReplaySessionRsp =
+    { id : Int
+    , state : String
+    , onEnd : MessageReplayOnEnd
+    , speed : MessageReplaySpeed
+    , completedCycles : Int
+    , windowFromMs : Int
+    , windowToMs : Int
+    , anchorTsMs : Int
+    , anchorAtMs : Int
+    , pausedAtMs : Maybe (Int)
+    , replayPositionMs : Int
+    , offsetMs : Int
+    , cursorMs : Int
+    , replayedCount : Int
+    , remainingCount : Int
+    , nextMessageMs : Maybe (Int)
+    , nextMessageEtaMs : Maybe (Int)
+    , cycleEndEtaMs : Int
+    , createdAtMs : Int
+    }
+
+
+messageReplaySessionRspEncoder : MessageReplaySessionRsp -> Json.Encode.Value
+messageReplaySessionRspEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "on_end", (messageReplayOnEndEncoder) struct.onEnd )
+        , ( "speed", (messageReplaySpeedEncoder) struct.speed )
+        , ( "completed_cycles", (Json.Encode.int) struct.completedCycles )
+        , ( "window_from_ms", (Json.Encode.int) struct.windowFromMs )
+        , ( "window_to_ms", (Json.Encode.int) struct.windowToMs )
+        , ( "anchor_ts_ms", (Json.Encode.int) struct.anchorTsMs )
+        , ( "anchor_at_ms", (Json.Encode.int) struct.anchorAtMs )
+        , ( "paused_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.pausedAtMs )
+        , ( "replay_position_ms", (Json.Encode.int) struct.replayPositionMs )
+        , ( "offset_ms", (Json.Encode.int) struct.offsetMs )
+        , ( "cursor_ms", (Json.Encode.int) struct.cursorMs )
+        , ( "replayed_count", (Json.Encode.int) struct.replayedCount )
+        , ( "remaining_count", (Json.Encode.int) struct.remainingCount )
+        , ( "next_message_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextMessageMs )
+        , ( "next_message_eta_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextMessageEtaMs )
+        , ( "cycle_end_eta_ms", (Json.Encode.int) struct.cycleEndEtaMs )
+        , ( "created_at_ms", (Json.Encode.int) struct.createdAtMs )
+        ]
+
+
+type alias MessageReplayStatusRsp =
+    { session : Maybe (MessageReplaySessionRsp)
+    , storedReplayCount : Maybe (Int)
+    }
+
+
+messageReplayStatusRspEncoder : MessageReplayStatusRsp -> Json.Encode.Value
+messageReplayStatusRspEncoder struct =
+    Json.Encode.object
+        [ ( "session", (Maybe.withDefault Json.Encode.null << Maybe.map (messageReplaySessionRspEncoder)) struct.session )
+        , ( "stored_replay_count", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.storedReplayCount )
         ]
 
 
@@ -31018,12 +31217,7 @@ systemSettingsCurrentRspDecoder =
     Json.Decode.succeed SystemSettingsCurrentRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_insert_historical_interceptions" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
@@ -31066,12 +31260,7 @@ systemSettingsItemDecoder =
     Json.Decode.succeed SystemSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_insert_historical_interceptions" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by_login_id" (Json.Decode.nullable (Json.Decode.string))))
@@ -31132,12 +31321,7 @@ createSystemSettingsReqDecoder : Json.Decode.Decoder CreateSystemSettingsReq
 createSystemSettingsReqDecoder =
     Json.Decode.succeed CreateSystemSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_analysis_units_exact_match_only_default" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_enabled" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_insert_historical_interceptions" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
@@ -31190,14 +31374,232 @@ activateSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
 
 
-rerDutyTestReplayStatusRspDecoder : Json.Decode.Decoder RerDutyTestReplayStatusRsp
-rerDutyTestReplayStatusRspDecoder =
-    Json.Decode.succeed RerDutyTestReplayStatusRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_count" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_source_position" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_count" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_emit_at_ms" (Json.Decode.nullable (Json.Decode.int))))
+messageReplayShiftModeDecoder : Json.Decode.Decoder MessageReplayShiftMode
+messageReplayShiftModeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "WindowStart" ->
+                            Json.Decode.succeed WindowStart
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "SameTimeOfDay" ->
+                            Json.Decode.succeed SameTimeOfDay
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Manual" ->
+                            Json.Decode.succeed Manual
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+messageReplayOnEndDecoder : Json.Decode.Decoder MessageReplayOnEnd
+messageReplayOnEndDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Loop" ->
+                            Json.Decode.succeed Loop
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Pause" ->
+                            Json.Decode.succeed Pause
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+messageReplaySpeedDecoder : Json.Decode.Decoder MessageReplaySpeed
+messageReplaySpeedDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Speed100" ->
+                            Json.Decode.succeed Speed100
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Speed200" ->
+                            Json.Decode.succeed Speed200
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Speed300" ->
+                            Json.Decode.succeed Speed300
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Speed500" ->
+                            Json.Decode.succeed Speed500
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Speed1000" ->
+                            Json.Decode.succeed Speed1000
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+messageReplaySpeedReqDecoder : Json.Decode.Decoder MessageReplaySpeedReq
+messageReplaySpeedReqDecoder =
+    Json.Decode.succeed MessageReplaySpeedReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "speed" (messageReplaySpeedDecoder)))
+
+
+messageReplayActivityBucketDecoder : Json.Decode.Decoder MessageReplayActivityBucket
+messageReplayActivityBucketDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Minutes15" ->
+                            Json.Decode.succeed Minutes15
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Hour1" ->
+                            Json.Decode.succeed Hour1
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Day1" ->
+                            Json.Decode.succeed Day1
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+messageReplayExtentRspDecoder : Json.Decode.Decoder MessageReplayExtentRsp
+messageReplayExtentRspDecoder =
+    Json.Decode.succeed MessageReplayExtentRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_ms" (Json.Decode.nullable (Json.Decode.int))))
+
+
+messageReplayActivityReqDecoder : Json.Decode.Decoder MessageReplayActivityReq
+messageReplayActivityReqDecoder =
+    Json.Decode.succeed MessageReplayActivityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "from_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bucket" (messageReplayActivityBucketDecoder)))
+
+
+messageReplayActivityPointDecoder : Json.Decode.Decoder MessageReplayActivityPoint
+messageReplayActivityPointDecoder =
+    Json.Decode.succeed MessageReplayActivityPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ts_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+messageReplayActivityRspDecoder : Json.Decode.Decoder MessageReplayActivityRsp
+messageReplayActivityRspDecoder =
+    Json.Decode.succeed MessageReplayActivityRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bucket_sec" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (messageReplayActivityPointDecoder))))
+
+
+messageReplayPlanReqDecoder : Json.Decode.Decoder MessageReplayPlanReq
+messageReplayPlanReqDecoder =
+    Json.Decode.succeed MessageReplayPlanReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "from_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "shift_mode" (messageReplayShiftModeDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "manual_shift_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "speed" (messageReplaySpeedDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "on_end" (messageReplayOnEndDecoder)))
+
+
+messageReplayPreviewRspDecoder : Json.Decode.Decoder MessageReplayPreviewRsp
+messageReplayPreviewRspDecoder =
+    Json.Decode.succeed MessageReplayPreviewRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "window_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skipped_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "replay_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "start_position_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_message_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_message_eta_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_message_shown_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cycle_end_eta_ms" (Json.Decode.int)))
+
+
+messageReplaySessionRspDecoder : Json.Decode.Decoder MessageReplaySessionRsp
+messageReplaySessionRspDecoder =
+    Json.Decode.succeed MessageReplaySessionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "on_end" (messageReplayOnEndDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "speed" (messageReplaySpeedDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completed_cycles" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "window_from_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "window_to_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "anchor_ts_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "anchor_at_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "paused_at_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "replay_position_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "replayed_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "remaining_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_message_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_message_eta_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cycle_end_eta_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" (Json.Decode.int)))
+
+
+messageReplayStatusRspDecoder : Json.Decode.Decoder MessageReplayStatusRsp
+messageReplayStatusRspDecoder =
+    Json.Decode.succeed MessageReplayStatusRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "session" (Json.Decode.nullable (messageReplaySessionRspDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stored_replay_count" (Json.Decode.nullable (Json.Decode.int))))
 
 
 rerReportAccessListRspDecoder : Json.Decode.Decoder RerReportAccessListRsp

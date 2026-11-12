@@ -285,10 +285,6 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.currentSystemSettings.mockResolvedValue({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 0,
       rerDutyPollIntervalSec: 0,
       rerShortUrlEnabled: false,
       supportNonRerInterceptions: false,
@@ -351,10 +347,6 @@ describe('useRerNetworksNeoPage', () => {
       apiMock.currentSystemSettings.mockResolvedValueOnce({
         id: 1,
         rerAnalysisUnitsExactMatchOnlyDefault: false,
-        rerDutyTestEnabled: false,
-        rerDutyInsertHistoricalInterceptions: false,
-        rerDutyTestSinceMs: 0,
-        rerDutyTestLimit: 0,
         rerDutyPollIntervalSec: 0,
         rerShortUrlEnabled: false,
         supportNonRerInterceptions,

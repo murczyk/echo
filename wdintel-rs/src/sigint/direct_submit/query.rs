@@ -2265,7 +2265,7 @@ mod tests {
                 .await;
         env.dbx
             .execute_raw(crate::ai_network_match::sql(
-                "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_test_enabled, rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, false, 0, 1, 5, true, now() at time zone 'utc' + interval '1 day')",
+                "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, 5, true, now() at time zone 'utc' + interval '1 day')",
                 vec![],
             ))
             .await

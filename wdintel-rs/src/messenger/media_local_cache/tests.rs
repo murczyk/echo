@@ -416,5 +416,5 @@ async fn cold_plaintext_video_never_waits_for_local_cache_population() {
 
 async fn enable_cache(env: &Env) {
     use sea_orm::ConnectionTrait;
-    env.dbx.execute_unprepared("insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_test_enabled, rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec, messenger_media_cache_enabled, messenger_media_cache_min_free_gib) values (true, false, 0, 1, 5, true, 0)").await.unwrap();
+    env.dbx.execute_unprepared("insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec, messenger_media_cache_enabled, messenger_media_cache_min_free_gib) values (true, 5, true, 0)").await.unwrap();
 }

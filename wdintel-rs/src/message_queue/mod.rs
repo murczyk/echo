@@ -23,6 +23,9 @@ pub struct ProcessSignalMessageQueueItemOptions {
     pub skip_dedupe: bool,
     /// The submitting login, for messages pushed through an API.
     pub login_id: Option<uuid::Uuid>,
+    /// Stored on the staged message, so split children inherit it. Message
+    /// replay marks its messages with the negated source message id.
+    pub external_id: Option<i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -179,7 +182,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         },
         format: NotSet,
         deleted: Set(true), // unstaged message
-        external_id: Set(None),
+        external_id: Set(options.external_id),
         // Echo IM inbox id is kept here only for tracing messages back to echo_im.
         echo_inbox_message_id: Set(m.inbox_message_id),
         message_uid: NotSet,
