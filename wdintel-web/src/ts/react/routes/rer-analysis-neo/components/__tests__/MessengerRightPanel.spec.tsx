@@ -7,7 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MessengersChatMemberItem } from '../../../../../../Bindings';
 
-const apiMock = vi.hoisted(() => ({ listMessengersChatMembers: vi.fn() }));
+const apiMock = vi.hoisted(() => ({
+  listMessengersChatMembers: vi.fn(),
+  listMessengersAttachments: vi.fn(),
+  countMessengersAttachments: vi.fn(),
+}));
 vi.mock('../../../../services/api/analysis-messengers', () => apiMock);
 
 import { MessengerRightPanel } from '../MessengerRightPanel';
@@ -35,12 +39,19 @@ describe('MessengerRightPanel', () => {
   let container: HTMLDivElement;
   let root: Root;
   const text = () => container.textContent ?? '';
-  const mount = () =>
-    act(async () =>
+  // The panel opens on the media tab unless the URL names another; most tests here are about the members.
+  const mount = (tab: string | null = 'members') => {
+    window.history.replaceState(
+      {},
+      '',
+      `/rer-analysis-neo?messengerAccount=a1${tab == null ? '' : `&messengerPanel=${tab}`}`,
+    );
+    return act(async () =>
       root.render(
         <MessengerRightPanel chat={{ accountId: 'a1', chatId: 'c1' }} onClose={vi.fn()} />,
       ),
     );
+  };
 
   beforeEach(() => {
     window.history.replaceState({}, '', '/rer-analysis-neo');
@@ -63,6 +74,8 @@ describe('MessengerRightPanel', () => {
       };
     });
     apiMock.listMessengersChatMembers.mockReset();
+    apiMock.listMessengersAttachments.mockReset();
+    apiMock.countMessengersAttachments.mockReset().mockResolvedValue({ items: [] });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -123,15 +136,75 @@ describe('MessengerRightPanel', () => {
     expect(container.querySelector('[aria-label="Дії стовпця"]')).toBeNull();
   });
 
-  it('keeps the media tab as a placeholder', async () => {
-    apiMock.listMessengersChatMembers.mockResolvedValueOnce({ items: [] });
-    await mount();
-    await act(async () =>
+  const emptyGallery = () =>
+    apiMock.listMessengersAttachments.mockResolvedValue({
+      items: [],
+      olderCursor: null,
+      newerCursor: null,
+    });
+  const clickTab = (label: string) =>
+    act(async () =>
       [...container.querySelectorAll<HTMLElement>('[role="tab"]')]
-        .find((tab) => tab.textContent === 'Медіа')
+        .find((tab) => tab.textContent === label)
         ?.click(),
     );
-    expect(text()).toContain('Галерея чату з’явиться пізніше.');
+
+  it('opens on the media tab, shows the gallery of the chat and puts the tab in the URL', async () => {
+    emptyGallery();
+    await mount(null);
+    expect(window.location.search).toContain('messengerPanel=media');
+    expect(apiMock.listMessengersChatMembers).not.toHaveBeenCalled();
+    expect(apiMock.listMessengersAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'a1', chatId: 'c1' }),
+      expect.anything(),
+    );
+    expect(container.querySelector('[data-messenger-gallery]')).not.toBeNull();
+  });
+
+  it('keeps the gallery mounted behind the members, and asks for the members only once they are shown', async () => {
+    emptyGallery();
+    apiMock.listMessengersChatMembers.mockResolvedValue({ items: [] });
+    await mount(null);
+    const gallery = container.querySelector('[data-messenger-gallery]');
+    expect(apiMock.listMessengersChatMembers).not.toHaveBeenCalled();
+    const callsBefore = apiMock.listMessengersAttachments.mock.calls.length;
+
+    await clickTab('Учасники');
+    expect(apiMock.listMessengersChatMembers).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-messenger-gallery]')).toBe(gallery);
+    expect(gallery?.parentElement?.className).toContain('invisible');
+
+    await clickTab('Медіа');
+    expect(container.querySelector('[data-messenger-gallery]')).toBe(gallery);
+    expect(gallery?.parentElement?.className).not.toContain('invisible');
+    expect(apiMock.listMessengersAttachments.mock.calls).toHaveLength(callsBefore);
+  });
+
+  it('does not load the gallery of a link that opens on the members until it is shown', async () => {
+    emptyGallery();
+    apiMock.listMessengersChatMembers.mockResolvedValue({ items: [] });
+    await mount('members');
+    expect(container.querySelector('[data-messenger-gallery]')).toBeNull();
+    expect(apiMock.listMessengersAttachments).not.toHaveBeenCalled();
+    await clickTab('Медіа');
+    expect(container.querySelector('[data-messenger-gallery]')).not.toBeNull();
+  });
+
+  it('follows the tab in the URL, opens the tab a link names, and strips it when the panel closes', async () => {
+    emptyGallery();
+    apiMock.listMessengersChatMembers.mockResolvedValue({ items: [] });
+    await mount('members');
+    expect(window.location.search).toContain('messengerPanel=members');
+    await clickTab('Медіа');
+    expect(window.location.search).toContain('messengerPanel=media');
+    await clickTab('Учасники');
+    expect(window.location.search).toContain('messengerPanel=members');
+    expect(window.location.search).toContain('messengerAccount=a1');
+
+    act(() => root.unmount());
+    expect(window.location.search).not.toContain('messengerPanel');
+    expect(window.location.search).toContain('messengerAccount=a1');
+    root = createRoot(container);
   });
 
   it('says so when the members do not load', async () => {

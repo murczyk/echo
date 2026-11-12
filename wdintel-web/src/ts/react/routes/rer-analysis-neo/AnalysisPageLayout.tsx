@@ -22,7 +22,7 @@ import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
 import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
-import { MessengerWorkspace } from './components/MessengerWorkspace';
+import { MessengerWorkspace, type MessengerJump } from './components/MessengerWorkspace';
 import { MessengerRightPanel, type MessengerOpenChat } from './components/MessengerRightPanel';
 import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
@@ -116,6 +116,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   // The chat open in the messenger workspace; its right panel (media, members) takes the place of the echo analytics.
   const [messengerChat, setMessengerChat] = useState<MessengerOpenChat | null>(null);
+  const [messengerJump, setMessengerJump] = useState<MessengerJump | null>(null);
   const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
     null,
   );
@@ -492,6 +493,11 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
           refreshToken={page.messengerRefreshToken}
           showNarrowCloseButton={!inDrawer}
           divider={!inDrawer}
+          onOpenMessage={(chatId, messageId) => {
+            setMessengerJump({ chatId, messageId });
+            // The drawer covers the chat, so it closes to show the message.
+            if (inDrawer) page.toggleRightPanel();
+          }}
           onClose={page.toggleRightPanel}
         />
       )
@@ -600,6 +606,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
                       refreshToken={page.messengerRefreshToken}
                       onBusyChange={page.setMessengerWorkspaceBusy}
                       onOpenChatChange={setMessengerChat}
+                      jumpTo={messengerJump}
                       onSaveInternalNotes={page.saveMessengerInternalNotes}
                       account={
                         page.messengerAccounts.find(

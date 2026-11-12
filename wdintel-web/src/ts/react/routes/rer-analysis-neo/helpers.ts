@@ -62,6 +62,8 @@ const MESSENGER_ANCHOR_PARAM = 'messengerAnchor';
 // A view of the account other than a chat, e.g. `contacts`. The chat and the view exclude each other.
 const MESSENGER_VIEW_PARAM = 'messengerView';
 const MESSENGER_VIEWS = ['contacts'] as const;
+const MESSENGER_PANEL_PARAM = 'messengerPanel';
+const MESSENGER_PANEL_TABS = ['media', 'members'] as const;
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
@@ -295,6 +297,7 @@ export function replaceMessengerQueryStateInUrl(state: MessengerQueryState): voi
     url.searchParams.delete(MESSENGER_CHAT_PARAM);
     url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
     url.searchParams.delete(MESSENGER_VIEW_PARAM);
+    url.searchParams.delete(MESSENGER_PANEL_PARAM);
   }
   const query = url.searchParams.toString();
   const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
@@ -1023,6 +1026,29 @@ export function replaceMessengerViewInUrl(view: MessengerView | null): void {
     url.searchParams.delete(MESSENGER_CHAT_PARAM);
     url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
   }
+  const query = url.searchParams.toString();
+  const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
+  if (href === `${window.location.pathname}${window.location.search}${url.hash}`) return;
+  window.history.replaceState(window.history.state, '', href);
+}
+
+export type MessengerPanelTab = (typeof MESSENGER_PANEL_TABS)[number];
+
+// The open tab of the messenger right panel; the param only exists while that panel is open.
+export function parseMessengerPanelTabFromWindow(): MessengerPanelTab | null {
+  if (typeof window === 'undefined') return null;
+  const tab = new URL(window.location.href).searchParams.get(MESSENGER_PANEL_PARAM)?.trim();
+  return MESSENGER_PANEL_TABS.find((known) => known === tab) ?? null;
+}
+
+// Only the analysis route in messenger mode is ever written. `null` removes the param.
+export function replaceMessengerPanelTabInUrl(tab: MessengerPanelTab | null): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (url.pathname.replace(/\/+$/, '') !== `/${ANALYSIS_ROUTE_PAGE_ID}`) return;
+  if (!url.searchParams.has(MESSENGER_ACCOUNT_PARAM)) return;
+  if (tab == null) url.searchParams.delete(MESSENGER_PANEL_PARAM);
+  else url.searchParams.set(MESSENGER_PANEL_PARAM, tab);
   const query = url.searchParams.toString();
   const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
   if (href === `${window.location.pathname}${window.location.search}${url.hash}`) return;

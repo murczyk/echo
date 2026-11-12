@@ -1,5 +1,9 @@
 import type {
   MessengersAccountUpdateReq,
+  MessengersAttachmentsCountsReq,
+  MessengersAttachmentsCountsRsp,
+  MessengersAttachmentsListReq,
+  MessengersAttachmentsListRsp,
   MessengersAccountsListRsp,
   MessengersChatsListReq,
   MessengersChatMembersListReq,
@@ -71,5 +75,33 @@ export async function listMessengersContacts(
 ): Promise<MessengersContactsListRsp> {
   return transformSnakeToCamel<MessengersContactsListRsp>(
     await postJson<unknown>('/api/messengers/contacts/list', transformCamelToSnake(req), options),
+  );
+}
+
+// One page of the attachments of a chat (or of every chat of an account when `chatId` is null), newest first.
+export async function listMessengersAttachments(
+  req: MessengersAttachmentsListReq,
+  options?: RequestOptions,
+): Promise<MessengersAttachmentsListRsp> {
+  return transformSnakeToCamel<MessengersAttachmentsListRsp>(
+    await postJson<unknown>(
+      '/api/messengers/attachments/list',
+      transformCamelToSnake(req),
+      options,
+    ),
+  );
+}
+
+// The number of attachments of a chat (or of an account when `chatId` is null) for each Telegram media type.
+export async function countMessengersAttachments(
+  req: MessengersAttachmentsCountsReq,
+  options?: RequestOptions,
+): Promise<MessengersAttachmentsCountsRsp> {
+  return transformSnakeToCamel<MessengersAttachmentsCountsRsp>(
+    await postJson<unknown>(
+      '/api/messengers/attachments/counts',
+      transformCamelToSnake(req),
+      options,
+    ),
   );
 }

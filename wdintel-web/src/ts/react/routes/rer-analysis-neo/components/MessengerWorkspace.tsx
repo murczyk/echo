@@ -1,6 +1,6 @@
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { PowerAlert } from '../../../components/PowerAlert';
 import {
@@ -20,6 +20,9 @@ import { MessengerInfoCard } from './MessengerInfoCard';
 import { MessengerNoteCard } from './MessengerNoteCard';
 import type { MessengerOpenChat } from './MessengerRightPanel';
 
+// A request from outside the workspace (the media tab) to open a chat at a message; a new object is a new request.
+export type MessengerJump = { chatId: string; messageId: string };
+
 type Props = {
   account: MessengerAccountItem | null;
   loading?: boolean;
@@ -28,6 +31,7 @@ type Props = {
   onBusyChange?: (busy: boolean) => void;
   // Reports the open chat (null when none), for the right panel of the page.
   onOpenChatChange?: (chat: MessengerOpenChat | null) => void;
+  jumpTo?: MessengerJump | null;
   onSaveInternalNotes?: (accountId: string, internalNotes: string) => Promise<void>;
   // shortcut: the external id will open another app, wire the target when it exists.
 };
@@ -41,6 +45,7 @@ export function MessengerWorkspace({
   refreshToken = 0,
   onBusyChange,
   onOpenChatChange,
+  jumpTo,
   onSaveInternalNotes,
 }: Props) {
   if (account == null && loading) {
@@ -66,6 +71,7 @@ export function MessengerWorkspace({
       refreshToken={refreshToken}
       onBusyChange={onBusyChange}
       onOpenChatChange={onOpenChatChange}
+      jumpTo={jumpTo}
       onSaveInternalNotes={onSaveInternalNotes}
     />
   );
@@ -77,12 +83,14 @@ function MessengerAccountWorkspace({
   refreshToken,
   onBusyChange,
   onOpenChatChange,
+  jumpTo,
   onSaveInternalNotes,
 }: {
   account: MessengerAccountItem;
   refreshToken: number;
   onBusyChange?: (busy: boolean) => void;
   onOpenChatChange?: Props['onOpenChatChange'];
+  jumpTo?: Props['jumpTo'];
   onSaveInternalNotes?: Props['onSaveInternalNotes'];
 }) {
   // The page's own phone check. The sidebar and the chat take it from here (the chat through `group-data-[mobile=true]/messenger`).
@@ -131,6 +139,23 @@ function MessengerAccountWorkspace({
     clearTableQueryInUrl();
   };
 
+  // The chat view reads its anchor once on mount, so a jump to a message remounts it.
+  const [jumpCount, setJumpCount] = useState(0);
+  // A jump left over from before this workspace mounted (another account was open) is not a new request.
+  const staleJumpRef = useRef(jumpTo);
+  // Opens a chat at a message, from the media tab or from the gallery of the account.
+  const openMessage = useCallback((chatId: string, messageId: string) => {
+    setSelected({ chatId, anchorMessageId: messageId });
+    setView(null);
+    replaceMessengerViewInUrl(null);
+    clearTableQueryInUrl();
+    setJumpCount((count) => count + 1);
+  }, []);
+  useEffect(() => {
+    if (jumpTo == null || jumpTo === staleJumpRef.current) return;
+    openMessage(jumpTo.chatId, jumpTo.messageId);
+  }, [jumpTo, openMessage]);
+
   // A shared analysis messenger link to a chat that is gone, or that this login cannot see, opens the account instead.
   useEffect(() => {
     if (chatMissing) selectChat(null);
@@ -158,7 +183,7 @@ function MessengerAccountWorkspace({
       />
       {chat != null ? (
         <MessengerChatView
-          key={chat.id}
+          key={`${chat.id}:${jumpCount}`}
           account={account}
           chat={chat}
           title={chatLabel(chat)}

@@ -5,11 +5,17 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { listMessengersChats } from '../../../../services/api/analysis-messengers';
+import {
+  listMessengersChatMembers,
+  listMessengersChats,
+  listMessengersMessages,
+} from '../../../../services/api/analysis-messengers';
 import { MessengerWorkspace } from '../MessengerWorkspace';
 
 vi.mock('../../../../services/api/analysis-messengers', () => ({
   listMessengersChats: vi.fn(),
+  listMessengersChatMembers: vi.fn(),
+  listMessengersMessages: vi.fn(),
 }));
 
 describe('MessengerWorkspace', () => {
@@ -180,5 +186,48 @@ describe('MessengerWorkspace', () => {
     expect(container.querySelectorAll('[data-messenger-chat]')).toHaveLength(1);
     search('nobody');
     expect(container.querySelectorAll('[data-messenger-chat]')).toHaveLength(0);
+  });
+
+  it('opens a chat at a message when the media tab asks for it, but not for a request that was already there', async () => {
+    const chat = {
+      id: '1',
+      chatType: 'PRIVATE',
+      title: 'Ivan',
+      messengerType: 'Telegram',
+      externalId: '1',
+      membersCount: null,
+      accountMemberStatus: null,
+      lastMessageDate: null,
+      telegram: null,
+    };
+    vi.mocked(listMessengersChats).mockResolvedValue({ items: [chat] });
+    vi.mocked(listMessengersChatMembers).mockResolvedValue({ items: [] });
+    vi.mocked(listMessengersMessages).mockResolvedValue({
+      items: [],
+      olderCursor: null,
+      newerCursor: null,
+    });
+    const account = { id: 'a', name: 'name', phone: '' };
+    const onOpenChatChange = vi.fn();
+    const render = (jumpTo?: { chatId: string; messageId: string }) =>
+      act(async () =>
+        root.render(
+          <MessengerWorkspace
+            account={account}
+            jumpTo={jumpTo}
+            onOpenChatChange={onOpenChatChange}
+          />,
+        ),
+      );
+    const stale = { chatId: '1', messageId: 'm0' };
+    await render(stale);
+    expect(listMessengersMessages).not.toHaveBeenCalled();
+
+    await render({ chatId: '1', messageId: 'm9' });
+    expect(onOpenChatChange).toHaveBeenCalledWith({ accountId: 'a', chatId: '1' });
+    expect(listMessengersMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ chatId: '1', aroundMessageId: 'm9' }),
+      expect.anything(),
+    );
   });
 });

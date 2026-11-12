@@ -5,9 +5,11 @@ import {
   buildMessengerChatLink,
   clearTableQueryInUrl,
   parseMessengerChatQueryFromWindow,
+  parseMessengerPanelTabFromWindow,
   parseMessengerViewFromWindow,
   parseMessengerQueryStateFromWindow,
   replaceMessengerChatQueryInUrl,
+  replaceMessengerPanelTabInUrl,
   replaceMessengerQueryStateInUrl,
   replaceMessengerViewInUrl,
 } from '../helpers';
@@ -253,5 +255,49 @@ describe('table state in the URL', () => {
     window.history.replaceState({}, '', '/rer-duty-neo?globalFilter=x');
     clearTableQueryInUrl();
     expect(window.location.search).toBe('?globalFilter=x');
+  });
+});
+
+describe('messenger right panel tab URL state', () => {
+  const url = (search: string) =>
+    window.history.replaceState({}, '', `/rer-analysis-neo?${search}`);
+
+  it('reads a known tab only', () => {
+    url('messengerAccount=a1&messengerPanel=members');
+    expect(parseMessengerPanelTabFromWindow()).toBe('members');
+    url('messengerAccount=a1&messengerPanel=nope');
+    expect(parseMessengerPanelTabFromWindow()).toBeNull();
+    url('messengerAccount=a1');
+    expect(parseMessengerPanelTabFromWindow()).toBeNull();
+  });
+
+  it('writes and removes the tab, keeping the rest of the URL', () => {
+    url('leftPanelTab=messenger&messengerAccount=a1&rightPanelOpen=true');
+    replaceMessengerPanelTabInUrl('media');
+    expect(window.location.search).toBe(
+      '?leftPanelTab=messenger&messengerAccount=a1&rightPanelOpen=true&messengerPanel=media',
+    );
+    replaceMessengerPanelTabInUrl(null);
+    expect(window.location.search).toBe(
+      '?leftPanelTab=messenger&messengerAccount=a1&rightPanelOpen=true',
+    );
+  });
+
+  it('writes nothing outside the messenger account or the analysis route', () => {
+    url('rightPanelOpen=true');
+    replaceMessengerPanelTabInUrl('media');
+    expect(window.location.search).toBe('?rightPanelOpen=true');
+    window.history.replaceState({}, '', '/other?messengerAccount=a1');
+    replaceMessengerPanelTabInUrl('media');
+    expect(window.location.search).toBe('?messengerAccount=a1');
+  });
+
+  it('is dropped when the messenger tab is left', () => {
+    url('leftPanelTab=messenger&messengerAccount=a1&messengerPanel=media');
+    replaceMessengerQueryStateInUrl({
+      leftPanelTab: LeftPanelTab.EchoGroups,
+      messengerAccountId: null,
+    });
+    expect(window.location.search).toBe('');
   });
 });
