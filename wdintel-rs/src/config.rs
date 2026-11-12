@@ -109,6 +109,52 @@ pub const API_RATE_LIMIT_CACHE_TTL: Duration = Duration::from_secs(1);
 pub const API_RATE_LIMIT_ROLE_CACHE_SIZE: usize = 4096;
 pub const SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY: i64 = 0x4543_484f_5345_5454;
 
+/// Every fixed single-key Postgres advisory lock. They share one key space, so
+/// two features with the same key silently wait on each other: reparse's
+/// `AI_CALLSIGN_WORKER_LOCK + 1` was the network-match lease (#4137). Add new
+/// keys here; the build fails if two are equal.
+const ADVISORY_LOCK_KEYS: &[i64] = &[
+    SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY,
+    AI_CALLSIGN_WORKER_LOCK,
+    AI_CALLSIGN_REPARSE_LOCK,
+    AI_NETWORK_MATCH_WORKER_LOCK,
+    AI_AGENT_WORKER_LEASE_ADVISORY_LOCK_KEY,
+    AI_CONTROL_PANEL_LOCK_KEY,
+    RER_DUTY_TEST_REPLAY_ADVISORY_LOCK_KEY,
+    SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY,
+    BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY,
+    SIGINT_UNIT_AUTO_ACTIVATION_ADVISORY_LOCK_KEY,
+    DEVICE_UPLOAD_FINALIZATION_METRICS_LOCK,
+    SIGINT_MEDIA_CONVERSION_ADVISORY_LOCK_KEY,
+    ORBIT_IMPORT_ADVISORY_LOCK_KEY,
+    crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_WORKER_LOCK,
+    crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_ADMISSION_LOCK,
+    crate::devices::analytics::DEFINITION_PUBLICATION_ADVISORY_LOCK_KEY,
+    crate::sigint::comments::SIGINT_COMMENT_MIGRATION_LOCK_KEY,
+    crate::transcription::executor::ECHO_AUDIO_TRANSCRIPTION_EXECUTOR_LOCK,
+    crate::transcription::executor::ECHO_AUDIO_TRANSCRIPTION_EXECUTOR_DRAIN_LOCK,
+];
+
+const fn all_distinct(keys: &[i64]) -> bool {
+    let mut i = 0;
+    while i < keys.len() {
+        let mut j = i + 1;
+        while j < keys.len() {
+            if keys[i] == keys[j] {
+                return false;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    true
+}
+
+const _: () = assert!(
+    all_distinct(ADVISORY_LOCK_KEYS),
+    "two advisory lock keys are equal; give each lock its own key"
+);
+
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
@@ -201,6 +247,8 @@ pub const AI_CALLSIGN_REPARSE_DAYS: i64 = 14;
 pub const AI_CALLSIGN_REPARSE_INTERVAL_SECS: i64 = 3_600;
 pub const AI_CALLSIGN_REPARSE_BATCH_SIZE: i64 = 1_000;
 pub const AI_CALLSIGN_WORKER_LOCK: i64 = 316_700_001;
+/// Serializes starting and retrying callsign reparse runs.
+pub const AI_CALLSIGN_REPARSE_LOCK: i64 = 316_700_003;
 pub const AI_CALLSIGN_FEEDBACK_PROMPT: &str =
     include_str!("ai_callsign/feedback_prompt.txt");
 pub const AI_CALLSIGN_SETTINGS_ID: i16 = 1;

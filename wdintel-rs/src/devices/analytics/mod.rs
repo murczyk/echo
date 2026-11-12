@@ -1,6 +1,7 @@
 mod bl;
 pub(in crate::devices) mod query;
 mod queue;
+pub(crate) use queue::DEFINITION_PUBLICATION_ADVISORY_LOCK_KEY;
 pub(in crate::devices) mod rules;
 #[cfg(test)]
 mod tests;
