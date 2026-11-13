@@ -70,6 +70,8 @@ export type SettingsDutySectionProps = {
   doNotPersistCurrentFilter: boolean;
   onDoNotPersistCurrentFilterChange: (value: boolean) => void;
   minimalReportWindowEnabled: boolean;
+  rememberReportGroup: boolean;
+  onRememberReportGroupChange: (value: boolean) => void;
   onMinimalReportWindowEnabledChange: (value: boolean) => void;
   audioTranscriptionCollapsed: boolean;
   onAudioTranscriptionCollapsedChange: (value: boolean) => void;
@@ -105,6 +107,8 @@ export function SettingsDutySection({
   doNotPersistCurrentFilter,
   onDoNotPersistCurrentFilterChange,
   minimalReportWindowEnabled,
+  rememberReportGroup,
+  onRememberReportGroupChange,
   onMinimalReportWindowEnabledChange,
   audioTranscriptionCollapsed,
   onAudioTranscriptionCollapsedChange,
@@ -183,6 +187,17 @@ export function SettingsDutySection({
               <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
                 Розвіддонесення
               </Typography>
+              <FormControlLabel
+                className="m-0"
+                control={
+                  <Switch
+                    checked={rememberReportGroup}
+                    onChange={(_, checked) => onRememberReportGroupChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label="Розвіддонесення: зберігати вибір групи"
+              />
               <FormControlLabel
                 sx={{
                   alignItems: 'flex-start',
