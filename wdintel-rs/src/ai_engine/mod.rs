@@ -1,6 +1,7 @@
 pub mod client;
 mod cooldown;
 pub mod gov;
+pub mod health;
 mod metrics;
 pub mod types;
 pub use client::AiEngineClient;
