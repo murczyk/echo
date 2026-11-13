@@ -1,8 +1,9 @@
 //! Automatic AI engine health (#4157).
 //!
-//! Every call through the shared [`AiEngineClient`], from every process, adds its
-//! outcome to per-minute Redis counters for its engine. Once a minute one
-//! instance reads them and:
+//! Every call through the shared [`AiEngineClient`], from every process, is
+//! counted per minute in Redis for its engine when it starts, and its outcome
+//! when it ends; a stream's outcome is how the stream ended, not its headers.
+//! Once a minute one instance reads the counters and:
 //!
 //! - marks a healthy engine unhealthy when more than
 //!   `AI_ENGINE_HEALTH_FAILURE_PERCENT` of at least `AI_ENGINE_HEALTH_MIN_CALLS`
@@ -13,9 +14,10 @@
 //!   who still call the engine are the signal, so it is never probed then.
 //!
 //! Only outcomes after the engine's latest health change count, so a mark never
-//! acts on evidence an administrator has already seen. The worker's own marks
-//! carry a time and no login. A mark an administrator set, or one a profile
-//! import set (which clears the time), is never reverted automatically.
+//! acts on evidence an administrator has already seen; every writer stamps the
+//! time. The worker's unhealthy marks have no login and a message starting with
+//! [`AUTOMATIC_PREFIX`]. A mark an administrator set (with a login) or a
+//! profile import set (with its own message) is never reverted automatically.
 //!
 //! The flag only steers the chat to a healthy engine; nothing blocks calls, so
 //! background jobs keep using the engine and their outcomes count too.
@@ -60,8 +62,22 @@ impl HealthSink {
         Self { redis }
     }
 
-    /// Counts an outcome without delaying the call it belongs to.
+    /// Counts a call as it starts, so a call still running shows the engine
+    /// is in use and is not probed meanwhile.
+    pub(super) fn record_start(&self, engine_id: Uuid) {
+        self.spawn_increment(engine_id, FIELD_TOTAL);
+    }
+
+    /// Counts how a call ended. Outcomes that say nothing about the provider
+    /// add nothing beyond the start.
     pub(super) fn record(&self, engine_id: Uuid, outcome: &'static str) {
+        if let Some(field) = outcome_field(outcome) {
+            self.spawn_increment(engine_id, field);
+        }
+    }
+
+    /// Updates the counters without delaying the call they belong to.
+    fn spawn_increment(&self, engine_id: Uuid, field: &'static str) {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
@@ -69,9 +85,9 @@ impl HealthSink {
         let minute = current_minute();
         runtime.spawn(async move {
             if let Err(error) =
-                record_outcome(&mut redis, engine_id, minute, outcome).await
+                increment(&mut redis, engine_id, minute, field).await
             {
-                log::warn!(target: LOG_TARGET, "engine_id={engine_id} outcome={outcome} counter update failed: {error:?}");
+                log::warn!(target: LOG_TARGET, "engine_id={engine_id} field={field} counter update failed: {error:?}");
             }
         });
     }
@@ -81,7 +97,8 @@ impl HealthSink {
 #[derive(Debug, PartialEq)]
 enum OutcomeClass {
     Ok,
-    /// The provider failed: rate limit, server error, timeout or connection.
+    /// The provider failed: rate limit, server error, timeout, connection or
+    /// a stream that broke off.
     Failed,
     /// Says nothing about the provider: our own bad request, a cancelled call,
     /// a local cooldown or a local error. It still shows that someone called.
@@ -92,8 +109,16 @@ fn classify(outcome: &str) -> OutcomeClass {
     match outcome {
         "ok" => OutcomeClass::Ok,
         "rate_limited" | "server_error" | "timeout" | "connect_error"
-        | "transport_error" => OutcomeClass::Failed,
+        | "transport_error" | "stream_failed" => OutcomeClass::Failed,
         _ => OutcomeClass::Neutral,
+    }
+}
+
+fn outcome_field(outcome: &str) -> Option<&'static str> {
+    match classify(outcome) {
+        OutcomeClass::Ok => Some(FIELD_OK),
+        OutcomeClass::Failed => Some(FIELD_FAILED),
+        OutcomeClass::Neutral => None,
     }
 }
 
@@ -105,27 +130,33 @@ fn current_minute() -> i64 {
     Utc::now().timestamp().div_euclid(60)
 }
 
+async fn increment(
+    redis: &mut ConnectionManager,
+    engine_id: Uuid,
+    minute: i64,
+    field: &str,
+) -> anyhow::Result<()> {
+    let key = bucket_key(engine_id, minute);
+    let mut pipe = redis::pipe();
+    pipe.atomic();
+    pipe.hincr(&key, field, 1).ignore();
+    pipe.expire(&key, BUCKET_TTL_SECS).ignore();
+    pipe.query_async::<()>(redis).await.c(h!())?;
+    Ok(())
+}
+
+/// A whole call: its start and how it ended.
+#[cfg(test)]
 pub(crate) async fn record_outcome(
     redis: &mut ConnectionManager,
     engine_id: Uuid,
     minute: i64,
     outcome: &str,
 ) -> anyhow::Result<()> {
-    let key = bucket_key(engine_id, minute);
-    let mut pipe = redis::pipe();
-    pipe.atomic();
-    pipe.hincr(&key, FIELD_TOTAL, 1).ignore();
-    match classify(outcome) {
-        OutcomeClass::Ok => {
-            pipe.hincr(&key, FIELD_OK, 1).ignore();
-        }
-        OutcomeClass::Failed => {
-            pipe.hincr(&key, FIELD_FAILED, 1).ignore();
-        }
-        OutcomeClass::Neutral => {}
+    increment(redis, engine_id, minute, FIELD_TOTAL).await?;
+    if let Some(field) = outcome_field(outcome) {
+        increment(redis, engine_id, minute, field).await?;
     }
-    pipe.expire(&key, BUCKET_TTL_SECS).ignore();
-    pipe.query_async::<()>(redis).await.c(h!())?;
     Ok(())
 }
 
@@ -222,14 +253,20 @@ pub(crate) fn decide(observation: &Observation) -> Decision {
     }
 }
 
-/// The worker's own marks carry a time and no login (see the module docs).
+/// How the worker's unhealthy messages start.
+pub(crate) const AUTOMATIC_PREFIX: &str = "Автоматично:";
+
+/// The worker set this unhealthy mark: no login, and its message.
 fn automatic(engine: &ai_engine::Model) -> bool {
-    engine.health_updated_at.is_some()
-        && engine.health_updated_by_login_id.is_none()
+    engine.health_updated_by_login_id.is_none()
+        && engine
+            .health_message
+            .as_deref()
+            .is_some_and(|message| message.starts_with(AUTOMATIC_PREFIX))
 }
 
 fn unhealthy_message(failed: u64, calls: u64, minutes: i64) -> String {
-    format!("Автоматично: {failed} з {calls} викликів моделі за останні {minutes} хв завершилися помилкою постачальника. Позначку буде знято, щойно модель знову відповідатиме.")
+    format!("{AUTOMATIC_PREFIX} {failed} з {calls} викликів моделі за останні {minutes} хв завершилися помилкою постачальника. Позначку буде знято, щойно модель знову відповідатиме.")
 }
 
 /// Changes the engine's health unless someone changed it since it was read.
@@ -291,9 +328,10 @@ where
         .await
         .c(h!())?;
     let mut redis = env.redis.clone();
-    let now = Utc::now().naive_utc();
-    let now_minute = now.and_utc().timestamp().div_euclid(60);
     for engine in engines {
+        // Probes of earlier engines can take a while, so each reads the clock.
+        let now = Utc::now().naive_utc();
+        let now_minute = now.and_utc().timestamp().div_euclid(60);
         // The minute of the last change is partly before it, so it is left out.
         let since_change = engine
             .health_updated_at

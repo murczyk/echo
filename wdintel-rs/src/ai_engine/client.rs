@@ -110,9 +110,11 @@ impl AiEngineClient {
         &self,
         engine: &ai_engine::Model,
     ) -> Option<StreamBodyTimer> {
-        self.metrics
-            .as_ref()
-            .map(|sink| StreamBodyTimer::start(sink, engine))
+        StreamBodyTimer::start(
+            self.metrics.as_ref(),
+            self.health.as_ref(),
+            engine,
+        )
     }
 
     pub(super) fn preview(&self, settings: ai_gov_ua_settings::Model) -> Self {

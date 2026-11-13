@@ -221,7 +221,7 @@ async fn idle_automatic_mark(
     let engine = test_support::engine(&env.dbx, status, "pong", false).await;
     let mut marked = engine.engine.clone().into_active_model();
     marked.unhealthy = Set(Some(true));
-    marked.health_message = Set(Some("Автоматично".into()));
+    marked.health_message = Set(Some(unhealthy_message(5, 5, 30)));
     marked.health_updated_at =
         Set(Some(Utc::now().naive_utc() - chrono::Duration::minutes(20)));
     marked.update(&env.dbx).await.unwrap();
@@ -281,4 +281,150 @@ async fn issue_4157_an_engine_someone_still_calls_is_not_probed() {
     .unwrap();
     assert_eq!(probes.load(Ordering::SeqCst), 0);
     assert_eq!(reload(&env, engine.engine.id).await.unhealthy, Some(true));
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_4157_a_mark_without_login_but_with_its_own_message_stays() {
+    // A profile import sets health without a login; only the worker's own
+    // message makes a mark automatic.
+    let env = cleanup().await.unwrap();
+    let engine = test_support::engine(&env.dbx, 200, "pong", false).await;
+    let id = engine.engine.id;
+    let mut imported = engine.engine.clone().into_active_model();
+    imported.unhealthy = Set(Some(true));
+    imported.health_message = Set(Some("Шлюз недоступний".into()));
+    imported.health_updated_at =
+        Set(Some(Utc::now().naive_utc() - chrono::Duration::minutes(20)));
+    imported.update(&env.dbx).await.unwrap();
+    let probes = AtomicUsize::new(0);
+    run_round(&env, |probed: ai_engine::Model| {
+        if probed.id == id {
+            probes.fetch_add(1, Ordering::SeqCst);
+        }
+        async { true }
+    })
+    .await
+    .unwrap();
+    assert_eq!(probes.load(Ordering::SeqCst), 0);
+    assert_eq!(reload(&env, id).await.unhealthy, Some(true));
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_4157_failures_before_an_imported_change_do_not_mark_again() {
+    let env = cleanup().await.unwrap();
+    let engine = test_support::engine(&env.dbx, 200, "pong", false).await;
+    let id = engine.engine.id;
+    record_minutes_ago(&env, id, "server_error", 5, 3).await;
+    run_round(&env, |_| async { false }).await.unwrap();
+    assert_eq!(reload(&env, id).await.unhealthy, Some(true));
+    // A profile import restores it, stamping the time as every writer does.
+    let mut imported = reload(&env, id).await.into_active_model();
+    imported.unhealthy = Set(Some(false));
+    imported.health_message = Set(None);
+    imported.health_updated_at = Set(Some(Utc::now().naive_utc()));
+    imported.update(&env.dbx).await.unwrap();
+    run_round(&env, |_| async { false }).await.unwrap();
+    assert_eq!(reload(&env, id).await.unhealthy, Some(false));
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_4157_a_call_still_running_is_not_interrupted_by_a_probe() {
+    let env = cleanup().await.unwrap();
+    let engine = idle_automatic_mark(&env, 200).await;
+    // A call that started but has not ended yet.
+    let mut redis = env.redis.clone();
+    increment(&mut redis, engine.engine.id, current_minute(), FIELD_TOTAL)
+        .await
+        .unwrap();
+    let probes = AtomicUsize::new(0);
+    run_round(&env, |probed: ai_engine::Model| {
+        if probed.id == engine.engine.id {
+            probes.fetch_add(1, Ordering::SeqCst);
+        }
+        async { true }
+    })
+    .await
+    .unwrap();
+    assert_eq!(probes.load(Ordering::SeqCst), 0);
+}
+
+/// Waits for spawned counter updates to land.
+async fn settled_counts(env: &Env, id: Uuid, expected_total: u64) -> Counts {
+    let mut redis = env.redis.clone();
+    let minute = current_minute();
+    for _ in 0..50 {
+        let counts = read_counts(&mut redis, id, minute - 1..=minute)
+            .await
+            .unwrap();
+        if counts.total >= expected_total && counts.decisive() > 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            return read_counts(&mut redis, id, minute - 1..=minute)
+                .await
+                .unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("counters did not settle");
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_4157_a_stream_counts_by_how_it_ended_not_its_headers() {
+    use super::super::metrics::{
+        stream_health_outcome, ProviderCallAttempt, StreamBodyTimer,
+    };
+    assert_eq!(stream_health_outcome("completed"), Some("ok"));
+    assert_eq!(stream_health_outcome("failed"), Some("stream_failed"));
+    assert_eq!(stream_health_outcome("cancelled"), None);
+    let env = cleanup().await.unwrap();
+    let health = HealthSink::new(env.redis.clone());
+    let engine = test_support::engine(&env.dbx, 200, "pong", false).await;
+    // A real 200 response from the fixture's server.
+    let response = || {
+        let url = format!("{}/chat/completions", engine.engine.url);
+        async move {
+            reqwest::Client::new()
+                .post(url)
+                .json(&serde_json::json!({}))
+                .send()
+                .await
+        }
+    };
+    // A stream whose headers arrived but which then broke off.
+    let mut attempt =
+        ProviderCallAttempt::start(None, Some(&health), &engine.engine, true);
+    attempt.mark_provider_start();
+    let answered = response().await.map_err(anyhow::Error::from);
+    assert!(answered.as_ref().unwrap().status().is_success());
+    attempt.finish(&answered);
+    StreamBodyTimer::start(None, Some(&health), &engine.engine)
+        .unwrap()
+        .failed();
+    let counts = settled_counts(&env, engine.engine.id, 1).await;
+    assert_eq!(
+        counts,
+        Counts {
+            total: 1,
+            ok: 0,
+            failed: 1
+        }
+    );
+    // A plain call counts as soon as its answer arrives.
+    let plain = test_support::engine(&env.dbx, 200, "pong", false).await;
+    let mut attempt =
+        ProviderCallAttempt::start(None, Some(&health), &plain.engine, false);
+    attempt.mark_provider_start();
+    attempt.finish(&response().await.map_err(anyhow::Error::from));
+    let counts = settled_counts(&env, plain.engine.id, 1).await;
+    assert_eq!(
+        counts,
+        Counts {
+            total: 1,
+            ok: 1,
+            failed: 0
+        }
+    );
 }

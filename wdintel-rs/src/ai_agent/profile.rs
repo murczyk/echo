@@ -709,14 +709,13 @@ async fn update_engine<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
-    // An imported health state is an administrator's decision. Clearing the
-    // time keeps the automatic health worker from treating it as its own mark
-    // and reverting it (#4157).
+    // A health change starts a new evidence window for the automatic health
+    // worker, which only counts calls after it (#4157).
     let health_changed = engine.unhealthy != profile_engine.unhealthy
         || engine.health_message != profile_engine.health_message;
     let mut engine = engine.into_active_model();
     if health_changed {
-        engine.health_updated_at = Set(None);
+        engine.health_updated_at = Set(Some(Utc::now().naive_utc()));
         engine.health_updated_by_login_id = Set(None);
     }
     engine.name = Set(profile_engine.name.clone());
