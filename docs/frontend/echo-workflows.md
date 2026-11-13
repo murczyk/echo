@@ -170,6 +170,14 @@ runtime execution remains explicitly unverified and prevents a claimed complete
 pass for those criteria. Review-text screenshots are feedback to validate against
 source, not UI design references. Read-only reference access never permits edits.
 
+For changed interactions, enforce the [motion acceptance gate](../../DESIGN.md#motion-and-state-continuity).
+Dev implements and self-checks it; QA independently observes the affected enter/exit
+and interruption states at CPU slowdown 4x, with relevant reduced-motion/focus
+checks. Report known flashing, jumps, blocked actions or lost reading context as
+defects that prevent completion of that flow, not follow-up cosmetic suggestions.
+Do not turn this gate into an unrelated animation redesign or an exhaustive
+browser campaign for a small fix.
+
 ## Context and handoff
 
 Resolve root using `git rev-parse --show-toplevel`, including from `wdintel-web`.

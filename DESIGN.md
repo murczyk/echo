@@ -45,13 +45,59 @@ backgrounds unless the content needs a distinct surface. Use list items for navi
 
 ## Motion and state continuity
 
-For changing panels and lists, preserve the reader's visual anchor. Loading
-indicators must not shift content; skeletons reuse the loaded content's outer
-spacing and width. Keep header and body geometry within the same resizing
-container. Check opening, closing and reversal midpoints for clipping, flashing,
-late-disappearing content and incorrect stacking, including an open drawer and
-viewport resize. Respect reduced motion; motion must not delay action feedback.
-Reuse existing list selection, control, menu and feedback patterns. The
+Smoothness and usability are acceptance criteria for new or changed interactions,
+not optional polish after functionality passes. Apply the following gate to the
+affected flow; it does not authorize unrelated redesign or decorative motion.
+
+- **Purpose and consistency:** movement explains a state, spatial relationship
+  or continuity. Reuse the existing component's motion, duration and easing;
+  introduce a new pattern only for an approved need. Routine repeated actions
+  get immediate static feedback or a restrained transition, not staged entrances,
+  bounce, overshoot or attention-seeking effects.
+- **Immediate response:** show selection, pressed state or relevant loading feedback
+  as soon as an action is accepted. Never hold input, navigation or completed data
+  for an animation to finish. Avoid transient spinner/skeleton flashes without
+  delaying available results; animation must not conceal a slow operation.
+- **Stable geometry:** preserve the reader's visual anchor and scroll position.
+  Loading, empty and error indicators must not shift unrelated content; skeletons
+  reuse the loaded content's outer spacing and width. Do not reset scroll to make
+  a transition easier. Keep header and body inside one coordinated resizing owner.
+- **Coherent lifecycle:** inspect the first, intermediate and final frames of
+  opening and closing. No flashing, detached headers, overflowing exit content,
+  incorrect stacking, end-of-transition snap or content disappearing over the
+  next surface. Clip or remove exiting content in coordination with geometry.
+  Hidden/exiting controls must not intercept pointer or keyboard focus.
+- **Interruptibility:** rapid toggle, reversal, another selection, resize and
+  cancellation converge on the latest intent from the current visual state.
+  Do not queue old transitions, jump back to an initial frame or let stale timers,
+  animation callbacks or network responses restore an obsolete state.
+- **Accessible operation:** preserve keyboard access, visible focus, logical focus
+  return and readable static feedback. Honor `prefers-reduced-motion`: remove
+  nonessential movement and animated scrolling while retaining the state change.
+  Animation is never the only indication of selection, progress or success.
+- **Rendering cost:** prefer `transform`/`opacity` for effects that do not need to
+  change layout. When actual panel/column resizing is required, coordinate the
+  real layout, limit its scope and inspect its cost; a transform must not fake
+  geometry while hit areas, text or scroll layout remain wrong. Specify transition
+  properties; do not introduce `transition: all`, per-frame React state updates
+  across message trees or blanket `will-change` as a polish shortcut.
+- **Observed quality:** dev and QA each inspect affected interactions in the
+  browser at CPU slowdown 4x, with normal and reduced motion, rapid reversal and
+  relevant drawer/mobile/resize states. A final screenshot or green unit test does
+  not verify a transition. Investigate visible stalls with browser performance
+  tools when needed; report measured evidence rather than asserting universal
+  frame-rate or timing guarantees.
+
+Known flashing, displaced content, lost reading position, blocked input or broken
+focus in the changed flow fails this gate and must be fixed before claiming that
+flow complete. Missing execution remains unverified. Keep the checks proportional
+to the actual motion change; do not repeat unrelated suites or every device/theme
+combination for a local repair.
+
+Accessibility reference: [W3C animation from interactions](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions).
+Rendering reference: [web.dev animation performance guidance](https://web.dev/articles/animations-guide).
+These inform this project gate; they do not establish application-wide WCAG
+conformance or a measured performance budget. The
 [Duty search contract](docs/frontend/react-behavior-contracts/duty.md#independent-duty-search)
 owns the search-specific layout and state rules.
 

@@ -36,6 +36,10 @@ Use this loop as appropriate to the request: brief → check the scenario and ap
   rendered affected states. Dev and QA each do this when assigned UI work; neither
   delegates that responsibility to the other. Exercise behavior as well as visual
   appearance. Missing access/execution stays explicitly unverified.
+- Apply the [motion acceptance gate](../../DESIGN.md#motion-and-state-continuity)
+  to changed interactions. Define intended transition, interruption, focus and
+  reduced-motion behavior in the brief when relevant; verify the intermediate
+  states, not only final layout. A functionality pass does not waive known UX defects.
 - Preserve the latest approved scope. Flag requirement gaps instead of inventing
   behavior; superseded or cancelled proposals are not requirements. Validate review
   comments against source and prior decisions before applying a repair.
@@ -52,6 +56,7 @@ User and task:
 Route / components / current behavior:
 Intended outcome and observable acceptance:
 Applicable states, themes, widths, keyboard/focus and persistence:
+Motion, interruptions and reduced-motion behavior (when affected):
 Existing components/tokens/contracts to reuse:
 Evidence, assumptions, open decisions and verification method:
 ```

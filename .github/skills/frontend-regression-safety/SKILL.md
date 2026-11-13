@@ -38,6 +38,9 @@ yourself and check approved behavior, not just the tests. For affected UI states
   A progress indicator belongs to its operation and must not resize the list.
 - Check animation midpoints, closing/reopening and rapid reversals for flashing,
   clipping, detached headers and stale overlays; respect reduced motion.
+  Apply the [motion acceptance gate](../../../DESIGN.md#motion-and-state-continuity)
+  at CPU slowdown 4x, including immediate feedback, interruption and focus.
+  Record observed outcomes; end-state screenshots alone do not verify smoothness.
 - Select relevant combinations of panels/drawers, multiple columns and resize,
   plus mobile keyboard/focus recovery. Do not expand every small fix into an
   exhaustive matrix unrelated to the changed behavior.
@@ -88,6 +91,8 @@ yourself and check approved behavior, not just the tests. For affected UI states
 - UX regression checks completed across breakpoints and states.
 - Relevant URL/localStorage/user-settings persistence behavior is verified.
 - Relevant build/tests pass.
+- Changed interactions meet the motion acceptance gate; known flicker, jumps,
+  input blocking or focus/reading-position loss is fixed, not labelled optional polish.
 - Any necessary type/mock/doc updates are included.
 - No silent handling regressions for API errors.
 
