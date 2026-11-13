@@ -13,6 +13,8 @@ export type MessengerAccountItem = {
   userId?: string | null;
   // The account's id in the external system.
   externalId?: string | null;
+  // Link to the account's page in the external system, an absolute http(s) URL.
+  externalUrl?: string | null;
   // Epoch milliseconds, as the API sends them.
   createdAt?: number | null;
   lastSync?: number | null;
@@ -26,6 +28,11 @@ type Props = {
   loading?: boolean;
   error?: string | null;
 };
+
+// The backend only stores http(s) links; checking again keeps a stray scheme from ever becoming a clickable one.
+export function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
 
 export function messengerAccountInitials(name: string): string {
   const initials = name

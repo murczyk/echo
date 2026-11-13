@@ -38,7 +38,8 @@ describe('the account sidebar of the messenger workspace', () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  const mount = () => act(async () => root.render(<MessengerWorkspace account={account} />));
+  const mount = (item: object = account) =>
+    act(async () => root.render(<MessengerWorkspace account={item as typeof account} />));
   const click = (selector: string) =>
     act(async () => {
       container
@@ -475,7 +476,9 @@ describe('the account sidebar of the messenger workspace', () => {
     it('keeps everything one rem from the border, and the rows that light up inset with room inside', async () => {
       await mount();
       // The account info, the search and the unread row start 1 rem in ...
-      const info = full().querySelector('[data-messenger-user-id]')!.closest('.flex.items-center')!;
+      const info = full()
+        .querySelector('[data-messenger-username]')!
+        .closest('.flex.items-center')!;
       expect(info.className).toContain('px-4');
       expect(
         full().querySelector('input[aria-label="Пошук чату"]')!.closest('.px-4'),
@@ -569,7 +572,7 @@ describe('the account sidebar of the messenger workspace', () => {
       expect(toggle.className).toContain('z-10');
       expect(full().contains(toggle)).toBe(false);
       // The first two lines of the account info keep clear of it, the rest of the lines have the whole width.
-      const lines = [...full().querySelectorAll('[data-messenger-user-id]')].map(
+      const lines = [...full().querySelectorAll('[data-messenger-username]')].map(
         (line) => line.className,
       );
       expect(lines.join(' ')).not.toContain('max-w-');
@@ -639,14 +642,39 @@ describe('the account sidebar of the messenger workspace', () => {
       expect(search.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it('copies the id from the whole line, label included', async () => {
+    it('copies the username from the whole line', async () => {
       clipboardMock.copyTextToClipboard.mockResolvedValue(undefined);
       await mount();
-      const line = full().querySelector('[data-messenger-user-id]')!;
+      const line = full().querySelector('[data-messenger-username]')!;
       expect(line.tagName).toBe('BUTTON');
-      expect(line.textContent).toBe('User ID: 7');
-      await click('[data-messenger-user-id]');
-      expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledWith('7');
+      expect(line.textContent).toBe('@me');
+      await click('[data-messenger-username]');
+      expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledWith('@me');
+    });
+
+    it('does not repeat the ids of the account, the info card has them', async () => {
+      await mount();
+      expect(full().textContent).not.toContain('User ID');
+      expect(full().textContent).not.toContain('External ID');
+    });
+
+    it('opens the source of the account first among the pages, in a new tab, for an http(s) link only', async () => {
+      const link = 'https://example.com/accounts/1';
+      await mount({ ...account, externalUrl: link });
+      const item = full().querySelector<HTMLAnchorElement>('[data-messenger-nav="external"]')!;
+      expect(item.getAttribute('href')).toBe(link);
+      expect(item.getAttribute('target')).toBe('_blank');
+      expect(item.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(full().querySelector('nav')!.firstElementChild).toBe(item);
+      expect(rail().querySelector('[data-messenger-rail-external]')!.getAttribute('href')).toBe(
+        link,
+      );
+
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await mount({ ...account, externalUrl: 'javascript:alert(1)' });
+      expect(container.querySelector('[data-messenger-nav="external"]')).toBeNull();
+      expect(container.querySelector('[data-messenger-rail-external]')).toBeNull();
     });
 
     it('leads back to the account cards from a blank area of the account info, not from a copy value', async () => {
@@ -654,10 +682,10 @@ describe('the account sidebar of the messenger workspace', () => {
       await click('[data-messenger-nav="contacts"]');
       const contacts = () => full().querySelector('[data-messenger-nav="contacts"]')!;
       expect(contacts().getAttribute('data-selected')).toBe('true');
-      await click('[data-messenger-user-id]');
+      await click('[data-messenger-username]');
       expect(contacts().getAttribute('data-selected')).toBe('true');
       const info = () =>
-        full().querySelector('[data-messenger-user-id]')!.closest('.flex.items-center')!;
+        full().querySelector('[data-messenger-username]')!.closest('.flex.items-center')!;
       expect(info().getAttribute('data-selected')).toBe('false');
       await click('[data-messenger-account-avatar]');
       expect(contacts().getAttribute('data-selected')).toBe('false');
@@ -666,7 +694,9 @@ describe('the account sidebar of the messenger workspace', () => {
 
     it('keeps the toggle out of the account info, so the names have the whole width', async () => {
       await mount();
-      const info = full().querySelector('[data-messenger-user-id]')!.closest('.flex.items-center')!;
+      const info = full()
+        .querySelector('[data-messenger-username]')!
+        .closest('.flex.items-center')!;
       expect(info.querySelector('button[aria-label="Згорнути панель акаунту"]')).toBeNull();
       // It sits in the row above, not by the search.
       const search = full().querySelector('input[aria-label="Пошук чату"]')!.closest('.px-4')!;

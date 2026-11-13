@@ -4,6 +4,7 @@ import DoneAllIcon from '@mui/icons-material/DoneAll';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import MarkChatUnreadOutlinedIcon from '@mui/icons-material/MarkChatUnreadOutlined';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -21,11 +22,16 @@ import {
   type useMessengerChats,
 } from '../use-messenger-chats';
 import { CopyValue } from './CopyValue';
-import { MessengerAccountAvatar, type MessengerAccountItem } from './MessengerAccountList';
+import {
+  MessengerAccountAvatar,
+  isHttpUrl,
+  type MessengerAccountItem,
+} from './MessengerAccountList';
 import { MessengerSearchField } from './MessengerSearchField';
 
 const GALLERY_NAV_ITEM = 'Галерея';
 const CONTACTS_NAV_ITEM = 'Контакти';
+const EXTERNAL_LINK_LABEL = 'Відкрити джерело';
 const CHAT_SECTIONS: ReadonlyArray<{
   key: MessengerChatSection;
   title: string;
@@ -296,31 +302,29 @@ function ExpandedSidebar({
             <CopyValue
               text={`@${account.username}`}
               className="group-navigation-name self-start text-xs opacity-60"
+              data-messenger-username
             >
               @{account.username}
-            </CopyValue>
-          ) : null}
-          {account.userId ? (
-            <CopyValue
-              text={account.userId}
-              className="group-navigation-name self-start text-xs opacity-60"
-              data-messenger-user-id
-            >
-              User ID: {account.userId}
-            </CopyValue>
-          ) : null}
-          {account.externalId ? (
-            <CopyValue
-              text={account.externalId}
-              className="group-navigation-name self-start text-xs opacity-60"
-            >
-              External ID: {account.externalId}
             </CopyValue>
           ) : null}
         </span>
       </div>
       <Separator name="account-pages" />
       <nav className="flex flex-col gap-1 px-2">
+        {account.externalUrl && isHttpUrl(account.externalUrl) ? (
+          // A link to the source of the account, in the list of the pages but not a page: it opens in a new tab and is
+          // never lit. `!`: the page's link color and underline are unlayered and beat the utilities.
+          <a
+            href={account.externalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`flex items-center justify-between gap-2 !rounded-lg !px-2 py-2 text-sm !text-inherit hover:!no-underline ${SELECTED_LOOK}`}
+            data-messenger-nav="external"
+          >
+            {EXTERNAL_LINK_LABEL}
+            <OpenInNewIcon sx={{ fontSize: 16 }} className="opacity-60" />
+          </a>
+        ) : null}
         <button
           type="button"
           className={`!rounded-lg !px-2 py-2 text-start text-sm data-[selected=true]:font-medium ${SELECTED_LOOK}`}
@@ -409,6 +413,7 @@ function RailButton({
   selected = false,
   disabled = false,
   avatar = false,
+  href,
   onClick,
   children,
   ...dataAttributes
@@ -418,33 +423,50 @@ function RailButton({
   disabled?: boolean;
   // An avatar button: a small rounded frame round the avatar, grey on hover, green when the chat is open.
   avatar?: boolean;
+  // Makes it a link that opens in a new tab, looking like the other buttons.
+  href?: string;
   onClick?: () => void;
   children: ReactNode;
   [dataAttribute: `data-${string}`]: string | boolean | undefined;
 }) {
+  // Every button is a slightly rounded square that goes grey on hover: the pages are lit in the primary color when
+  // open, a chat is lit green; an avatar button sits in a small frame round its avatar.
+  const look = `flex cursor-pointer items-center justify-center !rounded-lg disabled:cursor-default disabled:opacity-40 ${
+    avatar
+      ? `p-0.5 ${RAIL_CHAT_LOOK}`
+      : `size-10 group-data-[mobile=true]/sidebar:size-8 ${RAIL_ICON_LOOK}`
+  }`;
   return (
     // The bar belongs to a row as wide as the rail, so it sits on the edge of the rail whatever the width of the button.
     <div className={RAIL_BAR} data-selected={selected ? 'true' : 'false'} data-messenger-rail-row>
       <Tooltip placement="right" title={label}>
         <span className="inline-flex shrink-0">
-          <button
-            type="button"
-            aria-label={label}
-            aria-current={selected ? 'true' : undefined}
-            data-selected={selected ? 'true' : 'false'}
-            disabled={disabled}
-            // Every button is a slightly rounded square that goes grey on hover: the pages are lit in the primary color when
-            // open, a chat is lit green; an avatar button sits in a small frame round its avatar.
-            className={`flex cursor-pointer items-center justify-center !rounded-lg disabled:cursor-default disabled:opacity-40 ${
-              avatar
-                ? `p-0.5 ${RAIL_CHAT_LOOK}`
-                : `size-10 group-data-[mobile=true]/sidebar:size-8 ${RAIL_ICON_LOOK}`
-            }`}
-            onClick={onClick}
-            {...dataAttributes}
-          >
-            {children}
-          </button>
+          {href != null ? (
+            // `!`: the page's link color and underline are unlayered and beat the utilities.
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={label}
+              className={`${look} !text-inherit hover:!no-underline`}
+              {...dataAttributes}
+            >
+              {children}
+            </a>
+          ) : (
+            <button
+              type="button"
+              aria-label={label}
+              aria-current={selected ? 'true' : undefined}
+              data-selected={selected ? 'true' : 'false'}
+              disabled={disabled}
+              className={look}
+              onClick={onClick}
+              {...dataAttributes}
+            >
+              {children}
+            </button>
+          )}
         </span>
       </Tooltip>
     </div>
@@ -480,8 +502,6 @@ function CollapsedSidebar({
     account.name,
     account.phone,
     account.username ? `@${account.username}` : null,
-    account.userId ? `User ID: ${account.userId}` : null,
-    account.externalId ? `External ID: ${account.externalId}` : null,
   ].filter(Boolean);
   return (
     <aside
@@ -517,6 +537,15 @@ function CollapsedSidebar({
         </button>
       </Tooltip>
       <Separator name="account-pages" />
+      {account.externalUrl && isHttpUrl(account.externalUrl) ? (
+        <RailButton
+          label={EXTERNAL_LINK_LABEL}
+          href={account.externalUrl}
+          data-messenger-rail-external
+        >
+          <OpenInNewIcon fontSize="small" />
+        </RailButton>
+      ) : null}
       <RailButton
         label={GALLERY_NAV_ITEM}
         selected={galleryOpen}

@@ -1,9 +1,9 @@
-import { Typography } from '@mui/material';
+import { Link, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import { NO_DATA_LABEL, formatDateTime24 } from '../../../utils/misc';
 import { MessengerCard } from './MessengerCard';
-import type { MessengerAccountItem } from './MessengerAccountList';
+import { isHttpUrl, type MessengerAccountItem } from './MessengerAccountList';
 
 type Props = {
   account: MessengerAccountItem;
@@ -34,6 +34,15 @@ export function MessengerInfoCard({ account }: Props) {
       </Row>
       <Row label="External ID">{account.externalId || NO_DATA_LABEL}</Row>
       <Row label="User ID">{account.userId || NO_DATA_LABEL}</Row>
+      <Row label="Посилання">
+        {account.externalUrl && isHttpUrl(account.externalUrl) ? (
+          <Link href={account.externalUrl} target="_blank" rel="noopener noreferrer">
+            Відкрити джерело
+          </Link>
+        ) : (
+          NO_DATA_LABEL
+        )}
+      </Row>
       <Row label="Створено">{formatDateTime24(account.createdAt)}</Row>
       <Row label="Оновлено">{formatDateTime24(account.lastSync)}</Row>
     </MessengerCard>

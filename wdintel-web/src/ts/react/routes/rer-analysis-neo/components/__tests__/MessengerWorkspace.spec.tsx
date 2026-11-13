@@ -48,7 +48,7 @@ describe('MessengerWorkspace', () => {
     expect(container.textContent).toContain('name test');
   });
 
-  it('shows both ids and reports a click on the external id', () => {
+  it('shows both ids in the info card', () => {
     const account = {
       id: '1',
       name: 'name test',
@@ -57,9 +57,8 @@ describe('MessengerWorkspace', () => {
       externalId: 'external id test',
     };
     act(() => root.render(<MessengerWorkspace account={account} />));
-    expect(container.querySelector('[data-messenger-user-id]')?.textContent).toContain(
-      'user id test',
-    );
+    expect(container.textContent).toContain('user id test');
+    expect(container.textContent).toContain('external id test');
   });
 
   it('does not carry an unsaved internal note draft over to another account', () => {

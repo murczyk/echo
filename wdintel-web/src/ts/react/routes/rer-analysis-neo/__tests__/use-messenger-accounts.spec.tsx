@@ -82,13 +82,17 @@ describe('useMessengerAccounts', () => {
   });
 
   it('takes the messenger user id from the telegram block only when it exists', () => {
-    const base = { id: '1', displayName: 'A', externalId: 'external id test' } as Parameters<
-      typeof toMessengerAccountItem
-    >[0];
+    const base = {
+      id: '1',
+      displayName: 'A',
+      externalId: 'external id test',
+      externalUrl: 'https://example.com/accounts/1',
+    } as Parameters<typeof toMessengerAccountItem>[0];
     expect(toMessengerAccountItem({ ...base, telegram: { userId: 'user id test' } })).toMatchObject(
       {
         userId: 'user id test',
         externalId: 'external id test',
+        externalUrl: 'https://example.com/accounts/1',
       },
     );
     expect(toMessengerAccountItem({ ...base, telegram: null }).userId).toBeNull();

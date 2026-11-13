@@ -23,6 +23,7 @@ export function toMessengerAccountItem(account: MessengersAccountItem): Messenge
     internalNotes: account.internalNotes,
     userId: account.telegram?.userId ?? null,
     externalId: account.externalId,
+    externalUrl: account.externalUrl,
     createdAt: account.createdAt,
     lastSync: account.lastSync,
   };
