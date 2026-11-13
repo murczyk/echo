@@ -562,6 +562,32 @@ no `histogramQuantile` function, so a percentile on a histogram in the SigNoz
 query builder fails with an HTTP 500. The dashboard uses ClickHouse's built-in
 `quantilePrometheusHistogram` instead.
 
+### Automatic engine health
+
+The same call outcomes drive the engine health flag that the AI chat uses to
+steer users to a working model (`wdintel-rs/src/ai_engine/health.rs`, #4157).
+Every call through `AiEngineClient`, from every process, increments per-minute
+Redis counters under `ai-engine:health:<engine id>:<minute>`. Once a minute one
+instance, whichever claims `ai-engine:health:round`, checks every enabled engine:
+
+- A healthy engine is marked unhealthy when more than 90% of at least 5 calls
+  in the last 30 minutes failed at the provider (`rate_limited`,
+  `server_error`, `timeout`, `connect_error` or `transport_error`). Other
+  outcomes show traffic but say nothing about the provider.
+- An engine the worker marked recovers when at most half of at least 2 calls
+  in the last 10 minutes failed.
+- If nobody called it for 10 minutes, it is probed at most once every 5
+  minutes with a one-word chat completion, and any 2xx answer clears the mark.
+  Probes are not counted as calls, and an engine someone still calls is never
+  probed.
+
+Only outcomes after the latest health change count. The worker's marks have
+`health_updated_at` and no `health_updated_by_login_id`, and its message
+starts with «Автоматично». A mark set by an administrator, or by a profile
+import, is never changed back automatically. The flag does not block calls:
+background jobs keep using the engine, and their outcomes count too. Look for
+`ai_engine_health` lines in the bgworker journal to see each decision.
+
 ### Other application metrics
 
 - `echo.device_files.synchronized.count`: кількість файлів, які API синхронізації пристроїв успішно створило або оновило, з атрибутом `operation`.

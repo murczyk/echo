@@ -216,6 +216,23 @@ pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
 pub const AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS: usize = 500;
+// Automatic engine health (#4157), see `ai_engine::health`.
+pub const AI_ENGINE_HEALTH_REDIS_PREFIX: &str = "ai-engine:health:";
+pub const AI_ENGINE_HEALTH_INTERVAL_SECS: u64 = 60;
+/// Calls an engine must fail, of at least `AI_ENGINE_HEALTH_MIN_CALLS`, within
+/// `AI_ENGINE_HEALTH_WINDOW_MINUTES`, before it is marked unhealthy.
+pub const AI_ENGINE_HEALTH_FAILURE_PERCENT: u64 = 90;
+pub const AI_ENGINE_HEALTH_MIN_CALLS: u64 = 5;
+pub const AI_ENGINE_HEALTH_WINDOW_MINUTES: i64 = 30;
+/// An automatically unhealthy engine recovers when at most half of at least
+/// this many calls in the recovery window failed.
+pub const AI_ENGINE_HEALTH_RECOVERY_MIN_CALLS: u64 = 2;
+pub const AI_ENGINE_HEALTH_RECOVERY_WINDOW_MINUTES: i64 = 10;
+/// Without a single call for this long, an unhealthy engine is probed instead.
+pub const AI_ENGINE_HEALTH_PROBE_IDLE_MINUTES: i64 = 10;
+pub const AI_ENGINE_HEALTH_PROBE_INTERVAL_SECS: u64 = 300;
+pub const AI_ENGINE_HEALTH_PROBE_TIMEOUT_SECS: u64 = 60;
+pub const AI_ENGINE_HEALTH_PROBE_MAX_TOKENS: u32 = 16;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
 pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
     &["gpt-5", "gpt-6", "o1", "o3", "o4"];

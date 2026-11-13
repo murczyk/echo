@@ -1,4 +1,5 @@
 use super::client::is_government_url;
+use super::health::HealthSink;
 use crate::config::AI_PROVIDER_METRICS_OPENAI_HOST;
 use crate::entities::ai_engine;
 use crate::telemetry::{AiProviderLabels, Metrics};
@@ -41,12 +42,15 @@ struct PendingCall {
 /// records it instead of letting the call vanish from the latency data.
 pub(super) struct ProviderCallAttempt {
     pending: Option<PendingCall>,
+    /// The engine's health counters, which see the same outcome (#4157).
+    health: Option<(HealthSink, uuid::Uuid)>,
     provider_started_at: Option<Instant>,
 }
 
 impl ProviderCallAttempt {
     pub(super) fn start(
         sink: Option<&ProviderMetricsSink>,
+        health: Option<&HealthSink>,
         engine: &ai_engine::Model,
         streaming: bool,
     ) -> Self {
@@ -56,6 +60,7 @@ impl ProviderCallAttempt {
                 labels: sink.labels(engine),
                 streaming,
             }),
+            health: health.map(|health| (health.clone(), engine.id)),
             provider_started_at: None,
         }
     }
@@ -80,6 +85,9 @@ impl ProviderCallAttempt {
     }
 
     fn record(&mut self, outcome: &'static str) {
+        if let Some((health, engine_id)) = self.health.take() {
+            health.record(engine_id, outcome);
+        }
         let Some(call) = self.pending.take() else {
             return;
         };
