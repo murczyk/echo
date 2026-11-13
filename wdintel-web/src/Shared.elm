@@ -600,6 +600,11 @@ update req msg model =
             , E.sendCmd <| showErrorNotification req.path (Just title) content
             )
 
+        ShowTransientToastWithDetails title content ->
+            ( model
+            , E.sendCmd <| showTransientErrorNotification req.path title content
+            )
+
         ShowLoggedResponseDecodeError error ->
             ( model
             , E.sendCmd <| Random.generate (ShowLoggedResponseDecodeErrorWithCode error) responseDecodeErrorCodeGenerator
@@ -780,7 +785,7 @@ update req msg model =
                 , if shouldNotifyAboutPersistentFailure then
                     E.batch
                         [ retryEffect
-                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання оновлень" error
+                        , Utils.Api.ErrorHandling.formatErrorForShowTransientErrorWithDetails "Помилка отримання оновлень" error
                         ]
 
                   else
@@ -827,6 +832,17 @@ showErrorNotification path title content =
 
                 Nothing ->
                     Shared.Components.Toast.addError ToastMsg content
+
+
+showTransientErrorNotification : Route.Path.Path -> String -> String -> Cmd Msg
+showTransientErrorNotification path title content =
+    case path of
+        Route.Path.RerAnalysisNeo ->
+            -- The analysis snackbar already hides errors after a while
+            showErrorNotification path (Just title) content
+
+        _ ->
+            Shared.Components.Toast.addErrorV2Dismissing ToastMsg Config.toastTransientErrorDismissMs title content
 
 
 extractInboxChangedEvents : List B.EventMsg -> List { messageId : Int, origin : Maybe String, intelligenceReport : Bool }

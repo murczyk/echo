@@ -14,6 +14,7 @@ module Config exposing
     , featureShowCallsignsMetadata
     , rerUnitsPollingMinIntervalMs
     , thresholdStopCountingDays
+    , toastTransientErrorDismissMs
     , waterfallLoadEarlierThresholdMs
     , waterfallMessageLimit
     , waterfallNetworkRetryDelayMs
@@ -52,6 +53,13 @@ sharedLookupReconciliationIntervalMs =
 rerUnitsPollingMinIntervalMs : Float
 rerUnitsPollingMinIntervalMs =
     5000
+
+
+{-| How long an error toast from background message updates stays on screen
+-}
+toastTransientErrorDismissMs : Float
+toastTransientErrorDismissMs =
+    10000
 
 
 featureShowCallsignsMetadata : Bool

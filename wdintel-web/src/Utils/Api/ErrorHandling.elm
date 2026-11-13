@@ -1,4 +1,4 @@
-module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, formatErrorForShowErrorWithDetails, isTemporaryConnectionError)
+module Utils.Api.ErrorHandling exposing (ErrorDetails, formatErrorForShowError, formatErrorForShowErrorWithDetails, formatErrorForShowTransientErrorWithDetails, isTemporaryConnectionError)
 
 import Core.Types
 import Effect as E
@@ -180,7 +180,21 @@ formatErrorForShowError customTitle error =
 {-| Creates an Effect that shows error toast with separate title and content using E.showErrorWithDetails
 -}
 formatErrorForShowErrorWithDetails : String -> Core.Types.ApiError -> E.Effect msg
-formatErrorForShowErrorWithDetails customTitle error =
+formatErrorForShowErrorWithDetails =
+    formatErrorWith E.showErrorWithDetails
+
+
+{-| Like `formatErrorForShowErrorWithDetails`, but the toast closes itself after a while.
+For errors of background updates (event stream, inbox polling) that recur on every network blip.
+Response decode errors stay until closed.
+-}
+formatErrorForShowTransientErrorWithDetails : String -> Core.Types.ApiError -> E.Effect msg
+formatErrorForShowTransientErrorWithDetails =
+    formatErrorWith E.showTransientErrorWithDetails
+
+
+formatErrorWith : (String -> String -> E.Effect msg) -> String -> Core.Types.ApiError -> E.Effect msg
+formatErrorWith showDetails customTitle error =
     case error.httpError of
         Http.BadStatus 401 ->
             -- For 401 errors, trigger logout instead of showing error
@@ -192,16 +206,16 @@ formatErrorForShowErrorWithDetails customTitle error =
                     E.sendSharedMsg (Shared.Msg.ShowLoggedResponseDecodeError { title = customTitle, message = details })
 
                 Nothing ->
-                    showFormattedErrorWithDetails customTitle error
+                    showFormattedErrorWithDetails showDetails customTitle error
 
         _ ->
-            showFormattedErrorWithDetails customTitle error
+            showFormattedErrorWithDetails showDetails customTitle error
 
 
-showFormattedErrorWithDetails : String -> Core.Types.ApiError -> E.Effect msg
-showFormattedErrorWithDetails customTitle error =
+showFormattedErrorWithDetails : (String -> String -> E.Effect msg) -> String -> Core.Types.ApiError -> E.Effect msg
+showFormattedErrorWithDetails showDetails customTitle error =
     let
         errorDetails =
             formatErrorWithCustomTitle customTitle error
     in
-    E.showErrorWithDetails errorDetails.title errorDetails.content
+    showDetails errorDetails.title errorDetails.content

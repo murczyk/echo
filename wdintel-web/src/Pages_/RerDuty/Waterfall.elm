@@ -1900,7 +1900,7 @@ updateMessage shared user msg model =
                 E.none
 
               else
-                Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перевірки нових повідомлень" error
+                Utils.Api.ErrorHandling.formatErrorForShowTransientErrorWithDetails "Помилка перевірки нових повідомлень" error
             )
 
         InboxLoopGotMessages _ (Err error) ->
@@ -1909,7 +1909,7 @@ updateMessage shared user msg model =
                 E.none
 
               else
-                Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження нових повідомлень" error
+                Utils.Api.ErrorHandling.formatErrorForShowTransientErrorWithDetails "Помилка завантаження нових повідомлень" error
             )
 
         InboxLoopGotMessages once (Ok inboxRsp) ->
