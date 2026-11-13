@@ -386,6 +386,7 @@ export function RerDutyNeoPage({
           setFeedInitialTargetRef.current(feedId, {
             beforeIdNoninclusive: targetIds[0],
             messageIds: targetIds,
+            signal,
           });
           applyFilterRef.current(feedId, feed.filter, true, {
             preserveUnread: replyNavigationRef.current != null,

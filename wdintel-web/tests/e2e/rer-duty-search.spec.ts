@@ -303,6 +303,71 @@ test('#3571 mobile search overlays the feed and restores results after landing @
   await expect(query).toBeFocused();
 });
 
+for (const dismissal of ['enter', 'reopen'] as const) {
+  test(`#3571 dismisses mobile search with Escape after ${dismissal} without input focus @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      inboxResponse: response([1]),
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.goto('/rer-duty-neo');
+    const column = page.locator('[data-duty-feed-column]').first();
+    const trigger = column.getByRole('button', { name: 'Пошук у стрічці', exact: true });
+    const query = await openDutySearch(column);
+    await query.fill('needle');
+    await query.press('Escape');
+    await expect(column.locator('[data-duty-search-result]')).toHaveCount(1);
+    if (dismissal === 'enter') await query.press('Enter');
+    else {
+      await trigger.click();
+      await expect(column.locator('[data-duty-search-panel]')).toHaveCount(0);
+      await openDutySearch(column);
+    }
+    await expect(query).not.toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(column.locator('[data-duty-search-panel]')).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(await openDutySearch(column)).toHaveValue('needle');
+    await expect(query).not.toBeFocused();
+  });
+}
+
+test('#3571 keeps search open when Escape belongs to settings or another column groups @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    signalGroups: ['g1', 'g2'],
+    inboxResponse: response([1]),
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto(`/rer-duty-neo?state=${stateForGroups(['g1', 'g2'])}`);
+  const columns = page.locator('[data-duty-feed-column]');
+  const query = await openDutySearch(columns.first());
+  await query.fill('needle');
+  await query.press('Escape');
+  await expect(columns.first().locator('[data-duty-search-result]')).toHaveCount(1);
+  await columns
+    .first()
+    .getByRole('button', { name: /^Фільтри/ })
+    .click();
+  await expect(columns.first().getByLabel('Панель фільтрів')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(columns.first().getByLabel('Панель фільтрів')).toHaveCount(0);
+  await expect(columns.first().locator('[data-duty-search-panel]')).toBeVisible();
+  await columns.nth(1).getByRole('button', { name: 'Розгорнути список груп', exact: true }).click();
+  await expect(columns.nth(1).locator('[data-group-panel]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(columns.nth(1).locator('[data-group-panel]')).toHaveCount(0);
+  await expect(columns.first().locator('[data-duty-search-panel]')).toBeVisible();
+});
+
 test('#3571 applies rapid search reversals and result steps immediately @regression', async ({
   page,
 }) => {
@@ -1123,6 +1188,75 @@ for (const outcome of ['close', 'missing', 'error', 'replace', 'newest'] as cons
     ).toHaveCount(2);
     expect(navigationReloads).toEqual([]);
     await cpu.detach();
+  });
+}
+
+for (const outcome of ['close', 'replace', 'query'] as const) {
+  test(`#3571 cancels an already loading search context on ${outcome} @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const current = responseWithMessages([
+      { id: 10, text: 'current context' },
+      { id: 11, text: 'needle loaded result' },
+    ]);
+    const target = responseWithMessages([{ id: 5, text: 'needle historical result' }]);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let contextRequests = 0;
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      inboxCountResponseForRequest: () => ({ quantity: 2, first_element_ts: null }),
+      inboxResponseForRequest: async (body) => {
+        const request = body as Record<string, unknown>;
+        if (request.search)
+          return { ...target, inbox_items: [...target.inbox_items, current.inbox_items[1]] };
+        if (request.before_id_noninclusive === 5 || request.since_id_noninclusive === 5) {
+          contextRequests += 1;
+          await pending;
+          return target;
+        }
+        return current;
+      },
+    });
+    await page.route('**/api/rer-importer/messages-by-id-matching-filters', (route) =>
+      route.fulfill({ json: { messages: target.inbox_items } }),
+    );
+    await page.route('**/api/rer-importer/messages-by-id-with-metadata', async (route) => {
+      await pending;
+      await route.fulfill({ json: target });
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.goto('/rer-duty-neo');
+    const column = page.locator('[data-duty-feed-column]').first();
+    await expect(column.locator('[data-duty-message-id]')).toHaveCount(2);
+    const query = await openDutySearch(column);
+    await query.fill('needle');
+    await query.press('Escape');
+    await column.getByRole('button', { name: 'needle historical result', exact: true }).click();
+    await expect.poll(() => contextRequests).toBe(2);
+    try {
+      if (outcome === 'close')
+        await column.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+      else if (outcome === 'replace')
+        await column.getByRole('button', { name: 'needle loaded result', exact: true }).click();
+      else await query.fill('different');
+      await expect(column.locator('[data-message-feed-skeleton="refresh"]')).toHaveCount(0);
+      release();
+      await expect(column.locator('[data-duty-message-id="5"]')).toHaveCount(0);
+      await expect(column.locator('[data-duty-message-id="10"]')).toBeVisible();
+      if (outcome === 'replace') {
+        await expect(column.locator('[data-duty-message-id="11"]')).toBeInViewport();
+        await expect(
+          column.getByRole('button', { name: 'needle loaded result', exact: true }),
+        ).toHaveAttribute('aria-pressed', 'true');
+      }
+    } finally {
+      release();
+    }
   });
 }
 

@@ -178,6 +178,24 @@ export function DutySearchPanel({
         listRef.current?.closest('section')?.querySelector<HTMLInputElement>('input')?.focus();
     } else rememberPositionRef.current();
   }, [search.open, autoFocus]);
+  useEffect(() => {
+    if (!search.open) return;
+    const onEscape = (event: KeyboardEvent) => {
+      const trigger = listRef.current
+        ?.closest('[data-duty-feed-column]')
+        ?.querySelector('[id^="duty-search-trigger-"]');
+      if (
+        event.key === 'Escape' &&
+        !event.defaultPrevented &&
+        (event.target === document.body || event.target === trigger)
+      ) {
+        event.preventDefault();
+        search.onClose();
+      }
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [search.open, search.onClose]);
   const navigate = (index: number) => {
     const item = state.items[index];
     if (item) {
