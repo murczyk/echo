@@ -69,7 +69,14 @@ async function download(
   }
 }
 
-function remember(url: string, entry: { objectUrl: string; bytes: number }) {
+// Returns the object URL to show. A route that is already cached keeps its entry: tiles may hold that URL, and the new
+// download, which no tile has seen, is dropped instead of being counted twice.
+function remember(url: string, entry: { objectUrl: string; bytes: number }): string {
+  const existing = cachedGalleryThumbnail(url);
+  if (existing != null) {
+    URL.revokeObjectURL(entry.objectUrl);
+    return existing;
+  }
   cache.set(url, entry);
   cachedBytes += entry.bytes;
   // Oldest first; the newest entry stays even when it alone is over the cap.
@@ -80,6 +87,7 @@ function remember(url: string, entry: { objectUrl: string; bytes: number }) {
     cachedBytes -= evicted.bytes;
     URL.revokeObjectURL(evicted.objectUrl);
   }
+  return entry.objectUrl;
 }
 
 // Marks a route as in use by a mounted tile until the returned function is called.
@@ -123,8 +131,7 @@ export function requestGalleryThumbnail(url: string): {
       promise: download(url, controller.signal)
         .then((downloaded) => {
           failedAt.delete(url);
-          remember(url, downloaded);
-          return downloaded.objectUrl;
+          return remember(url, downloaded);
         })
         .catch((reason: unknown) => {
           if (!controller.signal.aborted) failedAt.set(url, Date.now());

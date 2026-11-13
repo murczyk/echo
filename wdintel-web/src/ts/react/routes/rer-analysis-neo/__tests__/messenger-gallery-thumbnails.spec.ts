@@ -148,6 +148,15 @@ describe('gallery thumbnail cache', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:t1');
   });
 
+  it('keeps the cached entry when a route is downloaded again', async () => {
+    fetchMock.mockResolvedValue(answer(200));
+    await expect(requestGalleryThumbnail('/t/1').promise).resolves.toBe('blob:t1');
+    await expect(requestGalleryThumbnail('/t/1').promise).resolves.toBe('blob:t1');
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:t2');
+    expect(cachedGalleryThumbnail('/t/1')).toBe('blob:t1');
+  });
+
   it('keeps a single entry that is over the cap by itself', async () => {
     fetchMock.mockImplementation(async () => ({
       ...answer(200),
