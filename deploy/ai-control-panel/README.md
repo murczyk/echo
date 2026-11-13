@@ -65,8 +65,9 @@ runs the same preview and upgrade as
 `just ai-control-panel upgrade --host <server> --release <required> [--dry-run]`,
 then checks again. It runs the deploying checkout's `control.py` directly, so it
 needs no local Rust build. The panel runs in its own session and writes a
-session log, whose path is printed; Ctrl-C asks it to stop at a safe boundary
-and waits until it has. The deploy exits 1 with a 🔴 message and notification
+session log, whose path is printed. Ctrl-C, SIGTERM or SIGHUP ask it to stop at
+a safe boundary, and the deploy keeps reading its output until it has, even if
+the terminal is gone. The deploy exits 1 with a 🔴 message and notification
 when the preview, upgrade or final check fails or the status is unknown. The
 application deploy itself has succeeded by then. `--silent` suppresses
 deployment notifications, not the harness output.

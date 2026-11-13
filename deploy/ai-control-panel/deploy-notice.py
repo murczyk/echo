@@ -94,23 +94,32 @@ def deployment_notice(controller, host):
             f'  {command} --dry-run\n  {command}')
 
 
+def say(text, stream=None, end='\n'):
+    """Print, ignoring a terminal that has gone away; the panel must still be waited for."""
+    try:
+        print(text, file=stream or sys.stdout, end=end, flush=True)
+    except (OSError, ValueError):
+        pass
+
+
 def show(event, host, release):
     if isinstance(event.get('message'), str):
-        print(event['message'], flush=True)
+        say(event['message'])
     for row in event.get('hosts', []) if isinstance(event.get('hosts'), list) else []:
         if row.get('host') == host:
             status = row.get('eligibility', {}).get(release) or row.get('routing_error') or 'Unknown compatibility'
-            print(f"{host} | {row.get('agent_host', 'agent host unknown')} | {row.get('namespace')} | "
-                  f"{row.get('deployed', '?')} | requires {row.get('required_release', 'unknown')} | "
-                  f'target {release}: {status}', flush=True)
+            say(f"{host} | {row.get('agent_host', 'agent host unknown')} | {row.get('namespace')} | "
+                f"{row.get('deployed', '?')} | requires {row.get('required_release', 'unknown')} | "
+                f'target {release}: {status}')
 
 
 def run_panel(repo, host, release, dry_run):
     """Run the control panel's upgrade for one host, as `just ai-control-panel` does; True on success.
 
     The checkout's control.py does the work, so no local Rust build is needed or
-    can be stale. It runs in its own session: Ctrl-C only asks it to stop at a
-    safe boundary, and this keeps waiting until it has.
+    can be stale. It runs in its own session, so signals reach only this process:
+    Ctrl-C, SIGTERM and SIGHUP ask the panel to stop at a safe boundary, and
+    this keeps draining its output until it has, even after the terminal is gone.
     """
     directory = repo / '.dev-runtime/ai-control-panel'
     directory.mkdir(parents=True, exist_ok=True)
@@ -124,12 +133,12 @@ def run_panel(repo, host, release, dry_run):
         if not interrupted:
             interrupted = True
             cancel_file.write_text('cancel')
-            print('Cancellation requested; waiting for a safe boundary.', file=sys.stderr, flush=True)
+            say('Cancellation requested; waiting for a safe boundary.', sys.stderr)
 
-    previous = signal.signal(signal.SIGINT, cancel)
+    previous = {number: signal.signal(number, cancel) for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
         with tempfile.NamedTemporaryFile('w', prefix='echo-ai-control-panel-', suffix='.log', delete=False) as log:
-            print(f'AI control panel log: {log.name}', flush=True)
+            say(f'AI control panel log: {log.name}')
             # The executable only probes a local dev instance in the fleet scan, as in `just ai-control-panel`.
             process = subprocess.Popen(
                 [sys.executable, str(repo / 'deploy/ai-control-panel/control.py'), 'upgrade', '--repo', str(repo),
@@ -145,14 +154,15 @@ def run_panel(repo, host, release, dry_run):
                 try:
                     event = json.loads(line)
                 except ValueError:
-                    print(line, end='', flush=True)
+                    say(line, end='')
                     continue
                 if isinstance(event, dict):
                     failed |= event.get('error') is True
                     show(event, host, release)
             status = process.wait()
     finally:
-        signal.signal(signal.SIGINT, previous)
+        for number, handler in previous.items():
+            signal.signal(number, handler)
         cancel_file.unlink(missing_ok=True)
     return status == 0 and not failed and not interrupted
 
