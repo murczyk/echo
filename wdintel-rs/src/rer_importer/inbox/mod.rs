@@ -6385,7 +6385,11 @@ mod tests {
             &env.dbx,
             sigint_unit::ActiveModel {
                 name: Set("Duty count unit".to_string()),
+                army_region: Set("Регіон".to_string()),
+                military_district: Set("Округ".to_string()),
                 army: Set("6 А".to_string()),
+                corps: Set("1 АК".to_string()),
+                division: Set("2 мсд".to_string()),
                 brigade: Set("27 омсбр".to_string()),
                 company: Set("1 мср".to_string()),
                 ..Default::default()
@@ -6541,24 +6545,25 @@ mod tests {
         let enriched = crate::rer_importer::unit_stats::enrich(&env, merged)
             .await
             .unwrap();
-        assert_eq!(
-            enriched
-                .options
-                .iter()
-                .find(|option| option.label == "27 омсбр")
-                .unwrap()
-                .count,
-            1
-        );
-        assert_eq!(
-            enriched
-                .options
-                .iter()
-                .find(|option| option.label == "6 А")
-                .unwrap()
-                .count,
-            1
-        );
+        for label in [
+            "27 омсбр 2 мсд 1 АК 6 А",
+            "2 мсд 1 АК 6 А",
+            "1 АК 6 А",
+            "6 А",
+        ] {
+            assert_eq!(
+                enriched
+                    .options
+                    .iter()
+                    .find(|option| option.label == label)
+                    .unwrap()
+                    .count,
+                1
+            );
+        }
+        assert!(enriched.options.iter().all(|option| {
+            !option.label.contains("Регіон") && !option.label.contains("Округ")
+        }));
         assert_eq!(
             enriched
                 .options

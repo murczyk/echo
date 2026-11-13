@@ -5,6 +5,8 @@ import {
   DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   DEFAULT_MEDIA_SUMMARY_ENABLED,
   DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
+  DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
+  DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
 } from './duty-settings-defaults';
 import {
   USER_SETTINGS_UPDATED_EVENT,
@@ -44,6 +46,8 @@ export type DutySettingsHook = DutySettingsValue & {
   setMessageSortBy: (value: MessageTimeBasis) => void;
   setMessageAutoParseEnabled: (value: boolean) => void;
   setMinimalReportWindowEnabled: (value: boolean) => void;
+  setDutyRememberReportGroup: (value: boolean) => void;
+  setAnalysisRememberReportGroup: (value: boolean) => void;
   setImportantOnlyMyOrganism: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
   retryLoad: () => void;
@@ -75,6 +79,10 @@ function normalizeDutySettings(
     messageAutoParseEnabled:
       settings?.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
     minimalReportWindowEnabled: settings?.minimalReportWindowEnabled ?? false,
+    dutyRememberReportGroup:
+      settings?.dutyRememberReportGroup ?? DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
+    analysisRememberReportGroup:
+      settings?.analysisRememberReportGroup ?? DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
     importantOnlyMyOrganism: settings?.importantOnlyMyOrganism ?? false,
   };
 }
@@ -223,6 +231,10 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, messageAutoParseEnabled: value })),
     setMinimalReportWindowEnabled: (value) =>
       setSettings((current) => ({ ...current, minimalReportWindowEnabled: value })),
+    setDutyRememberReportGroup: (value) =>
+      setSettings((current) => ({ ...current, dutyRememberReportGroup: value })),
+    setAnalysisRememberReportGroup: (value) =>
+      setSettings((current) => ({ ...current, analysisRememberReportGroup: value })),
     setImportantOnlyMyOrganism: (value) =>
       setSettings((current) => ({ ...current, importantOnlyMyOrganism: value })),
     scheduleSave,

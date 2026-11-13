@@ -1,5 +1,14 @@
 {
   "migrations": {
+    "echo:m20261113_093453_report_group_preferences": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20261112_141106_attachment_order": {
       "changes": [
         { "table": "public.signal_message_media", "strategy": "cdc_additive" },

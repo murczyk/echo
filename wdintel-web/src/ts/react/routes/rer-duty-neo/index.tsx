@@ -136,6 +136,7 @@ export function RerDutyNeoPage({
     mediaSummaryEnabled,
     messageTextPreviewLines,
     minimalReportWindowEnabled,
+    rememberReportGroup,
     importantOnlyMyOrganism,
   } = useRerDutyPageSettings();
   const requestEditorIntent = useCallback(
@@ -893,6 +894,7 @@ export function RerDutyNeoPage({
           }}
         >
           <ReplyMessageEditor
+            rememberReportGroup={rememberReportGroup}
             replyTarget={replyTarget}
             timeBasis="creation"
             ref={editorRef}

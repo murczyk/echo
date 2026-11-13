@@ -20,6 +20,7 @@ type Props = {
   busy: boolean;
   isEditMode: boolean;
   isReportMode?: boolean;
+  rememberReportGroup?: boolean;
   groupEditable?: boolean;
   groupLocked?: boolean;
   cyberEchoEnabled: boolean;
@@ -36,6 +37,7 @@ export function SystemSection({
   busy,
   isEditMode,
   isReportMode = false,
+  rememberReportGroup = true,
   groupEditable = false,
   groupLocked = false,
   cyberEchoEnabled,
@@ -140,7 +142,9 @@ export function SystemSection({
                   );
                 }
                 field.onChange(masterKey);
-                if (isReportMode && !isEditMode) rememberReportDestination(masterKey);
+                if (isReportMode && !isEditMode && rememberReportGroup) {
+                  rememberReportDestination(masterKey);
+                }
               }}
               renderInput={(params) => (
                 <TextField

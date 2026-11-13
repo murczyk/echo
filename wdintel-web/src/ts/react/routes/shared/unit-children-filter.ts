@@ -1,6 +1,6 @@
 import type { Unit } from '../../../../Bindings';
 import { getUnitIdFilterValue } from '../../utils/unit-search';
-import { buildUnitHierarchyTree, type TreeNode } from './unit-hierarchy';
+import { buildUnitHierarchyTree, HIERARCHY_KEYS, type TreeNode } from './unit-hierarchy';
 
 export type UnitCountOption = {
   value: string;
@@ -52,7 +52,12 @@ export function indexUnitHierarchyTree(
     index.children.set(value, descendants);
     index.exact.set(value, directUnits);
     if (node.children.some((child) => child.kind === 'group') || directUnits.length > 1) {
-      index.parents.push({ value, label: node.label, descendants });
+      const label = HIERARCHY_KEYS.slice(2)
+        .map((key) => node.hierarchy[key]?.trim())
+        .filter(Boolean)
+        .reverse()
+        .join(' ');
+      index.parents.push({ value, label, descendants });
     }
     return descendants;
   };

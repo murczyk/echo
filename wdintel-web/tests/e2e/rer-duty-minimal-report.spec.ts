@@ -13,7 +13,10 @@ const COPIED_TEXT = 'E2E copied original body';
 async function openThreeColumnDuty(
   page: Page,
   minimalReportWindowEnabled: boolean,
-  enableDutySearch = false,
+  {
+    enableDutySearch = false,
+    dutyRememberReportGroup = true,
+  }: { enableDutySearch?: boolean; dutyRememberReportGroup?: boolean } = {},
 ) {
   await page.setViewportSize({ width: 1920, height: 1000 });
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({ messageText: SOURCE_TEXT });
@@ -38,6 +41,7 @@ async function openThreeColumnDuty(
         ...settings,
         messageCardQuickAction: 'createReport',
         minimalReportWindowEnabled,
+        dutyRememberReportGroup,
       }),
     });
   });
@@ -85,6 +89,25 @@ function columnBoxes(page: Page) {
 }
 
 test.describe('#4008 minimal report window', () => {
+  test('ignores the remembered destination when Duty group memory is disabled', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
+    await openThreeColumnDuty(page, true, { dutyRememberReportGroup: false });
+    await openReportFromColumn(page, 1);
+    const panel = page.locator('[data-manage-message-presentation="minimal"]');
+    await expect(panel.getByText('Без надсилання в групу.')).toBeVisible();
+    const body = panel.getByRole('textbox', { name: 'Текст розвіддонесення' });
+    await body.fill('Report without a remembered group');
+    const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+    await body.press('Control+Enter');
+    expect((await submitted).postDataJSON().signal_group_master_key).toBeNull();
+    await expect(panel).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('echo_lastReportDestination'))).toBe(
+      'e2e-group',
+    );
+  });
+
   test('@regression #4103 uses and displays the remembered report destination', async ({
     page,
   }) => {
@@ -156,7 +179,7 @@ test.describe('#4008 minimal report window', () => {
   test('expands into the full side panel and keeps the draft', async ({ page }) => {
     const cpu = await page.context().newCDPSession(page);
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-    await openThreeColumnDuty(page, true, true);
+    await openThreeColumnDuty(page, true, { enableDutySearch: true });
     const source = page.locator('[data-duty-feed-column]').nth(2);
     await source.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
     await source.getByRole('combobox', { name: /пошук/i }).fill('E2E');

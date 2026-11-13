@@ -34824,6 +34824,8 @@ type alias UserDutySettingsDto =
     , messageAutoParseEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
     , minimalReportWindowEnabled : Bool
+    , dutyRememberReportGroup : Bool
+    , analysisRememberReportGroup : Bool
     , importantOnlyMyOrganism : Bool
     }
 
@@ -34849,4 +34851,6 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiPositionHighlightsEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "analysisRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]))
