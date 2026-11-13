@@ -124,7 +124,7 @@ fn instructions_are_trimmed_cleared_when_blank_and_bounded_4095() {
 
 async fn set_flag(dbx: &DatabaseConnection, enabled: bool) {
     dbx.execute_raw(sql(
-        "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_test_enabled, rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, false, 0, 1, 5, $1, now() at time zone 'utc' + interval '1 day')",
+        "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, 5, $1, now() at time zone 'utc' + interval '1 day')",
         vec![enabled.into()],
     ))
     .await

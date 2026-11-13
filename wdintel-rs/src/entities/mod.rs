@@ -157,6 +157,7 @@ pub mod login;
 pub mod login_totp;
 pub mod media_summary;
 pub mod media_summary_settings;
+pub mod message_replay_session;
 pub mod message_reply;
 pub mod message_reply_change;
 pub mod message_reply_source;

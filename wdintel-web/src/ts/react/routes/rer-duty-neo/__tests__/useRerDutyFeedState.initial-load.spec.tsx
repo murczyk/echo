@@ -318,10 +318,6 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.systemSettingsCurrent.mockResolvedValueOnce({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: true,
     });
@@ -409,10 +405,6 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.systemSettingsCurrent.mockResolvedValueOnce({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: true,
     });
@@ -456,10 +448,6 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.systemSettingsCurrent.mockResolvedValueOnce({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: true,
     });
