@@ -23,6 +23,7 @@ import {
 import {
   providerCompletion,
   ResearchBudget,
+  terminalProviderFailure,
   validateExecutionPolicy,
   type ExecutionPolicy,
 } from "./execution-policy.ts";
@@ -932,6 +933,14 @@ for (const [scenario, modelName] of [
     ) {
       assert.equal(synthesisCalls, 2);
       assert.equal(diagnostics.at(-1).outcome, "complete");
+    }
+    if (scenario === "retry-citation") {
+      // Incident 01a1d391: the log must say which check rejected the synthesis.
+      const rejected = diagnostics.find(
+        (event) => event.stage === "synthesis" && event.outcome === "citation_rejected",
+      );
+      // Its only link is to a message that was not retrieved, so it cites no source.
+      assert.equal(rejected.draftIssue, "no_citation");
     }
     if (scenario === "retry-deadline") {
       assert.equal(synthesisCalls, 1);
@@ -1954,15 +1963,90 @@ test("incident 01a1b210: a model failure before any tool gets one more attempt",
   );
 });
 
+/** Model calls the runner made, by the purpose Echo's gateway sees. */
+function modelCalls(purpose: "research" | "synthesis"): number {
+  return (globalThis.fetch as any).mock.calls.filter((call: any) => {
+    if (!String(call.arguments[0]).endsWith("/chat/completions")) return false;
+    const synthesis = new Headers(call.arguments[1].headers).get("x-echo-ai-purpose") === "synthesis";
+    return purpose === "synthesis" ? synthesis : !synthesis;
+  }).length;
+}
+
+/** The snapshots the run wrote before it failed. */
+function snapshots(): unknown[] {
+  return (process.stdout.write as any).mock.calls.filter((call: any) =>
+    String(call.arguments[0]).startsWith('{"type":"assistant_snapshot"'),
+  );
+}
+
 test("incident 01a1b210: a repeated failure stops after one extra attempt", async (t) => {
-  const { reads, reason, researchCalls } = await researchWithProviderScript(t, [
-    () => providerRejection(400, "unexpected model state"),
-    () => providerRejection(400, "unexpected model state"),
-    readArchive,
-  ]);
-  assert.equal(researchCalls, 2);
-  assert.equal(reads.length, 0);
-  assert.equal(reason, "provider_error");
+  // Incident 01a1d35e: research that gathered nothing fails as a provider failure, so
+  // the chat offers a retry or another model instead of a synthesis without evidence.
+  await assert.rejects(
+    researchWithProviderScript(t, [
+      () => providerRejection(400, "unexpected model state"),
+      () => providerRejection(400, "unexpected model state"),
+      readArchive,
+    ]),
+    (error: unknown) => terminalProviderFailure(error)?.failureKind === "provider_error",
+  );
+  assert.equal(modelCalls("research"), 2);
+  assert.equal(modelCalls("synthesis"), 0);
+  assert.deepEqual(snapshots(), []);
+});
+
+test("incident 01a1d35e: a model without a ready deployment gets no second start", async (t) => {
+  // The gateway's cooldown answer, on a status pi does not retry so the test needn't
+  // wait out pi's backoff; the runner classifies the text as a rate limit either way.
+  await assert.rejects(
+    researchWithProviderScript(t, [
+      () =>
+        providerRejection(
+          400,
+          "No deployments available for selected model, Try again in 60 seconds. Passed model=glm-5.3-flash-uncensored",
+        ),
+      readArchive,
+      () => stream("Готово."),
+    ]),
+    (error: unknown) => terminalProviderFailure(error)?.failureKind === "rate_limit",
+  );
+  assert.equal(modelCalls("research"), 1);
+  assert.equal(modelCalls("synthesis"), 0);
+  assert.deepEqual(snapshots(), []);
+});
+
+test("incident 01a1d35e: restored findings still reach synthesis when research fails", async (t) => {
+  // A follow-up carries the previous request's saved findings: synthesis can answer
+  // from them, so the request is not failed as a provider outage.
+  const { synthesisBodies } = await researchWithProviderScript(
+    t,
+    [
+      () => providerRejection(400, "unexpected model state"),
+      () => providerRejection(400, "unexpected model state"),
+    ],
+    policy,
+    { workMemory: { version: 1, recap: `Saved botanical survey: ${draft}`, ...sources } },
+  );
+  assert.equal(synthesisBodies.length > 0, true);
+  assert.ok(synthesisBodies[0].includes("Saved botanical survey"));
+});
+
+test("incident 01a1d35e: a provider that answers after a cooldown gets the usual re-prompt", () => {
+  const research = new FlashResearch(() => sources);
+  const attempt = (message: unknown) => {
+    // Set by beforeProvider for each research call.
+    (research as any).researchStartedAt = Date.now();
+    research.researchCompleted(message);
+  };
+  const cooldown = { stopReason: "error", errorMessage: "429 No deployments available for selected model", content: [] };
+  const failure = { stopReason: "error", errorMessage: "400 unexpected model state", content: [] };
+  attempt(cooldown);
+  assert.equal(research.noteFailedStart(failure), false);
+  // A private update_research call succeeded: the model has a deployment again.
+  attempt({ stopReason: "toolUse", content: [{ type: "toolCall", name: "update_research" }] });
+  attempt(failure);
+  assert.equal(research.noteFailedStart(failure), true);
+  assert.equal(research.providerNeverAnswered, false);
 });
 
 test("incident 01a1b210: a failure after work started keeps the evidence and does not retry", async (t) => {
@@ -2103,6 +2187,18 @@ test("incident 01a1c4a5: Deep delivers the reply, not the note confirming no sea
   assert.equal(researchCalls, 2);
   assert.equal(synthesisBodies.length, 0);
   assert.equal(answer, CSV);
+});
+
+test("incident 01a1d35e: a provider failure after Deep's reply still delivers an answer", async (t) => {
+  // The provider answered once, so the run is not a provider outage: the failed search
+  // reminder must not discard the request.
+  const { answer } = await researchWithProviderScript(
+    t,
+    [() => stream(CSV), () => providerRejection(400, "unexpected model state")],
+    deepPolicy,
+    ticketFollowUp,
+  );
+  assert.ok(answer);
 });
 
 test("incident 01a1c4a5: after a failed start the retry's reply is the answer", async (t) => {

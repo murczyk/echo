@@ -359,6 +359,11 @@ export class FlashResearch {
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
   private startFailed = false;
+  // The gateway answered a call before the first tool with a cooldown (429): no
+  // deployment of the model was ready, and pi's retries already waited it out.
+  private startCooldown = false;
+  // Some research call got an answer from the provider, even one without a tool call.
+  private providerAnswered = false;
   private readonly groupProblems = new Set<string>();
   private readonly groupsRead = new Set<string>();
   private readonly actions = new Map<string, CompletedAction>();
@@ -624,14 +629,32 @@ export class FlashResearch {
 
   // Deep was asked for more effort, so it must not simply end on an answer from memory.
   // A provider failure before the first tool call loses no work, so one more
-  // attempt beats telling the user to repeat the request.
+  // attempt beats telling the user to repeat the request. Not after a cooldown: the
+  // gateway had no deployment of the model, and another attempt only waits out
+  // another one (incident 01a1d35e).
   noteFailedStart(message?: { stopReason?: unknown; errorMessage?: unknown }): boolean {
     const failure = completionFailure(message?.errorMessage);
     this.startFailed =
       message?.stopReason === "error" &&
       this.publicToolRuns === 0 &&
+      !this.startCooldown &&
       (failure === "provider_error" || failure === "transient_error");
     return this.startFailed;
+  }
+
+  /**
+   * Every research call failed at the provider and nothing was saved: synthesis would
+   * have no evidence and only the same failing model. A reply the provider did give,
+   * such as Deep's answer before its search reminder, keeps the usual completion.
+   */
+  get providerNeverAnswered(): boolean {
+    return (
+      !this.providerAnswered &&
+      this.publicToolRuns === 0 &&
+      this.retrievals === 0 &&
+      !this.state &&
+      !this.draft
+    );
   }
 
   private get failedStart(): boolean {
@@ -669,9 +692,17 @@ export class FlashResearch {
     if (this.researchStartedAt === undefined) return;
     const durationMs = Date.now() - this.researchStartedAt;
     this.completed("research", durationMs);
+    const completion = providerCompletion(message);
+    // Only the latest outcome counts: a provider that answered after a cooldown has
+    // recovered, so a later failure gets the usual re-prompt.
+    if (["stop", "toolUse", "length"].includes(completion.stopReason ?? "")) {
+      this.providerAnswered = true;
+      this.startCooldown = false;
+    } else if (completion.failureKind === "rate_limit" && this.publicToolRuns === 0)
+      this.startCooldown = true;
     this.diagnostic({
       stage: "research",
-      ...providerCompletion(message),
+      ...completion,
       durationMs,
       remainingMs: budget?.remainingTotalMs(),
     });
@@ -785,9 +816,11 @@ export class FlashResearch {
     const answer = validatedFlashAnswer(candidate, this.sources());
     if (candidate && !answer) {
       outcome = "citation_rejected";
+      const draftIssue = answerIssue(candidate, this.sources());
       this.diagnostic({
         stage: "synthesis",
         outcome,
+        ...(draftIssue ? { draftIssue } : {}),
         attempt,
         durationMs,
         remainingMs: budget.remainingFinalizationMs(),
