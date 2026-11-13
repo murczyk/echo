@@ -1132,12 +1132,20 @@ async fn effective_queue_snapshot_attachments(
         return Ok(vec![]);
     }
     if !item.attachments.is_empty() {
-        return Ok(trim_echo_attachment_batch_for_queue(
+        let attachments = trim_echo_attachment_batch_for_queue(
             item.attachments.clone(),
             previous_attachment_count,
             datasource_id,
             item.internal_id,
-        ));
+        );
+        return crate::messenger::attachments::order_echo_snapshot(
+            txn,
+            datasource_id,
+            item.internal_id,
+            attachments,
+        )
+        .await
+        .c(h!());
     }
     if let Some(attachments) =
         crate::messenger::attachments::load_latest_echo_attachment_batch(
@@ -1244,23 +1252,19 @@ fn queue_snapshot_matches(
 fn queue_attachment_snapshot(
     attachments: &[signal_message_queue_attachment::Model],
 ) -> Vec<(String, Option<String>)> {
-    let mut snapshot = attachments
+    attachments
         .iter()
         .map(|attachment| (attachment.path.clone(), attachment.name.clone()))
-        .collect::<Vec<_>>();
-    snapshot.sort();
-    snapshot
+        .collect()
 }
 
 fn message_attachment_snapshot(
     attachments: &[echo_im::types::MessageAttachmentF1],
 ) -> Vec<(String, Option<String>)> {
-    let mut snapshot = attachments
+    attachments
         .iter()
         .map(|attachment| (attachment.path.clone(), attachment.name.clone()))
-        .collect::<Vec<_>>();
-    snapshot.sort();
-    snapshot
+        .collect()
 }
 
 async fn list_clients(
@@ -1785,17 +1789,17 @@ mod tests {
         };
         let existing_attachments = vec![
             signal_message_queue_attachment::Model {
-                id: 2,
-                message_id: 1,
-                path: "/tmp/b.txt".to_string(),
-                name: Some("b.txt".to_string()),
-                created_at: message.timestamp,
-            },
-            signal_message_queue_attachment::Model {
                 id: 1,
                 message_id: 1,
                 path: "/tmp/a.txt".to_string(),
                 name: Some("a.txt".to_string()),
+                created_at: message.timestamp,
+            },
+            signal_message_queue_attachment::Model {
+                id: 2,
+                message_id: 1,
+                path: "/tmp/b.txt".to_string(),
+                name: Some("b.txt".to_string()),
                 created_at: message.timestamp,
             },
         ];
@@ -2244,6 +2248,152 @@ mod tests {
         pool::process_queue(&mut pool, queue, attachments, datasources)
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3931_queue_propagates_echo_attachment_id_order() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let inbox = mk_echo_inbox_message(&env.dbx, account.id).await;
+        for path in ["/tmp/c.txt", "/tmp/a.txt", "/tmp/b.txt"] {
+            mk_echo_attachment(
+                &env.dbx,
+                account.id,
+                inbox.id,
+                path,
+                Some(path),
+            )
+            .await;
+        }
+        let mut snapshot =
+            test_message(inbox.id, "attachment order #3931", false);
+        snapshot.attachments = ["/tmp/b.txt", "/tmp/c.txt", "/tmp/a.txt"]
+            .iter()
+            .map(|path| echo_im::types::MessageAttachmentF1 {
+                path: String::from(*path),
+                name: Some(String::from(*path)),
+            })
+            .collect();
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(&snapshot, datasource.id, &txn)
+            .await
+            .unwrap();
+        let (_, attachments) =
+            load_signal_message_queue_snapshot(&txn, datasource.id, inbox.id)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            attachments
+                .iter()
+                .map(|attachment| attachment.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/tmp/c.txt", "/tmp/a.txt", "/tmp/b.txt"]
+        );
+        for (stored, incoming) in attachments.iter().zip(&snapshot.attachments)
+        {
+            signal_message_queue_attachment::ActiveModel {
+                id: Set(stored.id),
+                path: Set(incoming.path.clone()),
+                name: Set(incoming.name.clone()),
+                ..Default::default()
+            }
+            .update(&txn)
+            .await
+            .unwrap();
+        }
+        assert!(upsert_signal_message_queue_snapshot(
+            &snapshot,
+            datasource.id,
+            &txn
+        )
+        .await
+        .unwrap());
+        let attachments = attachments
+            .into_iter()
+            .map(|attachment| echo_im::types::MessageAttachmentF1 {
+                path: attachment.path,
+                name: attachment.name,
+            })
+            .collect::<Vec<_>>();
+        snapshot.attachments.extend(snapshot.attachments.clone());
+        assert!(!upsert_signal_message_queue_snapshot(
+            &snapshot,
+            datasource.id,
+            &txn
+        )
+        .await
+        .unwrap());
+        let (_, repeated) =
+            load_signal_message_queue_snapshot(&txn, datasource.id, inbox.id)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            repeated
+                .iter()
+                .map(|attachment| (&attachment.path, &attachment.name))
+                .collect::<Vec<_>>(),
+            attachments
+                .iter()
+                .map(|attachment| (&attachment.path, &attachment.name))
+                .collect::<Vec<_>>()
+        );
+
+        let source =
+            crate::functest::tests::mk_signal_message(&txn, Default::default())
+                .await
+                .unwrap();
+        for index in 0..3 {
+            signal_message_media::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                signal_message_id: Set(source.id),
+                content_type: Set("text/plain".to_string()),
+                file_name: Set(Some(format!("{index}.txt"))),
+                size_bytes: Set(1),
+                is_encrypted: Set(false),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await
+            .unwrap();
+        }
+        let reconciled =
+            crate::messenger::reconcile::effective_snapshot_attachments(
+                &txn,
+                datasource.id,
+                &snapshot,
+                source.id,
+            )
+            .await
+            .unwrap();
+        assert_eq!(reconciled, attachments);
+
+        let duplicate = attachments[0].clone();
+        echo_attachment::ActiveModel {
+            account_id: Set(account.id),
+            message_id: Set(inbox.id),
+            path: Set(duplicate.path.clone()),
+            name: Set(duplicate.name.clone()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        snapshot.attachments = attachments;
+        snapshot.attachments.push(duplicate);
+        let reconciled =
+            crate::messenger::reconcile::effective_snapshot_attachments(
+                &txn,
+                datasource.id,
+                &snapshot,
+                source.id,
+            )
+            .await
+            .unwrap();
+        assert_eq!(reconciled, snapshot.attachments);
+        txn.rollback().await.unwrap();
     }
 
     #[tokio::test]

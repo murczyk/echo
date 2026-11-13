@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package documentation media and publish a copy to each Echo S3 destination."""
+"""Package, download, and publish documentation media in Echo S3 destinations."""
 
 import argparse
 import json
@@ -8,11 +8,15 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 EXTENSIONS = "mp4 webm jpg jpeg png mp3 gif svg ico"
 SOURCE_ROOTS = ("docs/releases", "docs/static")
+UPLOAD_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
+UPLOAD_REGION = "eu-central-003"
+UPLOAD_BUCKETS = ("echouastaging", "echouastoragecbr", "echouastorage")
 
 
 def media_files(repository, only, extensions):
@@ -38,30 +42,6 @@ def media_files(repository, only, extensions):
     return selected
 
 
-def server_config(server, config_directory):
-    if config_directory:
-        source = (Path(config_directory) / f"{server}.toml").read_text()
-    else:
-        result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", server,
-             "cat /etc/echo/config.toml"], capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode:
-            raise ValueError(f"{server}: could not read existing server configuration")
-        source = result.stdout
-    result = subprocess.run(
-        ["tq", "--output", "json", "s3_config"], input=source,
-        capture_output=True, text=True, check=False,
-    )
-    if result.returncode:
-        raise ValueError(f"{server}: could not parse S3 configuration")
-    config = json.loads(result.stdout)
-    required = ("s3_bucket", "s3_endpoint", "s3_region", "s3_access_key_id", "s3_secret_access_key")
-    if not isinstance(config, dict) or any(not config.get(key) for key in required):
-        raise ValueError(f"{server}: incomplete S3 configuration")
-    return config
-
-
 def s5cmd(config, *arguments):
     environment = os.environ.copy()
     environment.update(
@@ -76,7 +56,7 @@ def s5cmd(config, *arguments):
     )
 
 
-def existing_keys(server, config, destination):
+def existing_keys(bucket, config, destination):
     result = s5cmd(config, "--json", "ls", destination + "*")
     if result.returncode:
         try:
@@ -91,20 +71,20 @@ def existing_keys(server, config, destination):
         )
         if empty:
             return set()
-        raise ValueError(f"{server}: could not list documentation media")
+        raise ValueError(f"{bucket}: could not list documentation media")
     keys = set()
     for line in result.stdout.splitlines():
         entry = json.loads(line)
         key = entry.get("key") if isinstance(entry, dict) else None
         if not isinstance(key, str) or not key.startswith(destination):
-            raise ValueError(f"{server}: invalid documentation media listing")
+            raise ValueError(f"{bucket}: invalid documentation media listing")
         keys.add(key)
     return keys
 
 
-def upload_server(server, config, files, force):
+def upload_bucket(bucket, config, files, force):
     destination = f"s3://{config['s3_bucket'].rstrip('/')}/doc-media/"
-    existing = set() if force else existing_keys(server, config, destination)
+    existing = set() if force else existing_keys(bucket, config, destination)
     uploaded = skipped = failed = 0
     for relative, source in files.items():
         remote = destination + relative
@@ -114,36 +94,114 @@ def upload_server(server, config, files, force):
         result = s5cmd(config, "cp", str(source), remote)
         if result.returncode:
             failed += 1
-            print(f"{server}: upload failed: {relative}", file=sys.stderr)
+            print(f"{bucket}: upload failed: {relative}", file=sys.stderr)
         else:
             uploaded += 1
-    print(f"{server}: selected={len(files)} uploaded={uploaded} skipped={skipped} failed={failed}")
+    print(f"{bucket}: selected={len(files)} uploaded={uploaded} skipped={skipped} failed={failed}")
     return failed == 0
 
 
+def bucket_configuration(bucket):
+    access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+    secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    if not access_key or not secret_key:
+        raise ValueError(
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required. "
+            f"Look for '{bucket}-lfs backblaze' in Bitwarden, as in goi/justfile."
+        )
+    return {
+        "s3_bucket": bucket,
+        "s3_endpoint": UPLOAD_ENDPOINT,
+        "s3_region": UPLOAD_REGION,
+        "s3_access_key_id": access_key,
+        "s3_secret_access_key": secret_key,
+    }
+
+
 def release(arguments):
-    for command in ("ssh", "tq", "s5cmd"):
-        if not shutil.which(command):
-            raise ValueError(f"required command is missing: {command}")
+    config = bucket_configuration(arguments.bucket)
+    if not shutil.which("s5cmd"):
+        raise ValueError("required command is missing: s5cmd")
     files = media_files(REPOSITORY, arguments.only, arguments.extensions.split())
     if not files:
         raise ValueError("no documentation media selected")
-    servers = list(dict.fromkeys(arguments.servers.split()))
-    if not servers or any(not server or server.startswith("-") or "/" in server for server in servers):
-        raise ValueError("invalid or empty server inventory")
-    configurations = {server: server_config(server, arguments.config_dir) for server in servers}
-    failed = []
-    for server, config in configurations.items():
+    if not upload_bucket(arguments.bucket, config, files, arguments.force):
+        raise ValueError(f"incomplete destination: {arguments.bucket}")
+
+
+def download_roots(only):
+    if not only:
+        return SOURCE_ROOTS
+    root = Path(only)
+    root = root if root.is_absolute() else REPOSITORY / root
+    if not root.resolve().is_relative_to(REPOSITORY):
+        raise ValueError("media directory must be inside the repository")
+    relative = root.resolve().relative_to(REPOSITORY).as_posix()
+    if not any(relative == source or relative.startswith(source + "/") for source in SOURCE_ROOTS):
+        raise ValueError("download directory must be inside docs/releases or docs/static")
+    if any(character in relative for character in "\n\r\0\\*?["):
+        raise ValueError("invalid media directory")
+    return (relative,)
+
+
+def download_destination(relative):
+    if any(part in ("", ".", "..") for part in relative.split("/")) or any(
+        character in relative for character in "\n\r\0\\*?["
+    ):
+        raise ValueError("invalid documentation media path")
+    destination = REPOSITORY / relative
+    if destination.is_symlink() or destination.resolve() != destination:
+        raise ValueError("media symlinks are not supported")
+    return destination
+
+
+def download_file(config, remote, destination, force):
+    if destination.exists() and not force:
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".doc-media-", dir=destination.parent) as directory:
+        temporary = Path(directory) / destination.name
+        result = s5cmd(config, "cp", remote, str(temporary))
+        if result.returncode:
+            raise ValueError("media download failed")
+        if force:
+            temporary.replace(destination)
+        else:
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                return False
+    return True
+
+
+def download(arguments):
+    if not shutil.which("s5cmd"):
+        raise ValueError("required command is missing: s5cmd")
+    bucket = arguments.bucket
+    roots = download_roots(arguments.only)
+    config = bucket_configuration(bucket)
+    source = f"s3://{config['s3_bucket'].rstrip('/')}/doc-media/"
+    files = {}
+    for root in roots:
+        for remote in sorted(existing_keys(bucket, config, source + root + "/")):
+            relative = remote.removeprefix(source)
+            if Path(relative).suffix.lower().lstrip(".") in EXTENSIONS.split():
+                files[relative] = download_destination(relative)
+    if not files:
+        raise ValueError("no documentation media selected")
+    downloaded = skipped = failed = 0
+    for relative, destination in files.items():
         try:
-            succeeded = upload_server(server, config, files, arguments.force)
-        except (ValueError, subprocess.TimeoutExpired):
-            print(f"{server}: documentation upload failed", file=sys.stderr)
-            succeeded = False
-        if not succeeded:
-            failed.append(server)
-    print(f"Servers: succeeded={len(servers) - len(failed)} failed={len(failed)}")
+            if download_file(config, source + relative, destination, arguments.force):
+                downloaded += 1
+            else:
+                skipped += 1
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            failed += 1
+            print(f"{bucket}: download failed: {relative}", file=sys.stderr)
+    print(f"{bucket}: selected={len(files)} downloaded={downloaded} skipped={skipped} failed={failed}")
     if failed:
-        raise ValueError("incomplete destinations: " + ", ".join(failed))
+        raise ValueError("incomplete downloads")
 
 
 def prepare(arguments):
@@ -172,12 +230,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     publish = commands.add_parser("release")
-    publish.add_argument("--servers", required=True)
     publish.add_argument("--extensions", default=EXTENSIONS)
     publish.add_argument("--only")
     publish.add_argument("--force", action="store_true")
-    publish.add_argument("--config-dir", default=os.environ.get("DOC_MEDIA_CONFIG_DIR"))
     publish.set_defaults(run=release)
+    fetch = commands.add_parser("download")
+    fetch.add_argument("--only")
+    fetch.add_argument("--force", action="store_true")
+    fetch.set_defaults(run=download)
+    for command in (publish, fetch):
+        command.add_argument("--bucket", required=True, choices=UPLOAD_BUCKETS)
     package = commands.add_parser("prepare")
     package.add_argument("--dist")
     package.add_argument("--docs-public")
@@ -189,6 +251,9 @@ def main():
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         print(f"doc-media: {error if isinstance(error, ValueError) else 'operation failed'}", file=sys.stderr)
         return 1
+    finally:
+        if arguments.command == "release":
+            print("Reminder: upload documentation media to all three buckets: " + ", ".join(UPLOAD_BUCKETS))
     return 0
 
 

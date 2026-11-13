@@ -961,6 +961,7 @@ mod tests {
         .await
         .unwrap();
         let media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),

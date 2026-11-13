@@ -42,6 +42,10 @@ import {
   validateSkill,
   validationFields,
   writeModelsFile,
+  normalizePeriodArgument,
+  prepareRouteArguments,
+  schemaArguments,
+  uuidArgument,
 } from "./runner.ts";
 import { createGroupScope, resolveGroups } from "./group-scope.ts";
 import { EDIT_GUIDANCE, MAP_GUIDANCE, MapRegistry } from "./maps.ts";
@@ -1232,7 +1236,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.10.2",
+    harnessRelease: "2026.11.13.1",
   });
 });
 
@@ -2057,4 +2061,161 @@ test("#3913 persists only allowlisted diagnostics even for unlabelled provider p
       ]),
     (error: Error) => error.message.length < 1100,
   );
+});
+
+test("#4125 period repair drops only keys that cannot move the window", () => {
+  const original = { kind: "relative_days", days: 3, timezone: "Europe/Kyiv", sinceDate: null, label: "доба", SENSITIVE: 1 };
+  const snapshot = structuredClone(original);
+  // Only keys known to describe a period are dropped; an unknown one may anchor it.
+  assert.deepEqual(normalizePeriodArgument(original), {
+    period: { kind: "relative_days", days: 3, SENSITIVE: 1 },
+    ignored: ["sinceDate", "timezone", "label"],
+  });
+  // Explicit dates fix a range, so a stray duration beside them is dropped...
+  assert.deepEqual(
+    normalizePeriodArgument({ kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07", days: 2 }),
+    { period: { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07" }, ignored: ["days"] },
+  );
+  // ...but a bound beside a relative period, or a second bound, would move the window.
+  for (const period of [
+    { kind: "relative_days", days: 7, sinceDate: "2026-10-01" },
+    { kind: "relative_days", days: 7, hours: 5 },
+    { kind: "sinceDate", sinceDate: "2026-11-01", days: 2 },
+    { kind: "date_range", sinceDate: "2026-07-01", tillDateInclusive: "2026-07-07", timezone: "EET" },
+    { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07", timezone: "EEST" },
+    { kind: "date_range", sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07", start: "2026-10-01" },
+  ]) {
+    assert.deepEqual(normalizePeriodArgument(period), { period, ignored: [] }, JSON.stringify(period));
+  }
+  const mixed = { days: 7, tillDateInclusive: "2026-10-01" };
+  assert.equal(normalizePeriodArgument(mixed).period, mixed);
+  assert.deepEqual(original, snapshot);
+  for (const [input, kind] of [
+    [{ hours: 24 }, "relative_hours"],
+    [{ days: 7 }, "relative_days"],
+    [{ sinceDate: "2026-11-01", tillDateInclusive: "2026-11-07" }, "date_range"],
+  ] as const) {
+    assert.equal((normalizePeriodArgument(input).period as any).kind, kind);
+  }
+  // A midnight keeps its date only when its offset is Kyiv's on that day.
+  for (const [sinceDate, kept] of [
+    ["2026-11-07T00:00:00+02:00", "2026-11-07"],
+    ["2026-07-01T00:00+03:00", "2026-07-01"],
+    ["2026-11-07T00:00:00Z", "2026-11-07"],
+    ["2026-11-07T00:00:00+03:00", "2026-11-07T00:00:00+03:00"],
+    ["2026-07-01T00:00:00+02:00", "2026-07-01T00:00:00+02:00"],
+  ]) {
+    assert.equal((normalizePeriodArgument({ kind: "date_range", sinceDate, tillDateInclusive: "2026-11-08" }).period as any).sinceDate, kept, sinceDate);
+  }
+  const startEnd = { start: "2026-11-01", end: "2026-11-02" };
+  assert.equal(normalizePeriodArgument(startEnd).period, startEnd);
+  // A bound or another time zone would change what is read, so they stay for a precise rejection.
+  for (const key of ["until", "endDate", "fromTime", "includeToday", "asOf"]) {
+    const period = { kind: "relative_days", days: 3, [key]: "x" };
+    assert.deepEqual(normalizePeriodArgument(period), { period: { kind: "relative_days", days: 3, [key]: "x" }, ignored: [] });
+  }
+  assert.deepEqual((normalizePeriodArgument({ kind: "relative_days", days: 3, timezone: "UTC" }).period as any).timezone, "UTC");
+  const weeks = { kind: "weeks", days: 3, label: "x" };
+  assert.equal(normalizePeriodArgument(weeks).period, weeks);
+});
+
+test("#4125 a rejected period names the field, the allowed fields and an example", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const parameterNames = new Map([["echo_inbox_messages", new Set(["period"])]]);
+  const reject = (period: unknown) => {
+    try {
+      inboxMessagesRequestBody({ period }, context);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    assert.fail("accepted");
+  };
+  const fieldsOf = (message: string) =>
+    validationFields({ content: [{ type: "text", text: `Invalid Echo tool arguments: ${message}` }] }, "echo_inbox_messages", parameterNames);
+  const until = reject({ kind: "relative_days", days: 3, until: "2026-11-08" });
+  assert.match(until, /unsupported field "until" for kind relative_days; allowed fields: kind, days\. Example: /);
+  assert.deepEqual(JSON.parse(until.split("Example: ")[1]), { kind: "relative_days", days: 7 });
+  assert.equal(fieldsOf(until), "period.until:additional");
+  assert.equal(fieldsOf(reject({ kind: "relative_days", days: 3, timezone: "UTC" })), "period.timezone:additional");
+  assert.equal(fieldsOf(reject({ kind: "relative_days", days: 3, SENSITIVE_until: 1 })), "period:additional");
+  const weeks = reject({ kind: "weeks" });
+  assert.match(weeks, /use kind relative_hours, relative_days or date_range/);
+  assert.equal(fieldsOf(weeks), "period:invalid");
+});
+
+test("#4125 route arguments repair the period and report what they dropped", () => {
+  const inbox = validateSkill({ method: "POST", path: "/api/rer-importer/get-inbox", skill: "inbox_messages", label: "Inbox", requestKind: "inboxMessages" });
+  const reports: string[] = [];
+  const args = { period: { kind: "relative_days", days: 2, timezone: "Europe/Kyiv", description: "x" }, search: "Сокіл" };
+  assert.deepEqual(prepareRouteArguments(inbox, args, (fields) => reports.push(fields)), {
+    period: { kind: "relative_days", days: 2 },
+    search: "Сокіл",
+  });
+  assert.deepEqual(reports, ["period.timezone:ignored, period.description:ignored"]);
+  assert.deepEqual(prepareRouteArguments(inbox, { period: { kind: "relative_days", days: 2 } }, () => assert.fail("reported")), {
+    period: { kind: "relative_days", days: 2 },
+  });
+});
+
+const MESSAGE_UUIDS_SCHEMA = {
+  type: "object",
+  description: "Read accessible intercepted messages by their UUIDs.",
+  properties: { message_uuids: { type: "array", items: { type: "string", format: "uuid" }, minItems: 1, maxItems: 100 } },
+  required: ["message_uuids"],
+  additionalProperties: false,
+};
+
+test("#4125 passthrough routes take Echo's schema and only json routes may carry one", () => {
+  const route = { method: "POST", path: "/api/rer-importer/messages-by-uuid", skill: "messages_by_uuid", label: "Read selected", requestKind: "json" };
+  assert.deepEqual(validateSkill({ ...route, requestSchema: MESSAGE_UUIDS_SCHEMA }).requestSchema, MESSAGE_UUIDS_SCHEMA);
+  assert.equal(validateSkill(route).requestSchema, undefined);
+  for (const invalid of [
+    { ...route, requestKind: "messageIds", path: "/api/rer-importer/messages-by-id", skill: "messages_by_id", requestSchema: MESSAGE_UUIDS_SCHEMA },
+    { ...route, requestSchema: { type: "string" } },
+    { ...route, requestSchema: { type: "object", properties: [] } },
+    { ...route, requestSchema: { ...MESSAGE_UUIDS_SCHEMA, description: "x".repeat(40_000) } },
+  ]) {
+    assert.throws(() => validateSkill(invalid), /requestSchema is invalid/);
+  }
+});
+
+test("#4125 schema arguments lift the shapes models send without guessing", () => {
+  const uuid = "01a1ba32-c862-7bcc-b685-d71d1d326f77";
+  for (const args of [
+    { message_uuids: [uuid] },
+    { body: { message_uuids: [uuid] } },
+    { body: JSON.stringify({ messageUuids: [uuid] }) },
+    { messageUuids: uuid.toUpperCase() },
+    { message_uuids: [`[джерело](/rer-analysis-neo?m=${uuid})`] },
+    { message_uuids: [`{${uuid}}`] },
+    { message_uuids: [`urn:uuid:${uuid}`] },
+  ]) {
+    assert.deepEqual(schemaArguments(MESSAGE_UUIDS_SCHEMA, args), { message_uuids: [uuid] }, JSON.stringify(args));
+  }
+  // Not a UUID: left for validation, which names the field and the format.
+  assert.deepEqual(schemaArguments(MESSAGE_UUIDS_SCHEMA, { message_uuids: ["legacy / uid", 42] }), { message_uuids: ["legacy / uid", 42] });
+  assert.equal(uuidArgument("legacy / uid"), "legacy / uid");
+  // A second spelling of the same field is kept as sent, so validation rejects it.
+  assert.deepEqual(
+    schemaArguments(MESSAGE_UUIDS_SCHEMA, { message_uuids: [uuid], messageUuids: ["other"] }),
+    { message_uuids: [uuid], messageUuids: ["other"] },
+  );
+  assert.deepEqual(
+    schemaArguments(MESSAGE_UUIDS_SCHEMA, { messageUuids: [uuid], messageUUIDs: ["other"] }),
+    { message_uuids: [uuid], messageUUIDs: ["other"] },
+  );
+  const comments = {
+    type: "object",
+    properties: {
+      messages: {
+        type: "array",
+        items: { type: "object", properties: { message_id: { type: "integer" } }, required: ["message_id"], additionalProperties: false },
+      },
+    },
+    required: ["messages"],
+    additionalProperties: false,
+  };
+  assert.deepEqual(schemaArguments(comments, { body: { messages: [42, { messageId: 43 }] } }), {
+    messages: [{ message_id: 42 }, { message_id: 43 }],
+  });
 });

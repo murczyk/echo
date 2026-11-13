@@ -97,10 +97,7 @@ where
 }
 
 fn slice_message(lnow: DateTime<Tz>, signal_message: &str) -> Vec<String> {
-    let mut rows = signal_message
-        .split('\n')
-        .collect::<Vec<&str>>()
-        .into_iter();
+    let mut rows = signal_message.split('\n').peekable();
     let mut result = vec![];
     let mut container = vec![];
     while let Some(row) = rows.next() {
@@ -116,7 +113,7 @@ fn slice_message(lnow: DateTime<Tz>, signal_message: &str) -> Vec<String> {
             let Some(row) = rows.next() else {
                 break;
             };
-            if is_header(lnow, row) {
+            if is_header(lnow, row, rows.peek().copied()) {
                 is_a_header = true;
                 result.push(container.join("\n"));
                 container = vec![];
@@ -130,9 +127,16 @@ fn slice_message(lnow: DateTime<Tz>, signal_message: &str) -> Vec<String> {
     result
 }
 
-fn is_header(lnow: DateTime<Tz>, row: &str) -> bool {
-    let m_ts = super::datetime::extract_datetime(lnow, row).ok().flatten();
-    if m_ts.is_some() {
+fn is_header(lnow: DateTime<Tz>, row: &str, next_row: Option<&str>) -> bool {
+    let m_ts = super::datetime::extract_datetime_with_precision(lnow, row)
+        .ok()
+        .flatten();
+    if m_ts.is_some_and(|timestamp| {
+        timestamp.has_time
+            || next_row.is_some_and(|row| {
+                super::frequency::extract_freq(row).ok().flatten().is_some()
+            })
+    }) {
         return true;
     }
     let m_post = crate::rer_importer::post::extract_post(row).ok().flatten();
@@ -153,6 +157,30 @@ mod tests {
 
     fn fixed_now(tz: Tz) -> DateTime<Tz> {
         tz.with_ymd_and_hms(2025, 4, 10, 12, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn splits_date_only_headers_3896() {
+        let now = crate::config::get_tz()
+            .with_ymd_and_hms(2026, 11, 12, 15, 0, 0)
+            .unwrap();
+        let messages: Vec<String> = ["12.11", "7.05"]
+            .into_iter()
+            .map(|header| {
+                format!(
+                    "{header}\n146.5000\nУКХ\nНВ\nНВ\n{}",
+                    "Перехоплення ".repeat(1000)
+                )
+            })
+            .collect();
+        let body = messages.join("\n");
+        assert!(should_try_split_message(&body));
+        assert!(!check_message_length_is_valid(&body));
+        assert_eq!(slice_message(now, &body), messages);
+        assert!(messages
+            .iter()
+            .all(|body| check_message_length_is_valid(body)));
+        assert!(is_invalid_for_historical_csv_import(now, &body));
     }
 
     #[tokio::test]

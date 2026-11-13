@@ -55,7 +55,7 @@ async fn issue_3927_quick_action_persists_and_survives_older_clients() {
     .await;
     assert_eq!(settings["messageCardQuickAction"], "copyText");
     env.dbx.execute_unprepared(
-        "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_test_enabled, rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec, hide_networks) values (true, false, 0, 1, 5, false)",
+        "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec, hide_networks) values (true, 5, false)",
     ).await.unwrap();
     let mut default_cookies = Vec::new();
     for roles in [

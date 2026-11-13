@@ -1,8 +1,9 @@
 use super::effective_prompt;
 use crate::config::{
-    AI_CALLSIGN_SETTINGS_ID, AI_CALLSIGN_WORKER_IDLE_SLEEP_MS,
-    AI_CALLSIGN_WORKER_MAX_ATTEMPTS, AI_CALLSIGN_WORKER_MAX_ERROR_CHARS,
-    AI_CALLSIGN_WORKER_RETRY_BASE_SECS, AI_CALLSIGN_WORKER_RETRY_MAX_SECS,
+    AI_CALLSIGN_SETTINGS_ID, AI_CALLSIGN_WORKER_CONCURRENCY,
+    AI_CALLSIGN_WORKER_IDLE_SLEEP_MS, AI_CALLSIGN_WORKER_MAX_ATTEMPTS,
+    AI_CALLSIGN_WORKER_MAX_ERROR_CHARS, AI_CALLSIGN_WORKER_RETRY_BASE_SECS,
+    AI_CALLSIGN_WORKER_RETRY_MAX_SECS,
 };
 use crate::entities::{
     ai_callsign_settings, ai_callsign_worker_job, ai_engine, sigint_inbox_item,
@@ -147,20 +148,58 @@ async fn run_leased(
     }
 }
 
-async fn run_owned(env: Arc<Env>, cancellation_token: CancellationToken) {
-    let mut redis = env.redis.clone();
-    info!("ai_callsign_worker started");
-    loop {
-        if cancellation_token.is_cancelled() {
-            info!("ai_callsign_worker received cancellation token");
-            break;
+/// Jobs this lease owner's parsers are working on, so no two parsers take the
+/// same message. The advisory lock makes this process the only owner.
+#[derive(Default)]
+struct JobClaims(tokio::sync::Mutex<HashSet<i64>>);
+
+impl JobClaims {
+    async fn claim_next(
+        &self,
+        dbx: &DatabaseConnection,
+    ) -> Result<Option<ai_callsign_worker_job::Model>, AppError> {
+        let mut claimed = self.0.lock().await;
+        let job = load_next_job(dbx, &claimed).await.c(h!())?;
+        if let Some(job) = &job {
+            claimed.insert(job.sigint_inbox_item_id);
         }
+        Ok(job)
+    }
+
+    async fn release(&self, sigint_inbox_item_id: i64) {
+        self.0.lock().await.remove(&sigint_inbox_item_id);
+    }
+}
+
+async fn run_owned(env: Arc<Env>, cancellation_token: CancellationToken) {
+    info!(
+        "ai_callsign_worker started with {AI_CALLSIGN_WORKER_CONCURRENCY} parsers"
+    );
+    let claims = JobClaims::default();
+    futures::future::join_all((0..AI_CALLSIGN_WORKER_CONCURRENCY).map(
+        |parser| run_parser(&env, &cancellation_token, &claims, parser == 0),
+    ))
+    .await;
+    info!("ai_callsign_worker received cancellation token");
+}
+
+/// One parser loop. Only the first runs the reparse sweep, which keeps its
+/// own cursor.
+async fn run_parser(
+    env: &Env,
+    cancellation_token: &CancellationToken,
+    claims: &JobClaims,
+    runs_reparse: bool,
+) {
+    let mut redis = env.redis.clone();
+    while !cancellation_token.is_cancelled() {
         let _loop_guard = worker_watch::loop_guard("ai_callsign_worker");
         let processed = match process_next(
             &env.ai_engine_client,
             &env.dbx,
             &env.rq,
             &mut redis,
+            claims,
         )
         .await
         {
@@ -170,13 +209,14 @@ async fn run_owned(env: Arc<Env>, cancellation_token: CancellationToken) {
                 false
             }
         };
-        let reprocessed = match super::reparse::tick(&env).await {
-            Ok(processed) => processed,
-            Err(error) => {
-                error!("ai_callsign_reparse failed: {error:#}");
-                false
-            }
-        };
+        let reprocessed = runs_reparse
+            && match super::reparse::tick(env).await {
+                Ok(processed) => processed,
+                Err(error) => {
+                    error!("ai_callsign_reparse failed: {error:#}");
+                    false
+                }
+            };
         if processed || reprocessed {
             continue;
         }
@@ -194,13 +234,29 @@ async fn process_next(
     dbx: &DatabaseConnection,
     rq: &reqwest::Client,
     redis: &mut redis::aio::ConnectionManager,
+    claims: &JobClaims,
 ) -> Result<bool, AppError> {
     let Some(config) = load_worker_config(dbx).await.c(h!())? else {
         return Ok(false);
     };
-    let Some(job) = load_next_job(dbx).await.c(h!())? else {
+    let Some(job) = claims.claim_next(dbx).await.c(h!())? else {
         return Ok(false);
     };
+    let sigint_inbox_item_id = job.sigint_inbox_item_id;
+    let result = process_job(ai_client, dbx, rq, redis, &config, job).await;
+    claims.release(sigint_inbox_item_id).await;
+    result.c(h!())?;
+    Ok(true)
+}
+
+async fn process_job(
+    ai_client: &crate::ai_engine::AiEngineClient,
+    dbx: &DatabaseConnection,
+    rq: &reqwest::Client,
+    redis: &mut redis::aio::ConnectionManager,
+    config: &WorkerConfig,
+    job: ai_callsign_worker_job::Model,
+) -> Result<(), AppError> {
     let message = signal_message::Entity::find_by_id(job.sigint_inbox_item_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(dbx)
@@ -210,7 +266,7 @@ async fn process_next(
         delete_job(dbx, job.sigint_inbox_item_id, job.created_at)
             .await
             .c(h!())?;
-        return Ok(true);
+        return Ok(());
     };
     let is_aviation_group =
         crate::inbox::message_is_aviation_group(dbx, &message)
@@ -221,7 +277,7 @@ async fn process_next(
         ai_client,
         dbx,
         rq,
-        &config,
+        config,
         &body,
         is_aviation_group,
     )
@@ -230,7 +286,7 @@ async fn process_next(
         Ok(callsigns) => callsigns,
         Err(error) => {
             fail_job(dbx, job, format!("{error:#}")).await.c(h!())?;
-            return Ok(true);
+            return Ok(());
         }
     };
     let ai_callsigns = normalize_callsigns(callsigns);
@@ -247,7 +303,7 @@ async fn process_next(
         Ok(changed) => changed,
         Err(error) => {
             fail_job(dbx, job, format!("{error:#}")).await.c(h!())?;
-            return Ok(true);
+            return Ok(());
         }
     };
     if changed {
@@ -265,7 +321,7 @@ async fn process_next(
             );
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 pub(crate) async fn parse_with_config<C: ConnectionTrait>(
@@ -341,11 +397,16 @@ pub(crate) async fn load_worker_config(
 
 async fn load_next_job(
     dbx: &DatabaseConnection,
+    claimed: &HashSet<i64>,
 ) -> Result<Option<ai_callsign_worker_job::Model>, AppError> {
     Ok(ai_callsign_worker_job::Entity::find()
         .filter(
             ai_callsign_worker_job::Column::NextAttemptAt
                 .lte(Utc::now().naive_utc()),
+        )
+        .filter(
+            ai_callsign_worker_job::Column::SigintInboxItemId
+                .is_not_in(claimed.iter().copied()),
         )
         .order_by_asc(ai_callsign_worker_job::Column::NextAttemptAt)
         .order_by_asc(ai_callsign_worker_job::Column::CreatedAt)
@@ -751,7 +812,10 @@ mod tests {
         enqueue_if_enabled(&env.dbx, item.id, item.id_uuid)
             .await
             .unwrap();
-        let old = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let old = load_next_job(&env.dbx, &HashSet::new())
+            .await
+            .unwrap()
+            .unwrap();
         let body = signal_message::Entity::find_by_id(item.id)
             .one(&env.dbx)
             .await
@@ -762,7 +826,10 @@ mod tests {
         enqueue_if_enabled(&env.dbx, item.id, item.id_uuid)
             .await
             .unwrap();
-        let new = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let new = load_next_job(&env.dbx, &HashSet::new())
+            .await
+            .unwrap()
+            .unwrap();
         assert!(new.created_at > old.created_at);
         assert!(!complete_job(
             &env.dbx,
@@ -780,7 +847,10 @@ mod tests {
         fail_job(&env.dbx, old, "stale failure".into())
             .await
             .unwrap();
-        let pending = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let pending = load_next_job(&env.dbx, &HashSet::new())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(pending.created_at, new.created_at);
         assert_eq!(pending.attempts, 0);
         assert!(crate::entities::ai_worker_progress::Entity::find()
@@ -791,7 +861,10 @@ mod tests {
         delete_job(&env.dbx, new.sigint_inbox_item_id, new.created_at)
             .await
             .unwrap();
-        assert!(load_next_job(&env.dbx).await.unwrap().is_none());
+        assert!(load_next_job(&env.dbx, &HashSet::new())
+            .await
+            .unwrap()
+            .is_none());
         assert!(!complete_job(
             &env.dbx,
             &env.rq,
@@ -807,6 +880,51 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        ai_engine::Entity::delete_by_id(engine_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4123
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn issue_4123_parsers_claim_distinct_jobs() {
+        use super::*;
+        use crate::ai_callsign::feedback::sql;
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let mut items = vec![];
+        for _ in 0..2 {
+            items.push(
+                crate::functest::tests::mk_sigint_inbox_item(
+                    &env.dbx,
+                    Default::default(),
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let engine_id = Uuid::new_v4();
+        env.dbx.execute_raw(sql("insert into ai_engine (id, name, url, model_name) values ($1, $2, 'http://127.0.0.1:1', 'fixture')", vec![engine_id.into(), engine_id.to_string().into()])).await.unwrap();
+        env.dbx.execute_raw(sql("insert into ai_callsign_settings (id, prompt, worker_enabled, worker_ai_engine_id) values (1, '', true, $1) on conflict (id) do update set worker_enabled = true, worker_ai_engine_id = $1", vec![engine_id.into()])).await.unwrap();
+        for item in &items {
+            enqueue_if_enabled(&env.dbx, item.id, item.id_uuid)
+                .await
+                .unwrap();
+        }
+        let claims = JobClaims::default();
+        let first = claims.claim_next(&env.dbx).await.unwrap().unwrap();
+        let second = claims.claim_next(&env.dbx).await.unwrap().unwrap();
+        assert_ne!(first.sigint_inbox_item_id, second.sigint_inbox_item_id);
+        assert!(claims.claim_next(&env.dbx).await.unwrap().is_none());
+        claims.release(first.sigint_inbox_item_id).await;
+        let again = claims.claim_next(&env.dbx).await.unwrap().unwrap();
+        assert_eq!(again.sigint_inbox_item_id, first.sigint_inbox_item_id);
+        for job in [first, second] {
+            delete_job(&env.dbx, job.sigint_inbox_item_id, job.created_at)
+                .await
+                .unwrap();
+        }
         ai_engine::Entity::delete_by_id(engine_id)
             .exec(&env.dbx)
             .await

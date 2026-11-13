@@ -109,6 +109,51 @@ pub const API_RATE_LIMIT_CACHE_TTL: Duration = Duration::from_secs(1);
 pub const API_RATE_LIMIT_ROLE_CACHE_SIZE: usize = 4096;
 pub const SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY: i64 = 0x4543_484f_5345_5454;
 
+/// Every fixed single-key Postgres advisory lock. They share one key space, so
+/// two features with the same key silently wait on each other: reparse's
+/// `AI_CALLSIGN_WORKER_LOCK + 1` was the network-match lease (#4137). Add new
+/// keys here; the build fails if two are equal.
+const ADVISORY_LOCK_KEYS: &[i64] = &[
+    SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY,
+    AI_CALLSIGN_WORKER_LOCK,
+    AI_CALLSIGN_REPARSE_LOCK,
+    AI_NETWORK_MATCH_WORKER_LOCK,
+    AI_AGENT_WORKER_LEASE_ADVISORY_LOCK_KEY,
+    AI_CONTROL_PANEL_LOCK_KEY,
+    SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY,
+    BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY,
+    SIGINT_UNIT_AUTO_ACTIVATION_ADVISORY_LOCK_KEY,
+    DEVICE_UPLOAD_FINALIZATION_METRICS_LOCK,
+    SIGINT_MEDIA_CONVERSION_ADVISORY_LOCK_KEY,
+    ORBIT_IMPORT_ADVISORY_LOCK_KEY,
+    crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_WORKER_LOCK,
+    crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_ADMISSION_LOCK,
+    crate::devices::analytics::DEFINITION_PUBLICATION_ADVISORY_LOCK_KEY,
+    crate::sigint::comments::SIGINT_COMMENT_MIGRATION_LOCK_KEY,
+    crate::transcription::executor::ECHO_AUDIO_TRANSCRIPTION_EXECUTOR_LOCK,
+    crate::transcription::executor::ECHO_AUDIO_TRANSCRIPTION_EXECUTOR_DRAIN_LOCK,
+];
+
+const fn all_distinct(keys: &[i64]) -> bool {
+    let mut i = 0;
+    while i < keys.len() {
+        let mut j = i + 1;
+        while j < keys.len() {
+            if keys[i] == keys[j] {
+                return false;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    true
+}
+
+const _: () = assert!(
+    all_distinct(ADVISORY_LOCK_KEYS),
+    "two advisory lock keys are equal; give each lock its own key"
+);
+
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
@@ -201,6 +246,8 @@ pub const AI_CALLSIGN_REPARSE_DAYS: i64 = 14;
 pub const AI_CALLSIGN_REPARSE_INTERVAL_SECS: i64 = 3_600;
 pub const AI_CALLSIGN_REPARSE_BATCH_SIZE: i64 = 1_000;
 pub const AI_CALLSIGN_WORKER_LOCK: i64 = 316_700_001;
+/// Serializes starting and retrying callsign reparse runs.
+pub const AI_CALLSIGN_REPARSE_LOCK: i64 = 316_700_003;
 pub const AI_CALLSIGN_FEEDBACK_PROMPT: &str =
     include_str!("ai_callsign/feedback_prompt.txt");
 pub const AI_CALLSIGN_SETTINGS_ID: i16 = 1;
@@ -211,6 +258,9 @@ pub const AI_CALLSIGN_MAX_CHARS: usize = 255;
 pub const AI_CALLSIGN_MAX_CONCURRENT_REQUESTS: usize = 4;
 pub const DIRECT_SUBMIT_AI_CALLSIGN_TIMEOUT_SECS: u64 = 10;
 pub const AI_CALLSIGN_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+/// Messages the callsign worker parses at once (#4123): one at a time could
+/// not keep up with ~120k messages a day.
+pub const AI_CALLSIGN_WORKER_CONCURRENCY: usize = 4;
 pub const AI_CALLSIGN_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_CALLSIGN_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
@@ -589,6 +639,18 @@ pub const AI_AGENT_WORKER_LEASE_TAKEOVER_GRACE_SEC: u64 =
         + AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC
         + 1;
 pub const AI_AGENT_IDLE_STOP_MINUTES: i64 = 5;
+/// A container prewarmed while the user types stops this long after start if
+/// no request uses it (#4139).
+pub const AI_AGENT_PREWARM_UNUSED_MINUTES: i64 = 3;
+/// Running-container slots a prewarm must leave free for real requests,
+/// which fail instead of waiting when capacity runs out.
+pub const AI_AGENT_PREWARM_RESERVED_SLOTS: u64 = 2;
+/// Below the composer's one-minute interval, so its keep-alives get through.
+pub const AI_AGENT_PREWARM_THROTTLE_SEC: u64 = 45;
+pub const AI_AGENT_PREWARM_REDIS_PREFIX: &str = "ai-agent:prewarm:";
+/// How long a lifecycle operation waits for the same user's container start
+/// (a request or a prewarm) instead of failing at the server `lock_timeout`.
+pub const AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS: u64 = 30_000;
 pub const AI_AGENT_DESTROY_STOPPED_DAYS: i64 = 7;
 pub const AI_AGENT_REVIEW_MAX_ATTEMPTS: i32 = 8;
 pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
@@ -668,7 +730,7 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.10.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.13.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1009,18 +1071,22 @@ pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
 pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
 pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
-pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const ANALYTICS_VERIFY_TIMEOUT_MS: u64 = 15_000;
 pub const ANALYTICS_HTTP_READ_TIMEOUT_MS: u64 = 60_000;
 pub const ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS: i64 = 10;
 pub const ANALYTICS_VERIFY_PGOPTIONS: &str = "-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify";
-pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
-pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
-pub const RER_DUTY_TEST_REPLAY_CLEANUP_BATCH_SIZE: u64 = 500;
-pub const RER_DUTY_TEST_REPLAY_ADVISORY_LOCK_KEY: i64 = 7_312_025_041;
-pub const RER_DUTY_TEST_REPLAY_IDLE_SLEEP_SEC: u64 = 1;
-pub const RER_DUTY_TEST_REPLAY_DISABLED_SLEEP_SEC: u64 = 5;
-pub const RER_DUTY_TEST_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
+pub const MESSAGE_REPLAY_TICK_SEC: u64 = 1;
+pub const MESSAGE_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
+pub const MESSAGE_REPLAY_EMIT_BATCH_SIZE: usize = 50;
+pub const MESSAGE_REPLAY_PURGE_BATCH_SIZE: u64 = 200;
+/// Interval of the worker's progress summary while a session exists; state
+/// changes are logged immediately.
+pub const MESSAGE_REPLAY_PROGRESS_LOG_SEC: u64 = 30;
+/// Caps the replay window and the fine (15 min / 1 h) activity range, which
+/// bounds that histogram (31 days of hourly bars: 744).
+pub const MESSAGE_REPLAY_MAX_RANGE_DAYS: i64 = 31;
+/// Caps the daily overview histogram used to browse for a window.
+pub const MESSAGE_REPLAY_MAX_BROWSE_DAYS: i64 = 366;
 // for xlsx import
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const SIGINT_SOURCE_RO_ID: i32 = 2;
@@ -1435,6 +1501,10 @@ pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_LOOKBACK_HOURS: i64 = 72;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_THRESHOLD: i64 = 100_000;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS: i64 = 14;
 pub const RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
+/// Messages a fresh-tail candidate query reads by id before it falls back to
+/// scanning the search window (#4153). A 5-minute tail held about 900 messages
+/// on echo-skhid and an hour about 10,500.
+pub const INBOX_FRESH_TAIL_MESSAGE_ID_LIMIT: u64 = 20_000;
 pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
 pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
 pub const GROUP_STATS_RECALCULATION_TASK_COMPACT_LIMIT: i64 = 5_000;

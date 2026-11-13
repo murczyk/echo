@@ -517,7 +517,9 @@ Attribute values:
   by `model_name`.
 - `process`: `echo-web`, `echo-bgworker`, `echo-report-worker` or `echo-oneoff`.
   All processes share one metric identity, so always keep this attribute: their
-  cumulative counters would otherwise collide.
+  cumulative counters would otherwise collide. AI chat calls go through the
+  agent gateway in `echo-web`; `echo-bgworker` makes background calls such as
+  OCR and callsign parsing. The dashboard's `process` filter separates them.
 - `streaming`: for a non-streamed call, headers usually arrive when generation
   finishes, so `response_start` is close to the full response time. For a
   streamed call it is only the wait before output begins.
@@ -534,6 +536,11 @@ When reading the numbers:
 - A hung provider mostly appears as `cancelled`, not `timeout`, because the
   outer timeout fires first. `cancelled` also covers runner aborts and the
   worker time limit, so it is not always the provider's fault.
+- To see which model is failing, read **Failed calls per interval by model**
+  (counts by model and outcome) and **Failed share by model, %**. An outage of
+  one model shows there as that model's bars and a share near 100%, for example
+  `glm-5.3-flash-uncensored` on 2026-11-13 from 04:06 UTC. **Failed calls per
+  minute by outcome** sums every selected model into one line per outcome.
 - `response_start` excludes Echo's local 429 cooldown wait, but includes the
   settings load, the Azure token fetch and any 401 retry. Caller latency can
   therefore be much longer than the provider time shown.

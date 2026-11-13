@@ -78,6 +78,13 @@ keep the ten-second pool wait, statement timeout and cancellation, and log
 `stage=source_admission outcome=skipped`. A Duty count tail with period unit
 filters keeps the slots, because its unit matching covers the whole requested
 period.
+A date-bounded, interception-time fresh-tail page kept the inbox-first shape
+(creation- and timestamp-sorted pages start from messages): `created_at` sat
+behind the lateral message lookup, so a tail with fewer matches than a page
+walked the whole requested period. On echo-skhid that hit the statement timeout
+about 160 times a day (#4153). The page now reads the tail's message IDs from
+the `created_at` index first and limits the inbox scan to them through the
+primary key. A tail of more than 20,000 messages keeps the unrestricted query.
 A local limit that rejects a source read inside an analytics attempt (SQL
 slots, pool wait, count queue, fallback capacity or a source statement timeout)
 is `reason=source_saturated`: the request returns 503 without a PostgreSQL

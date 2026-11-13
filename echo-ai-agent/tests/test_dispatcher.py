@@ -517,6 +517,7 @@ class DispatcherConcurrencyTests(unittest.TestCase):
                 mock.patch.object(DISPATCHER.Path, "home", return_value=root),
                 mock.patch.object(DISPATCHER, "LOCK_WAIT_SECONDS", 0.02),
                 mock.patch.object(DISPATCHER, "dispatch") as dispatch,
+                mock.patch.object(DISPATCHER, "no_change_result", return_value=None),
             ):
                 for blocked in ("global.lock", f"echo-ai-agent-{agent_id}.lock"):
                     with self.subTest(blocked=blocked), (root / blocked).open("a") as holder:
@@ -561,6 +562,7 @@ class DispatcherConcurrencyTests(unittest.TestCase):
                 mock.patch.object(DISPATCHER, "NAMESPACE_RELEASES", root),
                 mock.patch.object(DISPATCHER.Path, "home", return_value=root),
                 mock.patch.object(DISPATCHER, "dispatch", side_effect=dispatch),
+                mock.patch.object(DISPATCHER, "no_change_result", return_value=None),
                 ThreadPoolExecutor(max_workers=3) as pool,
             ):
                 chat = pool.submit(invoke, "run_request", first_id, "echo-first")
@@ -611,6 +613,7 @@ class DispatcherConcurrencyTests(unittest.TestCase):
                 mock.patch.object(DISPATCHER, "NAMESPACE_RELEASES", root),
                 mock.patch.object(DISPATCHER.Path, "home", return_value=root),
                 mock.patch.object(DISPATCHER, "dispatch", side_effect=dispatch),
+                mock.patch.object(DISPATCHER, "no_change_result", return_value=None),
                 ThreadPoolExecutor(max_workers=2) as pool,
             ):
                 first = pool.submit(invoke, "echo-first", "019fc7f7-9770-7f83-9c1a-211af29b02e6")
@@ -622,6 +625,221 @@ class DispatcherConcurrencyTests(unittest.TestCase):
                     release.set()
                 first.result(timeout=2)
                 second.result(timeout=2)
+
+
+AGENT_ID = "019fc7f7-9770-7f83-9c1a-211af29b02e6"
+AGENT_NAME = f"echo-ai-agent-{AGENT_ID}"
+
+
+def completed(returncode=0, stdout="", stderr=""):
+    return DISPATCHER.subprocess.CompletedProcess([], returncode, stdout, stderr)
+
+
+def configured_record(**config_overrides):
+    config = {
+        "user.echo.ai.managed": "true",
+        "user.echo.ai.namespace": "echo-staging",
+        "user.echo.ai.echo_hostname": "echo.example.test",
+        "user.echo.ai.echo_upstream": "100.64.63.98:443",
+        "user.echo.ai.provider_transport": "echo_gateway",
+    }
+    config.update(config_overrides)
+    return {
+        "name": AGENT_NAME,
+        "status": "Running",
+        "config": config,
+        "profiles": ["echo-ai-agent"],
+        "devices": {
+            "echo-upstream": {
+                "bind": "instance",
+                "connect": "tcp:100.64.63.98:443",
+                "listen": "tcp:127.0.0.1:18443",
+                "type": "proxy",
+            }
+        },
+    }
+
+
+GATEWAY_BODY = {
+    "agent_id": AGENT_ID,
+    "echo_hostname": "echo.example.test",
+    "echo_upstream": "100.64.63.98:443",
+    "provider_transport": "echo_gateway",
+}
+
+
+class DispatcherInstanceLookupTests(unittest.TestCase):
+    @mock.patch.object(DISPATCHER, "run")
+    def test_instance_record_queries_one_instance(self, run):
+        run.return_value = completed(stdout=json.dumps({"name": AGENT_NAME, "status": "Running"}))
+
+        record = DISPATCHER.instance_record(AGENT_NAME)
+
+        self.assertEqual(record["status"], "Running")
+        run.assert_called_once_with(["incus", "query", f"/1.0/instances/{AGENT_NAME}"], check=False)
+
+    @mock.patch.object(DISPATCHER, "run")
+    def test_missing_instance_is_none(self, run):
+        run.return_value = completed(
+            1, stderr='Error: Failed to fetch instance "x" in project "default": Instance not found\n'
+        )
+
+        self.assertIsNone(DISPATCHER.instance_record(AGENT_NAME))
+
+    @mock.patch.object(DISPATCHER, "run")
+    def test_other_query_failures_are_not_treated_as_missing(self, run):
+        run.return_value = completed(1, stderr="Error: connection refused\n")
+
+        with self.assertRaisesRegex(DISPATCHER.DispatchError, "connection refused"):
+            DISPATCHER.instance_record(AGENT_NAME)
+
+    @mock.patch.object(DISPATCHER, "run")
+    def test_instance_record_rejects_another_instance(self, run):
+        run.return_value = completed(stdout=json.dumps({"name": "echo-ai-agent-other"}))
+
+        with self.assertRaises(DISPATCHER.DispatchError):
+            DISPATCHER.instance_record(AGENT_NAME)
+
+    @mock.patch.object(DISPATCHER, "run_json")
+    def test_running_count_filters_running_instances_on_the_server(self, run_json):
+        run_json.return_value = [
+            {"name": AGENT_NAME, "status": "Running", "config": {"user.echo.ai.managed": "true"}},
+            {"name": "ai-rollout-1", "status": "Running", "config": {"user.echo.ai.managed": "true"}},
+        ]
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            DISPATCHER, "NAMESPACE_RELEASES", pathlib.Path(directory)
+        ):
+            self.assertEqual(DISPATCHER.running_agent_count(), 1)
+        run_json.assert_called_once_with(
+            ["incus", "query", "/1.0/instances?recursion=1&filter=status%20eq%20Running"]
+        )
+
+
+class DispatcherProxyNoChangeTests(unittest.TestCase):
+    @mock.patch.object(DISPATCHER, "apply_proxy_settings")
+    @mock.patch.object(DISPATCHER, "run")
+    @mock.patch.object(DISPATCHER, "require_instance")
+    def test_matching_proxies_skip_reconfiguration(self, require_instance, run, apply_proxy_settings):
+        require_instance.return_value = configured_record()
+        run.return_value = completed()
+
+        result = DISPATCHER.op_configure_proxies("echo-staging", dict(GATEWAY_BODY))
+
+        self.assertIs(result["changed"], False)
+        apply_proxy_settings.assert_not_called()
+        run.assert_called_once_with(
+            [
+                "incus",
+                "exec",
+                AGENT_NAME,
+                "--",
+                "sh",
+                "-c",
+                'grep -qxF -- "$1" /etc/hosts && systemctl is-active --quiet nginx',
+                "sh",
+                "127.0.0.1 echo.example.test # echo-ai-agent",
+            ],
+            check=False,
+        )
+
+    @mock.patch.object(DISPATCHER, "apply_proxy_settings")
+    @mock.patch.object(DISPATCHER, "run")
+    @mock.patch.object(DISPATCHER, "require_instance")
+    def test_lost_hosts_mapping_or_booting_nginx_reconfigures(self, require_instance, run, apply_proxy_settings):
+        require_instance.return_value = configured_record()
+        run.return_value = completed(1)
+
+        result = DISPATCHER.op_configure_proxies("echo-staging", dict(GATEWAY_BODY))
+
+        self.assertIs(result["changed"], True)
+        apply_proxy_settings.assert_called_once()
+
+    @mock.patch.object(DISPATCHER, "apply_proxy_settings")
+    @mock.patch.object(DISPATCHER, "run")
+    @mock.patch.object(DISPATCHER, "require_instance")
+    def test_transport_switch_reconfigures(self, require_instance, run, apply_proxy_settings):
+        require_instance.return_value = configured_record()
+        run.return_value = completed()
+        body = dict(GATEWAY_BODY, provider_transport="direct_http", vllm_upstream="100.105.172.96:8000")
+
+        result = DISPATCHER.op_configure_proxies("echo-staging", body)
+
+        self.assertIs(result["changed"], True)
+        settings = apply_proxy_settings.call_args.args[1]
+        self.assertEqual(settings.vllm_upstream, "100.105.172.96:8000")
+
+    @mock.patch.object(DISPATCHER, "apply_proxy_settings")
+    @mock.patch.object(DISPATCHER, "run")
+    @mock.patch.object(DISPATCHER, "require_instance")
+    def test_changed_upstream_address_reconfigures(self, require_instance, run, apply_proxy_settings):
+        require_instance.return_value = configured_record()
+        run.return_value = completed()
+        body = dict(GATEWAY_BODY, echo_upstream="100.64.63.99:443")
+
+        result = DISPATCHER.op_configure_proxies("echo-staging", body)
+
+        self.assertIs(result["changed"], True)
+        apply_proxy_settings.assert_called_once()
+
+    def test_unchanged_mutations_do_not_wait_for_the_global_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "deploy.lock").touch()
+            (root / "echo-staging.lock").touch()
+            request = DISPATCHER.Request("r1", "configure_proxies", dict(GATEWAY_BODY))
+            with (
+                mock.patch.object(DISPATCHER, "DEPLOY_LOCK_PATH", root / "deploy.lock"),
+                mock.patch.object(DISPATCHER, "ROLLOUT_LOCK_ROOT", root),
+                mock.patch.object(DISPATCHER, "NAMESPACE_RELEASES", root),
+                mock.patch.object(DISPATCHER.Path, "home", return_value=root),
+                mock.patch.object(DISPATCHER, "LOCK_WAIT_SECONDS", 0.2),
+                mock.patch.object(DISPATCHER, "require_instance", return_value=configured_record()),
+                mock.patch.object(DISPATCHER, "run", return_value=completed()),
+                mock.patch.object(DISPATCHER, "dispatch") as dispatch,
+                (root / "global.lock").open("a") as held,
+                (root / "global.lock").open("a") as lease,
+            ):
+                fcntl.flock(held, fcntl.LOCK_EX)
+                result = DISPATCHER.dispatch_with_rollout_lock(request, "echo-staging", lease)
+
+        self.assertIs(result["changed"], False)
+        dispatch.assert_not_called()
+
+
+class DispatcherStartReservationTests(unittest.TestCase):
+    def start(self, running, reserved=None):
+        body = {"agent_id": AGENT_ID}
+        if reserved is not None:
+            body["reserved_slots"] = reserved
+        stopped = dict(configured_record(), status="Stopped")
+        with (
+            mock.patch.object(DISPATCHER, "require_instance", return_value=stopped),
+            mock.patch.object(DISPATCHER, "running_agent_count", return_value=running),
+            mock.patch.object(DISPATCHER, "run") as run,
+        ):
+            DISPATCHER.op_start("echo-staging", body)
+        return run
+
+    def test_requests_may_use_every_slot(self):
+        self.start(running=5).assert_called_once_with(["incus", "start", AGENT_NAME])
+
+    def test_prewarm_leaves_reserved_slots_free(self):
+        self.start(running=3, reserved=2).assert_called_once()
+        with self.assertRaisesRegex(DISPATCHER.DispatchError, "running-container limit reached"):
+            self.start(running=4, reserved=2)
+
+    def test_rejects_invalid_reservations(self):
+        for reserved in (-1, DISPATCHER.MAX_RUNNING, True, "2"):
+            with self.subTest(reserved=reserved), self.assertRaises(DISPATCHER.DispatchError):
+                self.start(running=0, reserved=reserved)
+
+    def test_start_accepts_reserved_slots_field(self):
+        request = DISPATCHER.parse_request(
+            json.dumps(
+                {"id": "r1", "operation": "start", "agent_id": AGENT_ID, "reserved_slots": 2}
+            ).encode()
+        )
+        self.assertEqual(request.body["reserved_slots"], 2)
 
 
 if __name__ == "__main__":

@@ -183,7 +183,15 @@ mod tests {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub enum ListUnitsSortBy {
     CreatedAtDesc,
@@ -231,7 +239,15 @@ pub enum ListUnitsSortBy {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub enum ListUnitsSearchMode {
     Strict,
@@ -248,6 +264,7 @@ pub enum ListUnitsSearchMode {
     PartialEq,
     Clone,
     Default,
+    schemars::JsonSchema,
 )]
 pub struct ListUnitsReq {
     pub sort_by: Option<ListUnitsSortBy>,

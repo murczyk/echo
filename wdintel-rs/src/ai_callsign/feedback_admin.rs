@@ -240,7 +240,7 @@ pub async fn retry(
     transaction
         .execute_raw(sql(
             "select pg_advisory_xact_lock($1)",
-            vec![(crate::config::AI_CALLSIGN_WORKER_LOCK + 1).into()],
+            vec![crate::config::AI_CALLSIGN_REPARSE_LOCK.into()],
         ))
         .await
         .c(h!())?;

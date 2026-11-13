@@ -782,12 +782,7 @@ function systemSettings() {
   return {
     id: null,
     rer_analysis_units_exact_match_only_default: false,
-    rer_duty_test_enabled: false,
-    rer_duty_insert_historical_interceptions: false,
-    rer_duty_test_since_ms: 0,
-    rer_duty_test_limit: 1,
     rer_duty_poll_interval_sec: 1,
-    rer_duty_test_replay_interval_sec: 1,
     short_url_enabled: false,
     rer_report_enabled: false,
     support_non_rer_interceptions: false,

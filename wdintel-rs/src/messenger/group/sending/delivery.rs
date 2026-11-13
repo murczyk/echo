@@ -22,60 +22,77 @@ pub(crate) async fn enqueue(
     login_id: &uuid::Uuid,
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
-    let destination =
+    let destinations =
         Destination::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-select g.master_key, ec.name as client_name, ea.source::text as source
+select g.master_key, ec.name as client_name, ec.source::text as source
 from signal_message sm
-join datasource_group dg on dg.id = sm.datasource_group_id
-join signal_group g on g.master_key = dg.group_master_key
-join datasource d on d.id = g.datasource_id
-join echo_client_lock ecl on ecl.id = d.echo_client_lock_id
-join echo_client ec on ec.id = ecl.client_id
-join echo_account ea on ea.id = ecl.account_id
+join lateral (
+    select dg.group_master_key from datasource_group dg
+    where dg.id = sm.datasource_group_id and not dg.deleted
+    union
+    select smg.group_master_key from signal_message_group smg
+    join datasource_group dg on dg.id = smg.datasource_group_id and not dg.deleted
+    where smg.signal_message_id = sm.id
+) destination on true
+join signal_group g on g.master_key = destination.group_master_key
+join lateral (
+    select ec.name, ea.source
+    from datasource_group dg
+    join datasource d on d.id = dg.datasource_id
+    join echo_client_lock ecl on ecl.id = d.echo_client_lock_id
+    join echo_client ec on ec.id = ecl.client_id
+    join echo_account ea on ea.id = ecl.account_id
+    where dg.group_master_key = g.master_key and not dg.deleted
+        and not d.deleted and d.can_send_messages is true
+        and d.kind in ('signal', 'whatsapp')
+        and not ec.deleted and not ecl.remove_requested
+        and ea.source::text in ('signal', 'whatsapp')
+    order by (d.status = 'active') desc, d.display_name, d.id
+    limit 1
+) ec on true
 join login l on l.id = $2
 join sigint_group_sender_organism sender
     on sender.master_key = g.master_key and sender.organism_id = l.organism_id
-where sm.id = $1 and not sm.deleted and not dg.deleted
+where sm.id = $1 and not sm.deleted
     and not g.deleted and not g.is_archived and g.send_messages is true
-    and not d.deleted and d.can_send_messages is true and d.status = 'active'
-    and not ec.deleted and not ecl.remove_requested
-    and ea.source::text in ('signal', 'whatsapp')
 "#,
             vec![signal_message_id.into(), (*login_id).into()],
         ))
-        .one(txn)
+        .all(txn)
         .await
         .c(h!())?;
-    let Some(destination) = destination else {
+    if destinations.is_empty() {
         return Ok(());
-    };
+    }
     let message = signal_message::Entity::find_by_id(signal_message_id)
         .one(txn)
         .await
         .c(h!())?
         .c(h!())?;
     let attachments = attachments(env, txn, signal_message_id).await.c(h!())?;
-    echo_im::send_message(
-        SendMessageReq {
-            text: message.body.unwrap_or_default(),
-            source: if destination.source == "signal" {
-                MessageSource::Signal
-            } else {
-                MessageSource::Whatsapp
+    for destination in destinations {
+        echo_im::send_message(
+            SendMessageReq {
+                text: message.body.clone().unwrap_or_default(),
+                source: if destination.source == "signal" {
+                    MessageSource::Signal
+                } else {
+                    MessageSource::Whatsapp
+                },
+                group_ids: vec![destination.master_key],
+                recipient_phone_numbers: vec![],
+                attachments: attachments.clone(),
             },
-            group_ids: vec![destination.master_key],
-            recipient_phone_numbers: vec![],
-            attachments,
-        },
-        &destination.client_name,
-        txn,
-        None,
-    )
-    .await
-    .c(h!())?
-    .c(h!())?;
+            &destination.client_name,
+            txn,
+            None,
+        )
+        .await
+        .c(h!())?
+        .c(h!())?;
+    }
     Ok(())
 }
 

@@ -575,34 +575,48 @@ export function MessageCardMessageBody({
   const isDocumentVisible = !collapseMediaPreviews || activeAttachmentSection === 'documents';
   const isCoordinateVisible = !collapseMediaPreviews || activeAttachmentSection === 'coordinates';
   const isAudioVisible = !collapseMediaPreviews || activeAttachmentSection === 'audio';
+  const attachmentPositionsById = useMemo(
+    () =>
+      new Map(
+        (msg.media ?? []).some((media) => media.orderF64 != null)
+          ? (msg.media ?? []).map((media, index) => [media.id, index] as const)
+          : [],
+      ),
+    [msg.media],
+  );
   const cardSummaryItems = useMemo<CardSummaryItem[]>(
-    () => [
-      ...images.map((image) => ({
-        identity: summaryAttachmentIdentity(image),
-        mediaId: image.id ?? null,
-        kind: 'media' as const,
-        summary: image.summary ?? null,
-      })),
-      ...videoAttachments.map((attachment) => ({
-        identity: summaryAttachmentIdentity(attachment),
-        mediaId: attachment.id ?? null,
-        kind: 'media' as const,
-        summary: attachment.summary ?? null,
-      })),
-      ...documents.map((document) => ({
-        identity: summaryAttachmentIdentity(document),
-        mediaId: document.id ?? null,
-        kind: 'document' as const,
-        summary: document.summary ?? null,
-      })),
-      ...downloadAttachments.map((attachment) => ({
-        identity: summaryAttachmentIdentity(attachment),
-        mediaId: attachment.id ?? null,
-        kind: 'document' as const,
-        summary: attachment.summary ?? null,
-      })),
-    ],
-    [documents, downloadAttachments, images, videoAttachments],
+    () =>
+      [
+        ...images.map((image) => ({
+          identity: summaryAttachmentIdentity(image),
+          mediaId: image.id ?? null,
+          kind: 'media' as const,
+          summary: image.summary ?? null,
+        })),
+        ...videoAttachments.map((attachment) => ({
+          identity: summaryAttachmentIdentity(attachment),
+          mediaId: attachment.id ?? null,
+          kind: 'media' as const,
+          summary: attachment.summary ?? null,
+        })),
+        ...documents.map((document) => ({
+          identity: summaryAttachmentIdentity(document),
+          mediaId: document.id ?? null,
+          kind: 'document' as const,
+          summary: document.summary ?? null,
+        })),
+        ...downloadAttachments.map((attachment) => ({
+          identity: summaryAttachmentIdentity(attachment),
+          mediaId: attachment.id ?? null,
+          kind: 'document' as const,
+          summary: attachment.summary ?? null,
+        })),
+      ].sort(
+        (a, b) =>
+          (attachmentPositionsById.get(a.mediaId ?? '') ?? Number.MAX_SAFE_INTEGER) -
+          (attachmentPositionsById.get(b.mediaId ?? '') ?? Number.MAX_SAFE_INTEGER),
+      ),
+    [attachmentPositionsById, documents, downloadAttachments, images, videoAttachments],
   );
   const summaryScope = useMemo(
     () =>
@@ -675,8 +689,8 @@ export function MessageCardMessageBody({
       })),
     [audioAttachments],
   );
-  const previewAttachments = useMemo<MessageCardPreviewAttachment[]>(
-    () => [
+  const previewAttachments = useMemo<MessageCardPreviewAttachment[]>(() => {
+    const items: MessageCardPreviewAttachment[] = [
       ...images.map((image) => ({ type: 'image' as const, value: image })),
       ...videoPreviewSources.map((video) => ({ type: 'video' as const, value: video })),
       ...previewableDocuments.map((document) => ({
@@ -708,21 +722,30 @@ export function MessageCardMessageBody({
             },
           ]
         : []),
-    ],
-    [
-      audioPreviewSources,
-      coordinatePreviewPoints,
-      coordinateFocusIndex,
-      images,
-      kmzPreviewAttachments,
-      previewableDocuments,
-      videoPreviewSources,
-    ],
-  );
-  const kmzPreviewStartIndex =
-    images.length + videoPreviewSources.length + previewableDocuments.length;
+    ];
+    const positions = attachmentPositionsById;
+    const position = (item: MessageCardPreviewAttachment) => {
+      if (item.type === 'coordinate') return Number.MAX_SAFE_INTEGER;
+      const id = item.type === 'kmz' ? item.value.mediaId : item.value.id;
+      return positions.get(id ?? '') ?? Number.MAX_SAFE_INTEGER - 1;
+    };
+    return items.sort((a, b) => position(a) - position(b));
+  }, [
+    attachmentPositionsById,
+    audioPreviewSources,
+    coordinatePreviewPoints,
+    coordinateFocusIndex,
+    images,
+    kmzPreviewAttachments,
+    previewableDocuments,
+    videoPreviewSources,
+  ]);
   const coordinatePreviewStartIndex =
-    kmzPreviewStartIndex + kmzPreviewAttachments.length + audioPreviewSources.length;
+    images.length +
+    videoPreviewSources.length +
+    previewableDocuments.length +
+    kmzPreviewAttachments.length +
+    audioPreviewSources.length;
 
   const openPositionOnMap = useCallback(
     async (position: CnPosition) => {
@@ -1025,6 +1048,7 @@ export function MessageCardMessageBody({
               {isMediaVisible || (!collapseMediaPreviews && coordinateMapAttachment != null) ? (
                 <MessageCardImageList
                   images={isMediaVisible ? images : []}
+                  attachmentOrder={msg.media}
                   videos={isMediaVisible ? videoAttachments : []}
                   trailingContent={!collapseMediaPreviews ? coordinateMapAttachment : null}
                   selectedImageIndex={
@@ -1035,11 +1059,20 @@ export function MessageCardMessageBody({
                   }
                   onOpen={(index) => {
                     blurActiveElement();
-                    setAttachmentPreviewIndex(index);
+                    setAttachmentPreviewIndex(
+                      previewAttachments.findIndex(
+                        (item) => item.type === 'image' && item.value === images[index],
+                      ),
+                    );
                   }}
                   onOpenVideo={(index) => {
                     blurActiveElement();
-                    setAttachmentPreviewIndex(images.length + index);
+                    setAttachmentPreviewIndex(
+                      previewAttachments.findIndex(
+                        (item) =>
+                          item.type === 'video' && item.value === videoPreviewSources[index],
+                      ),
+                    );
                   }}
                   isDownloadStarting={isDownloadStarting}
                   onDownloadStart={onDownloadStart}
@@ -1057,63 +1090,79 @@ export function MessageCardMessageBody({
               ) : null}
               {isDocumentVisible && hasDocumentAttachments ? (
                 <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
-                  {documents.map((document, index) => {
-                    const previewIndex = previewableDocuments.findIndex(
-                      (previewableDocument) => previewableDocument.href === document.href,
-                    );
-                    return (
-                      <MessageMediaDocumentLink
-                        key={document.id ?? document.href}
-                        document={document}
-                        index={index}
-                        selected={selectedSummaryDocumentIndex === index}
-                        onPreview={
-                          previewIndex >= 0
-                            ? () => {
-                                blurActiveElement();
-                                setAttachmentPreviewIndex(
-                                  images.length + videoAttachments.length + previewIndex,
-                                );
-                              }
-                            : undefined
-                        }
-                        isDownloadStarting={isDownloadStarting}
-                        onDownloadStart={onDownloadStart}
-                      />
-                    );
-                  })}
-                  {downloadAttachments.map((attachment) => {
-                    const selected =
-                      selectedSummaryMediaIdentity != null &&
-                      summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
-                    const kmzPreviewIndex = kmzPreviewAttachments.indexOf(attachment);
-                    return kmzPreviewIndex >= 0 ? (
-                      <KmzAttachmentPreviewLink
-                        key={attachment.id}
-                        mediaId={resolveMediaAttachmentId(attachment)}
-                        originalHref={String(attachment.href ?? '')}
-                        fileName={mediaAttachmentDisplayName(attachment)}
-                        sizeBytes={attachment.sizeBytes ?? null}
-                        contentType={mediaAttachmentContentType(attachment)}
-                        initialStatus={attachment.kmzConversionStatus ?? 'pending'}
-                        selected={selected}
-                        onPreview={() => {
-                          blurActiveElement();
-                          setAttachmentPreviewIndex(kmzPreviewStartIndex + kmzPreviewIndex);
-                        }}
-                        isDownloadStarting={isDownloadStarting}
-                        onDownloadStart={onDownloadStart}
-                      />
-                    ) : (
-                      <MessageMediaDownloadLink
-                        key={attachment.id}
-                        attachment={attachment}
-                        selected={selected}
-                        isDownloadStarting={isDownloadStarting}
-                        onDownloadStart={onDownloadStart}
-                      />
-                    );
-                  })}
+                  {[
+                    ...documents.map((document, index) => {
+                      const previewIndex = previewableDocuments.findIndex(
+                        (previewableDocument) => previewableDocument.href === document.href,
+                      );
+                      return (
+                        <MessageMediaDocumentLink
+                          key={document.id ?? document.href}
+                          document={document}
+                          index={index}
+                          selected={selectedSummaryDocumentIndex === index}
+                          onPreview={
+                            previewIndex >= 0
+                              ? () => {
+                                  blurActiveElement();
+                                  setAttachmentPreviewIndex(
+                                    previewAttachments.findIndex(
+                                      (item) =>
+                                        item.type === 'document' &&
+                                        item.value === previewableDocuments[previewIndex],
+                                    ),
+                                  );
+                                }
+                              : undefined
+                          }
+                          isDownloadStarting={isDownloadStarting}
+                          onDownloadStart={onDownloadStart}
+                        />
+                      );
+                    }),
+                    ...downloadAttachments.map((attachment) => {
+                      const selected =
+                        selectedSummaryMediaIdentity != null &&
+                        summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
+                      const kmzPreviewIndex = kmzPreviewAttachments.indexOf(attachment);
+                      return kmzPreviewIndex >= 0 ? (
+                        <KmzAttachmentPreviewLink
+                          key={attachment.id}
+                          mediaId={resolveMediaAttachmentId(attachment)}
+                          originalHref={String(attachment.href ?? '')}
+                          fileName={mediaAttachmentDisplayName(attachment)}
+                          sizeBytes={attachment.sizeBytes ?? null}
+                          contentType={mediaAttachmentContentType(attachment)}
+                          initialStatus={attachment.kmzConversionStatus ?? 'pending'}
+                          selected={selected}
+                          onPreview={() => {
+                            blurActiveElement();
+                            setAttachmentPreviewIndex(
+                              previewAttachments.findIndex(
+                                (item) =>
+                                  item.type === 'kmz' &&
+                                  item.value.mediaId === resolveMediaAttachmentId(attachment),
+                              ),
+                            );
+                          }}
+                          isDownloadStarting={isDownloadStarting}
+                          onDownloadStart={onDownloadStart}
+                        />
+                      ) : (
+                        <MessageMediaDownloadLink
+                          key={attachment.id}
+                          attachment={attachment}
+                          selected={selected}
+                          isDownloadStarting={isDownloadStarting}
+                          onDownloadStart={onDownloadStart}
+                        />
+                      );
+                    }),
+                  ].sort(
+                    (a, b) =>
+                      (attachmentPositionsById.get(String(a.key)) ?? Number.MAX_SAFE_INTEGER) -
+                      (attachmentPositionsById.get(String(b.key)) ?? Number.MAX_SAFE_INTEGER),
+                  )}
                 </div>
               ) : null}
               {hasVisibleSummary ? (

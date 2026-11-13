@@ -8,14 +8,12 @@ use crate::config::{
 use crate::users::{ensure_admin, login_id_from_identity};
 pub mod signoz_metrics;
 pub mod types;
-pub mod worker;
 
 use crate::entities::system_settings;
 use crate::error::AppError;
 use crate::h;
 use crate::system_settings::types::{
-    ActivateSystemSettingsReq, CreateSystemSettingsReq,
-    RerDutyTestReplayStatusRsp, SetRerReportEnabledReq,
+    ActivateSystemSettingsReq, CreateSystemSettingsReq, SetRerReportEnabledReq,
     SystemSettingsCurrentRsp, SystemSettingsItem, SystemSettingsListRsp,
 };
 use crate::types::Env;
@@ -124,16 +122,9 @@ fn map_system_settings_item(
         id: settings.id,
         rer_analysis_units_exact_match_only_default: settings
             .rer_analysis_units_exact_match_only_default,
-        rer_duty_test_enabled: settings.rer_duty_test_enabled,
-        rer_duty_insert_historical_interceptions: settings
-            .rer_duty_insert_historical_interceptions,
-        rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
-        rer_duty_test_limit: settings.rer_duty_test_limit,
         rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
             settings.rer_duty_poll_interval_sec,
         ),
-        rer_duty_test_replay_interval_sec: settings
-            .rer_duty_test_replay_interval_sec,
         created_at: settings.created_at.and_utc().timestamp_millis(),
         updated_at: settings.updated_at.and_utc().timestamp_millis(),
         updated_by_login_id: settings
@@ -766,38 +757,6 @@ fn reconcile_report_concurrency_settings(
     Ok(())
 }
 
-fn validate_rer_duty_test_replay_settings(
-    req: &CreateSystemSettingsReq,
-) -> Result<(), AppError> {
-    if !req.rer_duty_test_enabled {
-        return Ok(());
-    }
-    if req.rer_duty_test_since_ms <= 0 {
-        return Err(AppError::BL {
-            msg: "Вкажіть дату старту тестових повідомлень".to_string(),
-        });
-    }
-    if !(1..=crate::config::RER_DUTY_TEST_REPLAY_SOURCE_MAX)
-        .contains(&req.rer_duty_test_limit)
-    {
-        return Err(AppError::BL {
-            msg: format!(
-                "Кількість тестових повідомлень має бути від 1 до {}",
-                crate::config::RER_DUTY_TEST_REPLAY_SOURCE_MAX
-            ),
-        });
-    }
-    if !(1..=crate::config::RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX)
-        .contains(&req.rer_duty_test_replay_interval_sec)
-    {
-        return Err(AppError::BL {
-            msg: "Інтервал тестових повідомлень має бути від однієї секунди до одного року"
-                .to_string(),
-        });
-    }
-    Ok(())
-}
-
 fn system_settings_active_model(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
@@ -809,16 +768,14 @@ fn system_settings_active_model(
         rer_analysis_units_exact_match_only_default: Set(
             req.rer_analysis_units_exact_match_only_default
         ),
-        rer_duty_test_enabled: Set(req.rer_duty_test_enabled),
-        rer_duty_insert_historical_interceptions: Set(req.rer_duty_test_enabled),
-        rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
-        rer_duty_test_limit: Set(req.rer_duty_test_limit),
+        rer_duty_test_enabled: sea_orm::ActiveValue::NotSet,
+        rer_duty_insert_historical_interceptions: sea_orm::ActiveValue::NotSet,
+        rer_duty_test_since_ms: sea_orm::ActiveValue::NotSet,
+        rer_duty_test_limit: sea_orm::ActiveValue::NotSet,
         rer_duty_poll_interval_sec: Set(effective_rer_duty_poll_interval_sec(
             req.rer_duty_poll_interval_sec,
         )),
-        rer_duty_test_replay_interval_sec: Set(
-            req.rer_duty_test_replay_interval_sec
-        ),
+        rer_duty_test_replay_interval_sec: sea_orm::ActiveValue::NotSet,
         created_at: sea_orm::ActiveValue::NotSet,
         updated_at: Set(now_utc()),
         echo_im_sync_since: Set(echo_im_sync_cursor.created_at),
@@ -972,7 +929,6 @@ async fn create_system_settings_for_login(
     validate_media_cache_settings(req).context(h!())?;
     validate_peleng_bounds(req)?;
     validate_report_generation_settings(req)?;
-    validate_rer_duty_test_replay_settings(req)?;
     let txn = begin_system_settings_update(dbx).await.context(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     let settings = get_active_system_settings(&txn).await.c(h!())?;
@@ -1144,16 +1100,9 @@ pub async fn current_system_settings(
             id: Some(settings.id),
             rer_analysis_units_exact_match_only_default: settings
                 .rer_analysis_units_exact_match_only_default,
-            rer_duty_test_enabled: settings.rer_duty_test_enabled,
-            rer_duty_insert_historical_interceptions: settings
-                .rer_duty_insert_historical_interceptions,
-            rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
-            rer_duty_test_limit: settings.rer_duty_test_limit,
             rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
                 settings.rer_duty_poll_interval_sec,
             ),
-            rer_duty_test_replay_interval_sec: settings
-                .rer_duty_test_replay_interval_sec,
             short_url_enabled: settings.short_url_enabled,
             rer_report_enabled: settings.rer_report_enabled.unwrap_or(false),
             support_non_rer_interceptions: settings
@@ -1227,13 +1176,8 @@ pub async fn current_system_settings(
         None => SystemSettingsCurrentRsp {
             id: None,
             rer_analysis_units_exact_match_only_default: true,
-            rer_duty_test_enabled: false,
-            rer_duty_insert_historical_interceptions: false,
-            rer_duty_test_since_ms: 0,
-            rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec:
                 crate::config::RER_DUTY_POLL_INTERVAL_MIN_SEC,
-            rer_duty_test_replay_interval_sec: 1,
             short_url_enabled: false,
             rer_report_enabled: false,
             support_non_rer_interceptions: false,
@@ -1274,15 +1218,6 @@ pub async fn current_system_settings(
             exclude_orbit_other_units: true,
         },
     }))
-}
-
-#[post("/api/admin/system-settings/rer-duty-test-replay/status")]
-pub async fn rer_duty_test_replay_status(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-) -> Result<Json<RerDutyTestReplayStatusRsp>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(worker::rer_duty_test_replay_status(&env.dbx).await?))
 }
 
 #[post("/api/admin/system-settings/list")]
@@ -2536,21 +2471,6 @@ mod tests {
         assert!(validate_report_generation_settings(&req).is_err());
     }
 
-    #[test]
-    fn rer_duty_test_replay_settings_require_a_valid_source_and_interval() {
-        let mut req = settings_req(false);
-        req.rer_duty_test_enabled = true;
-
-        assert!(validate_rer_duty_test_replay_settings(&req).is_err());
-
-        req.rer_duty_test_since_ms = 1;
-        req.rer_duty_test_replay_interval_sec = 0;
-        assert!(validate_rer_duty_test_replay_settings(&req).is_err());
-
-        req.rer_duty_test_replay_interval_sec = 1;
-        assert!(validate_rer_duty_test_replay_settings(&req).is_ok());
-    }
-
     fn old_ts() -> chrono::NaiveDateTime {
         chrono::DateTime::<chrono::Utc>::from_timestamp_micros(
             Utc::now().timestamp_micros(),
@@ -2607,12 +2527,7 @@ mod tests {
     fn settings_req(short_url_enabled: bool) -> CreateSystemSettingsReq {
         CreateSystemSettingsReq {
             rer_analysis_units_exact_match_only_default: true,
-            rer_duty_test_enabled: false,
-            rer_duty_insert_historical_interceptions: false,
-            rer_duty_test_since_ms: 0,
-            rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec: 1,
-            rer_duty_test_replay_interval_sec: 1,
             short_url_enabled,
             rer_report_enabled: false,
             support_non_rer_interceptions: false,
@@ -2701,12 +2616,13 @@ mod tests {
             ),
             updated_by_login_id: Set(None),
             deleted: Set(deleted),
-            rer_duty_test_enabled: Set(false),
-            rer_duty_test_since_ms: Set(0),
-            rer_duty_test_limit: Set(1),
+            rer_duty_test_enabled: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_since_ms: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_limit: sea_orm::ActiveValue::NotSet,
             rer_duty_poll_interval_sec: Set(1),
-            rer_duty_test_replay_interval_sec: Set(1),
-            rer_duty_insert_historical_interceptions: Set(false),
+            rer_duty_test_replay_interval_sec: sea_orm::ActiveValue::NotSet,
+            rer_duty_insert_historical_interceptions:
+                sea_orm::ActiveValue::NotSet,
             short_url_enabled: Set(false),
             rer_report_enabled: Set(None),
             support_non_rer_interceptions: Set(false),

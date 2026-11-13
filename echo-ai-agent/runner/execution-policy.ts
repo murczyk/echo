@@ -179,6 +179,14 @@ export interface BudgetEvidence {
   messages: CitedMessage[];
   files: FileSection[];
   saved?: { text: string; citations: string[] }[];
+  /** Statistics and lookups as the research model saw them; they cite no message. */
+  aggregates?: AggregateEvidence[];
+}
+
+export interface AggregateEvidence {
+  tool: string;
+  request: unknown;
+  result: unknown;
 }
 
 function evidenceRecords(
@@ -213,7 +221,7 @@ export function chooseBudgetAnswer(
     fileCitationHref(section.source),
   ),
 ): string {
-  const savedOnly = !evidence.messages.length && !evidence.files.length && Boolean(evidence.saved?.length);
+  const savedOnly = !evidence.messages.length && !evidence.files.length && !evidence.aggregates?.length && Boolean(evidence.saved?.length);
   const valid =
     candidate &&
     (!savedOnly || evidence.saved!.some((record) => record.citations.some((citation) => candidate.includes(citation)))) &&
@@ -259,7 +267,8 @@ export interface CompletionDiagnostic {
     | "tool_limit"
     | "continued"
     | "draft_refresh"
-    | "research_text";
+    | "research_text"
+    | "partial";
   stopReason?: string;
   rawStopReason?: string;
   inputTokens?: number;
@@ -418,6 +427,8 @@ type SynthesisOptions = {
   /** Images attached to the current message, kept for final synthesis. */
   images?: { type: "image"; data: string; mimeType: string }[];
   onOutcome?: (outcome: CompletionDiagnostic) => void;
+  /** Receives the text written before the signal cut the synthesis off. */
+  onPartial?: (text: string) => void;
 };
 
 /**
@@ -448,9 +459,15 @@ export function synthesisConversation(
 
 function synthesisContext(options: SynthesisOptions): Context | null {
   const records = evidenceRecords(options.evidence);
+  const aggregates = (options.evidence.aggregates ?? []).map(({ tool, request, result }) => ({
+    statisticsFrom: tool,
+    request,
+    result,
+  }));
   if (
     !records.length &&
     !options.evidence.saved?.length &&
+    !aggregates.length &&
     !options.allowUserEvidence
   )
     return null;
@@ -486,7 +503,9 @@ function synthesisContext(options: SynthesisOptions): Context | null {
     savedEvidence: record.text,
     citations: record.citations,
   }));
-  for (const record of [...records, ...saved].reverse()) {
+  // Newest first within the budget. Cited sources go first, so statistics only use
+  // the room they leave and never displace evidence an answer must cite.
+  for (const record of [...[...records, ...saved].reverse(), ...aggregates.reverse()]) {
     const message = {
       role: "user" as const,
       content: JSON.stringify(record),
@@ -499,6 +518,37 @@ function synthesisContext(options: SynthesisOptions): Context | null {
   }
   if (messages.length === 1 && !options.allowUserEvidence) return null;
   return context;
+}
+
+// How long a synthesis cut off by its signal may take to hand over what it streamed.
+// Finalization aborts a second before the deadline, and the worker allows five more.
+export const PARTIAL_GRACE_MS = 300;
+// Finish reasons, none yet included, after which a cut-off text is still the model's answer.
+const PARTIAL_FINISH_REASONS = new Set<string | undefined>([undefined, "stop", "length"]);
+// Endings of a cut-off text: the deadline's abort, or a finish that arrived as it fired.
+// "error" is a provider failure, which stays terminal.
+const PARTIAL_STOP_REASONS = new Set<string | undefined>(["aborted", "stop", "length"]);
+
+// Untrimmed: a cut-off text's final newline shows that its last line was finished.
+function messageText(message: unknown): string {
+  const content = (message as { content?: unknown } | null | undefined)?.content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((item) => item?.type === "text" && typeof item.text === "string")
+    .map((item) => item.text)
+    .join("");
+}
+
+async function settledWithin<T>(pending: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([pending.catch(() => null), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function synthesizeBudgetEvidence(
@@ -529,22 +579,21 @@ export async function synthesizeBudgetEvidence(
     signal.addEventListener("abort", onAbort, { once: true });
   });
   let response;
+  let pending: ReturnType<typeof summarize> | undefined;
   try {
-    response = await Promise.race([
-      aborted,
-      summarize(engine, options.prepareContext?.(context) ?? context, {
-        apiKey: options.apiKey,
-        maxTokens: options.maxTokens,
-        reasoning:
-          policy.synthesisEffort && policy.synthesisEffort !== "none"
-            ? (policy.synthesisEffort as "low" | "medium" | "high" | "max")
-            : undefined,
-        headers: { [PURPOSE_HEADER]: options.purpose ?? "synthesis" },
-        maxRetries: 0,
-        signal,
-        cacheRetention: "none",
-      }),
-    ]);
+    pending = summarize(engine, options.prepareContext?.(context) ?? context, {
+      apiKey: options.apiKey,
+      maxTokens: options.maxTokens,
+      reasoning:
+        policy.synthesisEffort && policy.synthesisEffort !== "none"
+          ? (policy.synthesisEffort as "low" | "medium" | "high" | "max")
+          : undefined,
+      headers: { [PURPOSE_HEADER]: options.purpose ?? "synthesis" },
+      maxRetries: 0,
+      signal,
+      cacheRetention: "none",
+    });
+    response = await Promise.race([aborted, pending]);
   } catch (error) {
     report({ outcome: signal.aborted ? "aborted" : completionFailure(error) });
     if (isProviderAuthorizationError(error))
@@ -560,7 +609,22 @@ export async function synthesizeBudgetEvidence(
     signal.removeEventListener("abort", onAbort);
   }
   if (!response || signal.aborted) {
-    report({ outcome: "aborted" });
+    // The provider still holds what it streamed before the cut and settles with it once
+    // it sees the abort. A provider that ignores the abort delays the fallback by at
+    // most PARTIAL_GRACE_MS.
+    const cut = options.onPartial && pending
+      ? (response ?? (await settledWithin(pending, PARTIAL_GRACE_MS)))
+      : null;
+    // The abort replaces stopReason, but a finish reason that already arrived stays: text
+    // a content filter, a provider failure or any other unexpected ending stopped is never
+    // an answer.
+    const partial =
+      PARTIAL_STOP_REASONS.has(cut?.stopReason) && PARTIAL_FINISH_REASONS.has(cut?.rawStopReason)
+        ? messageText(cut)
+        : "";
+    const written = partial.trim().length;
+    report({ outcome: "aborted", ...(written ? { textCharacters: written } : {}) });
+    if (written) options.onPartial?.(partial);
     return null;
   }
   const outcome = providerCompletion(response);
@@ -574,11 +638,5 @@ export async function synthesizeBudgetEvidence(
   if (/content_filter/i.test(response.errorMessage ?? ""))
     throw new SynthesisContentFilterError("Provider filtered final synthesis");
   if (response.stopReason !== "stop") return null;
-  return (
-    response.content
-      .filter((item) => item.type === "text")
-      .map((item) => item.text)
-      .join("")
-      .trim() || null
-  );
+  return messageText(response).trim() || null;
 }

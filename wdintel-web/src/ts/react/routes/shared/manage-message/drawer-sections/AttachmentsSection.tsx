@@ -1,4 +1,4 @@
-import { Box, Typography } from '@mui/material';
+import { Typography } from '@mui/material';
 import type { Uppy, UppyFile } from '@uppy/core';
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -29,6 +29,7 @@ import {
 } from '../../image-editor/image-editor-source-validation';
 import { renamePendingFile, replacePendingImageFile } from '../../image-editor/image-editor-upload';
 import { blurActiveElement } from '../../../../utils/focus';
+import { attachmentPositions, moveAttachment } from '../attachment-order';
 import { MAX_MESSAGE_ATTACHMENTS } from '../useMessageUppy';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import type { MessageFormData } from '../manage-message-drawer.schema';
@@ -77,14 +78,6 @@ function replacementMediaId(file: UppyFile<any, any>, existingMediaIds: Readonly
   return typeof mediaId === 'string' && existingMediaIds.has(mediaId) ? mediaId : null;
 }
 
-function attachmentSortRank(contentType: string | undefined, fileName: string | undefined): number {
-  const kind = mediaKind(contentType, fileName);
-  if (kind === 'image') return 0;
-  if (kind === 'video') return 1;
-  if (kind === 'audio') return 3;
-  return 2;
-}
-
 export function AttachmentsSection({
   uppy,
   uppyFiles,
@@ -100,6 +93,7 @@ export function AttachmentsSection({
   const { control, watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
   const attachmentFileNames = watch('attachment_file_names') || {};
+  const attachmentOrders = watch('attachment_orders') || {};
   const reportTextValue =
     useWatch({ control, name: 'full_body', disabled: !textPreviewMode }) ?? '';
   const reportDraft = useMemo(
@@ -136,23 +130,42 @@ export function AttachmentsSection({
     (media) => !deletedMediaIds.includes(media.id) || replacementByMediaId.has(media.id),
   );
 
-  const sortedVisibleMedia = useMemo(
-    () =>
-      [...visibleMedia].sort(
-        (a, b) =>
-          attachmentSortRank(a.contentType ?? undefined, a.fileName ?? undefined) -
-          attachmentSortRank(b.contentType ?? undefined, b.fileName ?? undefined),
-      ),
-    [visibleMedia],
-  );
-  const sortedUppyFiles = useMemo(
-    () =>
-      [...uppyFiles].sort(
-        (a, b) => attachmentSortRank(a.type, a.name) - attachmentSortRank(b.type, b.name),
-      ),
-    [uppyFiles],
-  );
   const replacementFiles = [...replacementByMediaId.values()];
+  const pendingFiles = uppyFiles.filter((file) => !replacementFiles.includes(file));
+  const positions = attachmentPositions(
+    existingMedia,
+    pendingFiles.map((file) => file.id),
+    attachmentOrders,
+  );
+  const orderedIds = [
+    ...visibleMedia.map((media) => media.id),
+    ...pendingFiles.map((file) => file.id),
+  ].sort((a, b) => positions.get(a)! - positions.get(b)!);
+  const reorder = (id: string, direction: -1 | 1) => {
+    const pendingPositions = Object.fromEntries(
+      pendingFiles.map((file) => [file.id, positions.get(file.id)!]),
+    );
+    setValue(
+      'attachment_orders',
+      moveAttachment(
+        orderedIds,
+        id,
+        direction,
+        positions,
+        { ...attachmentOrders, ...pendingPositions },
+        existingMedia.some((media) => media.orderF64 == null),
+      ),
+      { shouldDirty: true },
+    );
+  };
+  const moveProps = (id: string) => ({
+    onMoveUp: orderedIds.indexOf(id) > 0 ? () => reorder(id, -1) : undefined,
+    onMoveDown: orderedIds.indexOf(id) < orderedIds.length - 1 ? () => reorder(id, 1) : undefined,
+  });
+  const orderForPreview = (id: string) => {
+    const file = uppyFiles.find((file) => file.id === id);
+    return positions.get((file && replacementMediaId(file, existingMediaIds)) || id) ?? 0;
+  };
 
   const previewFiles = useMemo(
     () =>
@@ -313,6 +326,7 @@ export function AttachmentsSection({
       } else if (previewUrl) {
         const docKind = getDocumentKind({
           id: file.id,
+          orderF64: positions.get(file.id) ?? null,
           contentType: file.type ?? '',
           fileName: file.name ?? null,
           sizeBytes: file.size ?? 0,
@@ -340,7 +354,7 @@ export function AttachmentsSection({
       }
     };
 
-    for (const media of sortedVisibleMedia) {
+    for (const media of visibleMedia) {
       const rawMedia = media as MessageMediaInfo & {
         file_name?: string | null;
         content_type?: string | null;
@@ -417,15 +431,19 @@ export function AttachmentsSection({
       }
     }
 
-    for (const file of sortedUppyFiles)
-      if (!replacementFiles.includes(file)) appendUppyPreview(file);
+    for (const file of uppyFiles) if (!replacementFiles.includes(file)) appendUppyPreview(file);
 
-    return items;
+    return items.sort(
+      (a, b) =>
+        orderForPreview(a.type === 'coordinate' ? '' : (a.value.id ?? '')) -
+        orderForPreview(b.type === 'coordinate' ? '' : (b.value.id ?? '')),
+    );
   }, [
+    attachmentOrders,
     attachmentFileNames,
-    sortedUppyFiles,
+    uppyFiles,
     urls,
-    sortedVisibleMedia,
+    visibleMedia,
     failedExistingMediaIds,
     replacementByMediaId,
   ]);
@@ -510,114 +528,121 @@ export function AttachmentsSection({
       ) : null}
 
       {totalFiles > 0 ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-          {sortedVisibleMedia.map((media) => {
-            const rawMedia = media as MessageMediaInfo & {
-              file_name?: string | null;
-              content_type?: string | null;
-              size_bytes?: number | null;
-            };
-            const id = String(media.id ?? (rawMedia as any).id ?? '');
-            const fileName =
-              attachmentFileNames[id] ?? media.fileName ?? rawMedia.file_name ?? 'Unnamed file';
-            const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
-            const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
-            const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
-            const isFailed = failedExistingMediaIds.has(id);
-            const replacement = replacementByMediaId.get(id);
-            const preview = replacement ? urls.get(replacement.id) : undefined;
-            return (
-              <AttachmentFileRow
-                key={replacement?.id ?? id}
-                file={{
-                  id: replacement?.id ?? id,
-                  name: replacement?.name ?? fileName,
-                  type: replacement?.type ?? contentType,
-                  size: replacement?.size ?? sizeBytes,
-                }}
-                busy={busy}
-                onRemove={() =>
-                  replacement
-                    ? removeReplacement(replacement, id)
-                    : setValue('deleted_media_ids', Array.from(new Set([...deletedMediaIds, id])), {
-                        shouldDirty: true,
-                      })
-                }
-                onDownload={() =>
-                  replacement
-                    ? downloadUppyFile(replacement)
-                    : downloadExistingMedia({
-                        ...media,
-                        id,
-                        fileName,
-                        contentType,
-                        href: href ?? '',
-                      })
-                }
-                previewUrl={replacement ? preview?.url : !isFailed && href ? href : undefined}
-                onPreviewError={() =>
-                  replacement ? failPreview(replacement.id) : failExistingMedia(id)
-                }
-                onPreviewClick={() => openPreviewForId(replacement?.id ?? id)}
-                onEdit={
-                  canEditPreviewAttachment(replacement?.id ?? id)
-                    ? () => openPreviewForId(replacement?.id ?? id, 'edit-image')
-                    : undefined
-                }
-                onRename={(fileName) => {
-                  if (replacement) {
-                    return renamePendingFile({
-                      uppy,
-                      fileId: replacement.id,
-                      pending: replacement,
-                      fileName,
-                    });
-                  }
-                  setValue(
-                    'attachment_file_names',
-                    { ...attachmentFileNames, [id]: fileName },
-                    { shouldDirty: true },
-                  );
-                }}
-                upload={replacement ? fileUploadPresentation(replacement, busy) : undefined}
-              />
-            );
-          })}
-
-          {sortedUppyFiles
-            .filter((file) => !replacementFiles.includes(file))
-            .map((file) => {
-              const previewFile = {
-                id: file.id,
-                name: file.name ?? '',
-                type: file.type,
-                size: file.size,
-                data: file.data,
+        <div className="flex flex-col gap-echo-xs">
+          {[
+            ...visibleMedia.map((media) => {
+              const rawMedia = media as MessageMediaInfo & {
+                file_name?: string | null;
+                content_type?: string | null;
+                size_bytes?: number | null;
               };
-              const preview = urls.get(file.id);
+              const id = String(media.id ?? (rawMedia as any).id ?? '');
+              const fileName =
+                attachmentFileNames[id] ?? media.fileName ?? rawMedia.file_name ?? 'Unnamed file';
+              const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
+              const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
+              const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
+              const isFailed = failedExistingMediaIds.has(id);
+              const replacement = replacementByMediaId.get(id);
+              const preview = replacement ? urls.get(replacement.id) : undefined;
               return (
                 <AttachmentFileRow
-                  key={file.id}
-                  file={previewFile}
+                  key={replacement?.id ?? id}
+                  file={{
+                    id: replacement?.id ?? id,
+                    name: replacement?.name ?? fileName,
+                    type: replacement?.type ?? contentType,
+                    size: replacement?.size ?? sizeBytes,
+                  }}
                   busy={busy}
-                  onRemove={() => uppy.removeFile(file.id)}
-                  onDownload={() => downloadUppyFile(file)}
-                  previewUrl={preview?.url}
-                  onPreviewError={() => failPreview(file.id)}
-                  onPreviewClick={() => openPreviewForId(file.id)}
+                  {...moveProps(id)}
+                  onRemove={() =>
+                    replacement
+                      ? removeReplacement(replacement, id)
+                      : setValue(
+                          'deleted_media_ids',
+                          Array.from(new Set([...deletedMediaIds, id])),
+                          {
+                            shouldDirty: true,
+                          },
+                        )
+                  }
+                  onDownload={() =>
+                    replacement
+                      ? downloadUppyFile(replacement)
+                      : downloadExistingMedia({
+                          ...media,
+                          id,
+                          fileName,
+                          contentType,
+                          href: href ?? '',
+                        })
+                  }
+                  previewUrl={replacement ? preview?.url : !isFailed && href ? href : undefined}
+                  onPreviewError={() =>
+                    replacement ? failPreview(replacement.id) : failExistingMedia(id)
+                  }
+                  onPreviewClick={() => openPreviewForId(replacement?.id ?? id)}
                   onEdit={
-                    canEditPreviewAttachment(file.id)
-                      ? () => openPreviewForId(file.id, 'edit-image')
+                    canEditPreviewAttachment(replacement?.id ?? id)
+                      ? () => openPreviewForId(replacement?.id ?? id, 'edit-image')
                       : undefined
                   }
-                  onRename={(fileName) =>
-                    renamePendingFile({ uppy, fileId: file.id, pending: file, fileName })
-                  }
-                  upload={fileUploadPresentation(file, busy)}
+                  onRename={(fileName) => {
+                    if (replacement) {
+                      return renamePendingFile({
+                        uppy,
+                        fileId: replacement.id,
+                        pending: replacement,
+                        fileName,
+                      });
+                    }
+                    setValue(
+                      'attachment_file_names',
+                      { ...attachmentFileNames, [id]: fileName },
+                      { shouldDirty: true },
+                    );
+                  }}
+                  upload={replacement ? fileUploadPresentation(replacement, busy) : undefined}
                 />
               );
-            })}
-        </Box>
+            }),
+            ...uppyFiles
+              .filter((file) => !replacementFiles.includes(file))
+              .map((file) => {
+                const previewFile = {
+                  id: file.id,
+                  name: file.name ?? '',
+                  type: file.type,
+                  size: file.size,
+                  data: file.data,
+                };
+                const preview = urls.get(file.id);
+                return (
+                  <AttachmentFileRow
+                    key={file.id}
+                    file={previewFile}
+                    busy={busy}
+                    {...moveProps(file.id)}
+                    onRemove={() => uppy.removeFile(file.id)}
+                    onDownload={() => downloadUppyFile(file)}
+                    previewUrl={preview?.url}
+                    onPreviewError={() => failPreview(file.id)}
+                    onPreviewClick={() => openPreviewForId(file.id)}
+                    onEdit={
+                      canEditPreviewAttachment(file.id)
+                        ? () => openPreviewForId(file.id, 'edit-image')
+                        : undefined
+                    }
+                    onRename={(fileName) =>
+                      renamePendingFile({ uppy, fileId: file.id, pending: file, fileName })
+                    }
+                    upload={fileUploadPresentation(file, busy)}
+                  />
+                );
+              }),
+          ].sort((a, b) => orderForPreview(String(a.key)) - orderForPreview(String(b.key)))}
+        </div>
       ) : null}
 
       {previewDialogIndex !== null && previewAttachments.length > 0 ? (

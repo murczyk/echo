@@ -27,6 +27,7 @@ pub mod id;
 pub mod media;
 pub mod media_cache;
 pub(crate) mod media_local_cache;
+pub(crate) mod media_order;
 pub(crate) mod media_preview;
 pub mod media_thumbnail;
 pub mod media_wave;

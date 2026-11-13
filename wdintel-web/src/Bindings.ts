@@ -3682,6 +3682,7 @@ export type Datasource = {
 
 export type MessageMediaInfo = {
   id: string;
+  orderF64: number | null;
   contentType: string;
   fileName: string | null;
   sizeBytes: number;
@@ -4635,6 +4636,7 @@ export type DirectSubmitPayload = {
   network: SubmitNetwork | null;
   dmr: Array<SubmitDmrMetadata>;
   signalGroupMasterKey: string | null;
+  additionalSignalGroupMasterKeys: Array<string>;
   sourceSignalGroupMasterKey: string | null;
   deviceNameId: number | null | null;
   uploadUrls: Array<string> | null;
@@ -4649,6 +4651,7 @@ export type DirectSubmitPayload = {
 export type DirectSubmitAttachmentUpdates = {
   replacements: Array<DirectSubmitAttachmentReplacement>;
   renames: Array<DirectSubmitAttachmentRename>;
+  orders: Array<DirectSubmitAttachmentOrder>;
 };
 
 export type DirectSubmitAttachmentReplacement = {
@@ -4659,6 +4662,12 @@ export type DirectSubmitAttachmentReplacement = {
 export type DirectSubmitAttachmentRename = {
   mediaId: string;
   fileName: string;
+};
+
+export type DirectSubmitAttachmentOrder = {
+  mediaId: string | null;
+  uploadUrl: string | null;
+  orderF64: number;
 };
 
 export type DirectSubmitParsePayload = {
@@ -5898,12 +5907,7 @@ export type DeleteApiSenderReq = {
 export type SystemSettingsCurrentRsp = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -5944,12 +5948,7 @@ export type SystemSettingsCurrentRsp = {
 export type SystemSettingsItem = {
   id: number;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedByLoginId: string | null;
@@ -6006,12 +6005,7 @@ export type SystemSettingsListRsp = {
 
 export type CreateSystemSettingsReq = {
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -6062,12 +6056,102 @@ export type ActivateSystemSettingsReq = {
   id: number;
 };
 
-export type RerDutyTestReplayStatusRsp = {
-  status: string;
-  sourceCount: number;
-  nextSourcePosition: number | null;
-  generatedCount: number;
-  nextEmitAtMs: number | null;
+export type MessageReplayShiftMode =
+  | 'WindowStart'
+  | 'SameTimeOfDay'
+  | 'Manual'
+;
+
+export type MessageReplayOnEnd =
+  | 'Loop'
+  | 'Pause'
+;
+
+export type MessageReplaySpeed =
+  | 'Speed100'
+  | 'Speed200'
+  | 'Speed300'
+  | 'Speed500'
+  | 'Speed1000'
+;
+
+export type MessageReplaySpeedReq = {
+  speed: MessageReplaySpeed;
+};
+
+export type MessageReplayActivityBucket =
+  | 'Minutes15'
+  | 'Hour1'
+  | 'Day1'
+;
+
+export type MessageReplayExtentRsp = {
+  firstMs: number | null;
+  lastMs: number | null;
+};
+
+export type MessageReplayActivityReq = {
+  fromMs: number;
+  toMs: number;
+  bucket: MessageReplayActivityBucket;
+};
+
+export type MessageReplayActivityPoint = {
+  tsMs: number;
+  count: number;
+};
+
+export type MessageReplayActivityRsp = {
+  bucketSec: number;
+  points: Array<MessageReplayActivityPoint>;
+};
+
+export type MessageReplayPlanReq = {
+  fromMs: number;
+  toMs: number;
+  shiftMode: MessageReplayShiftMode;
+  manualShiftMs: number | null;
+  speed: MessageReplaySpeed;
+  onEnd: MessageReplayOnEnd;
+};
+
+export type MessageReplayPreviewRsp = {
+  windowCount: number;
+  skippedCount: number;
+  replayCount: number;
+  offsetMs: number;
+  startPositionMs: number;
+  firstMessageMs: number | null;
+  firstMessageEtaMs: number | null;
+  firstMessageShownMs: number | null;
+  cycleEndEtaMs: number;
+};
+
+export type MessageReplaySessionRsp = {
+  id: number;
+  state: string;
+  onEnd: MessageReplayOnEnd;
+  speed: MessageReplaySpeed;
+  completedCycles: number;
+  windowFromMs: number;
+  windowToMs: number;
+  anchorTsMs: number;
+  anchorAtMs: number;
+  pausedAtMs: number | null;
+  replayPositionMs: number;
+  offsetMs: number;
+  cursorMs: number;
+  replayedCount: number;
+  remainingCount: number;
+  nextMessageMs: number | null;
+  nextMessageEtaMs: number | null;
+  cycleEndEtaMs: number;
+  createdAtMs: number;
+};
+
+export type MessageReplayStatusRsp = {
+  session: MessageReplaySessionRsp | null;
+  storedReplayCount: number | null;
 };
 
 export type RerReportAccessListRsp = {
@@ -6671,6 +6755,10 @@ export type AiAgentConversationDetail = {
   createdAt: number;
   updatedAt: number;
   messages: Array<AiAgentMessageItem>;
+};
+
+export type AiAgentPrewarmReq = {
+  aiEngineId: string | null;
 };
 
 export type AiAgentRequestCreateReq = {

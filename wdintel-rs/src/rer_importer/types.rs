@@ -253,6 +253,8 @@ impl From<InboxInsertPayload> for InboxMessage {
 )]
 pub struct MessageMediaInfo {
     pub id: String,
+    #[serde(default)]
+    pub order_f64: Option<f64>,
     pub content_type: String,
     pub file_name: Option<String>,
     pub size_bytes: i64,
@@ -413,6 +415,7 @@ pub struct FreqDetailedPoint {
     PartialEq,
     Clone,
     Copy,
+    schemars::JsonSchema,
 )]
 pub enum InboxMessagesSortBy {
     IMSDatetime,
@@ -430,6 +433,7 @@ pub enum InboxMessagesSortBy {
     PartialEq,
     Clone,
     Copy,
+    schemars::JsonSchema,
 )]
 pub enum TagFilterOption {
     OneOfTags,
@@ -446,6 +450,7 @@ pub enum TagFilterOption {
     PartialEq,
     Clone,
     Copy,
+    schemars::JsonSchema,
 )]
 pub enum TagPresenceFilter {
     WithTags,
@@ -453,16 +458,32 @@ pub enum TagPresenceFilter {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct MessageIdsReq {
     pub message_ids: Vec<i64>,
+    #[schemars(skip)]
     pub inbox_req: Option<InboxMessagesReq>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+/// Read accessible intercepted messages by their UUIDs.
+#[derive(
+    Debug, Serialize, Deserialize, PartialEq, Clone, schemars::JsonSchema,
+)]
 pub struct MessageUuidsReq {
+    /// Message UUIDs: the `m=` value of an earlier citation link or a
+    /// `message_uuid` field. Read numeric message ids with messages_by_id.
+    #[schemars(length(min = 1, max = 100))]
     pub message_uuids: Vec<Uuid>,
+    #[schemars(skip)]
     pub inbox_req: Option<InboxMessagesReq>,
 }
 
@@ -477,6 +498,7 @@ pub struct MessageUuidsReq {
     Clone,
     Copy,
     Default,
+    schemars::JsonSchema,
 )]
 pub enum AnalysisSearchMode {
     #[default]
@@ -495,6 +517,7 @@ pub enum AnalysisSearchMode {
     PartialEq,
     Clone,
     Default,
+    schemars::JsonSchema,
 )]
 pub struct InboxMessagesReq {
     pub since_id_noninclusive: Option<i64>,
@@ -577,7 +600,15 @@ pub struct InboxMessagesReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct InboxItemContextReq {
     pub message_uid: String,
@@ -987,7 +1018,15 @@ pub struct SignalProfileSaveReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct AnalysisStatsReq {
     pub since_date_inclusive_ms: i64,
@@ -1037,7 +1076,15 @@ pub struct AnalysisStatsReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct AnalysisCallsignFrequencyMatchesReq {
     pub req: AnalysisStatsReq,
@@ -1832,16 +1879,36 @@ pub struct CallsignNetworkHint {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct MessageCommentsReq {
+    /// The numeric `id` of a message.
     pub message_id: i64,
 }
 
+/// Read the comments left on accessible messages.
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct BatchMessageCommentsReq {
+    /// Messages whose comments to read.
+    #[schemars(length(min = 1, max = 100))]
     pub messages: Vec<MessageCommentsReq>,
 }
 

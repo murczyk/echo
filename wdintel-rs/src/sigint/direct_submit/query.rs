@@ -865,6 +865,7 @@ where
         .filter(
             signal_message_media::Column::SignalMessageId.eq(signal_message_id),
         )
+        .order_by_asc(signal_message_media::Column::OrderF64)
         .order_by_asc(signal_message_media::Column::Id)
         .all(dbx)
         .await
@@ -888,6 +889,7 @@ where
         .filter(
             signal_message_media::Column::SignalMessageId.eq(signal_message_id),
         )
+        .order_by_asc(signal_message_media::Column::OrderF64)
         .order_by_asc(signal_message_media::Column::Id)
         .all(dbx)
         .await
@@ -904,7 +906,7 @@ where
     if signal_message_ids.is_empty() {
         return Ok(vec![]);
     }
-    Ok(signal_message_media::Entity::find()
+    let mut media = signal_message_media::Entity::find()
         .filter(
             signal_message_media::Column::SignalMessageId
                 .is_in(signal_message_ids.to_vec()),
@@ -913,7 +915,9 @@ where
         .lock(LockType::Update)
         .all(dbx)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    crate::messenger::media_order::sort(&mut media);
+    Ok(media)
 }
 
 pub async fn find_inbox_item_device_name_id<C>(
@@ -992,15 +996,31 @@ pub async fn copy_signal_message_media<C>(
     signal_message_id: i64,
     signal_message_uuid: Option<Uuid>,
     source_media: &[signal_message_media::Model],
-) -> Result<(), AppError>
+) -> Result<std::collections::HashMap<Uuid, Uuid>, AppError>
 where
     C: ConnectionTrait,
 {
-    crate::messenger::audio_ref::copy(
+    let start = crate::messenger::media_order::next(
+        dbx,
+        signal_message_id,
+        source_media.len(),
+    )
+    .await
+    .c(h!())?;
+    let source_media = source_media
+        .iter()
+        .enumerate()
+        .map(|(index, media)| {
+            let mut media = media.clone();
+            media.order_f64 = Some(start + index as f64);
+            media
+        })
+        .collect::<Vec<_>>();
+    let mut copied = crate::messenger::audio_ref::copy(
         env,
         dbx,
         signal_message_id,
-        source_media,
+        &source_media,
     )
     .await
     .c(h!())?;
@@ -1011,8 +1031,11 @@ where
             let storage_key = media.storage_key.clone().unwrap_or_else(|| {
                 crate::messenger::media::media_object_key(media)
             });
+            let id = Uuid::now_v7();
+            copied.insert(media.id, id);
             signal_message_media::ActiveModel {
-                id: Set(Uuid::now_v7()),
+                id: Set(id),
+                order_f64: Set(media.order_f64),
                 signal_message_id: Set(signal_message_id),
                 signal_message_uuid: Set(signal_message_uuid),
                 content_type: Set(media.content_type.clone()),
@@ -1031,7 +1054,7 @@ where
             .await
             .c(h!())?;
     }
-    Ok(())
+    Ok(copied)
 }
 
 pub async fn copy_signal_message_comments(
@@ -2265,7 +2288,7 @@ mod tests {
                 .await;
         env.dbx
             .execute_raw(crate::ai_network_match::sql(
-                "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_test_enabled, rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, false, 0, 1, 5, true, now() at time zone 'utc' + interval '1 day')",
+                "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, 5, true, now() at time zone 'utc' + interval '1 day')",
                 vec![],
             ))
             .await

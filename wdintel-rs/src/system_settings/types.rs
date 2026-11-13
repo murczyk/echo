@@ -7,12 +7,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 pub struct SystemSettingsCurrentRsp {
     pub id: Option<i64>,
     pub rer_analysis_units_exact_match_only_default: bool,
-    pub rer_duty_test_enabled: bool,
-    pub rer_duty_insert_historical_interceptions: bool,
-    pub rer_duty_test_since_ms: i64,
-    pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
-    pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
     pub rer_report_enabled: bool,
     pub support_non_rer_interceptions: bool,
@@ -67,12 +62,7 @@ pub struct SystemSettingsCurrentRsp {
 pub struct SystemSettingsItem {
     pub id: i64,
     pub rer_analysis_units_exact_match_only_default: bool,
-    pub rer_duty_test_enabled: bool,
-    pub rer_duty_insert_historical_interceptions: bool,
-    pub rer_duty_test_since_ms: i64,
-    pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
-    pub rer_duty_test_replay_interval_sec: i64,
     pub created_at: i64,
     pub updated_at: i64,
     pub updated_by_login_id: Option<String>,
@@ -151,13 +141,7 @@ pub struct SystemSettingsListRsp {
 )]
 pub struct CreateSystemSettingsReq {
     pub rer_analysis_units_exact_match_only_default: bool,
-    pub rer_duty_test_enabled: bool,
-    pub rer_duty_insert_historical_interceptions: bool,
-    pub rer_duty_test_since_ms: i64,
-    pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
-    #[serde(default = "default_rer_duty_test_replay_interval_sec")]
-    pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
     #[serde(default)]
     pub rer_report_enabled: bool,
@@ -267,21 +251,6 @@ fn default_true() -> bool {
     true
 }
 
-fn default_rer_duty_test_replay_interval_sec() -> i64 {
-    1
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct RerDutyTestReplayStatusRsp {
-    pub status: String,
-    pub source_count: i64,
-    pub next_source_position: Option<i64>,
-    pub generated_count: i64,
-    pub next_emit_at_ms: Option<i64>,
-}
-
 fn default_sigint_comment_parsing_enabled() -> bool {
     false
 }
@@ -323,10 +292,6 @@ mod tests {
     fn missing_boolean_settings_default_to_false() {
         let req: CreateSystemSettingsReq = serde_json::from_value(json!({
             "rer_analysis_units_exact_match_only_default": true,
-            "rer_duty_test_enabled": false,
-            "rer_duty_insert_historical_interceptions": false,
-            "rer_duty_test_since_ms": 0,
-            "rer_duty_test_limit": 1,
             "rer_duty_poll_interval_sec": 1,
             "short_url_enabled": false
         }))
@@ -341,7 +306,6 @@ mod tests {
         assert!(!req.disable_bot_tags);
         assert!(!req.hide_networks);
         assert!(req.analysis_aor_filter_enabled);
-        assert_eq!(req.rer_duty_test_replay_interval_sec, 1);
         assert!(req.exclude_orbit_other_units);
     }
 }

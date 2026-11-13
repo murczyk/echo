@@ -188,6 +188,14 @@ pub struct AiAgentConversationDetail {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+pub struct AiAgentPrewarmReq {
+    pub ai_engine_id: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
 pub struct AiAgentRequestCreateReq {
     #[serde(default)]
     pub reasoning_preset: Option<AiAgentReasoningPreset>,

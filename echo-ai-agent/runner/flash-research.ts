@@ -286,6 +286,17 @@ function answerIssue(text: string, sources: Sources): AnswerIssue | undefined {
     : undefined;
 }
 
+/**
+ * The part of a cut-off answer that was finished: its last line may stop mid-sentence
+ * or mid-link, and a trailing heading would introduce nothing.
+ */
+export function completedLines(text: string): string {
+  const lines = text.split("\n").slice(0, -1);
+  while (lines.length && (!lines.at(-1)!.trim() || /^\s*#{1,6}\s/.test(lines.at(-1)!)))
+    lines.pop();
+  return lines.join("\n").trimEnd();
+}
+
 export function validatedFlashAnswer(
   text: string | null,
   sources: Sources,
@@ -348,6 +359,11 @@ export class FlashResearch {
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
   private startFailed = false;
+  // The gateway answered a call before the first tool with a cooldown (429): no
+  // deployment of the model was ready, and pi's retries already waited it out.
+  private startCooldown = false;
+  // Some research call got an answer from the provider, even one without a tool call.
+  private providerAnswered = false;
   private readonly groupProblems = new Set<string>();
   private readonly groupsRead = new Set<string>();
   private readonly actions = new Map<string, CompletedAction>();
@@ -357,11 +373,15 @@ export class FlashResearch {
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
   private researchStartedAt?: number;
+  // The longest validated part of a synthesis the finalization deadline cut off.
+  private partial?: string;
   private readonly sources: () => Sources;
   private readonly journal?: WorkJournal;
   private readonly diagnostic: (event: CompletionDiagnostic) => void;
   private readonly tuning: ResearchTuning;
   usedFallback = false;
+  /** The answer is the finished part of a synthesis cut off by the deadline. */
+  usedPartial = false;
 
   constructor(
     sources: () => Sources,
@@ -512,6 +532,24 @@ export class FlashResearch {
     return answer;
   }
 
+  /**
+   * Research that wrote the cited answer after its tools already did synthesis's work;
+   * rewriting it would spend the time left on the same evidence (incident 01a1d04a).
+   * Only a report longer than any draft counts: a shorter text may be the completion
+   * note research ends with, and the draft or synthesis covers it. It must cite a source
+   * this request's tools returned, so an answer repeated from history is not one.
+   */
+  researchReport(
+    text: string,
+    budget: ResearchBudget,
+    retrieved: ReadonlySet<string>,
+  ): string | undefined {
+    return text.trim().length > DRAFT_CHARACTERS &&
+      markdownLinks(text).some((href) => retrieved.has(href))
+      ? this.directAnswer(text, budget)
+      : undefined;
+  }
+
   hasGaps(): boolean {
     return (
       (this.state
@@ -591,14 +629,32 @@ export class FlashResearch {
 
   // Deep was asked for more effort, so it must not simply end on an answer from memory.
   // A provider failure before the first tool call loses no work, so one more
-  // attempt beats telling the user to repeat the request.
+  // attempt beats telling the user to repeat the request. Not after a cooldown: the
+  // gateway had no deployment of the model, and another attempt only waits out
+  // another one (incident 01a1d35e).
   noteFailedStart(message?: { stopReason?: unknown; errorMessage?: unknown }): boolean {
     const failure = completionFailure(message?.errorMessage);
     this.startFailed =
       message?.stopReason === "error" &&
       this.publicToolRuns === 0 &&
+      !this.startCooldown &&
       (failure === "provider_error" || failure === "transient_error");
     return this.startFailed;
+  }
+
+  /**
+   * Every research call failed at the provider and nothing was saved: synthesis would
+   * have no evidence and only the same failing model. A reply the provider did give,
+   * such as Deep's answer before its search reminder, keeps the usual completion.
+   */
+  get providerNeverAnswered(): boolean {
+    return (
+      !this.providerAnswered &&
+      this.publicToolRuns === 0 &&
+      this.retrievals === 0 &&
+      !this.state &&
+      !this.draft
+    );
   }
 
   private get failedStart(): boolean {
@@ -636,9 +692,17 @@ export class FlashResearch {
     if (this.researchStartedAt === undefined) return;
     const durationMs = Date.now() - this.researchStartedAt;
     this.completed("research", durationMs);
+    const completion = providerCompletion(message);
+    // Only the latest outcome counts: a provider that answered after a cooldown has
+    // recovered, so a later failure gets the usual re-prompt.
+    if (["stop", "toolUse", "length"].includes(completion.stopReason ?? "")) {
+      this.providerAnswered = true;
+      this.startCooldown = false;
+    } else if (completion.failureKind === "rate_limit" && this.publicToolRuns === 0)
+      this.startCooldown = true;
     this.diagnostic({
       stage: "research",
-      ...providerCompletion(message),
+      ...completion,
       durationMs,
       remainingMs: budget?.remainingTotalMs(),
     });
@@ -692,14 +756,30 @@ export class FlashResearch {
       correction = this.correctionInstructions(result.outcome);
     }
     this.usedFallback = true;
-    const answer = this.fallback();
+    const draft = this.fallback();
+    // Either is validated; the longer one keeps more of the cited findings.
+    this.usedPartial = Boolean(
+      this.partial &&
+        (draft === FLASH_INABILITY || this.partial.length > draft.length),
+    );
+    const answer = this.usedPartial ? this.partial! : draft;
     this.diagnostic({
       stage: "answer",
-      outcome: answer === FLASH_INABILITY ? "inability" : "fallback",
+      outcome: this.usedPartial
+        ? "partial"
+        : answer === FLASH_INABILITY
+          ? "inability"
+          : "fallback",
       textCharacters: answer.length,
       remainingMs: budget.remainingFinalizationMs(),
     });
     return answer;
+  }
+
+  private notePartial(text: string): void {
+    const answer = validatedFlashAnswer(completedLines(text), this.sources());
+    if (answer && answer.length > (this.partial?.length ?? 0))
+      this.partial = answer;
   }
 
   private async synthesisAttempt(
@@ -715,6 +795,7 @@ export class FlashResearch {
     let durationMs = 0;
     const candidate = await synthesizeBudgetEvidence({
       ...options,
+      onPartial: (text) => this.notePartial(text),
       onOutcome: (event) => {
         outcome = event.outcome as CompletionStatus;
         durationMs = event.durationMs ?? 0;
@@ -735,9 +816,11 @@ export class FlashResearch {
     const answer = validatedFlashAnswer(candidate, this.sources());
     if (candidate && !answer) {
       outcome = "citation_rejected";
+      const draftIssue = answerIssue(candidate, this.sources());
       this.diagnostic({
         stage: "synthesis",
         outcome,
+        ...(draftIssue ? { draftIssue } : {}),
         attempt,
         durationMs,
         remainingMs: budget.remainingFinalizationMs(),

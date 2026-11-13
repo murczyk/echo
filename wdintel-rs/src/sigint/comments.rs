@@ -38,7 +38,7 @@ struct CommentCsvRow {
     source_organism: String,
 }
 
-const SIGINT_COMMENT_MIGRATION_LOCK_KEY: i64 = 7_421_983_615;
+pub(crate) const SIGINT_COMMENT_MIGRATION_LOCK_KEY: i64 = 7_421_983_615;
 const SIGINT_COMMENT_MIGRATION_MAX_BATCH_SIZE: u64 = 2_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

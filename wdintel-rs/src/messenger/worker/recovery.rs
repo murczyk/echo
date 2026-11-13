@@ -340,6 +340,7 @@ async fn load_recovery_maps(
     } else {
         echo_attachment::Entity::find()
             .filter(echo_attachment::Column::MessageId.is_in(inbox_ids_i32))
+            .order_by_asc(echo_attachment::Column::Id)
             .all(dbx)
             .await
             .c(h!())?
@@ -3091,12 +3092,13 @@ mod tests {
             echo_im_sync_since_inbox_message_id: Set(0),
             updated_by_login_id: Set(None),
             deleted: Set(deleted),
-            rer_duty_test_enabled: Set(false),
-            rer_duty_test_since_ms: Set(0),
-            rer_duty_test_limit: Set(1),
+            rer_duty_test_enabled: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_since_ms: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_limit: sea_orm::ActiveValue::NotSet,
             rer_duty_poll_interval_sec: Set(1),
-            rer_duty_test_replay_interval_sec: Set(1),
-            rer_duty_insert_historical_interceptions: Set(false),
+            rer_duty_test_replay_interval_sec: sea_orm::ActiveValue::NotSet,
+            rer_duty_insert_historical_interceptions:
+                sea_orm::ActiveValue::NotSet,
             short_url_enabled: Set(false),
             rer_report_enabled: Set(None),
             support_non_rer_interceptions: Set(false),
