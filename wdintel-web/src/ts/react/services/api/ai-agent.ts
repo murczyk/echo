@@ -54,6 +54,7 @@ import type {
   AiAgentProviderItem,
   AiAgentProviderRuntimeProfileItem,
   AiAgentRequestCancelRsp,
+  AiAgentPrewarmReq,
   AiAgentRequestCreateReq,
   AiAgentRequestCreateRsp,
   AiAgentRequestEventItem,
@@ -671,6 +672,12 @@ export async function updateAiAgentConversation(
 export async function deleteAiAgentConversation(id: string): Promise<void> {
   const req: AiAgentConversationIdReq = { id };
   await postVoid('/api/ai-agent/conversations/delete', req);
+}
+
+/** Asks Echo to start the user's agent container while they type (#4139). */
+export async function prewarmAiAgent(providerId: string): Promise<void> {
+  const req: AiAgentPrewarmReq = { aiEngineId: providerId };
+  await postVoid('/api/ai-agent/prewarm', req);
 }
 
 export async function submitAiAgentRequest(input: {

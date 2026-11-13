@@ -733,10 +733,11 @@ class DispatcherProxyNoChangeTests(unittest.TestCase):
                 "exec",
                 AGENT_NAME,
                 "--",
-                "grep",
-                "-qxF",
+                "sh",
+                "-c",
+                'grep -qxF -- "$1" /etc/hosts && systemctl is-active --quiet nginx',
+                "sh",
                 "127.0.0.1 echo.example.test # echo-ai-agent",
-                "/etc/hosts",
             ],
             check=False,
         )
@@ -744,7 +745,7 @@ class DispatcherProxyNoChangeTests(unittest.TestCase):
     @mock.patch.object(DISPATCHER, "apply_proxy_settings")
     @mock.patch.object(DISPATCHER, "run")
     @mock.patch.object(DISPATCHER, "require_instance")
-    def test_lost_hosts_mapping_reconfigures(self, require_instance, run, apply_proxy_settings):
+    def test_lost_hosts_mapping_or_booting_nginx_reconfigures(self, require_instance, run, apply_proxy_settings):
         require_instance.return_value = configured_record()
         run.return_value = completed(1)
 
@@ -803,6 +804,42 @@ class DispatcherProxyNoChangeTests(unittest.TestCase):
 
         self.assertIs(result["changed"], False)
         dispatch.assert_not_called()
+
+
+class DispatcherStartReservationTests(unittest.TestCase):
+    def start(self, running, reserved=None):
+        body = {"agent_id": AGENT_ID}
+        if reserved is not None:
+            body["reserved_slots"] = reserved
+        stopped = dict(configured_record(), status="Stopped")
+        with (
+            mock.patch.object(DISPATCHER, "require_instance", return_value=stopped),
+            mock.patch.object(DISPATCHER, "running_agent_count", return_value=running),
+            mock.patch.object(DISPATCHER, "run") as run,
+        ):
+            DISPATCHER.op_start("echo-staging", body)
+        return run
+
+    def test_requests_may_use_every_slot(self):
+        self.start(running=5).assert_called_once_with(["incus", "start", AGENT_NAME])
+
+    def test_prewarm_leaves_reserved_slots_free(self):
+        self.start(running=3, reserved=2).assert_called_once()
+        with self.assertRaisesRegex(DISPATCHER.DispatchError, "running-container limit reached"):
+            self.start(running=4, reserved=2)
+
+    def test_rejects_invalid_reservations(self):
+        for reserved in (-1, DISPATCHER.MAX_RUNNING, True, "2"):
+            with self.subTest(reserved=reserved), self.assertRaises(DISPATCHER.DispatchError):
+                self.start(running=0, reserved=reserved)
+
+    def test_start_accepts_reserved_slots_field(self):
+        request = DISPATCHER.parse_request(
+            json.dumps(
+                {"id": "r1", "operation": "start", "agent_id": AGENT_ID, "reserved_slots": 2}
+            ).encode()
+        )
+        self.assertEqual(request.body["reserved_slots"], 2)
 
 
 if __name__ == "__main__":

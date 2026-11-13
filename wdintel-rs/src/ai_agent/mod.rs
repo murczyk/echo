@@ -12,6 +12,7 @@ pub(crate) mod file_citations;
 pub(crate) mod lifecycle;
 pub mod maps;
 pub mod middleware;
+pub mod prewarm;
 pub mod profile;
 pub mod provider_gateway;
 pub(crate) mod reasoning;

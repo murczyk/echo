@@ -649,6 +649,7 @@ mod tests {
 
     fn media_with_extension(extension: &str) -> signal_message_media::Model {
         signal_message_media::Model {
+            order_f64: None,
             id: Uuid::nil(),
             signal_message_id: 1,
             signal_message_uuid: None,
@@ -731,6 +732,7 @@ mod tests {
         tokio::fs::write(&kmz_path, kmz_bytes).await.unwrap();
 
         let supported_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -746,6 +748,7 @@ mod tests {
         .await
         .unwrap();
         let ignored_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -761,6 +764,7 @@ mod tests {
         .await
         .unwrap();
         let native_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -778,6 +782,7 @@ mod tests {
         .await
         .unwrap();
         let passthrough_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -797,6 +802,7 @@ mod tests {
                 .unwrap()
                 + 1;
         let oversized_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -969,6 +975,7 @@ mod tests {
         .unwrap();
         let now = chrono::Utc::now().naive_utc();
         let converted_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -984,6 +991,7 @@ mod tests {
         .await
         .unwrap();
         let native_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -999,6 +1007,7 @@ mod tests {
         .await
         .unwrap();
         let lazy_native_media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -1158,6 +1167,7 @@ mod tests {
         .await
         .unwrap();
         let media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   conversations: vi.fn(),
   conversation: vi.fn(),
   submit: vi.fn(),
+  prewarm: vi.fn(),
   cancel: vi.fn(),
   delete: vi.fn(),
   stream: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
   listAiAgentConversations: mocks.conversations,
   getAiAgentConversation: mocks.conversation,
   submitAiAgentRequest: mocks.submit,
+  prewarmAiAgent: mocks.prewarm,
   cancelAiAgentRequest: mocks.cancel,
   deleteAiAgentConversation: mocks.delete,
   getAiAgentMap: mocks.map,
@@ -240,6 +242,7 @@ beforeEach(async () => {
   mocks.conversations.mockResolvedValue([]);
   mocks.conversation.mockResolvedValue({ ...CONVERSATION, messages: [] });
   mocks.cancel.mockResolvedValue('cancelled');
+  mocks.prewarm.mockResolvedValue(undefined);
   mocks.delete.mockResolvedValue(undefined);
   mocks.map.mockImplementation(async (summary) => ({ ...summary, records: [] }));
   mocks.stream.mockImplementation(
@@ -294,6 +297,29 @@ function uploadItem(id: string, fileName: string) {
     createdAt: 1_700_000_000_000,
   };
 }
+
+describe('AiAgentChat prewarm', () => {
+  it('#4139 starts the agent once typing begins and at most once a minute after', async () => {
+    expect(mocks.prewarm).not.toHaveBeenCalled();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+
+    await act(async () => setTextarea('Знайди'));
+    expect(mocks.prewarm).toHaveBeenCalledTimes(1);
+    expect(mocks.prewarm).toHaveBeenCalledWith(PROVIDER.id);
+
+    await act(async () => setTextarea('Знайди позивний'));
+    expect(mocks.prewarm).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(1_700_000_060_000);
+    await act(async () => setTextarea('Знайди позивний Карп'));
+    expect(mocks.prewarm).toHaveBeenCalledTimes(2);
+  });
+
+  it('#4139 does not start the agent for whitespace', async () => {
+    await act(async () => setTextarea('   '));
+    expect(mocks.prewarm).not.toHaveBeenCalled();
+  });
+});
 
 describe('AiAgentChat attachments', () => {
   it('#3962 uploads picked files and sends them with the next message', async () => {

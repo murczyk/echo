@@ -5,8 +5,8 @@ use crate::h;
 use crate::types::{Env, ShortContext};
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{
-    ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult,
-    TransactionTrait,
+    ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    FromQueryResult, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -26,11 +26,28 @@ struct Job {
     attempts: i32,
 }
 
+/// Starts a run, or returns the active one. Waits for a concurrent start or
+/// retry to commit.
 pub(crate) async fn start(
     db: &DatabaseConnection,
     actor: Option<Uuid>,
     days: i64,
 ) -> anyhow::Result<Uuid> {
+    let (since, now) = period(days).c(h!())?;
+    let transaction = db.begin().await.c(h!())?;
+    transaction
+        .execute_raw(sql(
+            "select pg_advisory_xact_lock($1)",
+            vec![AI_CALLSIGN_REPARSE_LOCK.into()],
+        ))
+        .await
+        .c(h!())?;
+    let id = create_run(&transaction, actor, since, now).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(id)
+}
+
+fn period(days: i64) -> anyhow::Result<(NaiveDateTime, NaiveDateTime)> {
     anyhow::ensure!(days > 0, "Кількість днів повинна бути додатною");
     let now = Utc::now().naive_utc();
     let duration = chrono::Duration::try_days(days)
@@ -40,14 +57,16 @@ pub(crate) async fn start(
         .checked_sub_signed(duration)
         .ok_or_else(|| anyhow::anyhow!("Завеликий період"))
         .c(h!())?;
-    let transaction = db.begin().await.c(h!())?;
-    transaction
-        .execute_raw(sql(
-            "select pg_advisory_xact_lock($1)",
-            vec![(AI_CALLSIGN_WORKER_LOCK + 1).into()],
-        ))
-        .await
-        .c(h!())?;
+    Ok((since, now))
+}
+
+/// Needs `AI_CALLSIGN_REPARSE_LOCK` held by `transaction`.
+async fn create_run(
+    transaction: &DatabaseTransaction,
+    actor: Option<Uuid>,
+    since: NaiveDateTime,
+    now: NaiveDateTime,
+) -> anyhow::Result<Uuid> {
     if let Some(row) = transaction.query_one_raw(sql("select id from ai_callsign_reparse_run where state in ('enumerating', 'running')", vec![])).await.c(h!())? {
         return row.try_get("", "id").c(h!());
     }
@@ -55,7 +74,6 @@ pub(crate) async fn start(
     transaction.execute_raw(sql("insert into ai_callsign_reparse_run (id, actor_id, automatic, state, since_ts, until_ts) values ($1, $2, $3, 'enumerating', $4, $5)", vec![id.into(), actor.into(), actor.is_none().into(), since.into(), now.into()])).await.c(h!())?;
     transaction.execute_raw(sql("insert into ai_callsign_reparse_target (run_id, callsign, removal_count) select $1, callsign, removal_count from ai_callsign_feedback_summary where $2 or removal_count > scheduled_count", vec![id.into(), actor.is_some().into()])).await.c(h!())?;
     transaction.execute_raw(sql("update ai_callsign_feedback_summary s set scheduled_count = greatest(s.scheduled_count, t.removal_count) from ai_callsign_reparse_target t where t.run_id = $1 and t.callsign = s.callsign", vec![id.into()])).await.c(h!())?;
-    transaction.commit().await.c(h!())?;
     Ok(id)
 }
 
@@ -90,7 +108,25 @@ async fn schedule(db: &DatabaseConnection) -> anyhow::Result<bool> {
     if row.is_none() {
         return Ok(false);
     }
-    start(db, None, AI_CALLSIGN_REPARSE_DAYS).await.c(h!())?;
+    let (since, now) = period(AI_CALLSIGN_REPARSE_DAYS).c(h!())?;
+    let transaction = db.begin().await.c(h!())?;
+    // A busy lock means a start or retry is committing; check again on the
+    // next tick instead of stalling this parser until lock_timeout.
+    let acquired: bool = transaction
+        .query_one_raw(sql(
+            "select pg_try_advisory_xact_lock($1) as acquired",
+            vec![AI_CALLSIGN_REPARSE_LOCK.into()],
+        ))
+        .await
+        .c(h!())?
+        .c(h!())?
+        .try_get("", "acquired")
+        .c(h!())?;
+    if !acquired {
+        return Ok(false);
+    }
+    create_run(&transaction, None, since, now).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(true)
 }
 
@@ -277,6 +313,13 @@ async fn cleanup(db: &DatabaseConnection) -> anyhow::Result<bool> {
     }
     transaction.commit().await.c(h!())?;
     Ok(true)
+}
+
+#[cfg(test)]
+pub(super) async fn schedule_for_test(
+    db: &DatabaseConnection,
+) -> anyhow::Result<bool> {
+    schedule(db).await
 }
 
 #[cfg(test)]

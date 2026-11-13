@@ -348,6 +348,7 @@ mod tests {
         assert!(is_allowed(&Method::POST, "/api/rer-importer/get-inbox"));
         assert!(!is_allowed(&Method::POST, "/api/user"));
         assert!(!is_allowed(&Method::POST, "/api/ai-agent/requests/create"));
+        assert!(!is_allowed(&Method::POST, "/api/ai-agent/prewarm"));
         assert!(!is_allowed(
             &Method::POST,
             "/api/rer-importer/delete-message"

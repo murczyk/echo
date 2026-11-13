@@ -2347,6 +2347,7 @@ mod messenger_media_tests {
         .await
         .unwrap();
         let media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(uuid::Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -2768,6 +2769,7 @@ mod messenger_media_tests {
     #[test]
     fn attachment_size_validation_rejects_negative_metadata() {
         let media = iter::once(signal_message_media::Model {
+            order_f64: None,
             id: uuid::Uuid::nil(),
             signal_message_id: 1,
             signal_message_uuid: Some(uuid::Uuid::now_v7()),

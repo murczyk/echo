@@ -27,7 +27,7 @@ pub(super) const DSL_VERSION: i32 = 1;
 // Stable application-owned PostgreSQL advisory-lock key. The value has no
 // business meaning; uniqueness and stability across Echo instances are what
 // serialize semantic tag mutation with definition snapshot publication.
-const DEFINITION_PUBLICATION_ADVISORY_LOCK_KEY: i64 =
+pub(crate) const DEFINITION_PUBLICATION_ADVISORY_LOCK_KEY: i64 =
     i64::from_be_bytes(*b"FILEADEF");
 
 #[derive(Clone, Debug)]

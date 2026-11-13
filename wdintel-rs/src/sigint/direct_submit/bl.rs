@@ -370,6 +370,12 @@ where
         )
         .c(h!())?;
     let timestamp = extracted_dt.as_ref().and_then(|dt| {
+        if let Some(datetime) = dt.utc_datetime {
+            return Some(
+                Utc.from_utc_datetime(&datetime)
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
+            );
+        }
         timezone
             .from_local_datetime(&dt.datetime)
             .single()
@@ -462,6 +468,7 @@ async fn save_signal_message(
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     let attachment_updates = payload.attachment_updates.clone().unwrap_or(
         DirectSubmitAttachmentUpdates {
+            orders: vec![],
             replacements: vec![],
             renames: vec![],
         },
@@ -695,6 +702,13 @@ async fn save_signal_message(
         &deleted_media_ids,
     )
     .c(h!())?;
+    validate_attachment_orders(
+        &attachment_updates,
+        &existing_media,
+        &deleted_media_ids,
+        &upload_urls,
+    )
+    .c(h!())?;
 
     validate_direct_submit_content(&payload, retained_media_count).c(h!())?;
     validate_direct_submit_attachment_count(
@@ -900,6 +914,77 @@ fn validate_direct_submit_payload(
                 "Список батьківських повідомлень не повинен містити дублікати."
                     .to_string(),
         });
+    }
+    Ok(())
+}
+
+async fn apply_attachment_orders(
+    txn: &DatabaseTransaction,
+    message: i64,
+    updates: &DirectSubmitAttachmentUpdates,
+    payload: &DirectSubmitPayload,
+    uploads: &[MediaUploadInput],
+    stored: &crate::messenger::media::StoreMediaAttachmentsResult,
+    copied: &std::collections::HashMap<Uuid, Uuid>,
+) -> anyhow::Result<()> {
+    if updates.orders.is_empty() {
+        return Ok(());
+    }
+    crate::messenger::media_order::next(txn, message, 0)
+        .await
+        .c(h!())?;
+    for order in &updates.orders {
+        let id = if let Some(id) = &order.media_id {
+            let id = parse_attachment_media_id(id).c(h!())?;
+            copied.get(&id).copied().unwrap_or(id)
+        } else {
+            let index = payload
+                .upload_urls
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .position(|url| Some(url) == order.upload_url.as_ref())
+                .c(h!())?;
+            let upload = uploads.get(index).c(h!())?;
+            let index = stored
+                .stored_uploads
+                .iter()
+                .position(|stored| stored.path == upload.path)
+                .c(h!())?;
+            stored.media.get(index).c(h!())?.id
+        };
+        crate::messenger::media_order::set(txn, message, id, order.order_f64)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+fn validate_attachment_orders(
+    updates: &DirectSubmitAttachmentUpdates,
+    existing_media: &[crate::entities::signal_message_media::Model],
+    deleted_media_ids: &[Uuid],
+    upload_urls: &[String],
+) -> Result<(), AppError> {
+    let mut ids = HashSet::new();
+    let mut urls = HashSet::new();
+    for order in &updates.orders {
+        let valid = match (&order.media_id, &order.upload_url) {
+            (Some(id), None) => {
+                let id = parse_attachment_media_id(id).c(h!())?;
+                existing_media.iter().any(|media| media.id == id)
+                    && !deleted_media_ids.contains(&id)
+                    && ids.insert(id)
+            }
+            (None, Some(url)) => upload_urls.contains(url) && urls.insert(url),
+            _ => false,
+        };
+        if !valid || !order.order_f64.is_finite() {
+            return Err(AppError::BL {
+                msg: "Некоректний порядок вкладень або недоступне вкладення."
+                    .to_string(),
+            });
+        }
     }
     Ok(())
 }
@@ -1188,18 +1273,16 @@ async fn load_copy_media(
         .into_iter()
         .filter(|id| !deleted_media_ids.contains(id))
         .collect::<HashSet<_>>();
-    let mut source_media_by_id = source_media
+    if retained_media_ids
+        .iter()
+        .any(|media_id| !source_media_ids.contains(media_id))
+    {
+        return Err(AppError::NotFound);
+    }
+    Ok(source_media
         .into_iter()
-        .map(|media| (media.id, media))
-        .collect::<BTreeMap<_, _>>();
-    retained_media_ids
-        .into_iter()
-        .map(|media_id| {
-            source_media_by_id
-                .remove(&media_id)
-                .ok_or(AppError::NotFound)
-        })
-        .collect()
+        .filter(|media| retained_media_ids.contains(&media.id))
+        .collect())
 }
 
 fn parse_media_ids(media_ids: &[String]) -> Result<Vec<Uuid>, AppError> {
@@ -1602,6 +1685,7 @@ async fn finish_direct_submit(
                 .await
                 .c(h!())?;
 
+        let mut copied_media_ids = std::collections::HashMap::new();
         if !parent_signal_message_ids.is_empty() {
             let mut source_media = load_copy_media(
                 env,
@@ -1629,7 +1713,7 @@ async fn finish_direct_submit(
                 }
                 media.file_name = Some(rename.file_name.trim().to_string());
             }
-            query::copy_signal_message_media(
+            copied_media_ids = query::copy_signal_message_media(
                 env,
                 &txn,
                 signal_message_id,
@@ -1638,6 +1722,33 @@ async fn finish_direct_submit(
             )
             .await
             .c(h!())?;
+            let mut seen_media_ids = HashSet::new();
+            let copied_media = source_media
+                .iter()
+                .filter_map(|media| copied_media_ids.get(&media.id))
+                .copied()
+                .filter(|id| seen_media_ids.insert(*id))
+                .collect::<Vec<_>>();
+            for (index, id) in copied_media.iter().enumerate() {
+                crate::messenger::media_order::set(
+                    &txn,
+                    signal_message_id,
+                    *id,
+                    (index + 1) as f64,
+                )
+                .await
+                .c(h!())?;
+            }
+            for (index, media) in upload_result.media.iter().enumerate() {
+                crate::messenger::media_order::set(
+                    &txn,
+                    signal_message_id,
+                    media.id,
+                    (copied_media.len() + index + 1) as f64,
+                )
+                .await
+                .c(h!())?;
+            }
             query::copy_signal_message_comments(
                 env,
                 &txn,
@@ -1667,6 +1778,18 @@ async fn finish_direct_submit(
             .await
             .c(h!())?;
         }
+
+        apply_attachment_orders(
+            &txn,
+            signal_message_id,
+            attachment_updates,
+            payload,
+            uploads,
+            &upload_result,
+            &copied_media_ids,
+        )
+        .await
+        .c(h!())?;
 
         let deleted_media_ids = media_to_delete
             .iter()
@@ -2568,6 +2691,20 @@ mod tests {
         assert_eq!(parsed_no_time.unit.as_deref(), Some(label));
         assert_eq!(parsed_no_time.is_time_null, Some(true));
         assert!(parsed_no_time.timestamp.is_some());
+
+        let parsed_moscow = parse_signal_message_body(
+            &env,
+            &env.dbx,
+            "25.10.2026_03:30:42 МСК\nПерехоплення",
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            parsed_moscow.timestamp.as_deref(),
+            Some("2026-10-25T00:30:42Z")
+        );
     }
 
     #[tokio::test]
@@ -2953,6 +3090,7 @@ mod tests {
         assert_eq!(report_message.group_master_key, None);
 
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(report.signal_message_id),
             signal_message_uuid: Set(
@@ -3463,6 +3601,7 @@ mod tests {
         .unwrap();
         let media_id = Uuid::now_v7();
         let media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(created.signal_message_id),
             signal_message_uuid: Set(
@@ -3515,6 +3654,154 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_3931_attachment_order_preserves_legacy_and_fractional_positions(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let created = submit_signal_message(
+            &login_id,
+            &env,
+            direct_submit_payload("attachment order #3931"),
+        )
+        .await
+        .unwrap();
+        let mut ids = Vec::new();
+        for index in 0..3 {
+            let id = Uuid::now_v7();
+            signal_message_media::ActiveModel {
+                id: Set(id),
+                signal_message_id: Set(created.signal_message_id),
+                content_type: Set("text/plain".to_string()),
+                file_name: Set(Some(format!("{index}.txt"))),
+                size_bytes: Set(1),
+                is_encrypted: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            ids.push(id);
+        }
+        let unchanged = edit_signal_message(
+            &login_id,
+            &env,
+            created.signal_message_id,
+            direct_submit_payload("unchanged attachment order #3931"),
+        )
+        .await
+        .unwrap();
+        let media = unchanged.message.unwrap().media;
+        assert_eq!(
+            media
+                .iter()
+                .map(|media| media.id.clone())
+                .collect::<Vec<_>>(),
+            ids.iter().map(ToString::to_string).collect::<Vec<_>>()
+        );
+        assert!(media.iter().all(|media| media.order_f64.is_none()));
+
+        let mut payload = direct_submit_payload("reordered attachments #3931");
+        payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            replacements: vec![],
+            renames: vec![],
+            orders: vec![super::super::types::DirectSubmitAttachmentOrder {
+                media_id: Some(ids[2].to_string()),
+                upload_url: None,
+                order_f64: 1.5,
+            }],
+        });
+        let reordered = edit_signal_message(
+            &login_id,
+            &env,
+            created.signal_message_id,
+            payload.clone(),
+        )
+        .await
+        .unwrap()
+        .message
+        .unwrap()
+        .media;
+        assert_eq!(
+            reordered
+                .iter()
+                .map(|media| media.id.clone())
+                .collect::<Vec<_>>(),
+            vec![ids[0].to_string(), ids[2].to_string(), ids[1].to_string()]
+        );
+        assert_eq!(
+            reordered
+                .iter()
+                .map(|media| media.order_f64)
+                .collect::<Vec<_>>(),
+            vec![Some(1.0), Some(1.5), Some(2.0)]
+        );
+        payload.attachment_updates.as_mut().unwrap().orders[0].order_f64 = 1.25;
+        let reordered = edit_signal_message(
+            &login_id,
+            &env,
+            created.signal_message_id,
+            payload.clone(),
+        )
+        .await
+        .unwrap()
+        .message
+        .unwrap()
+        .media;
+        assert_eq!(
+            reordered
+                .iter()
+                .map(|media| media.order_f64)
+                .collect::<Vec<_>>(),
+            vec![Some(1.0), Some(1.25), Some(2.0)]
+        );
+        payload.attachment_updates.as_mut().unwrap().orders[0].media_id =
+            Some(Uuid::now_v7().to_string());
+        assert!(edit_signal_message(
+            &login_id,
+            &env,
+            created.signal_message_id,
+            payload
+        )
+        .await
+        .is_err());
+
+        let mut report = direct_submit_payload("copied attachments #3931");
+        report.parent_signal_message_ids = vec![created.signal_message_id];
+        report.retained_media_ids =
+            Some(ids.iter().rev().map(ToString::to_string).collect());
+        let copied = submit_signal_message(&login_id, &env, report.clone())
+            .await
+            .unwrap()
+            .message
+            .unwrap()
+            .media;
+        assert_eq!(
+            copied
+                .iter()
+                .map(|media| media.file_name.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["0.txt", "2.txt", "1.txt"]
+        );
+        report.deleted_media_ids = Some(vec![ids[0].to_string()]);
+        let copied = submit_signal_message(&login_id, &env, report)
+            .await
+            .unwrap()
+            .message
+            .unwrap()
+            .media;
+        assert_eq!(
+            copied
+                .iter()
+                .map(|media| media.file_name.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["2.txt", "1.txt"]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn issue_3595_replacement_requeues_old_ocr_media() {
         const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\0\x05\0\x01\xff\x89\x99=\x1d\0\0\0\0IEND\xaeB`\x82";
         let env = cleanup().await.unwrap();
@@ -3546,6 +3833,7 @@ mod tests {
         let created_at =
             (chrono::Utc::now() - chrono::Duration::days(8)).naive_utc();
         let original = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(created.signal_message_id),
             signal_message_uuid: Set(
@@ -3639,6 +3927,7 @@ mod tests {
         let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("replacement.png".into()), meta_type: Some("image/png".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(PNG))])).await.unwrap() else { panic!() };
         let mut payload = direct_submit_payload("edited #3595");
         payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            orders: vec![],
             replacements: vec![
                 crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
                     media_id: media_id.to_string(),
@@ -3685,6 +3974,7 @@ mod tests {
         let mut payload =
             direct_submit_payload("invalid image replacement #3595");
         payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            orders: vec![],
             replacements: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
                 media_id: media_id.to_string(),
                 upload_url,
@@ -3711,6 +4001,7 @@ mod tests {
 
         let document_id = Uuid::now_v7();
         let document = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(document_id),
             signal_message_id: Set(created.signal_message_id),
             signal_message_uuid: Set(original.signal_message_uuid),
@@ -3729,6 +4020,7 @@ mod tests {
         let mut payload =
             direct_submit_payload("invalid document replacement #3595");
         payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            orders: vec![],
             replacements: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
                 media_id: document_id.to_string(),
                 upload_url,
@@ -3784,6 +4076,7 @@ mod tests {
         .unwrap();
         let media_id = Uuid::now_v7();
         let original = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(created.signal_message_id),
             signal_message_uuid: Set(
@@ -3833,6 +4126,7 @@ mod tests {
         let mut payload = direct_submit_payload("failed #3595 cleanup");
         payload.upload_urls = Some(vec![ordinary_upload_url]);
         payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            orders: vec![],
             replacements: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
                 media_id: media_id.to_string(),
                 upload_url: replacement_upload_url,
@@ -3890,6 +4184,7 @@ mod tests {
         .unwrap();
         let source_media_id = Uuid::now_v7();
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(source_media_id),
             signal_message_id: Set(source.signal_message_id),
             signal_message_uuid: Set(
@@ -3917,6 +4212,7 @@ mod tests {
         payload.parent_signal_message_ids = vec![source.signal_message_id];
         payload.retained_media_ids = Some(vec![source_media_id.to_string()]);
         payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            orders: vec![],
             replacements: vec![],
             renames: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentRename {
                 media_id: source_media_id.to_string(),

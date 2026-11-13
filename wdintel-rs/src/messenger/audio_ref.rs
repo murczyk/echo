@@ -15,6 +15,7 @@ pub(crate) struct AudioReference {
     pub transcription_source_id: Uuid,
     pub created_at: chrono::NaiveDateTime,
     pub file_name_override: Option<String>,
+    pub order_f64: Option<f64>,
 }
 
 pub(crate) async fn attach(
@@ -23,13 +24,22 @@ pub(crate) async fn attach(
     message: i64,
     audio: &device_audio::Model,
 ) -> anyhow::Result<Uuid> {
+    let existing = AudioReference::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "select * from signal_message_audio_ref where signal_message_id=$1 and audio_id=$2",
+        [message.into(), audio.id.into()],
+    )).one(db).await.c(h!())?;
+    let order = match existing {
+        Some(reference) => reference.order_f64,
+        None => Some(super::media_order::next(db, message, 1).await.c(h!())?),
+    };
     let source =
         crate::transcription::service::register(db, &audio.storage_key)
             .await
             .c(h!())?;
     let row = db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-        "insert into signal_message_audio_ref(id,signal_message_id,audio_id,transcription_source_id) values($1,$2,$3,$4) on conflict(signal_message_id,audio_id) do update set audio_id=excluded.audio_id returning id",
-        [Uuid::now_v7().into(), message.into(), audio.id.into(), source.into()])).await.c(h!())?.c(h!())?;
+        "insert into signal_message_audio_ref(id,signal_message_id,audio_id,transcription_source_id,order_f64) values($1,$2,$3,$4,$5) on conflict(signal_message_id,audio_id) do update set audio_id=excluded.audio_id returning id",
+        [Uuid::now_v7().into(), message.into(), audio.id.into(), source.into(), order.into()])).await.c(h!())?.c(h!())?;
     if audio.source_size_bytes
         <= crate::config::ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES
         && crate::system_settings::audio_transcription_enabled(db)
@@ -107,6 +117,7 @@ fn media(
         file_name: Some(reference.file_name_override.unwrap_or(audio.name)),
         size_bytes: audio.source_size_bytes,
         created_at: reference.created_at,
+        order_f64: reference.order_f64,
         is_encrypted: true,
         storage_key: Some(audio.storage_key),
     }
@@ -215,7 +226,7 @@ async fn load_messages<C: ConnectionTrait>(
             stored.push(media(reference, audio));
         }
     }
-    stored.sort_by_key(|media| media.id);
+    super::media_order::sort(&mut stored);
     Ok(stored)
 }
 
@@ -270,7 +281,8 @@ pub(crate) async fn copy<C: ConnectionTrait>(
     db: &C,
     message: i64,
     media: &[signal_message_media::Model],
-) -> anyhow::Result<()> {
+) -> anyhow::Result<std::collections::HashMap<Uuid, Uuid>> {
+    let mut copied = std::collections::HashMap::new();
     for media in media.iter().filter(|media| is_reference(media)) {
         let reference = reference(db, media.id).await.c(h!())?.c(h!())?;
         let audio = audio(env, &reference).await.c(h!())?;
@@ -280,9 +292,10 @@ pub(crate) async fn copy<C: ConnectionTrait>(
             .filter(|name| **name != audio.name)
             .cloned();
         let created = db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-            "insert into signal_message_audio_ref(id,signal_message_id,audio_id,transcription_source_id,file_name_override) values($1,$2,$3,$4,$5) on conflict(signal_message_id,audio_id) do nothing returning id",
-            [Uuid::now_v7().into(), message.into(), reference.audio_id.into(), reference.transcription_source_id.into(), override_name.into()])).await.c(h!())?;
+            "insert into signal_message_audio_ref(id,signal_message_id,audio_id,transcription_source_id,file_name_override,order_f64) values($1,$2,$3,$4,$5,$6) on conflict(signal_message_id,audio_id) do update set audio_id=excluded.audio_id returning id",
+            [Uuid::now_v7().into(), message.into(), reference.audio_id.into(), reference.transcription_source_id.into(), override_name.into(), media.order_f64.into()])).await.c(h!())?;
         if let Some(created) = created {
+            copied.insert(media.id, created.try_get("", "id").c(h!())?);
             index_name(
                 db,
                 created.try_get("", "id").c(h!())?,
@@ -298,7 +311,7 @@ pub(crate) async fn copy<C: ConnectionTrait>(
             .await
             .c(h!())?;
     }
-    Ok(())
+    Ok(copied)
 }
 
 pub(crate) async fn reconcile(

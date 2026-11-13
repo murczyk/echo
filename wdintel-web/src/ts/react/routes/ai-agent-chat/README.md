@@ -96,6 +96,20 @@ of the conversation. See the
 
 Regression coverage: `wdintel-web/tests/e2e/ai-agent-documents.spec.ts`.
 
+## Environment prewarm
+
+Typing the first draft text or attaching a file asks the backend
+(`POST /api/ai-agent/prewarm`) to start the user's agent container, so the
+request that follows skips most of «Готую середовище». The composer repeats the
+call at most once a minute and only while the draft keeps changing; it never
+fires on focus or page load. The backend throttles per user, does nothing while
+a request is active or another lifecycle operation holds the user's lock, keeps
+an already running container alive, and starts a stopped one only when two
+host slots stay free for real requests; the dispatcher enforces that reserve
+atomically across all namespaces on the agent host. A submission sent while a
+prewarm is starting waits for it rather than failing. A prewarmed container
+that no request uses stops after 3 minutes. Errors are logged, never shown.
+
 ## Live progress
 
 The composer shows **Зупинити** while this conversation has queued or running

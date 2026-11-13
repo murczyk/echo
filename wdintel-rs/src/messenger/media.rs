@@ -1034,6 +1034,12 @@ pub async fn replace_media_attachment(
     };
     let attachment = &staged.attachments[0];
     let result = async {
+        let order = signal_message_media::Entity::find_by_id(existing.id)
+            .one(txn)
+            .await
+            .c(h!())?
+            .c(h!())?
+            .order_f64;
         signal_message_media::Entity::delete_by_id(existing.id)
             .exec(txn)
             .await
@@ -1049,6 +1055,7 @@ pub async fn replace_media_attachment(
             is_encrypted: Set(attachment.is_encrypted),
             storage_key: Set(Some(attachment.storage_key.clone())),
             created_at: Set(existing.created_at),
+            order_f64: Set(order),
         }
         .insert(txn)
         .await
@@ -1075,10 +1082,21 @@ pub async fn persist_staged_media(
     txn: &impl ConnectionTrait,
 ) -> Result<Vec<signal_message_media::Model>, AppError> {
     let mut media = Vec::with_capacity(staged.attachments.len());
+    if staged.attachments.is_empty() {
+        return Ok(media);
+    }
+    let mut order = super::media_order::next(
+        txn,
+        signal_message_id,
+        staged.attachments.len(),
+    )
+    .await
+    .c(h!())?;
     for attachment in &staged.attachments {
         media.push(
             signal_message_media::ActiveModel {
                 id: Set(attachment.id),
+                order_f64: Set(Some(order)),
                 signal_message_id: Set(signal_message_id),
                 signal_message_uuid: Set(signal_message_uuid),
                 content_type: Set(attachment.content_type.clone()),
@@ -1093,6 +1111,7 @@ pub async fn persist_staged_media(
             .await
             .c(h!())?,
         );
+        order += 1.0;
     }
     Ok(media)
 }
@@ -1972,6 +1991,7 @@ mod tests {
         file_name: Option<&str>,
     ) -> signal_message_media::Model {
         signal_message_media::Model {
+            order_f64: None,
             id: Uuid::nil(),
             signal_message_id: 1,
             signal_message_uuid: Some(Uuid::now_v7()),
@@ -1993,6 +2013,138 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3931_uploads_persist_input_order_and_append() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let mut config = env.config.clone();
+        config.storage_dir = temporary.path().display().to_string();
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let txn = env.dbx.begin().await.unwrap();
+        let message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut uploads = Vec::new();
+        for name in ["c.txt", "a.txt", "b.txt"] {
+            let path = temporary.path().join(name);
+            tokio::fs::write(&path, name).await.unwrap();
+            uploads.push(MediaUploadInput {
+                path: path.display().to_string(),
+                name: Some(name.to_string()),
+                content_type: Some("text/plain".to_string()),
+            });
+        }
+        let stored = store_media_attachments(
+            &uploads,
+            message.id,
+            message.id_uuid,
+            &config,
+            &s3,
+            &txn,
+            UploadedAttachmentDeletion::Preserve,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            stored
+                .media
+                .iter()
+                .map(|media| media.order_f64)
+                .collect::<Vec<_>>(),
+            vec![Some(1.0), Some(2.0), Some(3.0)]
+        );
+        super::super::media_order::set(
+            &txn,
+            message.id,
+            stored.media[2].id,
+            1.5,
+        )
+        .await
+        .unwrap();
+        let appended = store_media_attachments(
+            &uploads[..1],
+            message.id,
+            message.id_uuid,
+            &config,
+            &s3,
+            &txn,
+            UploadedAttachmentDeletion::Preserve,
+        )
+        .await
+        .unwrap();
+        assert_eq!(appended.media[0].order_f64, Some(3.0));
+        let media = crate::messenger::audio_ref::for_messages(
+            &env,
+            &txn,
+            &[message.id],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            media
+                .iter()
+                .map(|media| media.file_name.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["c.txt", "b.txt", "a.txt", "c.txt"]
+        );
+        let copied_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::sigint::direct_submit::query::copy_signal_message_media(
+            &env,
+            &txn,
+            copied_message.id,
+            copied_message.id_uuid,
+            &media,
+        )
+        .await
+        .unwrap();
+        let copied = crate::messenger::audio_ref::for_messages(
+            &env,
+            &txn,
+            &[copied_message.id],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            copied
+                .iter()
+                .map(|media| media.file_name.clone())
+                .collect::<Vec<_>>(),
+            media
+                .iter()
+                .map(|media| media.file_name.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            copied
+                .iter()
+                .map(|media| media.order_f64)
+                .collect::<Vec<_>>(),
+            vec![Some(1.0), Some(2.0), Some(3.0), Some(4.0)]
+        );
+        txn.rollback().await.unwrap();
     }
 
     #[tokio::test]
@@ -2045,10 +2197,9 @@ mod tests {
             .execute_unprepared(
                 r#"
 insert into system_settings (
-    rer_analysis_units_exact_match_only_default, rer_duty_test_enabled,
-    rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec,
+    rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec,
     messenger_media_cache_enabled, messenger_media_cache_min_free_gib
-) values (true, false, 0, 1, 5, true, 0)
+) values (true, 5, true, 0)
 "#,
             )
             .await
@@ -2136,6 +2287,7 @@ insert into system_settings (
         let replacement_bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\0\x05\0\x01\xff\x89\x99=\x1d\0\0\0\0IEND\xaeB`\x82";
         tokio::fs::write(&upload, replacement_bytes).await.unwrap();
         let existing = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(fixture.message_id),
             signal_message_uuid: Set(None),

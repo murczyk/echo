@@ -1,4 +1,5 @@
 use super::client::is_government_url;
+use super::health::{HealthSink, InFlight};
 use crate::config::AI_PROVIDER_METRICS_OPENAI_HOST;
 use crate::entities::ai_engine;
 use crate::telemetry::{AiProviderLabels, Metrics};
@@ -41,12 +42,17 @@ struct PendingCall {
 /// records it instead of letting the call vanish from the latency data.
 pub(super) struct ProviderCallAttempt {
     pending: Option<PendingCall>,
+    /// The engine's health counters, which see the same outcome (#4157), with
+    /// the engine and this call's in-flight entry.
+    health: Option<(HealthSink, uuid::Uuid, InFlight)>,
+    streaming: bool,
     provider_started_at: Option<Instant>,
 }
 
 impl ProviderCallAttempt {
     pub(super) fn start(
         sink: Option<&ProviderMetricsSink>,
+        health: Option<&HealthSink>,
         engine: &ai_engine::Model,
         streaming: bool,
     ) -> Self {
@@ -56,6 +62,13 @@ impl ProviderCallAttempt {
                 labels: sink.labels(engine),
                 streaming,
             }),
+            health: health.map(|health| {
+                // Counted when it starts, so a long call shows the engine is in use.
+                health.record_start(engine.id);
+                let call = health.begin(engine.id);
+                (health.clone(), engine.id, call)
+            }),
+            streaming,
             provider_started_at: None,
         }
     }
@@ -80,6 +93,14 @@ impl ProviderCallAttempt {
     }
 
     fn record(&mut self, outcome: &'static str) {
+        if let Some((health, engine_id, call)) = self.health.take() {
+            health.end(engine_id, call);
+            // A stream's headers only promise an answer; its timer records how
+            // the stream ended instead.
+            if !(self.streaming && outcome == "ok") {
+                health.record(engine_id, outcome);
+            }
+        }
         let Some(call) = self.pending.take() else {
             return;
         };
@@ -107,21 +128,33 @@ impl Drop for ProviderCallAttempt {
     }
 }
 
-/// Records how long a provider stream ran after its response headers.
+/// Records how long a provider stream ran after its response headers, and
+/// how it ended for the engine's health.
 pub(crate) struct StreamBodyTimer {
     pending: Option<(Arc<Metrics>, AiProviderLabels)>,
+    health: Option<(HealthSink, uuid::Uuid, InFlight)>,
     started_at: Instant,
 }
 
 impl StreamBodyTimer {
+    /// `None` when neither metrics nor health counters are kept.
     pub(super) fn start(
-        sink: &ProviderMetricsSink,
+        sink: Option<&ProviderMetricsSink>,
+        health: Option<&HealthSink>,
         engine: &ai_engine::Model,
-    ) -> Self {
-        Self {
-            pending: Some((sink.metrics.clone(), sink.labels(engine))),
-            started_at: Instant::now(),
+    ) -> Option<Self> {
+        if sink.is_none() && health.is_none() {
+            return None;
         }
+        Some(Self {
+            pending: sink
+                .map(|sink| (sink.metrics.clone(), sink.labels(engine))),
+            health: health.map(|health| {
+                let call = health.begin(engine.id);
+                (health.clone(), engine.id, call)
+            }),
+            started_at: Instant::now(),
+        })
     }
 
     pub(crate) fn completed(&mut self) {
@@ -133,6 +166,12 @@ impl StreamBodyTimer {
     }
 
     fn record(&mut self, outcome: &'static str) {
+        if let Some((health, engine_id, call)) = self.health.take() {
+            health.end(engine_id, call);
+            if let Some(outcome) = stream_health_outcome(outcome) {
+                health.record(engine_id, outcome);
+            }
+        }
         if let Some((metrics, labels)) = self.pending.take() {
             metrics.record_ai_provider_stream(
                 &labels,
@@ -146,6 +185,16 @@ impl StreamBodyTimer {
 impl Drop for StreamBodyTimer {
     fn drop(&mut self) {
         self.record(OUTCOME_CANCELLED);
+    }
+}
+
+/// The call outcome a stream ending stands for. A cancelled stream says
+/// nothing about the provider.
+pub(super) fn stream_health_outcome(outcome: &str) -> Option<&'static str> {
+    match outcome {
+        "completed" => Some("ok"),
+        "failed" => Some("stream_failed"),
+        _ => None,
     }
 }
 

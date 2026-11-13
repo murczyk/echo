@@ -39,10 +39,12 @@
 завантажте їх у локальний каталог:
 
 ```bash
-just download-doc-media --server echo-pivnich --only docs/releases/YYYY-MM-DD/media
+just download-doc-media --bucket echouastorage --only docs/releases/YYYY-MM-DD/media
 ```
 
-Наявні локальні файли пропускаються; `--force` замінює їх копіями з B2.
+Параметр `--bucket` обов’язковий; без нього команда покаже доступні сховища та
+завершиться з помилкою. Наявні локальні файли пропускаються; `--force` замінює
+їх копіями з B2.
 
 ## 3) Оновіть `docs/releases/index.json`
 
@@ -63,7 +65,10 @@ just build-front
 
 На `/updates` має бути видно новий реліз, текст і медіа.
 
-Медіа публікуються окремо для кожного сервера командою
-`just release-doc-media`; `--only` обирає каталог, `--force` замінює існуючі
-файли. Публікація потребує погодження цільових серверів і B2-сховищ.
-Дивіться [зберігання медіа документації](doc-media.md).
+Медіа публікуються в одне B2-сховище командою
+`just release-doc-media --bucket echouastorage`; `--only` обирає каталог,
+`--force` замінює існуючі файли. Повторіть публікацію для всіх трьох сховищ,
+щоразу задаючи `AWS_ACCESS_KEY_ID` та `AWS_SECRET_ACCESS_KEY` з відповідної
+нотатки Bitwarden `<bucket>-lfs backblaze`. Наприкінці команда нагадує про всі
+три сховища. Публікація потребує погодження цільових B2-сховищ.
+Покрокова інструкція: [завантаження вкладень документації](doc-media.md#uploading-a-documentation-attachment).

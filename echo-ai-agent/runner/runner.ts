@@ -117,7 +117,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.11.2";
+const HARNESS_RELEASE = "2026.11.13.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3847,6 +3847,13 @@ function lastAssistantMessage(messages: unknown[]): JsonObject | undefined {
   ) as JsonObject | undefined;
 }
 
+/** The text of a reply that ended normally without calling a tool. */
+function finishedText(message: JsonObject | undefined): string {
+  const content = message?.content;
+  const calledTool = Array.isArray(content) && content.some((block) => (block as JsonObject | null)?.type === "toolCall");
+  return message?.stopReason === "stop" && !calledTool ? assistantMessageText(message) : "";
+}
+
 /** Whether the request asked for any tool, including private ones and calls rejected before they ran. */
 function requestedTools(messages: unknown[]): boolean {
   return messages.some((message) => {
@@ -4021,16 +4028,21 @@ const DEEP_STOP_NOTICES: Record<ResearchLimitReason, string> = {
 };
 const DEEP_UNFINISHED_NOTICE = "Агент завершив роботу, не виконавши всі заплановані кроки.";
 const DEEP_DRAFT_NOTICE = "Не вдалося завершити підсумок. Наведено останню збережену чернетку.";
+const PARTIAL_NOTICE = "Відповідь обірвано через ліміт часу; охоплення джерел неповне.";
+const PARTIAL_DEEP_HINT = " Оберіть глибокий аналіз, щоб отримати повний звіт.";
 
-function boundedResearchNotice({ reason, deep, coverageLimited, unfinished, fallbackText }: {
+export function boundedResearchNotice({ reason, deep, coverageLimited, unfinished, fallbackText, partial }: {
   reason: ResearchLimitReason | undefined;
   deep: boolean;
   coverageLimited: boolean;
   unfinished: boolean;
   /** The fallback answer, when synthesis failed. */
   fallbackText?: string;
+  /** The answer is the finished part of a synthesis the deadline cut off. */
+  partial?: boolean;
 }): string {
   if (!coverageLimited) return "";
+  if (partial) return deep ? PARTIAL_NOTICE : PARTIAL_NOTICE + PARTIAL_DEEP_HINT;
   if (!deep) return "Охоплення джерел неповне; відповідь містить лише підтверджені зібрані дані.";
   if (reason) return DEEP_STOP_NOTICES[reason];
   if (unfinished) return DEEP_UNFINISHED_NOTICE;
@@ -4124,7 +4136,7 @@ async function completeLimitedResearch(options: {
   // synthesis qualifies it.
   const coverageLimited = Boolean(budget.reason) || (deep ? unfinished || usedFallback : researchGaps);
   const notice = options.research
-    ? boundedResearchNotice({ reason: budget.reason, deep, coverageLimited, unfinished, fallbackText: usedFallback ? text : undefined })
+    ? boundedResearchNotice({ reason: budget.reason, deep, coverageLimited, unfinished, fallbackText: usedFallback ? text : undefined, partial: options.research?.usedPartial })
     : budget.reason === "context_limit"
     ? "Не вдалося продовжити аналіз усіх джерел. Наведено часткову відповідь за вже зібраними матеріалами; охоплення джерел неповне. Уточніть запит, щоб продовжити."
     : budget.policy.preset === "deep"
@@ -4310,12 +4322,16 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     };
     // Set only by tools of this request, not by the recap restored from earlier requests.
     let retrievedCitable = false;
+    const retrievedLinks = new Set<string>();
     const recordRetrievedSources = (citations: MessageCitation[]) => {
       if (citations.length) retrievedCitable = true;
+      for (const citation of citations) retrievedLinks.add(citationHref(citation));
       recordSources(citations);
     };
     const recordRetrievedFiles = (citations: FileCitation[], sections: FileSection[]) => {
       if (citations.length || sections.length) retrievedCitable = true;
+      for (const citation of citations) retrievedLinks.add(fileCitationHref(citation));
+      for (const section of sections) retrievedLinks.add(fileCitationHref(section.source));
       recordFiles(citations, sections);
     };
     const savedEvidence: NonNullable<BudgetEvidence["saved"]> = [];
@@ -4531,17 +4547,24 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         if (toolLimitError) throw toolLimitError;
         if (contextCompaction.failure()) throw contextCompaction.failure();
         if (cancelled) return;
-        await refreshFlashDraft(session, research, budget);
+        // A document must be saved during research, so synthesis says when it was not.
+        const documentWork = Boolean(payload.executionPolicy?.documentTask || payload.documentTarget);
+        const usedTools = requestedTools(currentTurnAssistantMessages);
+        // Research that wrote the cited answer after its tools needs neither a draft
+        // refresh nor a synthesis that would rewrite it with the time left.
+        const report = usedTools && !documentWork
+          ? research.researchReport(finishedText(lastAssistantMessage(currentTurnAssistantMessages)), budget, retrievedLinks)
+          : undefined;
+        if (!report) await refreshFlashDraft(session, research, budget);
         if (journal?.failure) throw journal.failure;
         if (authorizationFailure) throw authorizationFailure;
         if (contentFilterFailure) throw contentFilterFailure;
         if (cancelled) return;
         validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
-        // Research that ran no tool already answered from the whole conversation. A document
-        // must be saved during research, so synthesis says when it was not.
-        const answer = !requestedTools(currentTurnAssistantMessages) && !payload.executionPolicy?.documentTask && !payload.documentTarget
+        // Research that ran no tool already answered from the whole conversation.
+        const answer = report ?? (!usedTools && !documentWork
           ? research.directAnswer(reply ?? assistantMessageText(lastAssistantMessage(currentTurnAssistantMessages)), budget)
-          : undefined;
+          : undefined);
         await completeLimitedResearch({ payload, budget, selectedEngine: selectedModel,
           evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence, aggregates: [...deliveredAggregates.values()] },
           deliveredCitationsThisTurn, deliveredFiles, mapRegistry, documentRegistry, cancellation: cancellation.signal,
@@ -4682,6 +4705,14 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (research) emit({ type: "completion_diagnostic", stage: "research", outcome: budget?.reason ?? (toolLimitError ? "tool_error" : "provider_error"), remainingMs: budget?.remainingTotalMs() });
       if (research && !budget?.reason) budget?.limit("provider_error");
       if (!budget?.reason) throw error;
+      // Research whose every call failed at the provider, with no restored, retrieved or
+      // attached evidence, leaves synthesis nothing to work from but the same failing
+      // model. Failing the request lets the chat say the provider did not answer and
+      // offer a retry or another model (incident 01a1d35e).
+      const noEvidence = !savedEvidence.length && !deliveredMessages.size && !deliveredFileSections.size &&
+        !deliveredAggregates.size && !images.length && !payload.uploads?.length;
+      if (research && budget.reason === "provider_error" && research.providerNeverAnswered && noEvidence && terminalProviderFailure(error))
+        throw error;
       emitAssistant.current = false;
       void session.abort().catch(() => undefined);
       await completeLimitedResearch({

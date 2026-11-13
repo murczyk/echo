@@ -1,6 +1,7 @@
 export type SystemSettingsTab =
   | 'main'
   | 'duty'
+  | 'replay'
   | 'analysis'
   | 'reports'
   | 'control'
@@ -17,6 +18,7 @@ export type AiEngineUrlScreen =
 const SYSTEM_SETTINGS_TABS = new Set<SystemSettingsTab>([
   'main',
   'duty',
+  'replay',
   'analysis',
   'reports',
   'control',

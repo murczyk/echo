@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize,
+    Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize,
 )]
 #[sea_orm(table_name = "signal_message_audio_ref")]
 pub struct Model {
@@ -22,6 +22,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub file_name_override: Option<String>,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub order_f64: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

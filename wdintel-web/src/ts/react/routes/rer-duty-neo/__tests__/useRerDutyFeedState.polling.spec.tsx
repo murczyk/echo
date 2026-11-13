@@ -1956,10 +1956,6 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       hoisted.systemSettingsCurrent.mockResolvedValueOnce({
         id: 1,
         rerAnalysisUnitsExactMatchOnlyDefault: false,
-        rerDutyTestEnabled: false,
-        rerDutyInsertHistoricalInterceptions: false,
-        rerDutyTestSinceMs: 0,
-        rerDutyTestLimit: 1,
         rerDutyPollIntervalSec: 1,
         rerShortUrlEnabled: true,
       });
@@ -2001,10 +1997,6 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       hoisted.systemSettingsCurrent.mockResolvedValueOnce({
         id: 1,
         rerAnalysisUnitsExactMatchOnlyDefault: false,
-        rerDutyTestEnabled: false,
-        rerDutyInsertHistoricalInterceptions: false,
-        rerDutyTestSinceMs: 0,
-        rerDutyTestLimit: 1,
         rerDutyPollIntervalSec: 1,
         rerShortUrlEnabled: true,
       });

@@ -147,25 +147,28 @@ dev-front:
 dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
-# Publish documentation media separately to every active server's existing S3 destination.
+# Publish documentation media to the selected B2 bucket.
+[arg('bucket', long='bucket')]
 [arg('force', long='force', value='true')]
 [arg('only', long='only')]
-release-doc-media force="false" only="":
+release-doc-media bucket="" force="false" only="":
     #!/usr/bin/env bash
     set -euo pipefail
-    args=(release --servers "{{ active_servers }}" --extensions "mp4 webm jpg jpeg png mp3 gif svg ico")
-    if [[ "$1" == "true" ]]; then args+=(--force); fi
-    if [[ -n "$2" ]]; then args+=(--only "$2"); fi
+    args=(release --extensions "mp4 webm jpg jpeg png mp3 gif svg ico")
+    if [[ -n "$1" ]]; then args+=(--bucket "$1"); fi
+    if [[ "$2" == "true" ]]; then args+=(--force); fi
+    if [[ -n "$3" ]]; then args+=(--only "$3"); fi
     python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
 
-# Restore documentation media from one server's B2 destination into this checkout.
+# Restore documentation media from the selected B2 bucket into this checkout.
+[arg('bucket', long='bucket')]
 [arg('force', long='force', value='true')]
 [arg('only', long='only')]
-[arg('server', long='server')]
-download-doc-media server force="false" only="":
+download-doc-media bucket="" force="false" only="":
     #!/usr/bin/env bash
     set -euo pipefail
-    args=(download --server "$1")
+    args=(download)
+    if [[ -n "$1" ]]; then args+=(--bucket "$1"); fi
     if [[ "$2" == "true" ]]; then args+=(--force); fi
     if [[ -n "$3" ]]; then args+=(--only "$3"); fi
     python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"

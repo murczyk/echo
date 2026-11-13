@@ -362,9 +362,6 @@ describe('useRerDutyFeeds', () => {
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
     hoisted.fetchOrganismKeywordSets.mockResolvedValue([]);
     hoisted.currentSystemSettings.mockResolvedValue({
-      rerDutyTestEnabled: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
     });
     hoisted.fetchAnalysisCallsignInfos

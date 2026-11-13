@@ -65,6 +65,17 @@ Review database access using [QUERY_PERF.md](QUERY_PERF.md). Require
 production-scale plan evidence for high-risk queries and oneoffs; ORM-generated
 SQL is not exempt.
 
+## Advisory locks
+
+All `pg_advisory_*lock(bigint)` keys share one key space. Two features with the
+same key wait on each other with no error naming the cause. A held worker lease
+then turns the other feature's lock into a `lock_timeout` on every attempt
+(#4137). Give each fixed key its own named constant and list it in
+`ADVISORY_LOCK_KEYS` in `wdintel-rs/src/config.rs`, where the build checks that
+the keys are distinct. Never derive a key from another one with arithmetic such
+as `LOCK + 1`. A background tick should prefer `pg_try_advisory_*lock` and retry
+on a later tick rather than wait for `lock_timeout`.
+
 ## Entity generation
 
 Treat files in wdintel-rs/src/entities as auto generated. Reject any manual code changes

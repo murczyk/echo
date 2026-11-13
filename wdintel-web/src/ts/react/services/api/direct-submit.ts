@@ -9,6 +9,7 @@ import type {
   InboxMessage,
   Unit,
   DirectSubmitPayload,
+  DirectSubmitAttachmentOrder,
 } from '../../../../Bindings';
 import { normalizeInboxMessageFromWire } from './inbox-messages';
 import { transformSnakeToCamel } from '../../../snake-to-camel';
@@ -245,6 +246,7 @@ export type DirectSubmitRequest = {
   attachment_updates?: {
     replacements: { media_id: string; upload_url: string }[];
     renames: { media_id: string; file_name: string }[];
+    orders?: Array<SnakeCaseFields<DirectSubmitAttachmentOrder>>;
   };
   deleted_media_ids?: string[];
   retained_media_ids?: string[];

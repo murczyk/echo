@@ -35,6 +35,7 @@ async fn media_source(env: &crate::types::Env, key: &str) -> Uuid {
             .unwrap();
     let id = Uuid::now_v7();
     media::ActiveModel {
+        order_f64: Set(None),
         id: Set(id),
         signal_message_id: Set(message.id),
         signal_message_uuid: Set(message.id_uuid),

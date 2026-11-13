@@ -521,12 +521,13 @@ export function useManageMessageDrawer({
     const rawList = isEditMode
       ? (editTarget?.message.media ?? [])
       : (reportSource?.message.media ?? []);
-    return rawList.map((m) => {
+    return rawList.map((m, index) => {
       const raw = m as MessageMediaInfo & {
         file_name?: string | null;
         content_type?: string | null;
         size_bytes?: number | null;
         coordinate_status?: MessageMediaInfo['coordinateStatus'];
+        order_f64?: MessageMediaInfo['orderF64'];
       };
       const id = String(m.id ?? (raw as any).id ?? '');
       const fileName = m.fileName ?? raw.file_name ?? null;
@@ -535,6 +536,7 @@ export function useManageMessageDrawer({
       const href = m.href || (id ? `/api/messenger/media/${id}` : '');
       return {
         id,
+        orderF64: isReportCreateMode ? index + 1 : (m.orderF64 ?? raw.order_f64 ?? null),
         fileName,
         contentType,
         sizeBytes,
@@ -547,7 +549,7 @@ export function useManageMessageDrawer({
         kmzConversionStatus: m.kmzConversionStatus ?? (raw as any).kmz_conversion_status ?? null,
       };
     });
-  }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);
+  }, [isEditMode, isReportCreateMode, editTarget?.message.media, reportSource?.message.media]);
   const retainedAttachmentIds =
     isEditMode || isReportCreateMode
       ? existingMedia
