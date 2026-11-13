@@ -1094,7 +1094,7 @@
         "spec": {
           "display": {
             "name": "Failed calls per interval by model",
-            "description": "Calls that did not end with response headers (every outcome except ok), stacked by model and outcome, so one model's outage stands out. rate_limited and server_error come from the provider; cooldown_expired and local_error never reached it; cancelled also covers runner aborts. Pick process echo-web for the AI chat gateway. Buckets match Requests per interval by model."
+            "description": "Calls with any outcome other than ok, including HTTP error responses, stacked by model and outcome, so one model's outage stands out. rate_limited and server_error come from the provider; cooldown_expired and local_error never reached it; cancelled also covers runner aborts. Pick process echo-web for the AI chat gateway. Buckets match Requests per interval by model."
           },
           "plugin": {
             "kind": "signoz/BarChartPanel",
