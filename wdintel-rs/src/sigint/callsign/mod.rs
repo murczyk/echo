@@ -1,7 +1,5 @@
-use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
-use crate::users::{
-    ensure_base_role, has_any_role, has_role, login_id_from_identity,
-};
+use crate::config::{ROLE_API, ROLE_CYBER_VIEWER_RESTRICTED};
+use crate::users::{ensure_base_role, has_any_role, login_id_from_identity};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use self::bl::*;
@@ -25,6 +23,25 @@ pub mod bl_network_callsign;
 pub mod network_callsign;
 pub mod oneoff;
 pub mod types;
+
+async fn ensure_callsign_write_role(
+    dbx: &DatabaseConnection,
+    user: &actix_identity::Identity,
+    editor_role: &str,
+) -> Result<(), AppError> {
+    let user_id = login_id_from_identity(user).c(h!())?;
+    has_any_role(
+        dbx,
+        &user_id,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, ROLE_API],
+    )
+    .await
+    .c(h!())?;
+    has_any_role(dbx, &user_id, vec![editor_role, ROLE_API])
+        .await
+        .c(h!())?;
+    Ok(())
+}
 
 #[derive(Serialize)]
 struct CallsignExportRow {
@@ -1164,8 +1181,7 @@ pub async fn create_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
+    ensure_callsign_write_role(&env.dbx, &user, "CallsignsEditor")
         .await
         .c(h!())?;
     let user_id = login_id_from_identity(&user)?;
@@ -1211,8 +1227,7 @@ pub async fn update_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
+    ensure_callsign_write_role(&env.dbx, &user, "CallsignsEditor")
         .await
         .c(h!())?;
     let user_id = login_id_from_identity(&user)?;
@@ -1250,8 +1265,7 @@ pub async fn delete_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Callsign>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
+    ensure_callsign_write_role(&env.dbx, &user, "CallsignsEditor")
         .await
         .c(h!())?;
 
