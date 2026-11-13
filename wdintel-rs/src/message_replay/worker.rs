@@ -22,8 +22,14 @@ use crate::utils::worker_watch;
 use chrono::{NaiveDateTime, TimeZone};
 use redis::aio::ConnectionManager;
 use sea_orm::{DatabaseTransaction, TransactionTrait};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Set once no copy of the replay before #4110 is left. None can appear
+/// again, so the process stops looking for them; the first look can scan
+/// every comment of the system login.
+static LEGACY_PURGED: AtomicBool = AtomicBool::new(false);
 
 enum Step {
     /// Work was done; more may be pending. Carries inbox ids for fanout.
@@ -101,8 +107,7 @@ async fn run_step(
     let txn = env.dbx.begin().await.c(h!())?;
     let Some(replay_session) = session::lock_for_worker(&txn).await.c(h!())?
     else {
-        txn.commit().await.c(h!())?;
-        return Ok(Step::Idle);
+        return purge_legacy_next(txn).await;
     };
     match replay_session.state.as_str() {
         session::STATE_RUNNING => {
@@ -220,6 +225,25 @@ async fn purge_next(
         "message_replay: purged {} replayed messages (session {})",
         purged_ids.len(),
         replay_session.id
+    );
+    Ok(Step::Progress(purged_ids))
+}
+
+/// With no session, removes the copies the replay before #4110 left behind.
+async fn purge_legacy_next(txn: DatabaseTransaction) -> anyhow::Result<Step> {
+    if LEGACY_PURGED.load(Ordering::Relaxed) {
+        txn.commit().await.c(h!())?;
+        return Ok(Step::Idle);
+    }
+    let purged_ids = purge::purge_legacy_batch(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    if purged_ids.is_empty() {
+        LEGACY_PURGED.store(true, Ordering::Relaxed);
+        return Ok(Step::Idle);
+    }
+    info!(
+        "message_replay: purged {} copies left by the previous replay",
+        purged_ids.len()
     );
     Ok(Step::Progress(purged_ids))
 }

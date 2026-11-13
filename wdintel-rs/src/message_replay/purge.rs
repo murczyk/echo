@@ -1,10 +1,13 @@
 //! Hard-deletes replayed messages in batches. Replays are found through the
-//! negative `external_id` marker (`signal_message_external_id_idx`).
+//! negative `external_id` marker (`signal_message_external_id_idx`), and the
+//! copies the replay before #4110 left behind through its comment marker.
 //! Children referencing `signal_message` / `sigint_inbox_item` with
 //! ON DELETE NO ACTION are deleted first; the rest cascade. Stored media
 //! objects are never deleted: replays share them with their sources.
 
-use crate::config::MESSAGE_REPLAY_PURGE_BATCH_SIZE;
+use crate::config::{
+    MESSAGE_REPLAY_LEGACY_MARKER, MESSAGE_REPLAY_PURGE_BATCH_SIZE,
+};
 use crate::entities::*;
 use crate::h;
 use crate::types::ShortContext;
@@ -16,6 +19,45 @@ pub async fn purge_batch(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let message_ids = load_replay_batch(txn).await.c(h!())?;
+    purge_messages(txn, message_ids, "purged replayed messages")
+        .await
+        .c(h!())
+}
+
+/// Purges a batch of the copies the replay before #4110 made: marked with
+/// [`MESSAGE_REPLAY_LEGACY_MARKER`] by the system login, and usually already
+/// soft-deleted by that replay's cleanup. That replay is gone, so nothing
+/// else would ever remove them. Returns them for fanout; empty once none is
+/// left.
+pub async fn purge_legacy_batch(
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<Vec<i64>> {
+    let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
+    let mut message_ids = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::LoginId.eq(system_login_id))
+        .filter(
+            sigint_comment::Column::Comment.eq(MESSAGE_REPLAY_LEGACY_MARKER),
+        )
+        .order_by_desc(sigint_comment::Column::CreatedAt)
+        .limit(MESSAGE_REPLAY_PURGE_BATCH_SIZE)
+        .select_only()
+        .column(sigint_comment::Column::SignalMessageId)
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .c(h!())?;
+    message_ids.sort_unstable();
+    message_ids.dedup();
+    purge_messages(txn, message_ids, "purged legacy replayed messages")
+        .await
+        .c(h!())
+}
+
+async fn purge_messages(
+    txn: &DatabaseTransaction,
+    message_ids: Vec<i64>,
+    reason: &str,
+) -> anyhow::Result<Vec<i64>> {
     if message_ids.is_empty() {
         return Ok(message_ids);
     }
@@ -29,7 +71,7 @@ pub async fn purge_batch(
     crate::rer_importer::inbox::prepare_messages_network_activity_change(
         txn,
         &message_ids,
-        "purged replayed messages",
+        reason,
     )
     .await
     .c(h!())?;
@@ -115,3 +157,7 @@ async fn delete_messages(
         .c(h!())?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "purge_tests.rs"]
+mod tests;

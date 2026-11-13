@@ -1096,6 +1096,9 @@ pub const MESSAGE_REPLAY_TICK_SEC: u64 = 1;
 pub const MESSAGE_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
 pub const MESSAGE_REPLAY_EMIT_BATCH_SIZE: usize = 50;
 pub const MESSAGE_REPLAY_PURGE_BATCH_SIZE: u64 = 200;
+/// The comment the replay before #4110 put on its copies, as the system login.
+/// Nothing else writes it; `message_replay::purge` removes the copies left.
+pub const MESSAGE_REPLAY_LEGACY_MARKER: &str = "[duplicate]";
 /// Interval of the worker's progress summary while a session exists; state
 /// changes are logged immediately.
 pub const MESSAGE_REPLAY_PROGRESS_LOG_SEC: u64 = 30;
