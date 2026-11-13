@@ -1,10 +1,9 @@
 use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::sigint::callsign::bl_network_callsign::*;
+use crate::sigint::callsign::ensure_callsign_write_role;
 use crate::sigint::callsign::types::*;
 use crate::types::*;
-use crate::users::{
-    ensure_base_role, has_any_role, has_role, login_id_from_identity,
-};
+use crate::users::{ensure_base_role, has_any_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -33,7 +32,7 @@ pub async fn list_network_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -146,8 +145,7 @@ pub async fn create_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.context(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
+    ensure_callsign_write_role(&env.dbx, &user, "UnitsEditor")
         .await
         .context(h!())?;
     let user_id = login_id_from_identity(&user)?;
@@ -205,8 +203,7 @@ pub async fn add_as_known_network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AddAsKnownNetworkCallsignReq>,
 ) -> Result<Json<Vec<NetworkCallsign>>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.context(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
+    ensure_callsign_write_role(&env.dbx, &user, "UnitsEditor")
         .await
         .context(h!())?;
     let user_id = login_id_from_identity(&user)?;
@@ -264,8 +261,7 @@ pub async fn update_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.context(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
+    ensure_callsign_write_role(&env.dbx, &user, "UnitsEditor")
         .await
         .context(h!())?;
     let user_id = login_id_from_identity(&user)?;
@@ -322,8 +318,7 @@ pub async fn delete_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
+    ensure_callsign_write_role(&env.dbx, &user, "UnitsEditor")
         .await
         .c(h!())?;
     let user_id = login_id_from_identity(&user)?;
@@ -432,7 +427,12 @@ pub async fn network_callsigns_activity(
 mod tests {
     use super::*;
     use crate::entities::sigint_network_callsign;
-    use crate::functest::tests::{cleanup, find_test_login, mk_sigint_network};
+    use crate::functest::tests::{
+        cleanup, find_test_login, mk_sigint_network, mk_sigint_unit,
+    };
+    use crate::sigint::callsign::{
+        create_callsign, delete_callsign, update_callsign,
+    };
     use crate::sigint::network::types::NetworkFreqCallsignsPeriod;
     use actix_identity::{Identity, IdentityMiddleware};
     use actix_session::{storage::RedisSessionStore, SessionMiddleware};
@@ -447,6 +447,194 @@ mod tests {
     ) -> HttpResponse {
         Identity::login(&request.extensions(), login.into_inner()).unwrap();
         HttpResponse::NoContent().finish()
+    }
+
+    fn callsign_write_body(
+        path: &str,
+        unit_id: i64,
+        network_id: i64,
+        callsign_id: i64,
+        network_callsign_id: i64,
+    ) -> serde_json::Value {
+        let id = if path.contains("network-callsign") {
+            network_callsign_id
+        } else {
+            callsign_id
+        };
+        if path.ends_with("/delete") {
+            return serde_json::json!(id);
+        }
+        serde_json::json!({
+            "id": id,
+            "callsign": if path.ends_with("/update") { "сокіл-2" } else { "сокіл" },
+            "position": "оператор",
+            "comment": "",
+            "unit_id": unit_id,
+            "network_id": network_id,
+            "known_callsign_ids": [callsign_id],
+            "active": true,
+            "created_at": 0,
+            "developing": false,
+            "unit_developing": true,
+            "main_radio_station": false,
+            "command_control": false,
+        })
+    }
+
+    async fn assert_callsigns_deleted(
+        dbx: &DatabaseConnection,
+        callsign_id: i64,
+        network_callsign_id: i64,
+    ) {
+        let callsign =
+            crate::entities::sigint_callsign::Entity::find_by_id(callsign_id)
+                .one(dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let network_callsign =
+            sigint_network_callsign::Entity::find_by_id(network_callsign_id)
+                .one(dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(callsign.deleted);
+        assert_eq!(callsign.callsign, "сокіл-2");
+        assert!(network_callsign.deleted);
+        assert_eq!(network_callsign.sigint_callsign, "сокіл-2");
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn callsign_write_role_authorization() {
+        let env = cleanup().await.unwrap();
+        let test_login = find_test_login(&env.dbx).await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(create_callsign)
+                .service(update_callsign)
+                .service(delete_callsign)
+                .service(create_network_callsign)
+                .service(update_network_callsign)
+                .service(delete_network_callsign)
+                .service(add_as_known_network_callsigns)
+                .service(list_network_callsigns),
+        )
+        .await;
+
+        for (roles, allowed) in [
+            (vec!["Api"], true),
+            (vec!["Admin"], true),
+            (vec!["Rer", "CallsignsEditor", "UnitsEditor"], true),
+            (
+                vec!["CyberViewerRestricted", "CallsignsEditor", "UnitsEditor"],
+                true,
+            ),
+            (vec!["Rer"], false),
+            (vec!["Full"], false),
+            (vec!["ApiAgent"], false),
+            (vec!["CyberViewerRestricted"], false),
+            (vec!["CallsignsEditor", "UnitsEditor"], false),
+            (vec![], false),
+        ] {
+            let mut login = test_login.clone().into_active_model();
+            login.roles = Set(serde_json::json!(roles));
+            login.update(&env.dbx).await.unwrap();
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&format!("/test/login/{}", test_login.id))
+                    .to_request(),
+            )
+            .await;
+            let cookie =
+                response.response().cookies().next().unwrap().into_owned();
+            let mut callsign_id = 0;
+            let mut network_callsign_id = 0;
+
+            for path in [
+                "/api/sigint/callsign/create",
+                "/api/sigint/callsign/update",
+                "/api/sigint/network-callsign/create",
+                "/api/sigint/network-callsign/update",
+                "/api/sigint/network-callsign/add-as-known",
+                "/api/sigint/network-callsign/delete",
+                "/api/sigint/callsign/delete",
+            ] {
+                let body = callsign_write_body(
+                    path,
+                    unit.id,
+                    network.id,
+                    callsign_id,
+                    network_callsign_id,
+                );
+                let response = test::call_service(
+                    &app,
+                    test::TestRequest::post()
+                        .uri(path)
+                        .cookie(cookie.clone())
+                        .set_json(body)
+                        .to_request(),
+                )
+                .await;
+                let status = response.status();
+                let body = test::read_body(response).await;
+                assert_eq!(
+                    status,
+                    if allowed {
+                        actix_web::http::StatusCode::OK
+                    } else {
+                        actix_web::http::StatusCode::FORBIDDEN
+                    },
+                    "roles={roles:?}, path={path}, body={body:?}"
+                );
+                if !allowed {
+                    continue;
+                }
+                let body: serde_json::Value =
+                    serde_json::from_slice(&body).unwrap();
+                if path == "/api/sigint/callsign/create" {
+                    callsign_id = body["id"].as_i64().unwrap();
+                }
+                if path == "/api/sigint/network-callsign/create" {
+                    network_callsign_id = body["id"].as_i64().unwrap();
+                }
+            }
+            if allowed {
+                assert_callsigns_deleted(
+                    &env.dbx,
+                    callsign_id,
+                    network_callsign_id,
+                )
+                .await;
+                let response = test::call_service(
+                    &app,
+                    test::TestRequest::post()
+                        .uri("/api/sigint/network-callsigns/list")
+                        .cookie(cookie)
+                        .set_json(serde_json::json!({
+                            "network_id": network.id,
+                            "include_activity_info": false,
+                        }))
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(response.status(), actix_web::http::StatusCode::OK);
+            }
+        }
     }
 
     #[actix_web::test]
