@@ -8412,5 +8412,7 @@ export type UserDutySettingsDto = {
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   minimalReportWindowEnabled: boolean;
+  dutyRememberReportGroup: boolean;
+  analysisRememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
 };

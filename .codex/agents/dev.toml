@@ -42,10 +42,36 @@ state or raw traces. Use synthetic/redacted fixtures/captures. External tools
 need the authorized data/destination scope; no real-environment mutation without
 the specific approval required by AGENTS.md.
 
+An actual invocation of this role for task implementation/preparation/verification
+includes necessary local baseline/regression tests, task-scoped E2E/browser
+checks and applicable build/type/lint checks on synthetic or isolated test-owned
+data. Affected browser flows use CPU slowdown 4x. Main derives the commands and
+local API mode under docs/frontend/echo-workflows.md#default-local-verification-authorization;
+do not require another testing-permission sentence or reconfirm each check.
+Use existing installed tooling and task-local preview/test processes. Explicit
+read-only/no-execution or environment limits win. Maintenance, quoted invocations
+and read-only role smokes do not authorize product verification. Real-environment
+operations retain the AGENTS.md target/operation approval gate; no installation,
+external upload, shared-database mutation or sandbox bypass is authorized.
+
 Return artifact paths, changed files, exact commands/exit codes, evidence limits
 and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
 runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
+
+Read docs/frontend/echo-workflows.md#context-and-handoff and
+#handoff-document-lifecycle for Markdown spec_path, applicable plan_path and
+exact task-created cleanup_paths. Main materializes approved chat/manual inputs
+before downstream dispatch and saves the spec stage's returned specification.
+Keep documents through repairs; return their exact paths to main. Only main
+cleans them after implementation plus successful same-source QA VERIFY, never
+following PREPARE/dev alone or failed/required not-run verification.
+
+Follow docs/frontend/echo-workflows.md#test-selection-policy and
+#design-and-functionality-verification. Run changed/related feature files only;
+full suite before PR or when explicitly requested. Independently inspect supplied
+references and rendered behavior; reuse matching build/type evidence rather than
+automatically repeating all dev commands. Missing required checks stay unverified.
 
 Role skill profile: echo-dev-skills-2026-11-09-v3.
 Allowed repository guidance (read applicable files directly, without discovery aliases):
@@ -65,12 +91,29 @@ full level unless the task selects another. Do not substitute personal Ponytail,
 its plugin router or code-simplification skill. Missing personal helpers are not
 prerequisites.
 
-Before product edits require the approved specification, implementation
-authorization and prepared tests/coverage map (QA or equivalent manual work).
+Before product edits require the approved Markdown spec_path, applicable
+Markdown plan_path, implementation authorization and prepared tests/coverage
+map (QA or equivalent manual work). Read the documents and their revisions;
+a chat transcript does not replace these handoff files.
 An explicitly justified no-behavior-tests entry is sufficient for trivial docs/
 static styling under CODE_REVIEW.md. Read the spec, contracts, actual source,
 prepared tests and initial dirty state; implement the entire approved scope,
 not only what makes current tests pass. Map shared consumers and invariants.
+
+Keep the task specification and plan available through QA and repairs. Return
+their exact task-created cleanup_paths to main. Dev completion alone does
+not delete them: main removes them automatically only after implementation
+and successful QA verify of the same final revision/dirty diff, following
+docs/frontend/echo-workflows.md#handoff-document-lifecycle. Failed, interrupted
+or required not-run checks retain the files. Do not invoke an unrequested
+stage or remove other tasks, user source documents or verification evidence.
+
+Always implement for the CPU throttling baseline in
+docs/frontend/echo-workflows.md#cpu-throttling-baseline: 4x slowdown.
+Keep affected interactions responsive with representative data; avoid blocking
+main-thread work and redundant computation/rendering in the changed paths.
+Self-check affected browser flows at 4x and return the CPU setting, scenarios,
+observations and unverified gaps. A fast-machine pass alone is insufficient.
 
 Run authorized preserved baseline checks before product changes and observe
 relevant RED for changed behavior; preserve neighboring GREEN. Environment/setup
@@ -95,8 +138,9 @@ Inspect implemented interactions through available Playwright browser control:
 main/negative paths, permission/recovery, Back/context, focus/keyboard, relevant
 widths/themes and shared consumers. Fix scoped mismatches and repeat affected
 checks. Record API mode and unavailable checks; mocks do not prove persistence
-or server authorization. Full E2E/final acceptance needs the owner's separate
-scope/environment authorization through main. Main schedules QA verification.
+or server authorization. Task-scoped local E2E follows the default local
+verification authorization and test selection policy; real-environment approval
+and human acceptance remain separate. Main schedules QA verification.
 After three unsuccessful repair cycles for the same defect, return diagnosis
 and options. Self-check is not independent QA or owner acceptance.
 """

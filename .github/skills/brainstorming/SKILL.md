@@ -61,6 +61,8 @@ Spec returns requirements/open questions; designer maps approved criteria to
 flows, states, reused components and UX decisions. Source review and static
 drawings do not establish rendered behavior or usability.
 
-Return task output in chat, or an explicitly assigned location outside the
-repository. Do not create or commit task design/spec documents under `docs/`.
+Spec saves its requirements to the assigned Markdown `spec_path` and returns
+the document link in chat, following the shared Echo handoff contract. Designer
+returns design output in chat or its assigned document. Do not create or commit
+task design/spec documents under `docs/` automatically.
 Report evidence limits and unresolved decisions, then stop at the assigned stage.

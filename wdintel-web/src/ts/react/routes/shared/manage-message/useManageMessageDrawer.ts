@@ -102,6 +102,7 @@ export type UseManageMessageDrawerProps = {
   quickSuggestionsEnabled?: boolean;
   intentKey?: string;
   initialGroupMasterKey?: string | null;
+  rememberReportGroup?: boolean;
 };
 
 export function useManageMessageDrawer({
@@ -125,7 +126,10 @@ export function useManageMessageDrawer({
   quickSuggestionsEnabled = true,
   intentKey,
   initialGroupMasterKey = null,
+  rememberReportGroup = true,
 }: UseManageMessageDrawerProps) {
+  const rememberReportGroupRef = useRef(rememberReportGroup);
+  rememberReportGroupRef.current = rememberReportGroup;
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
   const isReplyMode = !isEditMode && !reportSource && engagedMessageId != null;
@@ -858,7 +862,7 @@ export function useManageMessageDrawer({
           const seededKey = getValues('signalGroupMasterKey');
           if (!available.some((g) => g.masterKey === seededKey)) {
             resetField('signalGroupMasterKey', { defaultValue: '' });
-            rememberReportDestination('');
+            if (rememberReportGroupRef.current) rememberReportDestination('');
           }
         }
       } catch (e) {
@@ -942,7 +946,7 @@ export function useManageMessageDrawer({
     } else if (isReportCreateMode && reportSource) {
       reset({
         ...EMPTY_FORM_VALUES,
-        signalGroupMasterKey: readReportDestination(),
+        signalGroupMasterKey: rememberReportGroupRef.current ? readReportDestination() : '',
         date: dayjs(),
         time: null,
       });
@@ -965,6 +969,17 @@ export function useManageMessageDrawer({
     getInitialCreateFormValues,
     intentKey,
   ]);
+
+  useEffect(() => {
+    if (
+      formReady &&
+      isReportCreateMode &&
+      !rememberReportGroup &&
+      !methods.getFieldState('signalGroupMasterKey').isDirty
+    ) {
+      resetField('signalGroupMasterKey', { defaultValue: '' });
+    }
+  }, [formReady, isReportCreateMode, rememberReportGroup, methods, resetField]);
 
   useEffect(() => {
     if (!formReady || !isReportMode) return;

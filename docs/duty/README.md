@@ -116,20 +116,23 @@ transport, including updates to buffered messages. Browser regressions are in
 
 ## Search and older periods
 
-The «Пошук в оперативному» toggle in admin system settings enables the Analysis
-search control below saved filters in every Duty Neo column without a server
-restart. The default is false; both search and the older-period button are
+The «Пошук в оперативному» toggle in admin system settings controls Duty search
+features without a server restart. The default is false; search and the older-period button are
 hidden when disabled. Reload Duty after changing the setting. Existing
 `enable_duty_search` values in `config.toml` are imported at startup only when
 the database setting is unset; the legacy key can then be removed.
-Search text and mode belong to the column filter and saved/linked filters.
+The [Duty search contract](../frontend/react-behavior-contracts/duty.md#independent-duty-search)
+records the approved independent-panel requirements, which are separate from
+legacy keyword-filter search. The preserved «Фільтр по ключовому слову» changes
+feed membership and belongs to saved/linked column filters. A panel query must
+change only search results, not feed membership.
 Search, counts, and all pages use the column filters and creation time.
 Inbox events recheck search membership for displayed, buffered, and off-window
 unread messages. Messages that stop matching are removed from all three.
 If server settings fail to load, a toast reports the error and restored searches
 remain blocked until the page is successfully reloaded.
 
-The initial request keeps the adaptive limit: traffic above 100,000 messages
+For the feed/keyword filter, the initial request keeps the adaptive limit: traffic above 100,000 messages
 in the preceding three days, unit filters, or unavailable statistics restrict
 history to 14 days. The effective boundary is applied before choosing the
 PostgreSQL/analytics search route and returned with the response. Subsequent
@@ -149,6 +152,115 @@ boundary are discarded as well.
 Regression coverage:
 `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.search.spec.tsx`
 and `wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
+
+## Independent search panel
+
+[#3571](https://github.com/echoua/echo/issues/3571): when `enableDutySearch` is enabled,
+each column has a separate search action. Only one panel is open at a time. The
+lightweight results use the feed's filters and server search modes, creation-time
+ordering, paged cursors, and a separate total count. The default period covers all
+available history. The panel has no separate history-period control.
+An upper timestamp bounds both result and count requests, including all-history
+search. Search text never changes the main feed, its polling, or unread tracking.
+
+Selecting a result explicitly navigates its source feed using the existing linked
+message context/highlight flow and cancels live following. The panel stays open.
+Closing or switching panels retains query, mode, period, results, selection and
+list anchor within the current page; reopening refreshes without repeating feed
+navigation. Closed panels make no background search requests. Filter changes
+invalidate cached results, while preserving the query. Stale responses cannot
+replace a newer query or navigate the feed.
+
+Group navigation and search are mutually exclusive within a column: opening
+either closes the other while preserving the source feed's reading position.
+Switching to groups retains the search cache and moves focus to the selected
+group; it does not restore focus to the closed search trigger. Explicit close
+returns focus to the corresponding trigger. Search in one column can coexist
+with group navigation in another. Choosing a different group uses normal scope
+navigation and invalidates cached search results while retaining the query.
+
+Open panels refresh on batched inbox-change events, including arriving messages
+and edits/deletions. Idle feed polling and browser focus do not fetch search
+results or show a loading indicator. Server matching-filter checks reconcile
+edited/deleted cached results.
+Refreshes page through the oldest cached cursor to reconcile the loaded range
+without leaving burst gaps. Historical readers keep their visible row and
+selected result; new matches wait behind an explicit indicator. The result list
+never marks messages read and never mounts another MessageCard/media tree.
+Failed refreshes retain the cache; error/retry feedback appears in the page
+snackbar, outside the result panel.
+
+When the embedded message/report editor is open, search fits inside the remaining
+feed workspace rather than widening it. Keep all feeds at least 360px wide;
+when search would break that minimum, temporarily hide only search, preserving
+its cache and pausing its requests. If the feeds themselves do not fit, use the
+existing active-feed tabs. A manual search open in a tight editor layout overlays
+its source feed; selecting a result hides the overlay without losing the draft.
+Tab switches preserve the source search intent and editor draft. Closing the
+editor restores automatically hidden search, unless explicitly closed or replaced.
+Source and result-list reading anchors remain preserved.
+
+With the embedded editor closed, desktop search adds a 270px track to the left of its source feed, below a shared
+full-width column header. A single feed reserves that 270px inside the available
+width as the window narrows; multiple feeds keep their intentional horizontal
+expansion. Results show group, sender,
+creation time and an emphasized matching snippet. Sibling feed widths remain
+stable. Selecting a result jumps to its message without animated scrolling,
+retaining the surrounding feed context. On narrow screens, search overlays the
+source feed at its full width without widening the column or adding horizontal
+overflow. Selecting a result closes the overlay and reveals the message with
+its surrounding context; reopening restores the query, results, selection and
+list position until the query is deliberately cleared. On mobile, the search action follows highlighting, before any column-close
+action. Opening an empty search focuses the input; reopening a saved query leaves it unfocused so
+results can be navigated without opening the keyboard. Clearing the query
+focuses the input again. Receiving results while typing does not steal focus.
+Enter in the mobile search
+input dismisses the keyboard without closing search or clearing the query;
+keyboard selection of a search mode still applies before focus is removed.
+Narrow/editor active-only
+layouts still mount only one feed tree; embedded editor sizing follows the width
+budget above. Explicit close returns keyboard focus to
+the source search action. Search popups own Escape before the enclosing panel.
+Search results reuse their known message ID without a context-lookup request.
+Loaded messages land directly; unloaded messages retain the readable feed during
+source-filter validation, then use the feed skeleton while loading surrounding
+messages. The search panel's progress bar only indicates result loading and does
+not change the list's geometry. Explicitly closing search, changing the query or
+selecting another result cancels the previous landing. Automatic mobile closure
+after result selection preserves that result's pending landing. Unavailable
+results and API errors use the
+page snackbar.
+The explicit newest-message action clears that feed's selected search result
+and cancels its pending search landing, retaining the query, results and list
+position. Other feeds' search selections remain unchanged.
+Search entry (180ms) and exit (140ms) animate the whole column's width,
+including its header. Message widths stay fixed, following columns move with
+the resized column, and the search panel is clipped to its remaining space so
+it never fades over returning cards. Narrow layouts use the full-width overlay
+without a column-width transition. With the embedded editor, search animates its
+reserved width together with the source feed; window resizing cancels obsolete
+geometry rather than animating toward an old width.
+Repeated search/group toggles and
+result steps apply immediately, including during a transition; exiting panels
+are inert. Initial results appear together once (100ms); refreshes retain the
+existing rows; newly added visible results fade together in 90ms. Pending matches
+use the existing header area, with the total in the action's tooltip, so their
+count never moves the reading row. Reduced motion
+removes these effects and keeps search progress and the Duty tab indicator static.
+The existing feed keyword filter remains **«Фільтр по ключовому слову»**. Applying
+a nonempty keyword closes the separate panel and disables its action until the
+keyword is cleared; clearing never reopens it automatically. Analysis search
+controls and behavior are unchanged. Duty mode selection uses the same
+autocomplete dropdown interaction as Analysis. In the search panel, the
+«Як працює пошук» link below its three mode options opens the explanation on
+request. Keyboard users can reach it with Tab; closing the explanation restores
+input focus without closing search. The keyword filter retains its information
+button. Close the search panel with its header action or Escape; the result
+navigation row contains only the previous/next arrows.
+
+Regression coverage:
+`wdintel-web/tests/e2e/rer-duty-search.spec.ts` and
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutySearch.spec.tsx`.
 
 ## Code map
 

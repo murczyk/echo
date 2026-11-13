@@ -671,6 +671,109 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(true);
   });
 
+  it('#3571 cancels historical navigation without replacing the feed or leaving it loading', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(80, 81));
+    const { apiRef } = await mountLoadedFeed();
+    const items = apiRef.current!.messageFeeds[0].items;
+    const older = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockReturnValueOnce(older.promise);
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(6, 6));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(80, 81));
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(rangeRsp(5, 5));
+    const navigation = new AbortController();
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 5,
+        messageIds: [5],
+        signal: navigation.signal,
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true, {
+        preserveUnread: true,
+      });
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].loading).toBe(true);
+    await act(async () => navigation.abort());
+    const loadingAfterCancel = apiRef.current!.messageFeeds[0].loading;
+    await act(async () => {
+      older.resolve(rangeRsp(4, 4));
+      await flushMicrotasks();
+    });
+    expect(loadingAfterCancel).toBe(false);
+    expect(apiRef.current!.messageFeeds[0].items).toBe(items);
+    expect(apiRef.current!.error).toBeNull();
+    hoisted.fetchInboxCount.mockClear();
+    await startPoll();
+    expect(hoisted.fetchInboxCount).toHaveBeenCalled();
+  });
+
+  it('#3571 does not cancel a replacement filter reload with the previous navigation signal', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const older = deferred<InboxMessagesRsp>();
+    const replacement = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockReturnValueOnce(older.promise);
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(6, 6));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(80, 81));
+    hoisted.fetchInboxMessages.mockReturnValueOnce(replacement.promise);
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(rangeRsp(5, 5));
+    const navigation = new AbortController();
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 5,
+        messageIds: [5],
+        signal: navigation.signal,
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true, {
+        preserveUnread: true,
+      });
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      apiRef.current!.applyFilter('mf-0', {
+        ...apiRef.current!.messageFeeds[0].filter,
+        groupsSelected: ['replacement'],
+      });
+      await flushMicrotasks();
+      navigation.abort();
+      older.resolve(rangeRsp(4, 4));
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].loading).toBe(true);
+    await act(async () => {
+      replacement.resolve(rangeRsp(100, 101));
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([100, 101]);
+    expect(apiRef.current!.messageFeeds[0].loading).toBe(false);
+    expect(apiRef.current!.error).toBeNull();
+  });
+
+  it('#3571 loads new filters when navigation was cancelled before its context request started', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(100, 101));
+    const navigation = new AbortController();
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 5,
+        messageIds: [5],
+        signal: navigation.signal,
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true, {
+        preserveUnread: true,
+      });
+      navigation.abort();
+      apiRef.current!.applyFilter('mf-0', {
+        ...apiRef.current!.messageFeeds[0].filter,
+        groupsSelected: ['replacement'],
+      });
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([100, 101]);
+    expect(apiRef.current!.messageFeeds[0].loading).toBe(false);
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledOnce();
+  });
+
   it('loads a direct-link target with an exact pagination cursor', async () => {
     const { apiRef } = await mountLoadedFeed();
     hoisted.fetchInboxMessages.mockClear();

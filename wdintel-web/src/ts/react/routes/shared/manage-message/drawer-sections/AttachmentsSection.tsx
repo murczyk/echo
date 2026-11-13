@@ -1,13 +1,20 @@
 import { Typography } from '@mui/material';
 import type { Uppy, UppyFile } from '@uppy/core';
-import { useCallback, useMemo, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  type RefObject,
+} from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 
 import type { MessageMediaInfo } from '../../../../../../Bindings';
 import { mediaKind } from '../../../../components/attachment-files';
 import {
   AttachmentDropzone,
-  AttachmentFileRow,
   useLocalMediaPreviewUrls,
   type AttachmentUploadPresentation,
 } from '../../../../components/AttachmentPickerUi';
@@ -32,15 +39,16 @@ import { blurActiveElement } from '../../../../utils/focus';
 import { attachmentPositions, moveAttachment } from '../attachment-order';
 import { MAX_MESSAGE_ATTACHMENTS } from '../useMessageUppy';
 import { FormSectionWrapper } from './FormSectionWrapper';
+import { AttachmentSortContext, SortableAttachmentFileRow } from './SortableAttachmentFileRow';
 import type { MessageFormData } from '../manage-message-drawer.schema';
 
 type Props = {
   uppy: Uppy;
   uppyFiles: UppyFile<any, any>[];
   fileInputRef: RefObject<HTMLInputElement>;
-  handleFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  handleDrop: (e: React.DragEvent<HTMLDivElement>) => void;
-  handleDropzoneKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  handleFileSelect: (e: ChangeEvent<HTMLInputElement>) => void;
+  handleDrop: (e: DragEvent<HTMLDivElement>) => void;
+  handleDropzoneKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void;
   busy: boolean;
   existingMedia?: MessageMediaInfo[];
   errorMsg?: string | null;
@@ -141,7 +149,9 @@ export function AttachmentsSection({
     ...visibleMedia.map((media) => media.id),
     ...pendingFiles.map((file) => file.id),
   ].sort((a, b) => positions.get(a)! - positions.get(b)!);
-  const reorder = (id: string, direction: -1 | 1) => {
+  const reorder = (id: string, targetId: string) => {
+    if (busy || id === targetId || !orderedIds.includes(id) || !orderedIds.includes(targetId))
+      return;
     const pendingPositions = Object.fromEntries(
       pendingFiles.map((file) => [file.id, positions.get(file.id)!]),
     );
@@ -150,7 +160,7 @@ export function AttachmentsSection({
       moveAttachment(
         orderedIds,
         id,
-        direction,
+        targetId,
         positions,
         { ...attachmentOrders, ...pendingPositions },
         existingMedia.some((media) => media.orderF64 == null),
@@ -158,10 +168,6 @@ export function AttachmentsSection({
       { shouldDirty: true },
     );
   };
-  const moveProps = (id: string) => ({
-    onMoveUp: orderedIds.indexOf(id) > 0 ? () => reorder(id, -1) : undefined,
-    onMoveDown: orderedIds.indexOf(id) < orderedIds.length - 1 ? () => reorder(id, 1) : undefined,
-  });
   const orderForPreview = (id: string) => {
     const file = uppyFiles.find((file) => file.id === id);
     return positions.get((file && replacementMediaId(file, existingMediaIds)) || id) ?? 0;
@@ -528,7 +534,7 @@ export function AttachmentsSection({
       ) : null}
 
       {totalFiles > 0 ? (
-        <div className="flex flex-col gap-echo-xs">
+        <AttachmentSortContext ids={orderedIds} busy={busy} onReorder={reorder}>
           {[
             ...visibleMedia.map((media) => {
               const rawMedia = media as MessageMediaInfo & {
@@ -546,8 +552,10 @@ export function AttachmentsSection({
               const replacement = replacementByMediaId.get(id);
               const preview = replacement ? urls.get(replacement.id) : undefined;
               return (
-                <AttachmentFileRow
-                  key={replacement?.id ?? id}
+                <SortableAttachmentFileRow
+                  key={id}
+                  sortableId={id}
+                  reorderable={totalFiles > 1}
                   file={{
                     id: replacement?.id ?? id,
                     name: replacement?.name ?? fileName,
@@ -555,7 +563,6 @@ export function AttachmentsSection({
                     size: replacement?.size ?? sizeBytes,
                   }}
                   busy={busy}
-                  {...moveProps(id)}
                   onRemove={() =>
                     replacement
                       ? removeReplacement(replacement, id)
@@ -619,11 +626,12 @@ export function AttachmentsSection({
                 };
                 const preview = urls.get(file.id);
                 return (
-                  <AttachmentFileRow
+                  <SortableAttachmentFileRow
                     key={file.id}
+                    sortableId={file.id}
+                    reorderable={totalFiles > 1}
                     file={previewFile}
                     busy={busy}
-                    {...moveProps(file.id)}
                     onRemove={() => uppy.removeFile(file.id)}
                     onDownload={() => downloadUppyFile(file)}
                     previewUrl={preview?.url}
@@ -642,7 +650,7 @@ export function AttachmentsSection({
                 );
               }),
           ].sort((a, b) => orderForPreview(String(a.key)) - orderForPreview(String(b.key)))}
-        </div>
+        </AttachmentSortContext>
       ) : null}
 
       {previewDialogIndex !== null && previewAttachments.length > 0 ? (

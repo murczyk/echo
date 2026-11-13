@@ -22,8 +22,13 @@ use crate::utils::worker_watch;
 use chrono::{NaiveDateTime, TimeZone};
 use redis::aio::ConnectionManager;
 use sea_orm::{DatabaseTransaction, TransactionTrait};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Set once no copy of the replay before #4110 is left. None can appear
+/// again, so the process stops looking for them.
+static LEGACY_PURGED: AtomicBool = AtomicBool::new(false);
 
 enum Step {
     /// Work was done; more may be pending. Carries inbox ids for fanout.
@@ -98,6 +103,9 @@ async fn run_step(
     env: &Env,
     redis: &mut ConnectionManager,
 ) -> anyhow::Result<Step> {
+    if let Some(purged_ids) = purge_legacy_next(env).await.c(h!())? {
+        return Ok(Step::Progress(purged_ids));
+    }
     let txn = env.dbx.begin().await.c(h!())?;
     let Some(replay_session) = session::lock_for_worker(&txn).await.c(h!())?
     else {
@@ -222,6 +230,27 @@ async fn purge_next(
         replay_session.id
     );
     Ok(Step::Progress(purged_ids))
+}
+
+/// Removes a batch of the copies the replay before #4110 left behind, ahead
+/// of any session's work, so a session that never ends cannot hold it off.
+/// Returns `None` once none is left.
+async fn purge_legacy_next(env: &Env) -> anyhow::Result<Option<Vec<i64>>> {
+    if LEGACY_PURGED.load(Ordering::Relaxed) {
+        return Ok(None);
+    }
+    let txn = env.dbx.begin().await.c(h!())?;
+    let purged_ids = purge::purge_legacy_batch(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    if purged_ids.is_empty() {
+        LEGACY_PURGED.store(true, Ordering::Relaxed);
+        return Ok(None);
+    }
+    info!(
+        "message_replay: purged {} copies left by the previous replay",
+        purged_ids.len()
+    );
+    Ok(Some(purged_ids))
 }
 
 fn log_emitted(

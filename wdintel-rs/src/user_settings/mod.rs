@@ -91,6 +91,12 @@ fn model_to_dto(
         minimal_report_window_enabled: m
             .minimal_report_window_enabled
             .unwrap_or(false),
+        duty_remember_report_group: m
+            .duty_remember_report_group
+            .unwrap_or(true),
+        analysis_remember_report_group: m
+            .analysis_remember_report_group
+            .unwrap_or(true),
         important_only_my_organism: m
             .important_only_my_organism
             .unwrap_or(false),
@@ -129,6 +135,14 @@ fn preserve_omitted_compatibility_fields(
     if body.get("importantOnlyMyOrganism").is_none() {
         incoming.important_only_my_organism =
             existing.important_only_my_organism;
+    }
+    if body.get("dutyRememberReportGroup").is_none() {
+        incoming.duty_remember_report_group =
+            existing.duty_remember_report_group;
+    }
+    if body.get("analysisRememberReportGroup").is_none() {
+        incoming.analysis_remember_report_group =
+            existing.analysis_remember_report_group;
     }
 }
 
@@ -173,7 +187,9 @@ pub async fn user_settings_put(
         || body.get("messageAutoParseEnabled").is_none()
         || body.get("aiPositionHighlightsEnabled").is_none()
         || body.get("minimalReportWindowEnabled").is_none()
-        || body.get("importantOnlyMyOrganism").is_none();
+        || body.get("importantOnlyMyOrganism").is_none()
+        || body.get("dutyRememberReportGroup").is_none()
+        || body.get("analysisRememberReportGroup").is_none();
     let mut dto: UserDutySettingsDto =
         serde_json::from_value(body.clone()).c(h!())?;
     if needs_existing {
@@ -244,6 +260,10 @@ pub async fn user_settings_put(
             dto.minimal_report_window_enabled,
         )),
         important_only_my_organism: Set(Some(dto.important_only_my_organism)),
+        duty_remember_report_group: Set(Some(dto.duty_remember_report_group)),
+        analysis_remember_report_group: Set(Some(
+            dto.analysis_remember_report_group,
+        )),
         receive_alerts_in_messenger: NotSet,
         updated_at: Set(now),
     })
@@ -268,6 +288,8 @@ pub async fn user_settings_put(
                 user_settings::Column::MessageAutoParseEnabled,
                 user_settings::Column::MinimalReportWindowEnabled,
                 user_settings::Column::ImportantOnlyMyOrganism,
+                user_settings::Column::DutyRememberReportGroup,
+                user_settings::Column::AnalysisRememberReportGroup,
                 user_settings::Column::UpdatedAt,
             ])
             .update_columns(

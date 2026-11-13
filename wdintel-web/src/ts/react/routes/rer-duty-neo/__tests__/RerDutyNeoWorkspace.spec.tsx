@@ -674,6 +674,8 @@ describe('RerDutyNeoWorkspace', () => {
     const messageFeeds = [{ ...buildFeed('feed-1'), loading: false }];
     const sourceColumn = buildFeedColumnModel(messageFeeds[0]);
     const sourceView = sourceColumn.view;
+    Object.freeze(sourceView);
+    Object.freeze(sourceColumn);
     const builder = vi.fn(() => sourceColumn);
     const columnRefsRef = { current: {} as Record<string, null> };
 
@@ -692,7 +694,7 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    expect(builder).toHaveBeenCalledTimes(1);
+    expect(builder).toHaveBeenCalledWith(messageFeeds[0]);
     expect(sourceColumn.view).toBe(sourceView);
     expect(sourceColumn.view.scrollTrackingEnabled).toBeUndefined();
     expect(renderedFeedColumns.get(messageFeeds[0].id)?.view).not.toBe(sourceView);

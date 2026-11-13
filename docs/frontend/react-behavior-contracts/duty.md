@@ -1,5 +1,104 @@
 # Duty
 
+## Independent Duty search
+
+- **Status:** owner-confirmed target behavior; preserve these decisions when
+  changing search. Some checkouts still have only legacy keyword-filter search.
+  This contract records requirements, not implementation completion or a claim
+  of browser verification.
+- **Behavior ID:** `react-duty-independent-search-continuity`
+- **Affected route/component:** `rer-duty-neo` search, source feed and adjacent panels.
+
+### Search, filters and live reading
+
+Search is scoped to its source column and filters, and searches history without
+the feed's adaptive date cutoff unless an explicit search period is selected.
+Do not invent a fixed 30-day limit; inspect endpoint constraints. Search text
+changes only the result list. Keep «Фільтр по ключовому слову» in the feed filter;
+it changes feed membership. Disable independent search while that keyword filter
+is applied, because the combined backend operation is unsupported. Analysis
+search and its shared consumers retain their existing behavior.
+
+Keep only one search open across columns, with per-column query, mode, period
+and result-reading state retained until intentional clearing. Switching/closing
+search preserves the source feed's last reading position. Hidden searches do
+not refresh in the background; reopening restores their state and reconciles
+data. Active search refreshes on inbox-change events, not periodic search polling
+or browser focus. Avoid a second full message-card/media tree for results.
+
+The feed continues normal live updates while search is open. Selecting a result
+uses the existing link/reply navigation to land at that message with surrounding
+context, without a long animated journey through intervening messages. New
+arrivals must not move a deliberately chosen reading position; normal newest
+arrow/scroll behavior remains available. Going to newest clears result selection.
+A visible search result alone does not mark the message read.
+
+At result-list top with no selection, new matches appear visibly at top and
+stale anchors are cleared. While reading historical/selected results, retain
+the visible row/offset and selection; buffer arrivals behind the new-results
+indicator until explicitly shown. Retain older-page cursors and deduplication.
+Merge sender profiles from initial, older and refresh/bridge responses into the
+existing cache; display available names rather than identifiers. Cancelled/stale
+responses cannot publish results or metadata. Search cancellation is scoped to
+search-origin navigation, including loaded targets; opening/editing/closing it
+must not abort an ordinary link/reply lookup or surrounding-context load.
+
+### Panels and responsive layout
+
+Search and groups are mutually exclusive within their column; groups in another
+column are independent. Disable search while its filter, notification or highlight
+settings are open. Desktop search sits left of its own feed; expansion adds
+width to the right without shifting earlier columns. Header and body resize
+together. Desktop horizontal workspace scrolling may accommodate extra columns,
+but viewport resize or an editor drawer must not clip the owning column or panel.
+Use the existing responsive editor/active-feed layout rather than forcing fixed
+expanded widths. Preserve data/selection/position across layout changes and
+temporary editor hiding; hiding must not cancel a pending result landing.
+
+On mobile, search overlays the source feed at available full width without
+expanding the column or introducing horizontal scroll. Put the search action on
+the right. Selecting a result closes the overlay and lands in the feed; reopening
+restores results. An empty query opens focused with the keyboard; existing results
+reopen without input focus/keyboard. Enter submits/settles input and dismisses
+the keyboard. Explicit closure and automatic post-selection closure have distinct
+navigation-cancellation semantics.
+
+### Presentation and feedback
+
+- Result rows: group plus non-wrapping date/time on row one, sender on row two,
+  at most two message-text lines with ellipsis. Use group-list selection styles
+  and visible separators. Preserve available search-term highlighting in both
+  results and the source message.
+- Panel background matches the filter/header surface in both themes. Input has
+  outer spacing; empty-state text reads as a placeholder. The desktop search
+  action includes «Пошук» and matches other header buttons, without a separate
+  rounded shape.
+- Result count and previous/next controls live above the results, not as an
+  obstructing bottom toolbar. No extra close X after those arrows, and no
+  «Вся доступна історія» footer. Input X clears the query; the panel trigger closes it.
+- Search modes use the Analysis-style dropdown; explanation is behind a link at
+  the bottom of that menu, not permanently displayed. Do not change Analysis.
+- Search refresh failures use the page snackbar/retry pattern and retain previous
+  useful results. The progress bar represents result-list loading only, occupies
+  stable geometry and does not run for source-message navigation. Feed skeletons
+  represent context loading and reuse card insets. Give immediate action feedback.
+- Opening, closing, reversal, viewport resize and drawer combinations must not
+  flash, leave panel content over a narrowed card or detach the header. Preserve
+  stacking beneath owning settings surfaces and support reduced motion. Cancelled
+  motion proposals and reference-app experiments are not approved behavior.
+
+**Existing source entry points:**
+`wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx`,
+`wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts`.
+Inspect the independent panel implementation and its regression coverage in
+the owning checkout; the legacy feed tests below do not establish these panel
+criteria. No direct default-suite test; behavior is preserved by this contract.
+**Existing baseline tests (legacy feed behavior):**
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.search.spec.tsx`,
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`,
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx`,
+`wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
+
 ## Feed filter payload compatibility
 
 - **Status:** operational compatibility
@@ -112,6 +211,16 @@
 - **Expected observable result:** Escape and outside interaction close only their owning panel; transparent overlays do not block the feed; narrow layouts retain one mobile header owner while available actions remain reachable.
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
+## Duty search motion and reading continuity
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-search-motion-continuity`
+- **Expected observable result:** search opens in 180ms and closes in 140ms by resizing its whole column together with the header; source text widths and preceding columns stay fixed. The header and message cards stay within the column throughout the transition; search is clipped to the space left beside the feed and never fades over returning cards. Search/group/column switches overlap entry and exit, accept immediate reversals, and leave exiting content inert. Result navigation remains instant. The first ready list for a query/mode fades together in 100ms; cached reopen, refresh and live updates do not replay that fade. Pending new matches occupy the existing header area and preserve list geometry, scrollTop and the same visible row's viewport position; applying them moves the result list to the top.
+- **Responsive and keyboard requirements:** narrow layouts overlay search at the source column's full width without expanding it or adding horizontal overflow, retaining one active feed tree. Selecting a result closes the mobile overlay without canceling its context navigation; reopening restores the query, results, selection and list position until explicitly cleared. Escape restores the owning trigger promptly, and stale transition/focus callbacks cannot override a later open. Reduced motion removes new spatial/fade effects, search progress animation and Duty tab indicator movement, including preference changes during a transition; existing linked-frame cleanup remains intact.
+- **API endpoint and compatibility requirements:** unchanged; search loading and source-context loading remain separate.
+- **Existing test(s):** `wdintel-web/tests/e2e/rer-duty-search.spec.ts`, `wdintel-web/tests/e2e/group-feed-navigation-duty.spec.ts`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutySearch.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/RerDutyNeoWorkspace.spec.tsx`.
+- **Original Echo issue/PR:** [#3571](https://github.com/echoua/echo/issues/3571).
+
 ## Duty embedded-editor feed layout
 
 - **Status:** normative
@@ -167,3 +276,31 @@
 - **Expected observable result:** restored frequency and post filters remain saved but do not leak into Cyber or Duty requests when radio features are unavailable.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/duty-creation-order.regression.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
+
+## Independent per-feed search
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-independent-search`
+- **Affected route/component:** Duty Neo search action, panel, workspace and linked-message navigation.
+- **Preconditions:** `enableDutySearch` is enabled and the source feed has no applied nonempty keyword filter.
+- **User action or external event:** open search, enter a query, choose a mode, load more results, select a result, switch panels, or receive an inbox update.
+- **Expected observable result:** a single lightweight panel searches within its feed filters without filtering the main feed. Results and total use the same creation-time period and explicit upper bound; all history has no artificial time limit. Older pages and large live bursts retain cursor continuity. Selecting a result navigates that same feed with normal context, highlighting and follow cancellation. The result list does not mark messages read. Cache, selection and visible row/offset survive close/switch/reopen within the page; reopen refreshes without repeating navigation. Hidden panels do not refresh. Filter changes invalidate cached membership while preserving query/mode/period. Applied keyword search closes and blocks the panel with «Щоб скористатися пошуком, очистіть фільтр по ключовому слову»; clearing only enables the action.
+- **Loading/empty/error/success behavior:** initial searches, paging and inbox-change events load results; idle feed polling and browser focus do not trigger search requests or loading indicators. A failed refresh retains previously loaded results with a stale explanation and retry in the page snackbar, outside the result panel; a failed older page retries the same cursor. Edits/deletions use server matching-filter validation. Historical result readers retain their anchor and selection while new results wait behind an indicator. The panel has no separate history-period control.
+- **URL, localStorage, or user-settings persistence:** panel state is page-local; existing keyword filter URL/saved-filter compatibility is preserved.
+- **API endpoint and compatibility requirements:** existing inbox, count, matching-filter and context endpoints only; ACL/device/group filtering and authentication handling remain in force. Search requests override adaptive feed history and never combine panel text with an applied keyword filter.
+- **Responsive and keyboard requirements:** search adds a 270px panel to the left of the source feed, below the shared full-width column header, and horizontally reveals the panel without scrolling the feed vertically; sibling widths remain stable. Results show group, sender, creation time and an emphasized matching snippet. Mode selection uses an autocomplete dropdown while typing, as on Analysis; its information popover contains explanations rather than mode buttons. Narrow/editor active-only presentation retains one MessageCard tree and the source feed width. Explicit panel close restores source-trigger focus; popups own Escape first. Theme semantics use Echo surface/text tokens. Minimal-report positioning remains anchored to the main feed surface.
+- **Known race/idempotency constraints:** aborted/generation-stale requests cannot replace current results; close, switch, query/filter changes cancel pending search landing. Reopening alone never selects or scrolls a feed result.
+- **Group-panel switching:** groups and search are mutually exclusive per column. Opening one closes the other without changing source filters or the vertical reading anchor. Switching to groups retains search cache and focuses the selected group without a delayed return to the search trigger; explicit close/Escape restores the relevant trigger. Groups in another column do not close the active search. Choosing a different group uses normal group navigation and invalidates cached result membership while retaining the query. Desktop/narrow switching, focus, cache and cross-column regressions live in `wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
+- **Search help and closing:** the panel has no persistent help icon or separate close action beside result navigation. A «Як працює пошук» link follows the three dropdown modes; activating it opens the explanation without changing query/mode. Tab reaches the link, Shift+Tab returns to the input, and Escape dismisses the popup/explanation before the search panel while restoring the appropriate focus. Close search through its header toggle or Escape. The keyword filter's existing help and Analysis search remain unchanged. Desktop/narrow coverage lives in `wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-duty-neo/useDutySearch.ts`, `DutySearchControls.tsx`, `DutySearchPanel.tsx`, `RerDutyNeoWorkspace.tsx`, `index.tsx`.
+- **Responsive search geometry:** a single feed plus its open search fits the available workspace when resized through desktop/mobile breakpoints and back; query and reading state persist. Multi-feed expansion remains horizontally scrollable. Entry/exit animate column width, source width/offset and search clipping together at 180/140ms, including the embedded editor. Reader resizing cancels stale geometry; reduced motion stays immediate and reversals begin at current interpolated sizes. Regression coverage: `wdintel-web/tests/e2e/rer-duty-search-editor.spec.ts` and `wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
+- **Search with the embedded editor:** fit the 270px search track inside the remaining feed workspace; keep all feeds readable at the existing 360px minimum before using active-feed tabs. Hide search before removing columns when its width would break that minimum. Temporary hiding preserves search intent/query/results/selection/anchors, pauses result requests and does not cancel message landing. A manual open in a tight editor layout overlays the source feed only; selection hides that overlay while preserving the draft. Tab switches preserve source search intent and never rebind the editor. Closing the editor restores temporarily hidden search; explicit close/replacement wins. Mobile search follows highlighting in DOM and visual order, before optional column close; desktop order is preserved. Regression coverage: `wdintel-web/tests/e2e/rer-duty-search-editor.spec.ts`, `wdintel-web/tests/e2e/rer-duty-minimal-report.spec.ts` and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutySearch.spec.tsx`.
+- **Search navigation motion:** selecting a result or using result navigation jumps immediately to the source message with its surrounding context, without animated scrolling. Reply-chain navigation retains its existing smooth/reduced-motion behavior.
+- **Search navigation latency:** a known search result bypasses context lookup. A loaded target lands without navigation API requests; an unloaded target retains readable feed content during server validation, then loads context under the source filters with the feed skeleton. Result selection does not show a progress bar in the search panel. Cancelled/replaced navigation cannot land later. Missing targets and API failures report through the page snackbar. Ordinary links and reply-chain resolution retain their existing access lookup.
+- **Search loading geometry:** the progress bar indicates initial search, refresh and older-result requests only. It overlays the bottom edge of the search header without changing the result list's position or height when it appears or disappears.
+- **Return to newest:** the explicit newest-message action clears the selected result and cancels pending search navigation for that feed only, preserving query, cached results and result-list position. Other feeds' selections and pending navigation remain intact.
+- **Search term highlights:** while search is open, matching source cards reuse the search response's marked text and the Analysis highlight style, including backend-matched word forms. Only equal message IDs and unchanged text may reuse these marks. Closing or clearing search removes them; reopening restores cached marks. Feed filters, source message data, surrounding context and other columns remain unchanged.
+- **Settings panels:** the search header action is disabled while that column's filters, notification settings or keyword highlighting panel is open. Closing the settings panel restores the action unless the keyword filter still blocks it. Other columns remain independently usable; an existing search cache is preserved.
+- **Expansion direction:** opening search in a later column adds width to its right without moving preceding columns. Automatic horizontal reveal targets the search panel alone, so an already visible panel does not scroll the workspace to fit the entire expanded column.
+- **Existing test(s):** `wdintel-web/tests/e2e/rer-duty-search.spec.ts`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutySearch.spec.tsx`; shared navigation regressions in `wdintel-web/tests/e2e/message-replies-frontend.spec.ts`.
+- **Original Echo issue/PR, if known:** [#3571](https://github.com/echoua/echo/issues/3571).

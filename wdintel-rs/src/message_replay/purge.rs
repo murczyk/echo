@@ -1,10 +1,14 @@
 //! Hard-deletes replayed messages in batches. Replays are found through the
-//! negative `external_id` marker (`signal_message_external_id_idx`).
+//! negative `external_id` marker (`signal_message_external_id_idx`), and the
+//! copies the replay before #4110 left behind through its comment marker.
 //! Children referencing `signal_message` / `sigint_inbox_item` with
 //! ON DELETE NO ACTION are deleted first; the rest cascade. Stored media
 //! objects are never deleted: replays share them with their sources.
 
-use crate::config::MESSAGE_REPLAY_PURGE_BATCH_SIZE;
+use crate::config::{
+    MESSAGE_REPLAY_INSTALL_MIGRATION, MESSAGE_REPLAY_LEGACY_MARKER,
+    MESSAGE_REPLAY_PURGE_BATCH_SIZE,
+};
 use crate::entities::*;
 use crate::h;
 use crate::types::ShortContext;
@@ -16,6 +20,115 @@ pub async fn purge_batch(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let message_ids = load_replay_batch(txn).await.c(h!())?;
+    purge_messages(txn, message_ids, "purged replayed messages")
+        .await
+        .c(h!())
+}
+
+/// Purges a batch of the copies the replay before #4110 made, which its
+/// cleanup only soft-deleted. That replay is gone, so nothing else would ever
+/// remove them. Returns them for fanout; empty once none is left.
+///
+/// The marker alone is not proof: comment parsing gives a real message the
+/// same system comment when its text carries [`MESSAGE_REPLAY_LEGACY_MARKER`].
+/// So only a message that passes all of these is purged:
+/// - the system login's marker comment, from before this replay was
+///   installed (its migration), when the old replay could still write it;
+/// - the comment written at exactly the message's `timestamp`: the old replay
+///   stamped both with one clock reading, while a parsed comment gets the
+///   database's insert time and a message its interception time;
+/// - already soft-deleted, so no visible message is ever touched;
+/// - no comment migrated into a message of its own, which would be orphaned.
+///   The comment migration's lock is held, so none can be migrated meanwhile;
+/// - not linked through `intel_product` either way: a linked comment would be
+///   orphaned, and a report would lose its source;
+/// - no GOI association names its `message_uid`, and no AI intel report
+///   attempt its id: GOI matching includes hidden messages, and nothing would
+///   repair either reference.
+///
+/// Every condition is in the query, so a skipped message cannot stall it.
+/// The marker is inlined so the planner can use the partial index on it
+/// (`m20261113_114713_legacy_replay_marker_index`), and there is no
+/// `DISTINCT`, so `LIMIT` ends the scan early. `goi_association.message_uid`
+/// has no index, so its check is a set Postgres hashes once per batch.
+pub async fn purge_legacy_batch(
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<Vec<i64>> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT pg_advisory_xact_lock($1)",
+        [crate::sigint::comments::SIGINT_COMMENT_MIGRATION_LOCK_KEY.into()],
+    ))
+    .await
+    .c(h!())?;
+    let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
+    let rows = txn
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            format!(
+                r#"
+            SELECT c.signal_message_id
+            FROM sigint_comment c
+            JOIN signal_message m ON m.id = c.signal_message_id
+            WHERE c.comment = '{MESSAGE_REPLAY_LEGACY_MARKER}'
+              AND c.login_id = $1
+              AND c.created_at < (
+                SELECT to_timestamp(applied_at) AT TIME ZONE 'UTC'
+                FROM seaql_migrations
+                WHERE version = $2
+              )
+              AND c.created_at = m.timestamp
+              AND m.deleted
+              AND NOT EXISTS (
+                SELECT 1 FROM sigint_comment migrated
+                WHERE migrated.signal_message_id = m.id
+                  AND migrated.migrated_signal_message_id IS NOT NULL
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM intel_product p WHERE p.source_message_id = m.id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM intel_product p WHERE p.intel_message_id = m.id
+              )
+              AND (
+                m.message_uid IS NULL
+                OR m.message_uid NOT IN (
+                  SELECT g.message_uid FROM goi_association g
+                  WHERE g.message_uid IS NOT NULL
+                )
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM ai_intel_report_attempt a
+                WHERE a.source_message_id = m.id
+              )
+            LIMIT $3
+            "#
+            ),
+            [
+                system_login_id.into(),
+                MESSAGE_REPLAY_INSTALL_MIGRATION.into(),
+                (MESSAGE_REPLAY_PURGE_BATCH_SIZE as i64).into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    let mut message_ids = rows
+        .into_iter()
+        .map(|row| row.try_get::<i64>("", "signal_message_id"))
+        .collect::<Result<Vec<_>, _>>()
+        .c(h!())?;
+    message_ids.sort_unstable();
+    message_ids.dedup();
+    purge_messages(txn, message_ids, "purged legacy replayed messages")
+        .await
+        .c(h!())
+}
+
+async fn purge_messages(
+    txn: &DatabaseTransaction,
+    message_ids: Vec<i64>,
+    reason: &str,
+) -> anyhow::Result<Vec<i64>> {
     if message_ids.is_empty() {
         return Ok(message_ids);
     }
@@ -29,7 +142,7 @@ pub async fn purge_batch(
     crate::rer_importer::inbox::prepare_messages_network_activity_change(
         txn,
         &message_ids,
-        "purged replayed messages",
+        reason,
     )
     .await
     .c(h!())?;
@@ -115,3 +228,7 @@ async fn delete_messages(
         .c(h!())?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "purge_tests.rs"]
+mod tests;

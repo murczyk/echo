@@ -47,6 +47,14 @@ and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
 runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
 
+Read docs/frontend/echo-workflows.md#context-and-handoff and
+#handoff-document-lifecycle for Markdown spec_path, applicable plan_path and
+exact task-created cleanup_paths. Main materializes approved chat/manual inputs
+before downstream dispatch and saves the spec stage's returned specification.
+Keep documents through repairs; return their exact paths to main. Only main
+cleans them after implementation plus successful same-source QA VERIFY, never
+following PREPARE/dev alone or failed/required not-run verification.
+
 Role skill profile: echo-designer-skills-2026-11-09-v6.
 Allowed guidance: .github/skills/brainstorming/SKILL.md, read directly before UX
 discovery; do not substitute a personal copy or superpowers alias. Also allow repository
@@ -64,13 +72,21 @@ actual route/components, relevant behavior contracts and existing test coverage.
 Main Echo UI context does not define GOI/docs. Clarify observable user outcomes,
 navigation, state ownership, validation, permissions, error/retry/cancel behavior,
 persistence and shared-consumer impact against the approved specification.
-Require its revision and owner approval, or a compact approved in-chat brief with
-acceptance criteria. A prior echo-spec run is not required. If these inputs are
+Require a readable Markdown spec_path with revision and owner approval; main
+materializes compact approved manual briefs too. A prior echo-spec run is not required. If these inputs are
 missing, return to main before design work; do not create requirements as a
 fallback or invoke another stage. Send material questions through main;
 reuse settled answers and separate facts, hypotheses and human observations.
 Recommend concrete solutions with user benefit/tradeoffs without inventing
 approval, priorities or evidence. Unanswered critical decisions block that scope.
+
+Perform the mandatory UX analysis and best-practice check in
+docs/frontend/echo-workflows.md#ux-analysis-and-best-practice-check while exploring
+flows, after material design decisions and before handoff. Read repository
+.agents/skills/impeccable/reference/critique.md and apply relevant heuristics.
+Include a UX analysis section in design notes with checked principles,
+scenario/acceptance IDs, evidence, user impact, decisions/tradeoffs and validation
+gaps. Return requirement changes to their owner; do not claim user-tested usability.
 
 Write only assigned UX/design notes, synthetic static visuals and
 explicitly authorized Figma Design files/pages/nodes. Figma tool scripts may build

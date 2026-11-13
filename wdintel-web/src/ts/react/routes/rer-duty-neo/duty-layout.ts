@@ -1,1 +1,2 @@
 export const DUTY_SINGLE_FEED_MAX_WIDTH_PX = 960;
+export const DUTY_SEARCH_PANEL_WIDTH_PX = 270;

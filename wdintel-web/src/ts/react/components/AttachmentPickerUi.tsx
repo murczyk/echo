@@ -1,5 +1,3 @@
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -17,7 +15,17 @@ import {
   MenuItem,
   Typography,
 } from '@mui/material';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import { attachmentIcon, fileExtension, formatFileSize, mediaKind } from './attachment-files';
 import { AttachmentRenameDialog } from './AttachmentRenameDialog';
@@ -39,9 +47,9 @@ export type AttachmentUploadPresentation = {
 type DropzoneProps = {
   busy: boolean;
   fileInputRef: RefObject<HTMLInputElement>;
-  onFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
-  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  onFileSelect: (event: ChangeEvent<HTMLInputElement>) => void;
+  onDrop: (event: DragEvent<HTMLDivElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   helperText: string;
 };
 
@@ -268,8 +276,7 @@ type FileRowProps = {
   onDownload?: () => void;
   onEdit?: () => void;
   onRename?: (fileName: string) => void;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
+  dragHandle?: ReactNode;
   previewUrl?: string;
   onPreviewError?: () => void;
   onPreviewClick?: () => void;
@@ -283,8 +290,7 @@ export function AttachmentFileRow({
   onDownload,
   onEdit,
   onRename,
-  onMoveUp,
-  onMoveDown,
+  dragHandle,
   previewUrl,
   onPreviewError,
   onPreviewClick,
@@ -300,7 +306,7 @@ export function AttachmentFileRow({
   const [renameOpen, setRenameOpen] = useState(false);
   const renameActionRef = useRef<HTMLElement | null>(null);
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+  const handleMenuOpen = (event: MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     setMenuAnchorEl(event.currentTarget);
   };
@@ -342,8 +348,10 @@ export function AttachmentFileRow({
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, width: '100%' }}>
+        {dragHandle}
         <Box
           sx={{
+            ml: dragHandle ? -0.75 : 0,
             width: 48,
             height: 48,
             flexShrink: 0,
@@ -407,26 +415,6 @@ export function AttachmentFileRow({
           >
             {meta}
           </Typography>
-        ) : null}
-        {onMoveUp || onMoveDown ? (
-          <span className="flex shrink-0 items-center">
-            <IconButton
-              size="small"
-              aria-label={`Перемістити ${file.name} вище`}
-              onClick={onMoveUp}
-              disabled={busy || !onMoveUp}
-            >
-              <ArrowUpwardIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              size="small"
-              aria-label={`Перемістити ${file.name} нижче`}
-              onClick={onMoveDown}
-              disabled={busy || !onMoveDown}
-            >
-              <ArrowDownwardIcon fontSize="small" />
-            </IconButton>
-          </span>
         ) : null}
         {onDownload || onEdit || onRename ? (
           <span className="flex shrink-0 items-center gap-0">

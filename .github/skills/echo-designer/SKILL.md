@@ -7,7 +7,7 @@ description: Use only when the user explicitly invokes echo-designer for UX flow
 
 This is a main-chat entrypoint, not the designer's working instructions.
 
-For Figma work, return editable Figma file/node links and concise design notes in chat. Generated task specifications, design notes and audit reports are not repository documents; if a file is needed, use an explicitly assigned location outside the repository. Inspect/show screenshots transiently in chat; do not save PNGs or companion mockup images into repository documents or link them from those documents unless the user explicitly requests an export. A designer-only request ends at design: neither main nor the child creates an implementation plan or invokes planning skills afterward. Technical planning requires a separately requested planning/development scope. Include these output limits in the handoff; helper workflows do not override them.
+For Figma work, return editable Figma file/node links and concise design notes in chat. Input specifications follow the shared Markdown handoff contract. Generated design notes and audit reports are not repository documents; if a file is needed, use an explicitly assigned location outside the repository. Inspect/show screenshots transiently in chat; do not save PNGs or companion mockup images into repository documents or link them from those documents unless the user explicitly requests an export. A designer-only request ends at design: neither main nor the child creates an implementation plan or invokes planning skills afterward. Technical planning requires a separately requested planning/development scope. Include these output limits in the handoff; helper workflows do not override them.
 
 Resolve `wireframe` / `wireframes` / `design` requests using the shared [output presets](../../../docs/frontend/figma-design.md#output-presets), including their default Figma format and [request flow](../../../docs/frontend/figma-design.md#request-flow). Natural-language instructions to apply the named skill select the same presets. Pass the approved specification, selected preset and explicit task overrides in the handoff; do not ask users to repeat styles or rewrite their request. Reuse the agreed task. Preset/configuration maintenance and quoted invocation examples do not authorize dispatch.
 
@@ -19,7 +19,16 @@ Resolve `wireframe` / `wireframes` / `design` requests using the shared [output 
 
 ## Design tools
 
+Require [UX analysis and a best-practice check](../../../docs/frontend/echo-workflows.md#ux-analysis-and-best-practice-check) while exploring flows, after material design decisions and before handoff. Include the analysis in design notes and inspect its findings, acceptance-ID mappings and evidence limits. Read repository Impeccable's `critique` guidance for this check; optional tools do not replace it.
+
 The assigned designer reads repository [brainstorming](../brainstorming/SKILL.md) directly for UX discovery from approved requirements. It does not author a replacement specification or start implementation/planning; no personal Superpowers plugin is needed.
+
+Read the actual supplied references and existing component behavior. Apply
+[DESIGN.md](../../../DESIGN.md) for continuity, stable loading geometry and motion;
+evaluate relevant panel/drawer/resize and mobile focus combinations. Do not
+reinstate cancelled proposals or invent behavior absent from the approved scope.
+Main passes the approved manual or role-produced brief as a readable Markdown
+`spec_path`, with its revision and approval, under the shared handoff contract.
 
 The assigned designer reads [.agents/skills/impeccable/SKILL.md](../../../.agents/skills/impeccable/SKILL.md) and its relevant Markdown guidance (`shape`, `critique`, `audit`) for UX structure, hierarchy, accessibility and responsive design. This Echo adaptation contains no runtime, hooks or additional agents. Use source/authorized browser evidence within the [workflow safety boundaries](../../../docs/frontend/echo-workflows.md#skill-and-tool-boundaries).
 

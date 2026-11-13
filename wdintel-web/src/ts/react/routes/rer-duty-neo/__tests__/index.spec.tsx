@@ -1255,6 +1255,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(state.setFeedInitialTarget).toHaveBeenCalledWith('feed-1', {
       beforeIdNoninclusive: 41,
       messageIds: [41],
+      signal: expect.any(AbortSignal),
     });
     state.messageFeeds = [{ ...state.messageFeeds[0], loading: true }];
     await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
