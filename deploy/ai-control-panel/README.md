@@ -54,20 +54,31 @@ access. Bootstrap authorization remains enforced. Verification errors return a
 failed protocol response while keeping the maintenance lease and channel open,
 so the controller can recover containers and finish restoring settings.
 
-`just deploy` and `just deploy-from-local` finish with `deploy-notice.py` after
-service checks and deployment cleanup. It compares the running application's
-required release with the namespace's selected template and managed agents.
-Backups and other namespaces do not count. An empty namespace uses its template;
-configured instances are checked even with AI disabled. Unconfigured instances
-are skipped. Unknown status produces a warning and a manual scan command.
-The check uses bounded, read-only SSH operations, needs no local Rust build,
-does not upgrade agents, and preserves the deploy result even if it fails.
-`--silent` suppresses deployment notifications, not the final harness notice.
+`just deploy` and `just deploy-from-local` finish with `deploy-notice.py --sync`
+after service checks and deployment cleanup. It compares the running
+application's required release with the namespace's selected template and
+managed agents. Backups and other namespaces do not count. An empty namespace
+uses its template; configured instances are checked even with AI disabled.
+Unconfigured instances are skipped, and an interrupted rollout of the
+namespace is an unknown status, never current. When the harness differs, it
+runs the same preview and upgrade as
+`just ai-control-panel upgrade --host <server> --release <required> [--dry-run]`,
+then checks again. It runs the deploying checkout's `control.py` directly, so it
+needs no local Rust build. The panel runs in its own session and writes a
+session log, whose path is printed; Ctrl-C asks it to stop at a safe boundary
+and waits until it has. The deploy exits 1 with a 🔴 message and notification
+when the preview, upgrade or final check fails or the status is unknown. The
+application deploy itself has succeeded by then. `--silent` suppresses
+deployment notifications, not the harness output.
+
+Without `--sync`, the check only reports: bounded, read-only SSH operations, no
+local Rust build, and exit status 0 even when the status is unknown.
 
 Run the notice independently:
 
 ```bash
 python3 deploy/ai-control-panel/deploy-notice.py echo-cbr
+python3 deploy/ai-control-panel/deploy-notice.py --sync echo-cbr  # retry a failed deploy sync
 python3 -m unittest discover -s deploy/ai-control-panel -p 'test_*.py'
 python3 -m unittest discover -s echo-ai-agent/tests -p test_control_panel.py
 ```
