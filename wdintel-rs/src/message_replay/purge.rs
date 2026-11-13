@@ -6,7 +6,8 @@
 //! objects are never deleted: replays share them with their sources.
 
 use crate::config::{
-    MESSAGE_REPLAY_LEGACY_MARKER, MESSAGE_REPLAY_PURGE_BATCH_SIZE,
+    MESSAGE_REPLAY_INSTALL_MIGRATION, MESSAGE_REPLAY_LEGACY_MARKER,
+    MESSAGE_REPLAY_PURGE_BATCH_SIZE,
 };
 use crate::entities::*;
 use crate::h;
@@ -24,30 +25,62 @@ pub async fn purge_batch(
         .c(h!())
 }
 
-/// Purges a batch of the copies the replay before #4110 made: marked with
-/// [`MESSAGE_REPLAY_LEGACY_MARKER`] by the system login, and usually already
-/// soft-deleted by that replay's cleanup. That replay is gone, so nothing
-/// else would ever remove them. Returns them for fanout; empty once none is
-/// left.
+/// Purges a batch of the copies the replay before #4110 made, which its
+/// cleanup only soft-deleted. That replay is gone, so nothing else would ever
+/// remove them. Returns them for fanout; empty once none is left.
+///
+/// The marker alone is not proof: comment parsing gives a real message the
+/// same system comment when its text carries [`MESSAGE_REPLAY_LEGACY_MARKER`].
+/// So only a message that passes all of these is purged:
+/// - the system login's marker comment, from before this replay was
+///   installed (its migration), when the old replay could still write it;
+/// - already soft-deleted, so no visible message is ever touched;
+/// - the marker not in its own text, which rules out a parsed comment;
+/// - no comment migrated into a message of its own, which would be orphaned.
+///
+/// Every condition is in the query, so a skipped message cannot stall it.
 pub async fn purge_legacy_batch(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
-    let mut message_ids = sigint_comment::Entity::find()
-        .filter(sigint_comment::Column::LoginId.eq(system_login_id))
-        .filter(
-            sigint_comment::Column::Comment.eq(MESSAGE_REPLAY_LEGACY_MARKER),
-        )
-        .order_by_desc(sigint_comment::Column::CreatedAt)
-        .limit(MESSAGE_REPLAY_PURGE_BATCH_SIZE)
-        .select_only()
-        .column(sigint_comment::Column::SignalMessageId)
-        .into_tuple::<i64>()
-        .all(txn)
+    let rows = txn
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+            SELECT DISTINCT c.signal_message_id
+            FROM sigint_comment c
+            JOIN signal_message m ON m.id = c.signal_message_id
+            WHERE c.login_id = $1
+              AND c.comment = $2
+              AND c.created_at < (
+                SELECT to_timestamp(applied_at) AT TIME ZONE 'UTC'
+                FROM seaql_migrations
+                WHERE version = $3
+              )
+              AND m.deleted
+              AND strpos(lower(coalesce(m.body, '')), lower($2)) = 0
+              AND NOT EXISTS (
+                SELECT 1 FROM sigint_comment migrated
+                WHERE migrated.signal_message_id = m.id
+                  AND migrated.migrated_signal_message_id IS NOT NULL
+              )
+            LIMIT $4
+            "#,
+            [
+                system_login_id.into(),
+                MESSAGE_REPLAY_LEGACY_MARKER.into(),
+                MESSAGE_REPLAY_INSTALL_MIGRATION.into(),
+                (MESSAGE_REPLAY_PURGE_BATCH_SIZE as i64).into(),
+            ],
+        ))
         .await
         .c(h!())?;
+    let mut message_ids = rows
+        .into_iter()
+        .map(|row| row.try_get::<i64>("", "signal_message_id"))
+        .collect::<Result<Vec<_>, _>>()
+        .c(h!())?;
     message_ids.sort_unstable();
-    message_ids.dedup();
     purge_messages(txn, message_ids, "purged legacy replayed messages")
         .await
         .c(h!())

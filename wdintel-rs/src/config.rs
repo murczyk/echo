@@ -1097,8 +1097,13 @@ pub const MESSAGE_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
 pub const MESSAGE_REPLAY_EMIT_BATCH_SIZE: usize = 50;
 pub const MESSAGE_REPLAY_PURGE_BATCH_SIZE: u64 = 200;
 /// The comment the replay before #4110 put on its copies, as the system login.
-/// Nothing else writes it; `message_replay::purge` removes the copies left.
+/// Comment parsing can write the same comment on a real message, so
+/// `message_replay::purge` checks more than this before deleting.
 pub const MESSAGE_REPLAY_LEGACY_MARKER: &str = "[duplicate]";
+/// The migration that installed #4110's replay; the old one wrote no marker
+/// after it.
+pub const MESSAGE_REPLAY_INSTALL_MIGRATION: &str =
+    "m20261111_090000_message_replay_session";
 /// Interval of the worker's progress summary while a session exists; state
 /// changes are logged immediately.
 pub const MESSAGE_REPLAY_PROGRESS_LOG_SEC: u64 = 30;
