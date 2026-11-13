@@ -299,7 +299,8 @@ async fn new_env_from_config(
             config.totp_strongbox_key.clone(),
         )
         .c(h!())?
-        .with_metrics(metrics.clone(), ai_provider_metrics_process()),
+        .with_metrics(metrics.clone(), ai_provider_metrics_process())
+        .with_health(redis.clone()),
     );
     let env = Env {
         ai_engine_client,
@@ -713,6 +714,10 @@ fn spawn_background_workers(
     }
     spawn_named_worker("healthcheck_worker", bg_set, async move {
         healthcheck::healthcheck_worker(&dbx9, config1).await;
+    });
+    let health_env = env.clone();
+    spawn_named_worker("ai_engine_health_worker", bg_set, async move {
+        crate::ai_engine::health::health_worker(health_env).await;
     });
     if let (Some(analytics), Some(analytics_config)) =
         (env.analytics.clone(), config.analytics.as_ref())
