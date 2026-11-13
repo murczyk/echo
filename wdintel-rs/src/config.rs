@@ -1501,6 +1501,10 @@ pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_LOOKBACK_HOURS: i64 = 72;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_THRESHOLD: i64 = 100_000;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS: i64 = 14;
 pub const RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
+/// Messages a fresh-tail candidate query reads by id before it falls back to
+/// scanning the search window (#4153). A 5-minute tail held about 900 messages
+/// on echo-skhid and an hour about 10,500.
+pub const INBOX_FRESH_TAIL_MESSAGE_ID_LIMIT: u64 = 20_000;
 pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
 pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
 pub const GROUP_STATS_RECALCULATION_TASK_COMPACT_LIMIT: i64 = 5_000;
