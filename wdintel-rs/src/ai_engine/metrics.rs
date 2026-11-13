@@ -64,6 +64,7 @@ impl ProviderCallAttempt {
             health: health.map(|health| {
                 // Counted when it starts, so a long call shows the engine is in use.
                 health.record_start(engine.id);
+                health.begin(engine.id);
                 (health.clone(), engine.id)
             }),
             streaming,
@@ -92,6 +93,7 @@ impl ProviderCallAttempt {
 
     fn record(&mut self, outcome: &'static str) {
         if let Some((health, engine_id)) = self.health.take() {
+            health.end(engine_id);
             // A stream's headers only promise an answer; its timer records how
             // the stream ended instead.
             if !(self.streaming && outcome == "ok") {
@@ -146,7 +148,10 @@ impl StreamBodyTimer {
         Some(Self {
             pending: sink
                 .map(|sink| (sink.metrics.clone(), sink.labels(engine))),
-            health: health.map(|health| (health.clone(), engine.id)),
+            health: health.map(|health| {
+                health.begin(engine.id);
+                (health.clone(), engine.id)
+            }),
             started_at: Instant::now(),
         })
     }
@@ -161,6 +166,7 @@ impl StreamBodyTimer {
 
     fn record(&mut self, outcome: &'static str) {
         if let Some((health, engine_id)) = self.health.take() {
+            health.end(engine_id);
             if let Some(outcome) = stream_health_outcome(outcome) {
                 health.record(engine_id, outcome);
             }

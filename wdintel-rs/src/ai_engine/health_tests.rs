@@ -428,3 +428,42 @@ async fn issue_4157_a_stream_counts_by_how_it_ended_not_its_headers() {
         }
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn issue_4157_a_call_running_longer_than_the_idle_window_blocks_the_probe(
+) {
+    let env = cleanup().await.unwrap();
+    let engine = idle_automatic_mark(&env, 200).await;
+    let id = engine.engine.id;
+    // A call that started long ago, beyond the counters, and still runs.
+    let health = HealthSink::new(env.redis.clone());
+    health.begin(id);
+    let mut redis = env.redis.clone();
+    for _ in 0..50 {
+        if in_flight(&mut redis, id).await.unwrap() == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let probes = AtomicUsize::new(0);
+    let probe = |probed: ai_engine::Model| {
+        if probed.id == id {
+            probes.fetch_add(1, Ordering::SeqCst);
+        }
+        async { true }
+    };
+    run_round(&env, probe).await.unwrap();
+    assert_eq!(probes.load(Ordering::SeqCst), 0);
+    // Once it ends, the idle engine is probed.
+    health.end(id);
+    for _ in 0..50 {
+        if in_flight(&mut redis, id).await.unwrap() == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    run_round(&env, probe).await.unwrap();
+    assert_eq!(probes.load(Ordering::SeqCst), 1);
+    assert_eq!(reload(&env, id).await.unhealthy, Some(false));
+}

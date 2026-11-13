@@ -773,22 +773,64 @@ async fn proxy_provider_call(
     )))
 }
 
+/// Provider failures that arrive inside an HTTP 200 stream: a chat-completion
+/// `data: {"error": …}` event, or a Responses `response.failed` or `error`
+/// event. Model text inside events is JSON-escaped, so it cannot match.
+const STREAM_ERROR_MARKERS: &[&[u8]] = &[
+    b"data: {\"error\"",
+    b"data:{\"error\"",
+    b"\"type\":\"response.failed\"",
+    b"\"type\": \"response.failed\"",
+    b"\"type\":\"error\"",
+    b"\"type\": \"error\"",
+];
+
+/// Watches a stream for [`STREAM_ERROR_MARKERS`], across chunk boundaries.
+#[derive(Default)]
+struct StreamErrorScan {
+    tail: Vec<u8>,
+    seen: bool,
+}
+
+impl StreamErrorScan {
+    fn observe(&mut self, chunk: &[u8]) {
+        if self.seen {
+            return;
+        }
+        let mut window = std::mem::take(&mut self.tail);
+        window.extend_from_slice(chunk);
+        self.seen = STREAM_ERROR_MARKERS.iter().any(|marker| {
+            window.windows(marker.len()).any(|bytes| bytes == *marker)
+        });
+        let longest = STREAM_ERROR_MARKERS
+            .iter()
+            .map(|marker| marker.len())
+            .max()
+            .unwrap_or(0);
+        let keep = window.len().saturating_sub(longest - 1);
+        self.tail = window.split_off(keep);
+    }
+}
+
+/// Times the stream and records how it ended: a stream that reported a
+/// provider error counts as failed even when it closed cleanly (#4157).
 fn observe_stream_body(
     stream: impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>>,
     timer: Option<StreamBodyTimer>,
 ) -> impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>> {
     futures_util::stream::unfold(
-        (Box::pin(stream), timer),
-        |(mut stream, mut timer)| async move {
+        (Box::pin(stream), timer, StreamErrorScan::default()),
+        |(mut stream, mut timer, mut scan)| async move {
             let chunk = stream.next().await;
             if let Some(timer) = timer.as_mut() {
                 match &chunk {
+                    None if scan.seen => timer.failed(),
                     None => timer.completed(),
                     Some(Err(_)) => timer.failed(),
-                    Some(Ok(_)) => {}
+                    Some(Ok(bytes)) => scan.observe(bytes),
                 }
             }
-            chunk.map(|chunk| (chunk, (stream, timer)))
+            chunk.map(|chunk| (chunk, (stream, timer, scan)))
         },
     )
 }
@@ -937,6 +979,32 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_4157_stream_error_events_are_seen_across_chunks() {
+        let seen = |chunks: &[&str]| {
+            let mut scan = StreamErrorScan::default();
+            for chunk in chunks {
+                scan.observe(chunk.as_bytes());
+            }
+            scan.seen
+        };
+        assert!(seen(&[
+            "data: {\"error\": {\"message\": \"No deployments available\"}}\n\n"
+        ]));
+        assert!(seen(&[
+            "event: response.failed\ndata: {\"ty",
+            "pe\":\"response.failed\",\"response\":{}}\n\n",
+        ]));
+        assert!(seen(&[
+            "data: {\"type\": \"error\", \"code\": \"server_error\"}\n\n"
+        ]));
+        // Model text arrives JSON-escaped, so it never matches.
+        assert!(!seen(&[
+            "data: {\"choices\":[{\"delta\":{\"content\":\"\\\"type\\\":\\\"error\\\"\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        ]));
+    }
 
     #[test]
     fn issue_3962_image_parts_must_be_inline() {
@@ -1269,6 +1337,32 @@ mod tests {
         for outcome in ["completed", "failed", "cancelled"] {
             assert_one_stream_sample(&recorder, outcome);
         }
+    }
+
+    #[actix_web::test]
+    async fn issue_4157_a_stream_reporting_a_provider_error_counts_as_failed() {
+        let (client, metrics, recorder) = recording_engine_client();
+        let ai_engine =
+            checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
+        let events = Ok::<_, actix_web::Error>(Bytes::from_static(
+            b"data: {\"error\": {\"message\": \"No deployments available\"}}\n\n",
+        ));
+        let streamed = observe_stream_body(
+            futures_util::stream::iter([events]),
+            client.start_stream_body_timer(&ai_engine),
+        )
+        .collect::<Vec<_>>()
+        .await;
+        // The client still gets the event; only the outcome changes.
+        assert_eq!(streamed.len(), 1);
+        metrics.force_flush_for_test();
+        assert_one_stream_sample(&recorder, "failed");
+        assert!(recorder
+            .find_with_attributes(
+                "echo.ai_provider.stream.duration",
+                &[("outcome", "completed"), ("process", "echo-test")],
+            )
+            .is_none());
     }
 
     #[actix_web::test]

@@ -527,7 +527,8 @@ Attribute values:
   `connect_error`, `transport_error`, `cancelled`, `cooldown_expired` or
   `local_error`. The last two never reached the provider, so they are counted
   but add no duration sample.
-- Stream `outcome`: `completed`, `failed` or `cancelled`.
+- Stream `outcome`: `completed`, `failed` or `cancelled`. `failed` includes a
+  stream that carried a provider error event and then closed cleanly.
 
 When reading the numbers:
 
@@ -569,7 +570,10 @@ steer users to a working model (`wdintel-rs/src/ai_engine/health.rs`, #4157).
 Every call through `AiEngineClient`, from every process, is counted in
 per-minute Redis counters under `ai-engine:health:<engine id>:<minute>` when it
 starts, and its outcome when it ends. A stream counts by how it ended, not by
-its headers. Once a minute one instance, whichever claims
+its headers: a stream that carried a provider error event (`data: {"error"…}`,
+`response.failed` or `error`) fails even if it closed cleanly. Calls and streams
+still running are tracked in `ai-engine:health:<engine id>:in-flight`. Once a
+minute one instance, whichever claims
 `ai-engine:health:round`, checks every enabled engine:
 
 - A healthy engine is marked unhealthy when more than 90% of at least 5 calls
@@ -582,13 +586,16 @@ its headers. Once a minute one instance, whichever claims
 - If nobody called it for 10 minutes, it is probed at most once every 5
   minutes with a one-word chat completion, and any 2xx answer clears the mark.
   Probes are not counted as calls, and an engine someone still calls, or has a
-  call running on, is never probed.
+  call running on however long, is never probed; this is checked again just
+  before the probe is sent.
 
 Only outcomes after the latest health change count; every writer stamps
 `health_updated_at`. The worker's unhealthy marks have no
 `health_updated_by_login_id` and a message starting with «Автоматично:». A mark
-set by an administrator (with a login) or by a profile import (with its own
-message) is never changed back automatically. The flag does not block calls:
+set by an administrator (with a login) or by a profile import with its own
+message is never changed back automatically. A profile import that copies the
+worker's «Автоматично:» mark from another host stays automatic, and recovers on
+this host's own evidence. The flag does not block calls:
 background jobs keep using the engine, and their outcomes count too. Look for
 `ai_engine_health` lines in the bgworker journal to see each decision.
 

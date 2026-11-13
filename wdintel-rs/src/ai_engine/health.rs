@@ -17,7 +17,8 @@
 //! acts on evidence an administrator has already seen; every writer stamps the
 //! time. The worker's unhealthy marks have no login and a message starting with
 //! [`AUTOMATIC_PREFIX`]. A mark an administrator set (with a login) or a
-//! profile import set (with its own message) is never reverted automatically.
+//! profile import set with its own message is never reverted automatically;
+//! an imported copy of the worker's own mark stays automatic.
 //!
 //! The flag only steers the chat to a healthy engine; nothing blocks calls, so
 //! background jobs keep using the engine and their outcomes count too.
@@ -50,6 +51,8 @@ const FIELD_OK: &str = "ok";
 const FIELD_FAILED: &str = "failed";
 /// Counters outlive the longest window they feed.
 const BUCKET_TTL_SECS: i64 = (AI_ENGINE_HEALTH_WINDOW_MINUTES + 5) * 60;
+/// Longer than any provider call or stream runs.
+const IN_FLIGHT_TTL_SECS: i64 = 2 * 60 * 60;
 
 /// Where a client's call outcomes are counted.
 #[derive(Clone)]
@@ -62,10 +65,37 @@ impl HealthSink {
         Self { redis }
     }
 
-    /// Counts a call as it starts, so a call still running shows the engine
-    /// is in use and is not probed meanwhile.
+    /// Counts a call as it starts, so recent use shows even before it ends.
     pub(super) fn record_start(&self, engine_id: Uuid) {
         self.spawn_increment(engine_id, FIELD_TOTAL);
+    }
+
+    /// A call or stream is now running on the engine; [`Self::end`] once it
+    /// stops. The worker never probes an engine with one running, however long.
+    pub(super) fn begin(&self, engine_id: Uuid) {
+        self.spawn_in_flight(engine_id, 1);
+    }
+
+    pub(super) fn end(&self, engine_id: Uuid) {
+        self.spawn_in_flight(engine_id, -1);
+    }
+
+    fn spawn_in_flight(&self, engine_id: Uuid, delta: i64) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let mut redis = self.redis.clone();
+        runtime.spawn(async move {
+            let key = in_flight_key(engine_id);
+            let mut pipe = redis::pipe();
+            pipe.atomic();
+            pipe.incr(&key, delta).ignore();
+            // A crashed process leaves its calls counted; they expire with the key.
+            pipe.expire(&key, IN_FLIGHT_TTL_SECS).ignore();
+            if let Err(error) = pipe.query_async::<()>(&mut redis).await {
+                log::warn!(target: LOG_TARGET, "engine_id={engine_id} in-flight update failed: {error:?}");
+            }
+        });
     }
 
     /// Counts how a call ended. Outcomes that say nothing about the provider
@@ -124,6 +154,39 @@ fn outcome_field(outcome: &str) -> Option<&'static str> {
 
 fn bucket_key(engine_id: Uuid, minute: i64) -> String {
     format!("{AI_ENGINE_HEALTH_REDIS_PREFIX}{engine_id}:{minute}")
+}
+
+fn in_flight_key(engine_id: Uuid) -> String {
+    format!("{AI_ENGINE_HEALTH_REDIS_PREFIX}{engine_id}:in-flight")
+}
+
+/// Calls and streams running on the engine now.
+async fn in_flight(
+    redis: &mut ConnectionManager,
+    engine_id: Uuid,
+) -> anyhow::Result<i64> {
+    let count: Option<i64> = redis::cmd("GET")
+        .arg(in_flight_key(engine_id))
+        .query_async(redis)
+        .await
+        .c(h!())?;
+    Ok(count.unwrap_or(0).max(0))
+}
+
+/// Whether nobody called the engine lately and nothing is running on it.
+async fn unused(
+    redis: &mut ConnectionManager,
+    engine_id: Uuid,
+    now_minute: i64,
+) -> anyhow::Result<bool> {
+    let recent = read_counts(
+        redis,
+        engine_id,
+        now_minute - AI_ENGINE_HEALTH_PROBE_IDLE_MINUTES + 1..=now_minute,
+    )
+    .await
+    .c(h!())?;
+    Ok(recent.total == 0 && in_flight(redis, engine_id).await.c(h!())? == 0)
 }
 
 fn current_minute() -> i64 {
@@ -362,16 +425,7 @@ where
             )
             .await
             .c(h!())?,
-            idle: read_counts(
-                &mut redis,
-                engine.id,
-                now_minute - AI_ENGINE_HEALTH_PROBE_IDLE_MINUTES + 1
-                    ..=now_minute,
-            )
-            .await
-            .c(h!())?
-            .total
-                == 0,
+            idle: unused(&mut redis, engine.id, now_minute).await.c(h!())?,
         };
         let decision = decide(&observation);
         let changed = match decision {
@@ -400,6 +454,11 @@ where
                     .await
                     .c(h!())?
                 {
+                    continue;
+                }
+                // Someone may have started a call since the engine was read.
+                let minute = Utc::now().timestamp().div_euclid(60);
+                if !unused(&mut redis, engine.id, minute).await.c(h!())? {
                     continue;
                 }
                 let answered = probe(engine.clone()).await;
