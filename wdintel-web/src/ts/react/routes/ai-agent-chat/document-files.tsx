@@ -51,6 +51,7 @@ export function DocumentChip({
       <EchoChip
         label={<span className="inline-flex items-center gap-echo-xs">{label}</span>}
         title="Документ доступний лише автору розмови"
+        data-copy-text={document.title}
       />
     );
   return (
@@ -59,6 +60,7 @@ export function DocumentChip({
       className="ai-document-chip"
       aria-label={`Відкрити документ «${document.title}», версія ${document.revision}`}
       title={document.fileName}
+      data-copy-text={document.title}
       onClick={(event) =>
         select(
           { kind: 'document', documentId: document.documentId, revision: document.revision },

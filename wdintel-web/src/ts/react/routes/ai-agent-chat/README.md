@@ -96,6 +96,21 @@ of the conversation. See the
 
 Regression coverage: `wdintel-web/tests/e2e/ai-agent-documents.spec.ts`.
 
+## Copying answers
+
+`CitationMarkdown` renders each code block (`CopyControls.tsx`) with its language
+and a **Копіювати** button that copies only the code. Once an answer has finished,
+a copy button under it opens a menu (#4182): **Копіювати текст** writes the
+rendered answer as HTML plus a plain-text alternative (`answer-copy.ts`), so Word
+and Google Docs keep formatting and messengers get clean text with bullets and
+tab-separated table cells; **Копіювати як Markdown** copies the stored source.
+Citation chips copy as their visible label with an absolute link; map and document
+chips copy as their title (`data-copy-text`); controls marked `data-copy-skip` and
+icons are left out.
+
+Regression coverage: `__tests__/answer-copy.spec.ts`,
+`wdintel-web/tests/e2e/ai-agent-copy.spec.ts`.
+
 ## Environment prewarm
 
 Typing the first draft text or attaching a file asks the backend

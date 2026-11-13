@@ -6,6 +6,43 @@ export function copyTextToClipboard(text: string): Promise<void> {
   return fallbackCopyTextToClipboard(text);
 }
 
+/** Copies formatted text: rich editors paste the HTML, plain-text fields paste `text`. */
+export async function copyRichTextToClipboard(html: string, text: string): Promise<void> {
+  if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' }),
+        }),
+      ]);
+      return;
+    } catch {
+      // Fall back below, e.g. when the browser rejects HTML clipboard items.
+    }
+  }
+  if (!copyRichTextWithCopyEvent(html, text)) await copyTextToClipboard(text);
+}
+
+function copyRichTextWithCopyEvent(html: string, text: string): boolean {
+  let written = false;
+  const onCopy = (event: ClipboardEvent) => {
+    if (!event.clipboardData) return;
+    event.clipboardData.setData('text/html', html);
+    event.clipboardData.setData('text/plain', text);
+    event.preventDefault();
+    written = true;
+  };
+  document.addEventListener('copy', onCopy);
+  try {
+    return document.execCommand('copy') && written;
+  } catch {
+    return false;
+  } finally {
+    document.removeEventListener('copy', onCopy);
+  }
+}
+
 // When copy runs after async UI work, the browser may report that the document is not focused.
 // This fallback keeps copy working in the same way across Elm and React callers.
 function fallbackCopyTextToClipboard(text: string): Promise<void> {
