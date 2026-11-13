@@ -2015,6 +2015,24 @@ test("incident 01a1d35e: a model without a ready deployment gets no second start
   assert.deepEqual(snapshots(), []);
 });
 
+test("incident 01a1d35e: a provider that answers after a cooldown gets the usual re-prompt", () => {
+  const research = new FlashResearch(() => sources);
+  const attempt = (message: unknown) => {
+    // Set by beforeProvider for each research call.
+    (research as any).researchStartedAt = Date.now();
+    research.researchCompleted(message);
+  };
+  const cooldown = { stopReason: "error", errorMessage: "429 No deployments available for selected model", content: [] };
+  const failure = { stopReason: "error", errorMessage: "400 unexpected model state", content: [] };
+  attempt(cooldown);
+  assert.equal(research.noteFailedStart(failure), false);
+  // A private update_research call succeeded: the model has a deployment again.
+  attempt({ stopReason: "toolUse", content: [{ type: "toolCall", name: "update_research" }] });
+  attempt(failure);
+  assert.equal(research.noteFailedStart(failure), true);
+  assert.equal(research.providerNeverAnswered, false);
+});
+
 test("incident 01a1b210: a failure after work started keeps the evidence and does not retry", async (t) => {
   const { reads, reason, researchCalls } = await researchWithProviderScript(t, [
     readArchive,

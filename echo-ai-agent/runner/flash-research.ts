@@ -693,10 +693,13 @@ export class FlashResearch {
     const durationMs = Date.now() - this.researchStartedAt;
     this.completed("research", durationMs);
     const completion = providerCompletion(message);
-    if (completion.failureKind === "rate_limit" && this.publicToolRuns === 0)
-      this.startCooldown = true;
-    if (["stop", "toolUse", "length"].includes(completion.stopReason ?? ""))
+    // Only the latest outcome counts: a provider that answered after a cooldown has
+    // recovered, so a later failure gets the usual re-prompt.
+    if (["stop", "toolUse", "length"].includes(completion.stopReason ?? "")) {
       this.providerAnswered = true;
+      this.startCooldown = false;
+    } else if (completion.failureKind === "rate_limit" && this.publicToolRuns === 0)
+      this.startCooldown = true;
     this.diagnostic({
       stage: "research",
       ...completion,
