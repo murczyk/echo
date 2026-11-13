@@ -55,6 +55,13 @@ const BUCKET_TTL_SECS: i64 = (AI_ENGINE_HEALTH_WINDOW_MINUTES + 5) * 60;
 /// this was left behind by a process that died.
 const IN_FLIGHT_MAX_MS: i64 = 2 * 60 * 60 * 1000;
 
+/// A call's entry in the engine's in-flight list.
+pub(crate) struct InFlight {
+    call: Uuid,
+    /// The task adding it, which removal waits for.
+    listed: Option<tokio::task::JoinHandle<()>>,
+}
+
 /// Where a client's call outcomes are counted.
 #[derive(Clone)]
 pub(crate) struct HealthSink {
@@ -74,14 +81,14 @@ impl HealthSink {
     /// A call or stream is now running on the engine; [`Self::end`] it once it
     /// stops. The worker never probes an engine with one running, however
     /// long, and drops entries older than `IN_FLIGHT_MAX_MS`.
-    pub(super) fn begin(&self, engine_id: Uuid) -> Uuid {
+    pub(super) fn begin(&self, engine_id: Uuid) -> InFlight {
         let call = Uuid::now_v7();
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            return call;
+            return InFlight { call, listed: None };
         };
         let mut redis = self.redis.clone();
         let started_ms = Utc::now().timestamp_millis();
-        runtime.spawn(async move {
+        let listed = runtime.spawn(async move {
             let key = in_flight_key(engine_id);
             let mut pipe = redis::pipe();
             pipe.atomic();
@@ -91,18 +98,26 @@ impl HealthSink {
                 log::warn!(target: LOG_TARGET, "engine_id={engine_id} in-flight start failed: {error:?}");
             }
         });
-        call
+        InFlight {
+            call,
+            listed: Some(listed),
+        }
     }
 
-    pub(super) fn end(&self, engine_id: Uuid, call: Uuid) {
+    /// Removes the call once its listing landed, so a quick call cannot be
+    /// removed before it is added and then linger.
+    pub(super) fn end(&self, engine_id: Uuid, in_flight: InFlight) {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
         let mut redis = self.redis.clone();
         runtime.spawn(async move {
+            if let Some(listed) = in_flight.listed {
+                let _ = listed.await;
+            }
             let removed: redis::RedisResult<()> = redis::cmd("ZREM")
                 .arg(in_flight_key(engine_id))
-                .arg(call.to_string())
+                .arg(in_flight.call.to_string())
                 .query_async(&mut redis)
                 .await;
             if let Err(error) = removed {
@@ -235,9 +250,11 @@ pub(crate) async fn record_outcome(
     minute: i64,
     outcome: &str,
 ) -> anyhow::Result<()> {
-    increment(redis, engine_id, minute, FIELD_TOTAL).await?;
+    increment(redis, engine_id, minute, FIELD_TOTAL)
+        .await
+        .c(h!())?;
     if let Some(field) = outcome_field(outcome) {
-        increment(redis, engine_id, minute, field).await?;
+        increment(redis, engine_id, minute, field).await.c(h!())?;
     }
     Ok(())
 }

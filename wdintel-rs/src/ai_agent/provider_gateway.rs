@@ -796,12 +796,15 @@ struct StreamChoice {
 
 /// Reads a provider's SSE events as they pass, to tell how the stream ended
 /// (#4157). A provider can report a failure inside an HTTP 200 stream: a
-/// chat-completion event with `error`, or a Responses `response.failed` or
-/// `error` event. A stream also succeeds only if it finished: `[DONE]`, a
-/// choice with a `finish_reason`, or `response.completed`/`incomplete`.
+/// chat-completion event with `error` or a `network_error` finish reason, or a
+/// Responses `response.failed` or `error` event. A stream succeeds only if it
+/// finished: a chat choice with another `finish_reason` (`[DONE]` alone is not
+/// enough), or `response.completed`/`incomplete`.
 #[derive(Default)]
 struct StreamOutcomeScan {
     line: Vec<u8>,
+    /// The current event's `data:` lines, joined with newlines as SSE does.
+    data: Vec<u8>,
     failed: bool,
     finished: bool,
 }
@@ -811,48 +814,66 @@ impl StreamOutcomeScan {
         for byte in chunk {
             if *byte == b'\n' {
                 let line = std::mem::take(&mut self.line);
-                self.event(&line);
+                self.line(&line);
             } else {
                 self.line.push(*byte);
             }
         }
     }
 
-    /// The stream ended: a last line without a newline still counts.
+    /// The stream ended: a last line or event without its terminator still
+    /// counts.
     fn end(&mut self) {
         let line = std::mem::take(&mut self.line);
-        self.event(&line);
+        self.line(&line);
+        self.dispatch();
     }
 
-    fn event(&mut self, line: &[u8]) {
+    fn line(&mut self, line: &[u8]) {
         let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if line.is_empty() {
+            self.dispatch();
+            return;
+        }
         let Some(data) = line.strip_prefix(b"data:") else {
             return;
         };
+        if !self.data.is_empty() {
+            self.data.push(b'\n');
+        }
+        self.data
+            .extend_from_slice(data.strip_prefix(b" ").unwrap_or(data));
+    }
+
+    fn dispatch(&mut self) {
+        let data = std::mem::take(&mut self.data);
         let data = data.trim_ascii();
-        if data == b"[DONE]" {
-            self.finished = true;
+        if data.is_empty() || data == b"[DONE]" {
             return;
         }
         let Ok(event) = serde_json::from_slice::<StreamEvent>(data) else {
             return;
+        };
+        let reasons = || {
+            event
+                .choices
+                .iter()
+                .flatten()
+                .filter_map(|choice| choice.finish_reason.as_deref())
         };
         if event.error.as_ref().is_some_and(|error| !error.is_null())
             || matches!(
                 event.kind.as_deref(),
                 Some("response.failed" | "error")
             )
+            || reasons().any(|reason| reason == "network_error")
         {
             self.failed = true;
         }
         if matches!(
             event.kind.as_deref(),
             Some("response.completed" | "response.incomplete")
-        ) || event
-            .choices
-            .iter()
-            .flatten()
-            .any(|choice| choice.finish_reason.is_some())
+        ) || reasons().any(|reason| reason != "network_error")
         {
             self.finished = true;
         }
@@ -1071,8 +1092,30 @@ mod tests {
         );
         // Finished streams, of both APIs, and one ending on a finish reason.
         assert_eq!(
-            scan(&["data: {\"choices\":[]}\n\n", "data: [DONE]\n\n"]),
+            scan(&[
+                "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n",
+                "data: [DONE]\n\n",
+            ]),
             (false, true)
+        );
+        // A network error finish reason, a lone [DONE], and an error split
+        // over two data lines of one event.
+        assert!(
+            scan(&[
+                "data: {\"choices\":[{\"finish_reason\":\"network_error\"}]}\n\n"
+            ])
+            .0
+        );
+        assert_eq!(
+            scan(&["data: {\"choices\":[]}\n\n", "data: [DONE]\n\n"]),
+            (false, false)
+        );
+        assert!(
+            scan(&[
+                "data: {\"error\":\ndata: {\"message\":\"down\"}}\n\n",
+                "data: [DONE]\n\n",
+            ])
+            .0
         );
         assert_eq!(
             scan(&["data: {\"type\":\"response.completed\",\"response\":{}}\r\n\r\n"]),
@@ -1094,6 +1137,7 @@ mod tests {
         assert_eq!(
             scan(&[
                 "data: {\"choices\":[{\"delta\":{\"content\":\"\\\"error\\\": 1\"},\"finish_reason\":null}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
                 "data: [DONE]\n\n",
             ]),
             (false, true)
@@ -1403,8 +1447,9 @@ mod tests {
         let (client, metrics, recorder) = recording_engine_client();
         let ai_engine =
             checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
-        let chunk =
-            Ok::<_, actix_web::Error>(Bytes::from_static(b"data: [DONE]\n\n"));
+        let chunk = Ok::<_, actix_web::Error>(Bytes::from_static(
+            b"data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        ));
 
         let completed = observe_stream_body(
             futures_util::stream::iter([chunk]),
@@ -1465,7 +1510,9 @@ mod tests {
     #[actix_web::test]
     async fn issue_4029_gateway_records_a_streamed_call() {
         use actix_web::body::to_bytes;
-        let events = Bytes::from_static(b"data: [DONE]\n\n");
+        let events = Bytes::from_static(
+            b"data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        );
         let (server, address) = checkpoint_fixture_server(events.clone());
         let handle = server.handle();
         let task = actix_web::rt::spawn(server);

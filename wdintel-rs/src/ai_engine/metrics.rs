@@ -1,5 +1,5 @@
 use super::client::is_government_url;
-use super::health::HealthSink;
+use super::health::{HealthSink, InFlight};
 use crate::config::AI_PROVIDER_METRICS_OPENAI_HOST;
 use crate::entities::ai_engine;
 use crate::telemetry::{AiProviderLabels, Metrics};
@@ -44,7 +44,7 @@ pub(super) struct ProviderCallAttempt {
     pending: Option<PendingCall>,
     /// The engine's health counters, which see the same outcome (#4157), with
     /// the engine and this call's in-flight entry.
-    health: Option<(HealthSink, uuid::Uuid, uuid::Uuid)>,
+    health: Option<(HealthSink, uuid::Uuid, InFlight)>,
     streaming: bool,
     provider_started_at: Option<Instant>,
 }
@@ -132,7 +132,7 @@ impl Drop for ProviderCallAttempt {
 /// how it ended for the engine's health.
 pub(crate) struct StreamBodyTimer {
     pending: Option<(Arc<Metrics>, AiProviderLabels)>,
-    health: Option<(HealthSink, uuid::Uuid, uuid::Uuid)>,
+    health: Option<(HealthSink, uuid::Uuid, InFlight)>,
     started_at: Instant,
 }
 

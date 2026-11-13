@@ -571,9 +571,12 @@ Every call through `AiEngineClient`, from every process, is counted in
 per-minute Redis counters under `ai-engine:health:<engine id>:<minute>` when it
 starts, and its outcome when it ends. A stream counts by how it ended, not by
 its headers. The gateway reads its SSE events. A stream fails if an event
-carries `error` or is `response.failed`/`error`, and that counts at once, even
-if the client then leaves. It also fails if it closes without finishing:
-`[DONE]`, a `finish_reason`, or `response.completed`/`incomplete`. Calls and
+carries `error`, has a `network_error` finish reason, or is
+`response.failed`/`error`, and that counts at once, even if the client then
+leaves. It also fails if it closes without finishing: a chat choice with
+another `finish_reason` (`[DONE]` alone is not enough), or
+`response.completed`/`incomplete`. A non-streamed call counts when its headers
+arrive, because the provider sends them only once the answer is ready. Calls and
 streams still running are listed in `ai-engine:health:<engine id>:in-flight`;
 entries older than 2 hours were left by a dead process and are ignored. Once a
 minute one instance, whichever claims
