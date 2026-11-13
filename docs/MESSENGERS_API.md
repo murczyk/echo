@@ -116,6 +116,7 @@ type MessengersAccountItem = {
   last_sync: number | null              // collector's last successful sync
   notes: string | null                  // from the collector
   internal_notes: string | null         // written by Echo users
+  external_url: string | null           // absolute http(s) URL of the account's page in the collector
   telegram: { user_id: string } | null
   datasource_group: MessengersDatasourceGroup
 }
@@ -154,6 +155,7 @@ Example response:
       "last_sync": 1760430000000,
       "notes": null,
       "internal_notes": "Перевірити зв'язок з чатом 9001",
+      "external_url": "https://example.com/accounts/17",
       "telegram": { "user_id": "7012345678" },
       "datasource_group": {
         "id": 4182,

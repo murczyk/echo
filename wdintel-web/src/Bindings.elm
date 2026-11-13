@@ -2588,6 +2588,7 @@ type alias MessengersAccountItem =
     , lastSync : Maybe (Int)
     , notes : Maybe (String)
     , internalNotes : Maybe (String)
+    , externalUrl : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     , datasourceGroup : MessengersDatasourceGroup
     }
@@ -2613,6 +2614,7 @@ messengersAccountItemEncoder struct =
         , ( "last_sync", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastSync )
         , ( "notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.notes )
         , ( "internal_notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.internalNotes )
+        , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         , ( "datasource_group", (messengersDatasourceGroupEncoder) struct.datasourceGroup )
         ]
@@ -23076,6 +23078,7 @@ messengersAccountItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_sync" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "notes" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "internal_notes" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_group" (messengersDatasourceGroupDecoder)))
 

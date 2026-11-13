@@ -106,6 +106,7 @@ fn account_item(
             .map(|dt| dt.and_utc().timestamp_millis()),
         notes: account.notes.clone(),
         internal_notes: account.internal_notes.clone(),
+        external_url: account.external_url.clone(),
         telegram: account.telegram_user_id.map(|id| {
             MessengersTelegramAccountId {
                 user_id: id.to_string(),

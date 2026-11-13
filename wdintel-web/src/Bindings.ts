@@ -1008,6 +1008,7 @@ export type MessengersAccountItem = {
   lastSync: number | null;
   notes: string | null;
   internalNotes: string | null;
+  externalUrl: string | null;
   telegram: MessengersTelegramAccountId | null;
   datasourceGroup: MessengersDatasourceGroup;
 };

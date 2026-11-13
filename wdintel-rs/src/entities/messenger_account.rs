@@ -49,6 +49,8 @@ pub struct Model {
     pub avatar_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub internal_notes: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub external_url: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

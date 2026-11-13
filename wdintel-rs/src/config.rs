@@ -813,6 +813,8 @@ pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 pub const MESSENGER_INGEST_GROUP_KEY_PREFIX: &str = "messenger_ingest.";
 pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
 pub const MESSENGER_INGEST_SYNC_MAX_ITEMS: usize = 200;
+/// Longest account link kept, the common practical limit of URL length.
+pub const MESSENGER_INGEST_EXTERNAL_URL_MAX_LEN: usize = 2048;
 /// Every ingest request, including each TUS chunk, resolves the ingest
 /// datasource; its `last_sync_at` is refreshed at most this often.
 pub const MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS: i64 = 300;

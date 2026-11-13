@@ -40,6 +40,7 @@ pub struct MessengersAccountItem {
     pub last_sync: Option<i64>,
     pub notes: Option<String>,
     pub internal_notes: Option<String>,
+    pub external_url: Option<String>,
     pub telegram: Option<MessengersTelegramAccountId>,
     pub datasource_group: MessengersDatasourceGroup,
 }
