@@ -35,7 +35,9 @@ including relevant inflections or distinctive word stems. These broader matches
 still require contextual review. With no explicit user period, searches without identifying evidence, including
 equipment, acronym, and other non-person matches, extend from 31 days to the
 preceding 31 days and then 28 days: at most 90 Kyiv calendar days, keeping the
-existing 31-day request cap. User-specified
+existing 31-day request cap. The runner, not the tool schema, enforces the cap,
+so a call for a longer period is refused with the exact `date_range` windows of
+at most 31 days that cover it, newest first (#4179). User-specified
 periods and group restrictions are preserved. Errors and incomplete pagination
 must never be described as proof that no evidence exists.
 
