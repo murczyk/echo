@@ -85,7 +85,13 @@ function MessengerMessageCardBase({
           </div>
           <div className="[&>*+*]:mt-1">
             {showSenderName && senderName ? (
-              <div className="text-xs font-medium opacity-70" data-messenger-sender>
+              // A float is not counted in the width of the bubble, so a name as wide as the bubble would wrap beside the
+              // button. The padding is the width of the button and its margin (30 + 8 px): it makes the bubble that much
+              // wider than the name, and the button floats over the padding, so the name still fits on its line.
+              <div
+                className="pr-[38px] text-xs font-medium break-words opacity-70"
+                data-messenger-sender
+              >
                 {senderName}
               </div>
             ) : null}
