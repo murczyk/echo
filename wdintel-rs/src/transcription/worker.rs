@@ -8,7 +8,7 @@ use echo_gpu_client::{
     WorkerPolicy,
 };
 use echo_media::ffmpeg::ProbeOptions;
-use echo_media::{Ffmpeg, Formats, Input};
+use echo_media::{Formats, Input};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -202,7 +202,7 @@ async fn ensure_audio(path: &Path) -> Result<()> {
             ECHO_AUDIO_TRANSCRIPTION_PROBE_TIMEOUT_SECS,
         ),
     };
-    let probed = Ffmpeg::shared()
+    let probed = crate::media_sandbox::ffmpeg()
         .map_err(retryable_preparation)
         .context(h!())?
         .probe(&input, &options)

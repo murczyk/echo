@@ -57,6 +57,7 @@ mod location;
 pub mod log_api;
 pub mod logging;
 pub mod mattermost;
+pub mod media_sandbox;
 pub mod media_summary;
 pub mod message_queue;
 pub mod message_reply;

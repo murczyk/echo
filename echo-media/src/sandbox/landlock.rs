@@ -70,7 +70,10 @@ fn supports(abi: ABI) -> bool {
 fn handled(mode: SandboxMode) -> Result<Ruleset, landlock::RulesetError> {
     let required = match mode {
         SandboxMode::Enforce => CompatLevel::HardRequirement,
-        SandboxMode::BestEffort => CompatLevel::BestEffort,
+        // `Disabled` never builds a ruleset.
+        SandboxMode::BestEffort | SandboxMode::Disabled => {
+            CompatLevel::BestEffort
+        }
     };
     Ruleset::default()
         .set_compatibility(required)

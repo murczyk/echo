@@ -2292,6 +2292,9 @@ pub struct Config {
     pub feature_delete_uploaded_attachment: Option<bool>,
     pub feature_calculate_sigint_inbox_item_networks: Option<bool>,
     pub skip_discord_notifications: Option<bool>,
+    /// Run ffmpeg and ffprobe in the echo-media sandbox. Off by default;
+    /// read once at startup.
+    pub media_sandbox_enabled: Option<bool>,
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
     pub alpine_converter_url: Option<String>,

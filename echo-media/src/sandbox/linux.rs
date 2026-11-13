@@ -43,6 +43,8 @@ pub(super) struct Restrictions {
     drop_bounding_set: bool,
     unshare: UnshareFlags,
     cap_last: u32,
+    /// `false` for `SandboxMode::Disabled`: `restrict` does nothing.
+    enabled: bool,
 }
 
 /// How the filesystem is restricted: exactly one of the two, or a Landlock
@@ -79,7 +81,21 @@ impl Restrictions {
             drop_bounding_set: effective.contains(CapabilitySet::SETPCAP),
             unshare,
             cap_last: cap_last(),
+            enabled: true,
         })
+    }
+
+    /// `SandboxMode::Disabled`: only the parent-death signal remains.
+    pub(super) fn none() -> Self {
+        Self {
+            ruleset: None,
+            mounts: None,
+            parent: Pid::from_raw(std::process::id() as i32),
+            drop_bounding_set: false,
+            unshare: UnshareFlags::empty(),
+            cap_last: 0,
+            enabled: false,
+        }
     }
 
     /// Die with the parent; fail if it already exited during the fork.
@@ -111,6 +127,9 @@ impl Restrictions {
     /// Drop capabilities, then set `NO_NEW_PRIVS` and enter the Landlock
     /// domain.
     pub(super) fn restrict(&mut self) -> io::Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
         self.drop_capabilities()?;
         self.restrict_filesystem()
     }

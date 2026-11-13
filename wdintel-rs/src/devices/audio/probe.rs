@@ -13,7 +13,7 @@ use chrono::{DateTime, Utc};
 use echo_media::ffmpeg::{
     DecodeOptions, Probe, ProbeOptions, Rendition, RenditionOptions,
 };
-use echo_media::{Ffmpeg, Formats, Input, MediaError};
+use echo_media::{Formats, Input, MediaError};
 use std::future::Future;
 use std::path::Path;
 
@@ -60,9 +60,6 @@ pub(super) async fn probe_with_resources(
     slot: Option<ResourceGuard>,
 ) -> anyhow::Result<ProbedAudio> {
     checked_recording_end(start, 1).c(h!())?;
-    self_check::ensure_media_ready(&runtime.media_check)
-        .await
-        .c(h!())?;
     let permit = runtime
         .probe_permits
         .clone()
@@ -98,13 +95,17 @@ async fn probe_owned(
         (Some(channels), Some(rate)) if channels > 0 => rate,
         _ => return Err(invalid("некоректні параметри аудіопотоку")),
     };
-    let options = decode_options(sample_rate).c(h!())?;
+    let options = DecodeOptions {
+        formats: Formats::AUDIO,
+        threads: ffmpeg_threads().c(h!())?,
+        progress_timeout: DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT,
+        ..DecodeOptions::new(sample_rate)
+    };
     let input = Input::file(source).c(h!())?;
-    let report = until_shutdown(
-        Ffmpeg::shared().c(h!())?.decode_verify(&input, &options),
-    )
-    .await
-    .c(h!())?;
+    let media = crate::media_sandbox::ffmpeg().c(h!())?;
+    let report = until_shutdown(media.decode_verify(&input, &options))
+        .await
+        .c(h!())?;
     Ok(ProbedAudio {
         duration_us: report.duration_us,
         mime_type,
@@ -117,10 +118,13 @@ async fn probe_owned(
 /// `Formats::AUDIO` so a FLAC or Ogg upload is reported as unsupported
 /// rather than invalid; only WAV and MP3 are decoded afterwards.
 async fn media_metadata(source: &Path) -> anyhow::Result<Probe> {
+    let options = ProbeOptions {
+        formats: Formats::AUDIO,
+        timeout: DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT,
+    };
     let input = Input::file(source).c(h!())?;
-    until_shutdown(Ffmpeg::shared().c(h!())?.probe(&input, &probe_options()))
-        .await
-        .c(h!())
+    let media = crate::media_sandbox::ffmpeg().c(h!())?;
+    until_shutdown(media.probe(&input, &options)).await.c(h!())
 }
 
 pub(super) async fn source_channels(source: &Path) -> anyhow::Result<u32> {
@@ -142,6 +146,7 @@ pub(super) async fn render(
     rendition: Rendition<'_>,
 ) -> anyhow::Result<()> {
     let options = RenditionOptions {
+        formats: Formats::AUDIO,
         threads: ffmpeg_threads().c(h!())?,
         sample_rate: DEVICE_AUDIO_RENDITION_RATE.parse().c(h!())?,
         progress_timeout: DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT,
@@ -149,28 +154,13 @@ pub(super) async fn render(
     };
     let input = Input::file(source).c(h!())?;
     until_shutdown(
-        Ffmpeg::shared()
+        crate::media_sandbox::ffmpeg()
             .c(h!())?
             .audio_rendition(&input, output, &options),
     )
     .await
     .c(h!())?;
     Ok(())
-}
-
-fn probe_options() -> ProbeOptions {
-    ProbeOptions {
-        formats: Formats::AUDIO,
-        timeout: DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT,
-    }
-}
-
-fn decode_options(sample_rate: u32) -> anyhow::Result<DecodeOptions> {
-    Ok(DecodeOptions {
-        threads: ffmpeg_threads().c(h!())?,
-        progress_timeout: DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT,
-        ..DecodeOptions::new(sample_rate)
-    })
 }
 
 fn ffmpeg_threads() -> anyhow::Result<u32> {
@@ -235,8 +225,6 @@ pub(super) fn checked_recording_end(
     }
     Ok(end)
 }
-
-pub(super) mod self_check;
 
 #[cfg(test)]
 mod tests;

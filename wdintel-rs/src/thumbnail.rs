@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use echo_media::ffmpeg::ThumbnailOptions;
-use echo_media::{Ffmpeg, Input};
+use echo_media::Input;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Duration;
@@ -44,7 +44,7 @@ pub(crate) async fn generate(
     };
     let result = match Input::file(input) {
         Ok(input) => {
-            Ffmpeg::shared()?
+            crate::media_sandbox::ffmpeg()?
                 .thumbnail(&input, output, &thumbnail)
                 .await
         }

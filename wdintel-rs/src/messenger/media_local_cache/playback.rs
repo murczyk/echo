@@ -11,7 +11,7 @@ use crate::types::{warn, Env, ShortContext};
 use anyhow::{bail, Result};
 use chrono::Utc;
 use echo_media::ffmpeg::{ProbeOptions, RemuxOptions};
-use echo_media::{Ffmpeg, Formats, Input};
+use echo_media::{Formats, Input};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -158,7 +158,7 @@ async fn supported_source(source: &Path) -> Result<bool> {
         ),
     };
     let input = Input::file(source).c(h!())?;
-    let probe = match Ffmpeg::shared().c(h!())?.probe(&input, &options).await {
+    let probe = match crate::media_sandbox::ffmpeg().c(h!())?.probe(&input, &options).await {
         Ok(probe) => probe,
         Err(error) if error.is_terminal() => {
             warn!("video probe rejected {}: {error:#}", source.display());
@@ -218,9 +218,8 @@ async fn remux_watching_disk(
         ..RemuxOptions::new(reserved)
     };
     let input = Input::file(source).c(h!())?;
-    let remux = Ffmpeg::shared()
-        .c(h!())?
-        .remux_mp4_faststart(&input, target, &options);
+    let media = crate::media_sandbox::ffmpeg().c(h!())?;
+    let remux = media.remux_mp4_faststart(&input, target, &options);
     tokio::pin!(remux);
     loop {
         tokio::select! {

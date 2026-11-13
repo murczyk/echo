@@ -135,6 +135,14 @@ impl Ffmpeg {
         &self.config
     }
 
+    /// A copy whose jobs run in `mode`, such as [`SandboxMode::Disabled`]
+    /// for a deployment that has not opted in to the sandbox.
+    pub fn with_sandbox_mode(&self, mode: SandboxMode) -> Self {
+        let mut ffmpeg = self.clone();
+        ffmpeg.config.sandbox_mode = mode;
+        ffmpeg
+    }
+
     fn spec(&self, job: Job<'_>) -> Spec {
         let program = match job.program {
             Program::Ffmpeg => &self.config.ffmpeg_bin,

@@ -365,39 +365,29 @@ pub(crate) async fn run_audio(
     let Some(database) = env.file_registry_db.as_ref() else {
         return;
     };
-    // A broken decoder sandbox would reject every upload as invalid audio,
-    // so claim nothing until the self-check passes.
-    let workers = async {
-        if !runtime.wait_for_media(&cancellation).await {
-            return None;
-        }
-        Some(register_kinds(
-            database.connection().clone(),
-            settings,
-            Arc::new(AudioExecutor {
-                env: env.clone(),
-                runtime: runtime.clone(),
-            }),
-            cancellation.clone(),
-            &[FinalizationKind::FinalizationAudioKind],
-        ))
-    };
-    let (registration, (), ()) = tokio::join!(
-        workers,
+    let registration = register_kinds(
+        database.connection().clone(),
+        settings,
+        Arc::new(AudioExecutor {
+            env: env.clone(),
+            runtime: runtime.clone(),
+        }),
+        cancellation.clone(),
+        &[FinalizationKind::FinalizationAudioKind],
+    );
+    tokio::join!(
         crate::devices::audio::async_cleanup::run_nofail(
             env.clone(),
-            runtime.clone(),
+            runtime,
             cancellation.clone(),
         ),
         cleanup::run_accounting_nofail(
             database.connection().clone(),
             FinalizationKind::FinalizationAudioKind,
-            cancellation.clone(),
+            cancellation,
         ),
     );
-    if let Some(registration) = registration {
-        registration.shutdown().await;
-    }
+    registration.shutdown().await;
 }
 
 struct AudioExecutor {

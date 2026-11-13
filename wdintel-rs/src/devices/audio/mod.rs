@@ -363,10 +363,6 @@ pub(super) const DEVICE_AUDIO_CLEANUP_BATCH: u64 = 100;
 pub(crate) const DEVICE_AUDIO_CLEANUP_METRIC: &str =
     "echo.device_audio.cleanup.count";
 pub(super) const DEVICE_AUDIO_BUSY_RETRY_AFTER_SECS: u64 = 60;
-pub(super) const DEVICE_AUDIO_MEDIA_CHECK_RATE: u32 = 8000;
-pub(super) const DEVICE_AUDIO_MEDIA_CHECK_SAMPLES: u32 = 800;
-pub(super) const DEVICE_AUDIO_MEDIA_CHECK_RETRY: Duration =
-    Duration::from_secs(30);
 pub(super) const DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT: Duration =
     Duration::from_secs(5 * 60);
 pub(super) const DEVICE_AUDIO_PROCESS_READ_BYTES: usize = 8192;
@@ -402,7 +398,6 @@ pub(crate) struct DeviceAudioRuntime {
     namespace_scan: Arc<tokio::sync::Mutex<Option<tokio::fs::ReadDir>>>,
     metrics: Option<crate::telemetry::Metrics>,
     playback_cache: Arc<content::PlaybackCache>,
-    media_check: Arc<probe::self_check::MediaCheck>,
 }
 
 #[derive(Clone)]
@@ -465,7 +460,6 @@ pub(crate) fn build_runtime(
         namespace_scan: Arc::new(tokio::sync::Mutex::new(None)),
         metrics,
         playback_cache: Arc::new(content::PlaybackCache::default()),
-        media_check: Arc::default(),
     })
 }
 
@@ -504,15 +498,6 @@ fn unavailable(message: &str) -> AppError {
 }
 
 impl DeviceAudioRuntime {
-    /// Waits for the decoder self-check; `false` if cancelled first.
-    pub(crate) async fn wait_for_media(
-        &self,
-        cancellation: &tokio_util::sync::CancellationToken,
-    ) -> bool {
-        probe::self_check::wait_until_ready(&self.media_check, cancellation)
-            .await
-    }
-
     async fn finalization_slot(
         &self,
         kind: crate::devices::upload_finalization::resources::ResourceKind,

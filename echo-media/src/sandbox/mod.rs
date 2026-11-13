@@ -32,6 +32,11 @@ pub enum SandboxMode {
     /// Default elsewhere (macOS has no sandbox here); on Linux only for
     /// development hosts without Landlock.
     BestEffort,
+    /// No isolation: no namespaces, capability drop, `NO_NEW_PRIVS` or
+    /// Landlock. Processes still get the cleared environment, a new session,
+    /// the parent-death signal and rlimits, and ffmpeg keeps its protocol
+    /// and format whitelists. For deployments that have not opted in yet.
+    Disabled,
 }
 
 impl Default for SandboxMode {
@@ -178,7 +183,12 @@ impl Policy {
 
     #[cfg(target_os = "linux")]
     fn prepare(&self, mode: SandboxMode) -> Result<child::Prepared> {
-        let restrictions = linux::Restrictions::new(self, mode)?;
+        let restrictions = match mode {
+            SandboxMode::Disabled => linux::Restrictions::none(),
+            SandboxMode::Enforce | SandboxMode::BestEffort => {
+                linux::Restrictions::new(self, mode)?
+            }
+        };
         Ok(child::Prepared::new(self, restrictions))
     }
 
@@ -196,6 +206,7 @@ impl Policy {
                     "media processes run without a sandbox on this platform"
                 )
             }),
+            SandboxMode::Disabled => {}
         }
         Ok(child::Prepared::new(self))
     }
@@ -228,5 +239,6 @@ pub(crate) fn unavailable(
             log::warn!("media sandbox degraded: {reason}");
             Ok(())
         }
+        SandboxMode::Disabled => Ok(()),
     }
 }

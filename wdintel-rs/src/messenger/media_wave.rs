@@ -13,7 +13,7 @@ use crate::types::{warn, Env, ShortContext};
 use actix_web::http::header;
 use actix_web::{get, HttpResponse};
 use echo_media::ffmpeg::{AudioImage, AudioImageOptions};
-use echo_media::{Ffmpeg, Input};
+use echo_media::Input;
 use uuid::Uuid;
 
 fn audio_temp_suffix(media: &signal_message_media::Model) -> &'static str {
@@ -119,7 +119,7 @@ async fn generate_png(
     kind: AudioImage,
 ) -> Result<Vec<u8>, AppError> {
     let input = Input::file(audio_path).c(h!())?;
-    let generated = Ffmpeg::shared()
+    let generated = crate::media_sandbox::ffmpeg()
         .c(h!())?
         .audio_image(&input, output_path, &AudioImageOptions::new(kind))
         .await;

@@ -5,7 +5,7 @@ use crate::h;
 use crate::types::{Env, ShortContext};
 use anyhow::{bail, Result};
 use echo_media::ffmpeg::ProbeOptions;
-use echo_media::{Ffmpeg, Formats, RemoteUrl};
+use echo_media::{Formats, RemoteUrl};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -106,7 +106,7 @@ pub(super) async fn info(
             MESSENGER_MEDIA_PREVIEW_PROBE_TIMEOUT_SECS,
         ),
     };
-    let probe = Ffmpeg::shared()
+    let probe = crate::media_sandbox::ffmpeg()
         .c(h!())?
         .probe(&source.value, &options)
         .await

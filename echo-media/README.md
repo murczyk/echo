@@ -110,6 +110,12 @@ sandbox separately.
   new session, rlimits and output staging, and a warning is logged once.
   `Enforce` refuses to spawn. `landlock` is a Linux-only dependency.
 
+`SandboxMode::Disabled` skips layer 3's isolation on every platform: no
+namespaces, capability drop, `NO_NEW_PRIVS` or Landlock. Layers 1, 2 and 4
+stay, as do the parent-death signal and the rlimits. It is for deployments
+that have not opted in to the sandbox (see [Wiring](#wiring)).
+`Ffmpeg::with_sandbox_mode(mode)` returns a copy whose jobs run in `mode`.
+
 ## Residual risks
 
 - **No seccomp yet.** `fork`, `io_uring`, `bpf`, `userfaultfd` and the rest of
@@ -146,7 +152,7 @@ also expands `%d` and glob patterns in the input name to neighbouring files:
 
 - On Linux the sandbox grants only the input file, so those reads fail
   (`tests/hostile.rs` `image2_sequence_names_cannot_read_neighbours`).
-- Without the sandbox (macOS) nothing stops them.
+- Without the sandbox (macOS, or `SandboxMode::Disabled`) nothing stops them.
 
 Input names must therefore be chosen by Echo, never by the sender, as
 wdintel-rs already does with `<id>.source` and `source-XXXX`.
@@ -184,21 +190,38 @@ can wrap other decoders later, such as `pdftotext`.
 
 All call sites are wired. Across them:
 
+- Every call site takes its `Ffmpeg` from `wdintel-rs/src/media_sandbox.rs`
+  `ffmpeg()`: `Ffmpeg::shared()` with the configured sandbox mode.
 - `MediaError::is_terminal()` errors (input that can never decode) map to each
   call site's terminal failure; timeouts and environment failures stay
   transient or retryable.
-- On Linux the default is `Enforce`. A host without Landlock uses the mount
-  namespace fallback when the service has `CAP_SYS_ADMIN` (and logs a warning
-  once). Without either, or a root service without `CAP_SYS_ADMIN`, media jobs
-  fail as transient errors instead of running unsandboxed. Check every host's
-  kernel before deploying.
 - wdintel-rs passes its own `config.rs` constants (filters, limits, timeouts)
   through the option structs.
+
+### Sandbox opt-in
+
+The sandbox is off unless `config.toml` sets:
+
+```toml
+media_sandbox_enabled = true
+```
+
+- The web process and the bgworker read it once at startup
+  (`init_runtime_env` calls `media_sandbox::init`); changing it needs a
+  restart. Without it, jobs run in `SandboxMode::Disabled`.
+- When enabled, jobs run in `SandboxMode::default()` (`Enforce` on Linux). A
+  host without Landlock uses the mount namespace fallback when the service has
+  `CAP_SYS_ADMIN` (and logs a warning once).
+- When enabled, startup first probes and fully decodes a generated silent WAV
+  in the sandbox. If that fails (no Landlock or `CAP_SYS_ADMIN`, a missing
+  library, a broken ffmpeg), the process refuses to start and logs the
+  decoder's stderr. Otherwise a broken sandbox would fail every job as a
+  terminal error, and device audio would reject each upload as `InvalidAudio`.
 
 ### Thumbnails
 
 - `wdintel-rs/src/thumbnail.rs` keeps its `generate` and `InvalidMedia`
-  interface and calls `Ffmpeg::shared()`; terminal errors become
+  interface and calls `media_sandbox::ffmpeg()`; terminal errors become
   `InvalidMedia`.
 - Messenger thumbnails gained the whitelists they lacked. Device thumbnails
   keep their 2 MiB output cap; messenger thumbnails pass no cap.
@@ -256,12 +279,17 @@ a pre-signed S3 URL:
 
 `devices/audio/probe.rs` runs every job, and `content.rs` calls its `render`:
 
-- `media_metadata` probes with `Formats::AUDIO`, so FLAC or Ogg is reported as
-  unsupported rather than invalid. Only WAV and MP3 continue.
+- Every job passes `Formats::AUDIO`. A format outside that list fails to open,
+  which is terminal, so it becomes `InvalidAudio` rather than unsupported.
+- `media_metadata` probes, so FLAC or Ogg is reported as unsupported rather
+  than invalid. As before this crate, only a `format_name` of `wav` or `mp3`
+  continues; the check is in wdintel-rs, not an ffmpeg flag.
 - `decode_verify` decodes the whole WAV or MP3 source and checks framecrc
   progress, with `DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT` as the stall limit.
 - `audio_rendition` writes the MP3 rendition (capped at 512 MiB) and the wave
   and spectrogram PNGs (capped at 1 MiB), using the device audio filters.
+- `DecodeOptions::new` and `RenditionOptions::new` default to
+  `Formats::WAV_MP3`; device audio overrides it with `Formats::AUDIO`.
 - Each job is dropped, killing its process group, when finalization shuts
   down.
 - Every terminal failure becomes one `InvalidAudio` reason ("повне
@@ -276,7 +304,8 @@ a pre-signed S3 URL:
    `/tmp`.
 3. Check the deployment: Landlock in `/sys/kernel/security/lsm` (or the mount
    namespace fallback working there), `CAP_SYS_ADMIN` for the services, and
-   root-owned `ffmpeg` and `ffprobe` on the service `PATH`.
+   root-owned `ffmpeg` and `ffprobe` on the service `PATH`. Then set
+   `media_sandbox_enabled = true`; the startup self-check confirms it works.
 4. Clean up `.echo-media-root-*` directories in the temp dir. They are empty,
    and are left only if the service dies while spawning a job.
 
@@ -298,8 +327,12 @@ the sandbox. macOS builds have not been compiled or run yet.
   - `SIGXFSZ`, the cleared environment, and group kill on timeout and on drop;
   - network denial, which runs with root or Landlock ABI 4+ and is skipped
     otherwise;
-  - capabilities and `NoNewPrivs`. `CapBnd` is checked only as root.
+  - capabilities and `NoNewPrivs`. `CapBnd` is checked only as root;
+  - `SandboxMode::Disabled` reads outside the policy but still clears the
+    environment.
 - `tests/jobs.rs` runs each job on lavfi fixtures.
+- `wdintel-rs` `media_sandbox::tests` runs the startup self-check in the
+  sandbox.
 - `tests/hostile.rs`:
   - runs HLS, concat, `subfile:` and ffconcat payloads, under six names,
     against all nine jobs;

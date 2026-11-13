@@ -285,6 +285,31 @@ async fn missing_granted_paths_are_rejected() {
     assert!(matches!(result, Err(MediaError::Rejected(_))), "{result:?}");
 }
 
+#[tokio::test]
+async fn disabled_mode_skips_isolation_but_clears_the_environment() {
+    std::env::set_var("ECHO_MEDIA_TEST_SECRET", "leaked");
+    let secrets = secrets();
+    let spec = Spec {
+        program: SH.into(),
+        args: vec![
+            "-c".into(),
+            format!("cat {}; env | sort", secrets.text.display()).into(),
+        ],
+        policy: Policy::for_programs(&[SH]).fs_isolation(fs_isolation()),
+        mode: echo_media::SandboxMode::Disabled,
+        timeout: TIMEOUT,
+        capture_stdout: true,
+        redact: Vec::new(),
+    };
+    let output = process::run(spec).await.unwrap();
+    let stdout = stdout(&output);
+    assert!(
+        stdout.contains(&String::from_utf8_lossy(SECRET_MARKER).into_owned()),
+        "ungranted file should be readable: {stdout}"
+    );
+    assert!(!stdout.contains("ECHO_MEDIA_TEST_SECRET"), "{stdout}");
+}
+
 fn wait_for_file(path: &Path) -> String {
     let deadline = Instant::now() + TIMEOUT;
     while Instant::now() < deadline {
