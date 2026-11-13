@@ -2155,6 +2155,18 @@ test("incident 01a1c4a5: Deep delivers the reply, not the note confirming no sea
   assert.equal(answer, CSV);
 });
 
+test("incident 01a1d35e: a provider failure after Deep's reply still delivers an answer", async (t) => {
+  // The provider answered once, so the run is not a provider outage: the failed search
+  // reminder must not discard the request.
+  const { answer } = await researchWithProviderScript(
+    t,
+    [() => stream(CSV), () => providerRejection(400, "unexpected model state")],
+    deepPolicy,
+    ticketFollowUp,
+  );
+  assert.ok(answer);
+});
+
 test("incident 01a1c4a5: after a failed start the retry's reply is the answer", async (t) => {
   const { answer, synthesisBodies } = await researchWithProviderScript(
     t,

@@ -362,6 +362,8 @@ export class FlashResearch {
   // The gateway answered a call before the first tool with a cooldown (429): no
   // deployment of the model was ready, and pi's retries already waited it out.
   private startCooldown = false;
+  // Some research call got an answer from the provider, even one without a tool call.
+  private providerAnswered = false;
   private readonly groupProblems = new Set<string>();
   private readonly groupsRead = new Set<string>();
   private readonly actions = new Map<string, CompletedAction>();
@@ -640,9 +642,19 @@ export class FlashResearch {
     return this.startFailed;
   }
 
-  /** No tool ran and research saved nothing, so synthesis would have no evidence of its own. */
-  get gatheredNothing(): boolean {
-    return this.publicToolRuns === 0 && this.retrievals === 0 && !this.state && !this.draft;
+  /**
+   * Every research call failed at the provider and nothing was saved: synthesis would
+   * have no evidence and only the same failing model. A reply the provider did give,
+   * such as Deep's answer before its search reminder, keeps the usual completion.
+   */
+  get providerNeverAnswered(): boolean {
+    return (
+      !this.providerAnswered &&
+      this.publicToolRuns === 0 &&
+      this.retrievals === 0 &&
+      !this.state &&
+      !this.draft
+    );
   }
 
   private get failedStart(): boolean {
@@ -683,6 +695,8 @@ export class FlashResearch {
     const completion = providerCompletion(message);
     if (completion.failureKind === "rate_limit" && this.publicToolRuns === 0)
       this.startCooldown = true;
+    if (["stop", "toolUse", "length"].includes(completion.stopReason ?? ""))
+      this.providerAnswered = true;
     this.diagnostic({
       stage: "research",
       ...completion,

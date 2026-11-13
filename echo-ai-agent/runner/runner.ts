@@ -4705,11 +4705,11 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (research) emit({ type: "completion_diagnostic", stage: "research", outcome: budget?.reason ?? (toolLimitError ? "tool_error" : "provider_error"), remainingMs: budget?.remainingTotalMs() });
       if (research && !budget?.reason) budget?.limit("provider_error");
       if (!budget?.reason) throw error;
-      // Research that never got past a provider failure gathered nothing: synthesis would
-      // only ask the failing model to answer without evidence. Failing the request lets
+      // Research whose every call failed at the provider has nothing to synthesize, and
+      // synthesis would only ask the same failing model again. Failing the request lets
       // the chat say the provider did not answer and offer a retry or another model
       // (incident 01a1d35e).
-      if (research && budget.reason === "provider_error" && research.gatheredNothing && terminalProviderFailure(error))
+      if (research && budget.reason === "provider_error" && research.providerNeverAnswered && terminalProviderFailure(error))
         throw error;
       emitAssistant.current = false;
       void session.abort().catch(() => undefined);

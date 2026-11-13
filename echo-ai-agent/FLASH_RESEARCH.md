@@ -75,9 +75,10 @@ preset, because nothing is lost by trying again. Authorization and content-filte
 failures are not retried. Nor is a start where the gateway answered with a
 cooldown (HTTP 429, such as LiteLLM's "No deployments available"): pi's retries
 already waited it out, and another attempt would only wait out another one.
-When research ends on a provider failure without having gathered anything (no
-tool ran and nothing was saved), the request fails as a provider failure instead
-of running synthesis, which would ask the same model to answer without evidence.
+When every research call failed at the provider and nothing was saved, the
+request fails as a provider failure instead of running synthesis, which would ask
+the same model to answer without evidence. A reply the provider did give, such as
+Deep's answer before its search reminder, still completes as usual.
 The chat then says the provider did not answer and offers a retry or another
 model (incident 01a1d35e: a 194-second wait ended in the inability text).
 Research may also end without any text, as GLM-5.3 does: synthesis writes the
