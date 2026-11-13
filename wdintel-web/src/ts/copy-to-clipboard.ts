@@ -6,29 +6,41 @@ export function copyTextToClipboard(text: string): Promise<void> {
   return fallbackCopyTextToClipboard(text);
 }
 
-/** Copies formatted text: rich editors paste the HTML, plain-text fields paste `text`. */
-export async function copyRichTextToClipboard(html: string, text: string): Promise<void> {
-  if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
-    try {
+/**
+ * Copies `text`, with an optional HTML version that rich editors paste instead. Its
+ * fallback never moves focus, so it also works inside menus and dialogs that trap focus.
+ */
+export async function copyTextToClipboardInPlace(text: string, html?: string): Promise<void> {
+  if (await writeWithClipboardApi(text, html)) return;
+  if (!copyWithCopyEvent(text, html)) await copyTextToClipboard(text);
+}
+
+async function writeWithClipboardApi(text: string, html?: string): Promise<boolean> {
+  try {
+    if (html === undefined && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    if (html !== undefined && navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
       await navigator.clipboard.write([
         new ClipboardItem({
           'text/html': new Blob([html], { type: 'text/html' }),
           'text/plain': new Blob([text], { type: 'text/plain' }),
         }),
       ]);
-      return;
-    } catch {
-      // Fall back below, e.g. when the browser rejects HTML clipboard items.
+      return true;
     }
+  } catch {
+    // Denied, or no clipboard access on plain HTTP: fall back to a copy event.
   }
-  if (!copyRichTextWithCopyEvent(html, text)) await copyTextToClipboard(text);
+  return false;
 }
 
-function copyRichTextWithCopyEvent(html: string, text: string): boolean {
+function copyWithCopyEvent(text: string, html?: string): boolean {
   let written = false;
   const onCopy = (event: ClipboardEvent) => {
     if (!event.clipboardData) return;
-    event.clipboardData.setData('text/html', html);
+    if (html !== undefined) event.clipboardData.setData('text/html', html);
     event.clipboardData.setData('text/plain', text);
     event.preventDefault();
     written = true;

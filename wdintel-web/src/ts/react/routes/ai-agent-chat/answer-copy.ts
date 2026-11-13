@@ -1,4 +1,4 @@
-import { copyRichTextToClipboard } from '../../../copy-to-clipboard';
+import { copyTextToClipboardInPlace } from '../../../copy-to-clipboard';
 
 /** Rendered controls and icons that are not part of an answer's text. */
 const COPY_SKIP_SELECTOR = '[data-copy-skip], svg, [aria-hidden="true"]';
@@ -24,7 +24,7 @@ const COPY_CELL_STYLE = 'border:1px solid;padding:4px 8px';
 export function copyRenderedAnswer(root: HTMLElement | null): Promise<void> {
   if (!root) return Promise.reject(new Error('The answer is not rendered'));
   const answer = copyableAnswer(root);
-  return copyRichTextToClipboard(answer.innerHTML, answerPlainText(answer));
+  return copyTextToClipboardInPlace(answerPlainText(answer), answer.innerHTML);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 const ANSWER = [
@@ -16,12 +16,7 @@ const ANSWER = [
   '| 30.07 | **Рух** техніки |',
 ].join('\n');
 
-// Regression: https://github.com/echoua/echo/issues/4182
-test('@regression #4182 AI answers copy code blocks and the whole answer', async ({
-  page,
-  context,
-}) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+async function installConversation(page: Page) {
   await installAnalysisNeoApiMocks(page);
   const conversation = {
     id: '11111111-1111-4111-8111-111111111111',
@@ -60,7 +55,16 @@ test('@regression #4182 AI answers copy code blocks and the whole answer', async
     }),
   );
   await page.goto(`/?conversation=${conversation.id}`);
-  const chat = page.locator('ai-agent-chat');
+  return page.locator('ai-agent-chat');
+}
+
+// Regression: https://github.com/echoua/echo/issues/4182
+test('@regression #4182 AI answers copy code blocks and the whole answer', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const chat = await installConversation(page);
   const codeBlock = chat.locator('.ai-code-block');
   await expect(codeBlock).toContainText('bash');
 
@@ -110,4 +114,31 @@ test('@regression #4182 AI answers copy code blocks and the whole answer', async
   );
   expect(copied.html).toContain('<strong>Рух</strong>');
   expect(copied.html).not.toContain('Копіювати');
+});
+
+// Plain-HTTP deployments have no Clipboard API; copying must not depend on moving
+// focus out of the open menu.
+test('@regression #4182 AI answers copy without the Clipboard API', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.addInitScript(() => {
+    const clipboard = navigator.clipboard;
+    Object.defineProperty(window, 'testClipboard', { value: clipboard });
+    Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined });
+  });
+  const readClipboard = () =>
+    page.evaluate(() =>
+      (window as unknown as { testClipboard: Clipboard }).testClipboard.readText(),
+    );
+  const chat = await installConversation(page);
+
+  await chat.getByRole('button', { name: 'Копіювати відповідь' }).click();
+  await page.getByRole('menuitem', { name: 'Копіювати як Markdown' }).click();
+  await expect.poll(readClipboard).toBe(ANSWER);
+
+  await chat.getByRole('button', { name: 'Копіювати відповідь' }).click();
+  await page.getByRole('menuitem', { name: 'Копіювати текст' }).click();
+  await expect.poll(readClipboard).toContain('Дата\tСуть');
+
+  await chat.locator('.ai-code-block').getByRole('button', { name: 'Копіювати' }).click();
+  await expect.poll(readClipboard).toBe('ls -la /var/log\ngrep -n "Ехо" app.log');
 });

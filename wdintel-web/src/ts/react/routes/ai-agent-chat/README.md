@@ -106,7 +106,8 @@ and Google Docs keep formatting and messengers get clean text with bullets and
 tab-separated table cells; **Копіювати як Markdown** copies the stored source.
 Citation chips copy as their visible label with an absolute link; map and document
 chips copy as their title (`data-copy-text`); controls marked `data-copy-skip` and
-icons are left out.
+icons are left out. Without the Clipboard API (plain HTTP) every copy action falls
+back to a copy event, which works inside the open menu's focus trap.
 
 Regression coverage: `__tests__/answer-copy.spec.ts`,
 `wdintel-web/tests/e2e/ai-agent-copy.spec.ts`.

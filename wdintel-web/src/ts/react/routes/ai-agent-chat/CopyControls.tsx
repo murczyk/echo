@@ -13,7 +13,7 @@ import {
 } from 'react';
 import type { ExtraProps } from 'react-markdown';
 
-import { copyTextToClipboard } from '../../../copy-to-clipboard';
+import { copyTextToClipboardInPlace } from '../../../copy-to-clipboard';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { copyRenderedAnswer } from './answer-copy';
@@ -66,7 +66,9 @@ export function CodeBlock({ node: _node, children, ...props }: ComponentProps<'p
           color="inherit"
           startIcon={copied ? <CheckIcon /> : <ContentCopyOutlinedIcon />}
           onClick={() =>
-            copy(() => copyTextToClipboard((preRef.current?.textContent ?? '').replace(/\n$/, '')))
+            copy(() =>
+              copyTextToClipboardInPlace((preRef.current?.textContent ?? '').replace(/\n$/, '')),
+            )
           }
           sx={{ color: 'text.secondary', textTransform: 'none' }}
         >
@@ -123,7 +125,7 @@ export function AnswerCopyMenu({
         <MenuItem onClick={() => choose(() => copyRenderedAnswer(contentRef.current))}>
           Копіювати текст
         </MenuItem>
-        <MenuItem onClick={() => choose(() => copyTextToClipboard(markdown))}>
+        <MenuItem onClick={() => choose(() => copyTextToClipboardInPlace(markdown))}>
           Копіювати як Markdown
         </MenuItem>
       </Menu>
