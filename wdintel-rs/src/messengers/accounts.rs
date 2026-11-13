@@ -33,18 +33,37 @@ pub(crate) async fn list_accounts(
     Ok(MessengersAccountsListRsp { items })
 }
 
+/// Longest `internal_notes` accepted, in characters. The UI field has the
+/// same `maxLength`, so only direct API calls can exceed it.
+const INTERNAL_NOTES_MAX_CHARS: usize = 512;
+
 /// Full-state write of the fields Echo users own: `null` clears a field.
 pub(crate) async fn update_account(
     dbx: &DatabaseConnection,
     scope: &MessengersScope,
     req: MessengersAccountUpdateReq,
 ) -> Result<(), AppError> {
+    validate_internal_notes(req.internal_notes.as_deref()).c(h!())?;
     let account = resolve_account(dbx, scope, &req.account_id).await.c(h!())?;
     let mut account = account.into_active_model();
     account.internal_notes = Set(req.internal_notes);
     account.updated_at = Set(Utc::now().naive_utc());
     account.update(dbx).await.c(h!())?;
     Ok(())
+}
+
+fn validate_internal_notes(notes: Option<&str>) -> Result<(), AppError> {
+    match notes {
+        Some(notes) if notes.chars().count() > INTERNAL_NOTES_MAX_CHARS => {
+            Err(AppError::BL {
+                msg: format!(
+                    "internal_notes is longer than \
+                     {INTERNAL_NOTES_MAX_CHARS} characters"
+                ),
+            })
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The account a request refers to. An invalid id is a `400`; an account that
@@ -129,5 +148,19 @@ fn datasource_group_item(
             .and_utc()
             .timestamp_millis(),
         created_at: datasource_group.created_at.and_utc().timestamp_millis(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn internal_notes_limit_counts_characters() {
+        let at_limit = "ї".repeat(INTERNAL_NOTES_MAX_CHARS);
+        let over_limit = "a".repeat(INTERNAL_NOTES_MAX_CHARS + 1);
+        assert!(validate_internal_notes(None).is_ok());
+        assert!(validate_internal_notes(Some(&at_limit)).is_ok());
+        assert!(validate_internal_notes(Some(&over_limit)).is_err());
     }
 }

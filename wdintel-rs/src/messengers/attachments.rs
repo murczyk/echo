@@ -759,6 +759,8 @@ mod tests {
             is_encrypted: Set(true),
             storage_key: Set(None),
             signal_message_uuid: Set(None),
+            // Ingest numbers a message's attachments from 1.
+            order_f64: Set(Some((index + 1) as f64)),
         }
         .insert(&env.dbx)
         .await
