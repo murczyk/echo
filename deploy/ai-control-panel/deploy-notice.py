@@ -50,6 +50,24 @@ def upgrade_status(row, inventory):
     return observed != {row['required_release']}, ', '.join(sorted(observed))
 
 
+def unfinished_local_rollout(repo, host):
+    """Raise if this checkout's rollout journal for the host is unfinished.
+
+    A rollout can finish on the agent VM, so versions match, yet stop before it
+    switches AI back on; only the journal of the checkout that ran it shows that.
+    """
+    path = repo / '.dev-runtime/ai-control-panel' / (host + '.json')
+    if not path.exists():
+        return
+    try:
+        phase = json.loads(path.read_text()).get('phase')
+    except (OSError, ValueError, AttributeError) as error:
+        raise RuntimeError(f'Unreadable local rollout journal {path}: {error}') from error
+    if phase != 'complete':
+        raise RuntimeError(f'Unfinished local rollout of {host} (phase {phase}); '
+                           f'recovery needs approval: just ai-control-panel recover --host {host}')
+
+
 def inspect_deployment(controller, host):
     """Return (state, required release, text); state is skipped, current or needed."""
     row = controller.probe(host)
@@ -64,6 +82,7 @@ def inspect_deployment(controller, host):
         raise RuntimeError('Running application did not report a valid harness requirement')
     if not row.get('namespace'):
         raise RuntimeError('Dispatcher namespace is missing')
+    unfinished_local_rollout(controller.repo, host)
     connection = resolve_agent_host(row)
     inventory = controller.host_action('inventory', agent_host=connection)
     needed, observed = upgrade_status(row, inventory)
@@ -106,11 +125,40 @@ def show(event, host, release):
     if isinstance(event.get('message'), str):
         say(event['message'])
     for row in event.get('hosts', []) if isinstance(event.get('hosts'), list) else []:
-        if row.get('host') == host:
-            status = row.get('eligibility', {}).get(release) or row.get('routing_error') or 'Unknown compatibility'
+        if isinstance(row, dict) and row.get('host') == host:
+            eligibility = row.get('eligibility')
+            status = (eligibility.get(release) if isinstance(eligibility, dict) else None) or row.get('routing_error') or 'Unknown compatibility'
             say(f"{host} | {row.get('agent_host', 'agent host unknown')} | {row.get('namespace')} | "
                 f"{row.get('deployed', '?')} | requires {row.get('required_release', 'unknown')} | "
                 f'target {release}: {status}')
+
+
+class SessionLog:
+    """Best effort: a log that cannot be written never stops the upgrade it records."""
+
+    def __init__(self):
+        self.file = None
+        try:
+            self.file = tempfile.NamedTemporaryFile('w', prefix='echo-ai-control-panel-', suffix='.log', delete=False)
+            say(f'AI control panel log: {self.file.name}')
+        except OSError as error:
+            say(f'AI control panel log unavailable: {error}', sys.stderr)
+
+    def write(self, line):
+        if self.file is None:
+            return
+        try:
+            self.file.write(f'{datetime.datetime.now(datetime.timezone.utc).isoformat()} {line}')
+            self.file.flush()
+        except (OSError, ValueError) as error:
+            say(f'AI control panel log stopped: {error}', sys.stderr)
+            self.close()
+
+    def close(self):
+        file, self.file = self.file, None
+        if file is not None:
+            with contextlib.suppress(OSError, ValueError):
+                file.close()
 
 
 def run_panel(repo, host, release, dry_run):
@@ -118,8 +166,9 @@ def run_panel(repo, host, release, dry_run):
 
     The checkout's control.py does the work, so no local Rust build is needed or
     can be stale. It runs in its own session, so signals reach only this process:
-    Ctrl-C, SIGTERM and SIGHUP ask the panel to stop at a safe boundary, and
-    this keeps draining its output until it has, even after the terminal is gone.
+    Ctrl-C, SIGTERM and SIGHUP ask the panel to stop at a safe boundary. This never
+    returns or raises before the panel has exited: on any early exit it asks the
+    panel to stop and keeps reading its output until it has.
     """
     directory = repo / '.dev-runtime/ai-control-panel'
     directory.mkdir(parents=True, exist_ok=True)
@@ -128,39 +177,54 @@ def run_panel(repo, host, release, dry_run):
                'dry_run': dry_run, 'cancel_file': str(cancel_file)}
     interrupted = False
 
-    def cancel(signum, frame):
+    def cancel(signum=None, frame=None):
         nonlocal interrupted
-        if not interrupted:
-            interrupted = True
+        if interrupted:
+            return
+        interrupted = True
+        try:
             cancel_file.write_text('cancel')
-            say('Cancellation requested; waiting for a safe boundary.', sys.stderr)
+        except OSError as error:
+            say(f'Could not ask the AI control panel to stop ({error}); waiting for it to finish.', sys.stderr)
+            return
+        say('Cancellation requested; waiting for a safe boundary.', sys.stderr)
 
     previous = {number: signal.signal(number, cancel) for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    log = SessionLog()
+    process = None
+    drained = False
+    failed = False
     try:
-        with tempfile.NamedTemporaryFile('w', prefix='echo-ai-control-panel-', suffix='.log', delete=False) as log:
-            say(f'AI control panel log: {log.name}')
-            # The executable only probes a local dev instance in the fleet scan, as in `just ai-control-panel`.
-            process = subprocess.Popen(
-                [sys.executable, str(repo / 'deploy/ai-control-panel/control.py'), 'upgrade', '--repo', str(repo),
-                 '--executable', str(repo / 'target/debug/wdintel-rs'), '--mode', 'debug'],
-                cwd=repo, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, start_new_session=True)
-            process.stdin.write(json.dumps(request))
-            process.stdin.close()
-            failed = False
-            for line in process.stdout:
-                log.write(f'{datetime.datetime.now(datetime.timezone.utc).isoformat()} {line}')
-                log.flush()
-                try:
-                    event = json.loads(line)
-                except ValueError:
-                    say(line, end='')
-                    continue
-                if isinstance(event, dict):
-                    failed |= event.get('error') is True
-                    show(event, host, release)
-            status = process.wait()
+        # The executable only probes a local dev instance in the fleet scan, as in `just ai-control-panel`.
+        process = subprocess.Popen(
+            [sys.executable, str(repo / 'deploy/ai-control-panel/control.py'), 'upgrade', '--repo', str(repo),
+             '--executable', str(repo / 'target/debug/wdintel-rs'), '--mode', 'debug'],
+            cwd=repo, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        process.stdin.write(json.dumps(request).encode())
+        process.stdin.close()
+        for raw in process.stdout:
+            line = raw.decode('utf-8', 'replace')
+            log.write(line)
+            try:
+                event = json.loads(line)
+            except ValueError:
+                say(line, end='')
+                continue
+            if isinstance(event, dict):
+                failed |= event.get('error') is True
+                show(event, host, release)
+        drained = True
     finally:
+        if process is not None:
+            if not drained:
+                cancel()
+                with contextlib.suppress(Exception):
+                    for _ in process.stdout:
+                        pass
+            status = process.wait()
+            with contextlib.suppress(OSError):
+                process.stdout.close()
+        log.close()
         for number, handler in previous.items():
             signal.signal(number, handler)
         cancel_file.unlink(missing_ok=True)

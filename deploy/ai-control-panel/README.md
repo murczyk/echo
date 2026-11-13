@@ -59,15 +59,18 @@ after service checks and deployment cleanup. It compares the running
 application's required release with the namespace's selected template and
 managed agents. Backups and other namespaces do not count. An empty namespace
 uses its template; configured instances are checked even with AI disabled.
-Unconfigured instances are skipped, and an interrupted rollout of the
-namespace is an unknown status, never current. When the harness differs, it
+Unconfigured instances are skipped. An interrupted rollout of the namespace on
+the agent VM, or an unfinished rollout journal of the deploying checkout
+(`.dev-runtime/ai-control-panel/<server>.json`), is an unknown status naming
+`just ai-control-panel recover`, never current. When the harness differs, it
 runs the same preview and upgrade as
 `just ai-control-panel upgrade --host <server> --release <required> [--dry-run]`,
 then checks again. It runs the deploying checkout's `control.py` directly, so it
 needs no local Rust build. The panel runs in its own session and writes a
-session log, whose path is printed. Ctrl-C, SIGTERM or SIGHUP ask it to stop at
-a safe boundary, and the deploy keeps reading its output until it has, even if
-the terminal is gone. The deploy exits 1 with a 🔴 message and notification
+session log, whose path is printed; a log that can't be written stops logging,
+not the upgrade. Ctrl-C, SIGTERM or SIGHUP ask it to stop at a safe boundary,
+and so does any error while reading its output. Either way the deploy keeps
+reading its output until it has exited, even if the terminal is gone. The deploy exits 1 with a 🔴 message and notification
 when the preview, upgrade or final check fails or the status is unknown. The
 application deploy itself has succeeded by then. `--silent` suppresses
 deployment notifications, not the harness output.
