@@ -1,7 +1,10 @@
+import contextlib
 import copy
 import importlib.util
+import io
 import json
 import os
+import signal
 import textwrap
 from pathlib import Path
 from types import SimpleNamespace
@@ -277,10 +280,156 @@ class Notice(DeploymentFixture):
                                 capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('WARNING:', result.stdout)
+        result = subprocess.run(['python3', str(Path(NOTICE.__file__)), '--sync', 'echo-fixture'],
+                                env={**os.environ, 'PATH': str(directory) + ':' + os.environ['PATH']},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('WARNING:', result.stdout)
+
+
+class Sync(DeploymentFixture):
+    def panel(self, *results, upgrade_to=NEW):
+        calls = []
+        def run(repo, host, release, dry_run):
+            calls.append((host, release, dry_run))
+            ok = results[len(calls) - 1]
+            if ok and not dry_run and upgrade_to:
+                self.inventories[DEFAULT] = inventory(selected=upgrade_to)
+            return ok
+        return calls, run
+
+    def sync(self, run):
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            synced = NOTICE.sync_deployment(self.controller, 'echo-cbr', run=run)
+        return synced, output.getvalue()
+
+    def test_needed_upgrade_previews_upgrades_and_confirms(self):
+        calls, run = self.panel(True, True)
+        synced, text = self.sync(run)
+        self.assertTrue(synced, text)
+        self.assertEqual(calls, [('echo-cbr', NEW, True), ('echo-cbr', NEW, False)])
+        self.assertIn('upgrade needed', text)
+        self.assertTrue(text.rstrip().endswith(f'AI harness: echo-cbr is current ({NEW}; {DEFAULT}).'), text)
+
+    def test_current_and_unconfigured_hosts_never_run_the_panel(self):
+        calls, run = self.panel()
+        self.inventories[DEFAULT] = inventory(selected=NEW)
+        self.assertTrue(self.sync(run)[0])
+        self.rows['echo-cbr'].update(namespace=None, dispatcher=None)
+        synced, text = self.sync(run)
+        self.assertTrue(synced)
+        self.assertIn('skipped', text)
+        self.assertEqual(calls, [])
+
+    def test_failed_preview_skips_the_upgrade(self):
+        calls, run = self.panel(False)
+        synced, text = self.sync(run)
+        self.assertFalse(synced)
+        self.assertEqual(calls, [('echo-cbr', NEW, True)])
+        self.assertIn('nothing was changed', text)
+
+    def test_failed_or_incomplete_upgrade_is_not_in_sync(self):
+        for results, upgrade_to in [((True, False), NEW), ((True, True), None)]:
+            with self.subTest(results=results):
+                self.inventories[DEFAULT] = inventory()
+                calls, run = self.panel(*results, upgrade_to=upgrade_to)
+                synced, text = self.sync(run)
+                self.assertFalse(synced, text)
+                self.assertEqual(len(calls), 2)
+
+    def test_unknown_status_fails_without_running_the_panel(self):
+        calls, run = self.panel()
+        self.rows['echo-cbr'].pop('required_release')
+        synced, text = self.sync(run)
+        self.assertFalse(synced)
+        self.assertIn('WARNING:', text)
+        self.assertEqual(calls, [])
+
+    def test_interrupted_rollout_is_never_reported_current(self):
+        calls, run = self.panel()
+        self.inventories[DEFAULT] = inventory(selected=NEW)
+        self.inventories[DEFAULT]['pending'] = [{'namespace': 'echo-cbr', 'phase': 'replaced'}]
+        synced, text = self.sync(run)
+        self.assertFalse(synced)
+        self.assertIn('Interrupted rollout', text)
+        self.assertIn('recover --host echo-cbr', text)
+        self.assertNotIn('is current', text)
+        self.assertEqual(calls, [])
+        self.inventories[DEFAULT]['pending'] = [{'namespace': 'echo-other', 'phase': 'replaced'}]
+        self.assertTrue(self.sync(run)[0])
+
+
+
+class PanelRun(unittest.TestCase):
+    """run_panel against a stand-in control.py that speaks the same protocol."""
+    def run_panel(self, body, dry_run=False):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            panel = repo / 'deploy/ai-control-panel'
+            panel.mkdir(parents=True)
+            (panel / 'control.py').write_text(textwrap.dedent('''
+                import json, os, signal, sys, time
+                from pathlib import Path
+                request = json.load(sys.stdin)
+                Path(os.environ['PANEL_SEEN']).write_text(json.dumps({'argv': sys.argv[1:], 'request': request,
+                                                             'own_session': os.getsid(0) == os.getpid()}))
+                def emit(value): print(json.dumps(value), flush=True)
+            ''') + textwrap.dedent(body))
+            seen = repo / 'seen.json'
+            with mock.patch.dict(os.environ, {'PANEL_SEEN': str(seen)}), \
+                    contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()) as errors:
+                ok = NOTICE.run_panel(repo, 'echo-cbr', NEW, dry_run)
+            log = output.getvalue().split('AI control panel log: ', 1)[1].split('\n', 1)[0]
+            self.addCleanup(Path(log).unlink)
+            leftover = list((repo / '.dev-runtime/ai-control-panel').iterdir())
+            return ok, output.getvalue() + errors.getvalue(), json.loads(seen.read_text()), Path(log).read_text(), leftover
+
+    def test_success_prints_messages_and_the_target_row(self):
+        ok, text, seen, log, leftover = self.run_panel('''
+            emit({'message': 'Preview passed; no changes made. Selected: echo-cbr'})
+            emit({'hosts': [{'host': 'echo-other'}, {'host': 'echo-cbr', 'agent_host': 'vm', 'namespace': 'echo-cbr',
+                  'deployed': 'old', 'required_release': 'new', 'eligibility': {request['release']: 'Ready'}}]})
+            emit({'diagnostic': 'only in the log'})
+            print('plain text')
+        ''', dry_run=True)
+        self.assertTrue(ok, text)
+        self.assertEqual(seen['argv'][:2], ['upgrade', '--repo'])
+        self.assertEqual(seen['request']['selected'], ['echo-cbr'])
+        self.assertEqual(seen['request']['release'], NEW)
+        self.assertTrue(seen['request']['dry_run'])
+        self.assertTrue(seen['own_session'])
+        self.assertIn('Preview passed', text)
+        self.assertIn(f'echo-cbr | vm | echo-cbr | old | requires new | target {NEW}: Ready', text)
+        self.assertNotIn('echo-other', text)
+        self.assertNotIn('only in the log', text)
+        self.assertIn('plain text', text)
+        self.assertIn('only in the log', log)
+        self.assertEqual(leftover, [])
+
+    def test_error_event_or_exit_status_fails(self):
+        for body in ["emit({'message': 'boom', 'error': True})\n", "sys.exit(3)\n"]:
+            with self.subTest(body=body):
+                self.assertFalse(self.run_panel(body)[0])
+
+    def test_ctrl_c_asks_the_panel_to_stop_and_waits_for_it(self):
+        ok, text, seen, log, leftover = self.run_panel('''
+            os.kill(os.getppid(), signal.SIGINT)
+            os.kill(os.getppid(), signal.SIGINT)
+            cancel = Path(request['cancel_file'])
+            deadline = time.monotonic() + 5
+            while not cancel.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            emit({'message': 'Cancelled at a safe boundary' if cancel.exists() else 'never cancelled'})
+        ''')
+        self.assertFalse(ok)
+        self.assertIn('Cancelled at a safe boundary', text)
+        self.assertEqual(text.count('Cancellation requested'), 1)
+        self.assertEqual(leftover, [])
+        self.assertIs(signal.getsignal(signal.SIGINT), signal.default_int_handler)
 
 
 class RecipeAdvisory(unittest.TestCase):
-    def run_recipe(self, recipe, fail=False):
+    def run_recipe(self, recipe, fail=False, notice_exit=0):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             binary = directory / 'bin'
@@ -309,7 +458,8 @@ if name=='ssh':
             panel = deploy / 'ai-control-panel'
             panel.mkdir()
             (panel / 'deploy-notice.py').write_text(
-                'import os\nwith open(os.environ["RECIPE_LOG"],"a") as out: out.write("notice\\n")\nraise SystemExit(37)\n')
+                'import os,sys\nwith open(os.environ["RECIPE_LOG"],"a") as out: out.write("notice "+" ".join(sys.argv[1:])+"\\n")\n'
+                'raise SystemExit(int(os.environ["NOTICE_EXIT"]))\n')
             debian = directory / 'target/debian'
             debian.mkdir(parents=True)
             (debian / 'wdintel-rs_fixture_amd64.deb').touch()
@@ -325,28 +475,39 @@ if name=='ssh':
             script.write_text(body)
             result = subprocess.run(['bash', str(script)], cwd=directory,
                                     env={**os.environ, 'PATH': str(binary) + ':' + os.environ['PATH'],
-                                         'RECIPE_LOG': str(log), 'RECIPE_FAIL': '1' if fail else ''},
+                                         'RECIPE_LOG': str(log), 'RECIPE_FAIL': '1' if fail else '',
+                                         'NOTICE_EXIT': str(notice_exit)},
                                     capture_output=True, text=True, timeout=10)
             return result, log.read_text().splitlines()
 
-    def test_both_recipes_keep_success_when_final_advisory_crashes(self):
+    def test_both_recipes_sync_the_harness_after_cleanup(self):
         for recipe in ['deploy', 'deploy-from-local']:
             with self.subTest(recipe=recipe):
                 result, actions = self.run_recipe(recipe)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn('AI harness check failed', result.stderr)
-                self.assertEqual(actions.count('notice'), 1)
-                notice = actions.index('notice')
+                self.assertEqual([action for action in actions if action.startswith('notice')], ['notice --sync echo-fixture'])
+                notice = actions.index('notice --sync echo-fixture')
+                self.assertEqual(actions.count('clear'), 1)
                 self.assertLess(actions.index('clear'), notice)
                 self.assertLess(max(index for index, action in enumerate(actions) if action == 'curl'), notice)
 
-    def test_failed_deployment_does_not_run_the_success_advisory(self):
+    def test_both_recipes_fail_loudly_when_the_harness_is_not_in_sync(self):
+        for recipe in ['deploy', 'deploy-from-local']:
+            with self.subTest(recipe=recipe):
+                result, actions = self.run_recipe(recipe, notice_exit=1)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn('🔴🔴🔴 AI harness on echo-fixture is not confirmed in sync', result.stderr)
+                self.assertIn('deploy-notice.py --sync echo-fixture', result.stderr)
+                notice = actions.index('notice --sync echo-fixture')
+                self.assertEqual(actions[notice + 1:], ['curl'])
+                self.assertEqual(actions.count('clear'), 1)
+
+    def test_failed_deployment_does_not_run_the_harness_sync(self):
         for recipe in ['deploy', 'deploy-from-local']:
             with self.subTest(recipe=recipe):
                 result, actions = self.run_recipe(recipe, fail=True)
                 self.assertEqual(result.returncode, 42, result.stderr)
-                self.assertNotIn('notice', actions)
-
+                self.assertFalse([action for action in actions if action.startswith('notice')])
 
 if __name__ == '__main__':
     unittest.main()

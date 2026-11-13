@@ -22,7 +22,7 @@ covers the same, except that its Prepare pushes only `stable`.
 Everything else still needs separate approval, including:
 
 - `just deploy-docs`;
-- harness changes other than the upgrade a deploy notice asks for;
+- harness changes other than the upgrade `just deploy` runs;
 - configuration changes, one-off commands, and resnapshots from 👷 changelog
   entries;
 - rollbacks and recovery from a failed deploy or harness upgrade.
@@ -72,9 +72,9 @@ Everything else still needs separate approval, including:
    ```
 
 6. Deploy the canaries one by one, in this order: `echo-staging`,
-   `echo-cbr-staging`, `echo-kharkiv2`. After each one, upgrade its harness (see
-   [Upgrading the AI harness](#upgrading-the-ai-harness)) and check logs (see
-   [Checking a server](#checking-a-server)).
+   `echo-cbr-staging`, `echo-kharkiv2`. The deploy also upgrades the server's AI
+   harness (see [Upgrading the AI harness](#upgrading-the-ai-harness)). Check
+   logs after each one (see [Checking a server](#checking-a-server)).
 
    ```bash
    just deploy --server <server>             # CI built the deb
@@ -89,9 +89,9 @@ Everything else still needs separate approval, including:
 ## Make
 
 Deploy every server in `just servers-active` that is not a canary, one by one,
-in the listed order. Upgrade its harness and check logs after each one before
-starting the next. Use `just deploy` or `just deploy-from-local` as in Prepare.
-Do not use `just deploy-many`, because it leaves no log check between servers.
+in the listed order. Check logs after each one before starting the next. Use
+`just deploy` or `just deploy-from-local` as in Prepare. Do not use
+`just deploy-many`, because it leaves no log check between servers.
 
 For "prepare and make release", start Make straight after Prepare if the
 canaries are clean.
@@ -131,50 +131,50 @@ canaries are clean.
 ## Upgrading the AI harness
 
 Echo requires the exact harness release its running application was built for.
-Until they match, every AI chat request on that server fails, so a server is not
-finished while its deploy notice asks for an upgrade.
+Until they match, every AI chat request on that server fails.
 
-Upgrade straight after each deploy, before starting the next server, to the
-release the notice names. The panel refuses to upgrade ahead of the deploy.
+`just deploy` and `just deploy-from-local` upgrade the harness themselves,
+straight after the application: they preview the upgrade to the release the
+application requires, run it, and check again. Run deploys from the release
+checkout, because the upgrade uses its harness bundle and control panel. No
+local Rust build is needed.
 
-1. Build the control panel once per release, from the release checkout:
+A deploy that synced the harness ends with
+`AI harness: <server> is current (<release>; …)`, or `not configured … skipped`
+on servers without AI agents. If the harness could not be synced, the deploy
+prints `🔴🔴🔴` after `✅✅✅ deploy OK` and exits 1. The application is deployed,
+but AI chat on that server stays down until the harness matches:
 
-   ```bash
-   cargo build -p wdintel-rs --bin wdintel-rs
-   ```
+- Queued or running AI requests on the server block the upgrade. Steps that
+  find the agent VM busy with other servers' requests wait and retry on their
+  own. If an upgrade still fails, the panel recovers the previous containers.
+  When the restored harness doesn't match the running Echo build, AI stays
+  disabled and the error says so.
+- The retry, once the VM is quiet or the cause is fixed, finishes the upgrade
+  and switches AI back on. It is recovery from a failed harness upgrade, so it
+  needs approval:
 
-2. Preview, then upgrade:
+  ```bash
+  python3 deploy/ai-control-panel/deploy-notice.py --sync <server>
+  ```
 
-   ```bash
-   just ai-control-panel upgrade --host <server> --release <release> --dry-run
-   just ai-control-panel upgrade --host <server> --release <release>
-   ```
+After a deploy that upgraded the harness, confirm AI is still on:
 
-   Queued or running AI requests on the server block the upgrade. Steps that
-   find the agent VM busy with other servers' requests wait and retry on their
-   own. If an upgrade still fails, the panel recovers the previous containers.
-   When the restored harness doesn't match the running Echo build, AI stays
-   disabled and the error says so. Rerun the same command once the VM is quiet:
-   it finishes the upgrade and switches AI back on.
+```bash
+just ai-control-panel scan --host <server> --json 2>/dev/null | grep '^{"hosts"' | python3 -c 'import json,sys; print(json.load(sys.stdin)["hosts"][0]["enabled"])'
+```
 
-3. Confirm the server now reports its harness as current and AI is still on:
-
-   ```bash
-   python3 deploy/ai-control-panel/deploy-notice.py <server>
-   just ai-control-panel scan --host <server> --json 2>/dev/null | grep '^{"hosts"' | python3 -c 'import json,sys; print(json.load(sys.stdin)["hosts"][0]["enabled"])'
-   ```
-
-   The scan must print `True` unless AI was already off on that server before the
-   upgrade.
+The scan must print `True` unless AI was already off on that server before the
+upgrade.
 
 ## Checking a server
 
 Wait about 5 minutes after the deploy so there is real traffic in the logs.
 
 1. Confirm the deploy printed `✅✅✅ deploy OK`.
-2. Read the AI harness notice at the end of the deploy output. If it says an
-   upgrade is needed, [upgrade](#upgrading-the-ai-harness) before going on. If it
-   reports an unknown status, stop and report it.
+2. Confirm the deploy ended with the AI harness current or not configured. If
+   it printed `🔴🔴🔴` instead, stop and report it (see
+   [Upgrading the AI harness](#upgrading-the-ai-harness)).
 3. Read the service logs. Match the level in the text: the services log to stdout,
    so `journalctl -p warning` shows nothing even when there are errors.
 
