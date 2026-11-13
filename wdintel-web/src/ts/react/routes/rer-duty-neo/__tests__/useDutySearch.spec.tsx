@@ -141,6 +141,27 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     expect(dependencies.messageFeeds[0].filter.search).toBeFalsy();
   });
 
+  it('closes mobile search after selection without canceling landing and retains its list state', async () => {
+    dependencies = { ...dependencies, closeOnSelect: true };
+    await render();
+    await open();
+    const selected = column().state.items[0];
+    await act(async () => column().onScroll(60, [{ id: selected[0], offset: -10 }]));
+    vi.mocked(dependencies.cancelNavigation).mockClear();
+    await act(async () => column().onSelect(selected));
+    expect(column().open).toBe(false);
+    expect(dependencies.navigate).toHaveBeenCalledWith('a', String(selected[0]), selected);
+    expect(dependencies.cancelNavigation).not.toHaveBeenCalled();
+    await act(async () => column().onOpen());
+    expect(column().state).toMatchObject({
+      search: 'needle',
+      selectedId: selected[0],
+      scrollTop: 60,
+      anchors: [{ id: selected[0], offset: -10 }],
+    });
+    expect(column().state.items).toContainEqual(selected);
+  });
+
   it.each(['a', 'b', null])(
     'clears only selection and cancels only the same feed pending navigation (%s)',
     async (navigatingFeedId) => {

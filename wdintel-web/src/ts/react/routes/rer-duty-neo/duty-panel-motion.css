@@ -1,0 +1,22 @@
+.duty-group-motion [data-group-panel] {
+  animation: none;
+}
+
+.duty-search-pending {
+  animation: duty-search-appear 100ms ease-out;
+}
+
+@keyframes duty-search-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duty-search-pending {
+    animation: none;
+  }
+}

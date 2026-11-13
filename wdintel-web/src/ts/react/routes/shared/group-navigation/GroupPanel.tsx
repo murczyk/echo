@@ -6,6 +6,7 @@ import type { GroupNavigationItem, GroupScope } from './group-navigation.types';
 type Props = {
   id: string;
   open: boolean;
+  renderExit?: boolean;
   groups: readonly GroupNavigationItem[];
   scope: GroupScope;
   onSelect: (scope: GroupScope) => void;
@@ -20,6 +21,7 @@ type Props = {
 export function GroupPanel({
   id,
   open,
+  renderExit = false,
   groups,
   scope,
   onSelect,
@@ -69,7 +71,7 @@ export function GroupPanel({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [onClose, open, triggerRef]);
 
-  if (!open) return null;
+  if (!open && !renderExit) return null;
 
   return (
     <div className="group-navigation-panel-layer" data-variant="overlay">

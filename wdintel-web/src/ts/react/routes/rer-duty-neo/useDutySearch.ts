@@ -58,6 +58,7 @@ export type DutySearchColumn = {
 type Dependencies = {
   messageFeeds: MessageFeedState[];
   enabled: boolean;
+  closeOnSelect?: boolean;
   buildReqForFeed: (feed: MessageFeedState, opts: { loadLatest?: boolean }) => InboxMessagesReq;
   pollIntervalMs: number;
   activateFeed?: (feedId: string) => void;
@@ -209,6 +210,7 @@ export function useDutySearch(dependencies: Dependencies) {
   const refreshPendingRef = useRef(false);
   const changedIdsRef = useRef(new Set<number>());
   const authenticationFailedRef = useRef(false);
+  const focusRequestRef = useRef(0);
 
   const update = useCallback((id: string, change: (state: SearchState) => SearchState) => {
     const state = statesRef.current[id];
@@ -429,6 +431,7 @@ export function useDutySearch(dependencies: Dependencies) {
       state,
       onOpen: () => {
         if (feed.filter.search?.trim()) return;
+        focusRequestRef.current += 1;
         cancel();
         dependenciesRef.current.cancelNavigation();
         const next = {
@@ -441,13 +444,15 @@ export function useDutySearch(dependencies: Dependencies) {
         setActiveFeedId(feed.id);
       },
       onClose: ({ restoreFocus = true } = {}) => {
+        const focusRequest = ++focusRequestRef.current;
         cancel();
         dependenciesRef.current.cancelNavigation();
         setActiveFeedId(null);
         if (restoreFocus) {
-          requestAnimationFrame(() =>
-            document.getElementById(`duty-search-trigger-${feed.id}`)?.focus(),
-          );
+          requestAnimationFrame(() => {
+            if (focusRequest === focusRequestRef.current && activeRef.current === null)
+              document.getElementById(`duty-search-trigger-${feed.id}`)?.focus();
+          });
         }
       },
       onChange: (changes) => {
@@ -469,6 +474,11 @@ export function useDutySearch(dependencies: Dependencies) {
       },
       onSelect: (item) => {
         update(feed.id, (current) => ({ ...current, selectedId: item[0] }));
+        if (dependenciesRef.current.closeOnSelect) {
+          focusRequestRef.current += 1;
+          cancel();
+          setActiveFeedId(null);
+        }
         dependenciesRef.current.navigate(
           feed.id,
           item[1].messageUid ?? item[1].messageUuid ?? String(item[0]),

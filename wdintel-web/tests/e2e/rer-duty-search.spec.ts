@@ -50,6 +50,397 @@ async function openDutySearch(column: Locator): Promise<Locator> {
   return query;
 }
 
+for (const panel of ['search', 'groups'] as const) {
+  test(`#3571 keeps the ${panel} panel invisible after exit finishes until unmount @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      signalGroups: ['Навчальна група'],
+      inboxResponseForRequest: () => response([1]),
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.goto('/rer-duty-neo');
+    const column = page.locator('[data-duty-feed-column]').first();
+    const selector = panel === 'search' ? '[data-duty-search-panel]' : '[data-group-panel]';
+    await column
+      .getByRole('button', {
+        name: panel === 'search' ? 'Пошук у стрічці' : 'Розгорнути список груп',
+        exact: true,
+      })
+      .click();
+    await expect(column.locator(selector)).toBeVisible();
+    await column.evaluate((column, selector) => {
+      const observer = new MutationObserver(() => {
+        const content = column.querySelector(selector);
+        const exiting =
+          selector === '[data-duty-search-panel]'
+            ? content?.parentElement
+            : content?.closest('.duty-group-motion');
+        if (exiting?.getAttribute('aria-hidden') !== 'true') return;
+        const animation = exiting.getAnimations()[0];
+        if (!animation) return;
+        observer.disconnect();
+        void animation.finished.then(() => {
+          column.setAttribute(
+            'data-exit-opacity',
+            exiting.isConnected ? getComputedStyle(exiting).opacity : '0',
+          );
+        });
+      });
+      observer.observe(column, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ['aria-hidden'],
+      });
+    }, selector);
+    await column
+      .getByRole('button', {
+        name: panel === 'search' ? 'Пошук у стрічці' : 'Згорнути список груп',
+        exact: true,
+      })
+      .click();
+    await expect(column).toHaveAttribute('data-exit-opacity', '0');
+    await expect(column.locator(selector)).toHaveCount(0);
+  });
+}
+
+for (const feedCount of [1, 2]) {
+  test(`#3571 keeps the header and search inside the resizing column (${feedCount} feeds) @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: feedCount === 1 ? 2400 : 1600, height: 900 });
+    const groups = Array.from({ length: feedCount }, (_, index) => `group-${index}`);
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      signalGroups: groups,
+      inboxResponse: response([1, 2, 3, 4, 5, 6, 7, 8]),
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.goto(`/rer-duty-neo?state=${stateForGroups(groups)}`);
+    const column = page.locator('[data-duty-feed-column]').first();
+    await expect(column.locator('[data-duty-message-id]')).toHaveCount(8);
+    const measure = () =>
+      column.evaluate((column) => {
+        const rect = column.getBoundingClientRect();
+        const main = column.querySelector('[data-duty-feed-main]')!.getBoundingClientRect();
+        const header = column
+          .querySelector('[data-duty-feed-header-layout]')!
+          .getBoundingClientRect();
+        const panel = column.querySelector('[data-duty-search-panel]')?.parentElement;
+        return {
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          mainLeft: main.left,
+          mainRight: main.right,
+          mainWidth: main.width,
+          headerLeft: header.left,
+          headerRight: header.right,
+          panelRight: panel?.getBoundingClientRect().right ?? rect.left,
+          cardWidth: column.querySelector('[data-duty-message-id]')!.getBoundingClientRect().width,
+          nextLeft: column.nextElementSibling?.getBoundingClientRect().left ?? null,
+        };
+      });
+    const settle = () =>
+      column.evaluate(async (column) => {
+        const targets = [
+          column,
+          column.querySelector('[data-duty-feed-main]'),
+          column.querySelector('[data-duty-search-panel]')?.parentElement,
+        ];
+        await Promise.all(
+          targets
+            .flatMap((target) => target?.getAnimations() ?? [])
+            .map((animation) => {
+              animation.play();
+              return animation.finished.catch(() => {});
+            }),
+        );
+      });
+    const closed = await measure();
+    const trigger = column.getByRole('button', { name: 'Пошук у стрічці', exact: true });
+    await trigger.click();
+    await settle();
+    for (const direction of ['closing', 'opening']) {
+      await column.evaluate((column, direction) => {
+        const observer = new MutationObserver(() => {
+          const targets = [
+            column,
+            column.querySelector('[data-duty-feed-main]'),
+            column.querySelector('[data-duty-search-panel]')?.parentElement,
+          ];
+          const animations = targets
+            .flatMap((target) => target?.getAnimations() ?? [])
+            .filter((animation) => animation.playState === 'running');
+          if (!animations.length) return;
+          observer.disconnect();
+          for (const animation of animations) {
+            animation.pause();
+            animation.currentTime = Number(animation.effect!.getTiming().duration) / 2;
+          }
+          column.setAttribute('data-width-sampled', direction);
+        });
+        observer.observe(column, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['aria-expanded'],
+        });
+      }, direction);
+      await trigger.evaluate((button: HTMLButtonElement) => button.click());
+      await expect(column).toHaveAttribute('data-width-sampled', direction);
+      const midpoint = await measure();
+      expect(midpoint.width).toBeGreaterThan(closed.width + 1);
+      expect(midpoint.width).toBeLessThan(closed.width + 269);
+      expect(midpoint.headerLeft).toBeGreaterThanOrEqual(midpoint.left - 1);
+      expect(midpoint.headerRight).toBeLessThanOrEqual(midpoint.right + 1);
+      expect(midpoint.mainRight).toBeLessThanOrEqual(midpoint.right + 1);
+      expect(midpoint.mainWidth).toBeCloseTo(closed.mainWidth, 0);
+      expect(midpoint.cardWidth).toBeCloseTo(closed.cardWidth, 0);
+      expect(midpoint.panelRight).toBeLessThanOrEqual(midpoint.mainLeft + 1);
+      if (midpoint.nextLeft !== null && closed.nextLeft !== null)
+        expect(midpoint.nextLeft - midpoint.right).toBeCloseTo(closed.nextLeft - closed.right, 0);
+      await page.screenshot({ path: test.info().outputPath(`${direction}-midpoint.png`) });
+      await settle();
+      if (direction === 'closing')
+        await expect(column.locator('[data-duty-search-panel]')).toHaveCount(0);
+    }
+  });
+}
+
+test('#3571 mobile search overlays the feed and restores results after landing @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    inboxResponse: response(Array.from({ length: 20 }, (_, index) => index + 1)),
+    inboxCountResponseForRequest: () => ({ quantity: 20, first_element_ts: null }),
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/rer-duty-neo');
+  const column = page.locator('[data-duty-feed-column]').first();
+  await expect(column.locator('[data-duty-message-id]')).toHaveCount(20);
+  const closedWidth = await column.evaluate((column) => column.getBoundingClientRect().width);
+  const query = await openDutySearch(column);
+  await expect(query).toBeFocused();
+  const panel = column.locator('[data-duty-search-panel]');
+  const geometry = await column.evaluate((column) => ({
+    width: column.getBoundingClientRect().width,
+    panelWidth: column.querySelector('[data-duty-search-panel]')!.getBoundingClientRect().width,
+    overflow: column.parentElement!.scrollWidth - column.parentElement!.clientWidth,
+  }));
+  expect(geometry.width).toBeCloseTo(closedWidth, 0);
+  expect(geometry.panelWidth).toBeCloseTo(closedWidth, 0);
+  expect(geometry.overflow).toBeLessThanOrEqual(1);
+  await query.fill('needle');
+  await query.press('Escape');
+  const list = panel.locator('[data-duty-search-list]');
+  await expect(list.locator('[data-duty-search-result]')).toHaveCount(20);
+  await list.evaluate((list) => {
+    list.scrollTop = 240;
+    list.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  const position = await list.evaluate((list) => list.scrollTop);
+  const selectedId = await list.evaluate((list) => {
+    const bounds = list.getBoundingClientRect();
+    const row = [...list.querySelectorAll<HTMLElement>('[data-duty-search-result]')].find((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.top >= bounds.top && rect.bottom <= bounds.bottom;
+    });
+    return row!.dataset.dutySearchResult!;
+  });
+  await list.locator(`[data-duty-search-result="${selectedId}"]`).click();
+  await expect(panel).toHaveCount(0);
+  await expect(
+    column.locator(
+      `[data-duty-message-id="${selectedId}"][data-message-feed-highlighted], [data-duty-message-id="${selectedId}"] [data-message-feed-highlighted]`,
+    ),
+  ).toHaveCount(1);
+  await expect(column.locator(`[data-duty-message-id="${selectedId}"]`)).toBeInViewport();
+  const reopened = await openDutySearch(column);
+  await expect(reopened).toHaveValue('needle');
+  await expect(reopened).not.toBeFocused();
+  await expect(list.locator('[data-duty-search-result]')).toHaveCount(20);
+  await expect.poll(() => list.evaluate((list) => list.scrollTop)).toBeCloseTo(position, 0);
+  await expect(list.locator(`[data-duty-search-result="${selectedId}"]`)).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await panel.evaluate(async (panel) => {
+    await Promise.all(
+      panel.parentElement!.getAnimations().map((animation) => animation.finished.catch(() => {})),
+    );
+  });
+  expect(
+    await panel.evaluate((panel) => {
+      const rect = panel.getBoundingClientRect();
+      return panel.contains(document.elementFromPoint(rect.right - 32, rect.bottom - 24));
+    }),
+  ).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('mobile-restored-search.png') });
+  await panel.getByRole('button', { name: 'Наступний результат', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  const nextId = String(Number(selectedId) - 1);
+  await expect(column.locator(`[data-duty-message-id="${nextId}"]`)).toBeInViewport();
+  await openDutySearch(column);
+  await expect(reopened).not.toBeFocused();
+  await expect(list.locator(`[data-duty-search-result="${nextId}"]`)).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await panel.getByRole('button', { name: 'Очистити пошук', exact: true }).click();
+  await expect(reopened).toBeFocused();
+  await expect(list.locator('[data-duty-search-result]')).toHaveCount(0);
+  await column.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(await openDutySearch(column)).toHaveValue('');
+  await expect(query).toBeFocused();
+});
+
+test('#3571 applies rapid search reversals and result steps immediately @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    inboxResponseForRequest: () => response([1, 2, 3, 4]),
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/rer-duty-neo');
+  const column = page.locator('[data-duty-feed-column]').first();
+  const trigger = column.getByRole('button', { name: 'Пошук у стрічці', exact: true });
+  await expect(trigger).toBeVisible();
+  await trigger.evaluate((button: HTMLButtonElement) => {
+    button.click();
+  });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await trigger.evaluate((button: HTMLButtonElement) => button.click());
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await trigger.evaluate((button: HTMLButtonElement) => button.click());
+  const query = column.getByRole('combobox', { name: 'Пошук', exact: true });
+  await expect(query).toBeFocused();
+  await query.fill('needle');
+  await query.press('Escape');
+  const panel = column.locator('[data-duty-search-panel]');
+  await expect(panel.locator('[data-duty-search-result]')).toHaveCount(4);
+  const next = panel.getByRole('button', { name: 'Наступний результат', exact: true });
+  await next.evaluate((button: HTMLButtonElement) => button.click());
+  await expect(panel.locator('[data-duty-search-result="4"]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await next.evaluate((button: HTMLButtonElement) => button.click());
+  await expect(panel.locator('[data-duty-search-result="3"]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+});
+
+test('#3571 keeps the same visible search row fixed when pending counts change @regression', async ({
+  page,
+}) => {
+  let added = 0;
+  const ids = () => Array.from({ length: 20 + added }, (_, i) => 20 + added - i);
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    disableAutoScroll: true,
+    inboxCountResponseForRequest: () => ({ quantity: 20 + added, first_element_ts: null }),
+    inboxResponseForRequest: () => response(ids()),
+  });
+  await page.route('**/api/rer-importer/messages-by-id-matching-filters', (route) =>
+    route.fulfill({ json: { messages: response(ids()).inbox_items } }),
+  );
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/rer-duty-neo');
+  const column = page.locator('[data-duty-feed-column]').first();
+  const query = await openDutySearch(column);
+  await query.fill('needle');
+  await query.press('Escape');
+  const list = column.locator('[data-duty-search-list]');
+  await expect(list.locator('[data-duty-search-result]')).toHaveCount(20);
+  await list.evaluate((n) => {
+    n.scrollTop = 300;
+    n.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  const snapshot = () =>
+    list.evaluate((n) => {
+      const bounds = n.getBoundingClientRect();
+      const row = [...n.querySelectorAll('[data-duty-search-result]')].find(
+        (row) => row.getBoundingClientRect().bottom > bounds.top,
+      )!;
+      return {
+        y: bounds.y,
+        height: bounds.height,
+        top: n.scrollTop,
+        row: row.getAttribute('data-duty-search-result'),
+        rowY: row.getBoundingClientRect().y,
+      };
+    });
+  const before = await snapshot();
+  for (const count of [1, 10]) {
+    if (count === 10) {
+      await page.clock.install();
+      await page.clock.runFor(10000);
+      await page.clock.resume();
+    }
+    added = count;
+    await page.evaluate(
+      (ids) =>
+        window.dispatchEvent(
+          new CustomEvent('echo-inbox-changed', { detail: { messageIds: ids } }),
+        ),
+      ids().slice(0, count),
+    );
+    await expect(
+      column.getByRole('button', { name: `Нові результати: ${count}`, exact: true }),
+    ).toBeVisible();
+    expect(await snapshot()).toEqual(before);
+  }
+  await column.getByRole('button', { name: 'Нові результати: 10', exact: true }).click();
+  await expect(list.locator('[data-duty-search-result="30"]')).toBeVisible();
+  await expect.poll(() => list.evaluate((n) => n.scrollTop)).toBe(0);
+});
+
+test('#3571 makes pending search loading static with reduced motion @regression', async ({
+  page,
+}) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    inboxResponseForRequest: async (body) => {
+      if ((body as Record<string, unknown>).search) await pending;
+      return response([1]);
+    },
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/rer-duty-neo');
+  const query = await openDutySearch(page.locator('[data-duty-feed-column]').first());
+  await query.fill('needle');
+  await query.press('Escape');
+  const panel = page.locator('[data-duty-search-panel]');
+  await expect(panel.getByRole('progressbar')).toBeVisible();
+  expect(
+    await panel.evaluate(
+      (n) => n.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length,
+    ),
+  ).toBe(0);
+  release();
+  await expect(panel.locator('[data-duty-search-result]')).toHaveCount(1);
+});
+
 test('#3571 highlights backend search matches in the source feed only @regression', async ({
   page,
 }) => {
@@ -88,8 +479,6 @@ test('#3571 highlights backend search matches in the source feed only @regressio
   await page.screenshot({ path: test.info().outputPath('source-search-highlight.png') });
   await column.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
   await expect(marks).toHaveCount(0);
-  // The header button suppresses repeated clicks for 400ms.
-  await page.waitForTimeout(400);
   const reopened = await openDutySearch(column);
   await expect(marks).toHaveText(['Нова']);
   await reopened.fill('');
@@ -268,6 +657,23 @@ for (const width of [1600, 390]) {
       await toggle.click();
       await expect(search).toBeDisabled();
       await expect(query).toHaveValue('needle');
+      if (name.source === '^Фільтри') {
+        const keyword = column.getByRole('combobox', {
+          name: 'Фільтр по ключовому слову',
+          exact: true,
+        });
+        await expect(keyword).toBeVisible();
+        await keyword.scrollIntoViewIfNeeded();
+        await expect(keyword).toBeInViewport();
+        expect(
+          await keyword.evaluate((input) => {
+            const bounds = input.getBoundingClientRect();
+            return (
+              document.elementFromPoint(bounds.left + 12, bounds.top + bounds.height / 2) === input
+            );
+          }),
+        ).toBe(true);
+      }
       await toggle.click();
       await expect(search).toBeEnabled();
       await expect(query).toHaveValue('needle');
@@ -406,191 +812,205 @@ test('#3571 searches independently and lands in the source feed with context @re
   await cpu.detach();
 });
 
-test('#3571 lands an unloaded 40-day result beyond adaptive history with filtered context @regression', async ({
-  page,
-}) => {
-  const now = Date.UTC(2026, 10, 11, 12);
-  const targetTime = now - 40 * 24 * 60 * 60 * 1000;
-  const adaptiveSince = now - period;
-  const groups = ['group-1'];
-  const contextRequests: Array<Record<string, unknown>> = [];
-  const listRequests: Array<Record<string, unknown>> = [];
-  let contextLookups = 0;
-  let releaseValidation!: () => void;
-  const validationReady = new Promise<void>((resolve) => {
-    releaseValidation = resolve;
-  });
-  const messages = [
-    [4, 'before historical context', targetTime - 1000, 'group-1', 'sender-a'],
-    [5, 'needle 40 days ago', targetTime, 'group-1', 'sender-a'],
-    [6, 'after historical context', targetTime + 1000, 'group-1', 'sender-a'],
-    [7, 'excluded group context', targetTime + 2000, 'group-2', 'sender-a'],
-    [8, 'excluded sender context', targetTime + 3000, 'group-1', 'sender-b'],
-    [89, 'recent older', now - 2000, 'group-1', 'sender-a'],
-    [90, 'recent newest', now - 1000, 'group-1', 'sender-a'],
-  ].map(([id, text, createdAt, groupMasterKey, sender]) => [
-    Number(id),
-    minimalInboxMessage({
-      text: String(text),
-      createdAt: Number(createdAt),
-      groupMasterKey: String(groupMasterKey),
-      sender: String(sender),
-    }),
-  ]) as InboxMessagesRspRaw['inbox_items'];
-  const target = messages.find(([id]) => id === 5)!;
-  const matches = (request: Record<string, unknown>, [id, message]: (typeof messages)[number]) =>
-    (request.since_date_inclusive_ms == null ||
-      message.createdAt >= Number(request.since_date_inclusive_ms)) &&
-    (request.till_date_inclusive_ms == null ||
-      message.createdAt <= Number(request.till_date_inclusive_ms)) &&
-    (request.before_id_noninclusive == null || id < Number(request.before_id_noninclusive)) &&
-    (request.since_id_noninclusive == null || id > Number(request.since_id_noninclusive)) &&
-    (request.selected_groups == null ||
-      (request.selected_groups as string[]).includes(message.groupMasterKey!)) &&
-    (request.denied_senders == null ||
-      !(request.denied_senders as string[]).includes(message.sender!)) &&
-    (request.search == null || message.text?.includes(String(request.search)));
-  const reply = (
-    rows: typeof messages,
-    historySince: number | null = null,
-  ): InboxMessagesRspRaw => ({
-    ...response(),
-    inbox_items: rows,
-    history_since_ms: historySince,
-    history_period_ms: historySince == null ? null : period,
-  });
-  await installRerDutyShortStateMocks(page, {
-    enableDutySearch: true,
-    signalGroups: groups,
-    inboxCountResponseForRequest: (body) => ({
-      quantity: messages.filter((message) => matches(body as Record<string, unknown>, message))
-        .length,
-      first_element_ts: null,
-    }),
-    inboxResponseForRequest: (body) => {
-      const request = body as Record<string, unknown>;
-      listRequests.push(request);
-      const adaptive =
-        request.load_latest === true &&
-        request.before_id_noninclusive == null &&
-        request.since_id_noninclusive == null &&
-        request.since_date_inclusive_ms == null &&
-        request.till_date_inclusive_ms == null;
-      return reply(
-        messages.filter((message) =>
-          matches(
-            adaptive ? { ...request, since_date_inclusive_ms: adaptiveSince } : request,
-            message,
-          ),
-        ),
-        adaptive ? adaptiveSince : null,
-      );
-    },
-  });
-  await page.route('**/api/rer-importer/inbox-item-context', (route) => {
-    contextLookups += 1;
-    return route.fulfill({
-      json: {
-        message: target,
-        group_master_keys: groups,
-        sigint_inbox_item_ids: [5],
-        since_ts: null,
-        till_ts: null,
-      },
+for (const width of [1600, 390]) {
+  test(`#3571 lands an unloaded 40-day result beyond adaptive history with filtered context at ${width}px @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const now = Date.UTC(2026, 10, 11, 12);
+    const targetTime = now - 40 * 24 * 60 * 60 * 1000;
+    const adaptiveSince = now - period;
+    const groups = ['group-1'];
+    const contextRequests: Array<Record<string, unknown>> = [];
+    const listRequests: Array<Record<string, unknown>> = [];
+    let contextLookups = 0;
+    let releaseValidation!: () => void;
+    const validationReady = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
     });
-  });
-  await page.route('**/api/rer-importer/messages-by-id-matching-filters', async (route) => {
-    const request = (await route.request().postDataJSON()).inbox_req as Record<string, unknown>;
-    if (request.search == null) {
-      contextRequests.push(request);
-      await validationReady;
-    }
-    await route.fulfill({ json: { messages: matches(request, target) ? [target] : [] } });
-  });
-  await page.route('**/api/rer-importer/messages-by-id-with-metadata', async (route) => {
-    const request = await route.request().postDataJSON();
-    await route.fulfill({
-      json: reply(
-        messages.filter(
-          (message) =>
-            request.message_ids.includes(message[0]) &&
+    const messages = [
+      [4, 'before historical context', targetTime - 1000, 'group-1', 'sender-a'],
+      [5, 'needle 40 days ago', targetTime, 'group-1', 'sender-a'],
+      [6, 'after historical context', targetTime + 1000, 'group-1', 'sender-a'],
+      [7, 'excluded group context', targetTime + 2000, 'group-2', 'sender-a'],
+      [8, 'excluded sender context', targetTime + 3000, 'group-1', 'sender-b'],
+      [89, 'recent older', now - 2000, 'group-1', 'sender-a'],
+      [90, 'recent newest', now - 1000, 'group-1', 'sender-a'],
+    ].map(([id, text, createdAt, groupMasterKey, sender]) => [
+      Number(id),
+      minimalInboxMessage({
+        text: String(text),
+        createdAt: Number(createdAt),
+        groupMasterKey: String(groupMasterKey),
+        sender: String(sender),
+      }),
+    ]) as InboxMessagesRspRaw['inbox_items'];
+    const target = messages.find(([id]) => id === 5)!;
+    const matches = (request: Record<string, unknown>, [id, message]: (typeof messages)[number]) =>
+      (request.since_date_inclusive_ms == null ||
+        message.createdAt >= Number(request.since_date_inclusive_ms)) &&
+      (request.till_date_inclusive_ms == null ||
+        message.createdAt <= Number(request.till_date_inclusive_ms)) &&
+      (request.before_id_noninclusive == null || id < Number(request.before_id_noninclusive)) &&
+      (request.since_id_noninclusive == null || id > Number(request.since_id_noninclusive)) &&
+      (request.selected_groups == null ||
+        (request.selected_groups as string[]).includes(message.groupMasterKey!)) &&
+      (request.denied_senders == null ||
+        !(request.denied_senders as string[]).includes(message.sender!)) &&
+      (request.search == null || message.text?.includes(String(request.search)));
+    const reply = (
+      rows: typeof messages,
+      historySince: number | null = null,
+    ): InboxMessagesRspRaw => ({
+      ...response(),
+      inbox_items: rows,
+      history_since_ms: historySince,
+      history_period_ms: historySince == null ? null : period,
+    });
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      signalGroups: groups,
+      inboxCountResponseForRequest: (body) => ({
+        quantity: messages.filter((message) => matches(body as Record<string, unknown>, message))
+          .length,
+        first_element_ts: null,
+      }),
+      inboxResponseForRequest: (body) => {
+        const request = body as Record<string, unknown>;
+        listRequests.push(request);
+        const adaptive =
+          request.load_latest === true &&
+          request.before_id_noninclusive == null &&
+          request.since_id_noninclusive == null &&
+          request.since_date_inclusive_ms == null &&
+          request.till_date_inclusive_ms == null;
+        return reply(
+          messages.filter((message) =>
             matches(
-              {
-                ...request.inbox_req,
-                before_id_noninclusive: null,
-                since_id_noninclusive: null,
-              },
+              adaptive ? { ...request, since_date_inclusive_ms: adaptiveSince } : request,
               message,
             ),
-        ),
-      ),
+          ),
+          adaptive ? adaptiveSince : null,
+        );
+      },
     });
-  });
-  const cpu = await page.context().newCDPSession(page);
-  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-  const state = encodeURIComponent(
-    JSON.stringify({
-      messageFeeds: [
-        [
-          'mf-0',
-          {
-            groupsSelected: groups,
-            deniedSenders: ['sender-b'],
-          },
+    await page.route('**/api/rer-importer/inbox-item-context', (route) => {
+      contextLookups += 1;
+      return route.fulfill({
+        json: {
+          message: target,
+          group_master_keys: groups,
+          sigint_inbox_item_ids: [5],
+          since_ts: null,
+          till_ts: null,
+        },
+      });
+    });
+    await page.route('**/api/rer-importer/messages-by-id-matching-filters', async (route) => {
+      const request = (await route.request().postDataJSON()).inbox_req as Record<string, unknown>;
+      if (request.search == null) {
+        contextRequests.push(request);
+        await validationReady;
+      }
+      await route.fulfill({ json: { messages: matches(request, target) ? [target] : [] } });
+    });
+    await page.route('**/api/rer-importer/messages-by-id-with-metadata', async (route) => {
+      const request = await route.request().postDataJSON();
+      await route.fulfill({
+        json: reply(
+          messages.filter(
+            (message) =>
+              request.message_ids.includes(message[0]) &&
+              matches(
+                {
+                  ...request.inbox_req,
+                  before_id_noninclusive: null,
+                  since_id_noninclusive: null,
+                },
+                message,
+              ),
+          ),
+        ),
+      });
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const state = encodeURIComponent(
+      JSON.stringify({
+        messageFeeds: [
+          [
+            'mf-0',
+            {
+              groupsSelected: groups,
+              deniedSenders: ['sender-b'],
+            },
+          ],
         ],
-      ],
-    }),
-  );
-  await page.goto(`/rer-duty-neo?state=${state}`);
-  const column = page.locator('[data-duty-feed-column]').first();
-  await expect(column.locator('[data-duty-message-id]')).toHaveCount(2);
-  expect(listRequests[0].load_latest).toBe(true);
-  const query = await openDutySearch(column);
-  await query.fill('needle');
-  const result = column.getByRole('button', { name: 'needle 40 days ago', exact: true });
-  await expect(result.locator('[data-duty-search-result-group]')).toHaveText('group-1');
-  await expect(result.locator('[data-duty-search-result-sender]')).toHaveText('sender-a');
-  await expect(result.locator('strong')).toHaveText('needle');
-  await query.press('Escape');
-  await result.click();
-  await expect.poll(() => contextRequests.length).toBe(1);
-  await expect(column.locator('[data-duty-search-panel]').getByRole('progressbar')).toHaveCount(0);
-  await expect(column.locator('[data-duty-message-id="90"]')).toBeVisible();
-  expect(contextLookups).toBe(0);
-  releaseValidation();
-  await expect(
-    column.locator(
-      '[data-duty-message-id="5"][data-message-feed-highlighted], [data-duty-message-id="5"] [data-message-feed-highlighted]',
-    ),
-  ).toHaveCount(1);
-  await expect(column.locator('[data-duty-message-id="5"]')).toBeInViewport();
-  await expect(column.locator('[data-duty-message-id="4"]')).toBeAttached();
-  await expect(column.locator('[data-duty-message-id="6"]')).toBeAttached();
-  await expect(
-    column.locator('[data-duty-message-id="7"], [data-duty-message-id="8"]'),
-  ).toHaveCount(0);
-  await expect(query).toBeVisible();
-  await expect(column.getByRole('progressbar', { name: 'Перехід до повідомлення' })).toHaveCount(0);
-  expect(contextRequests).toHaveLength(1);
-  expect(contextRequests[0]).toMatchObject({
-    since_date_inclusive_ms: null,
-    selected_groups: groups,
-    denied_senders: ['sender-b'],
-    search: null,
-  });
-  const aroundRequests = listRequests.filter(
-    (request) => request.before_id_noninclusive === 5 || request.since_id_noninclusive === 5,
-  );
-  expect(aroundRequests).toHaveLength(2);
-  for (const request of aroundRequests)
-    expect(request).toMatchObject({
+      }),
+    );
+    await page.goto(`/rer-duty-neo?state=${state}`);
+    const column = page.locator('[data-duty-feed-column]').first();
+    await expect(column.locator('[data-duty-message-id]')).toHaveCount(2);
+    expect(listRequests[0].load_latest).toBe(true);
+    const query = await openDutySearch(column);
+    await query.fill('needle');
+    const result = column.getByRole('button', { name: 'needle 40 days ago', exact: true });
+    await expect(result.locator('[data-duty-search-result-group]')).toHaveText('group-1');
+    await expect(result.locator('[data-duty-search-result-sender]')).toHaveText('sender-a');
+    await expect(result.locator('strong')).toHaveText('needle');
+    await query.press('Escape');
+    await result.click();
+    await expect.poll(() => contextRequests.length).toBe(1);
+    await expect(column.locator('[data-duty-search-panel]').getByRole('progressbar')).toHaveCount(
+      0,
+    );
+    await expect(column.locator('[data-duty-message-id="90"]')).toBeVisible();
+    expect(contextLookups).toBe(0);
+    releaseValidation();
+    await expect(
+      column.locator(
+        '[data-duty-message-id="5"][data-message-feed-highlighted], [data-duty-message-id="5"] [data-message-feed-highlighted]',
+      ),
+    ).toHaveCount(1);
+    await expect(column.locator('[data-duty-message-id="5"]')).toBeInViewport();
+    await expect(column.locator('[data-duty-message-id="4"]')).toBeAttached();
+    await expect(column.locator('[data-duty-message-id="6"]')).toBeAttached();
+    await expect(
+      column.locator('[data-duty-message-id="7"], [data-duty-message-id="8"]'),
+    ).toHaveCount(0);
+    if (width === 390) await expect(column.locator('[data-duty-search-panel]')).toHaveCount(0);
+    else await expect(query).toBeVisible();
+    await expect(column.getByRole('progressbar', { name: 'Перехід до повідомлення' })).toHaveCount(
+      0,
+    );
+    expect(contextRequests).toHaveLength(1);
+    expect(contextRequests[0]).toMatchObject({
       since_date_inclusive_ms: null,
       selected_groups: groups,
       denied_senders: ['sender-b'],
       search: null,
     });
-  await cpu.detach();
-});
+    const aroundRequests = listRequests.filter(
+      (request) => request.before_id_noninclusive === 5 || request.since_id_noninclusive === 5,
+    );
+    expect(aroundRequests).toHaveLength(2);
+    for (const request of aroundRequests)
+      expect(request).toMatchObject({
+        since_date_inclusive_ms: null,
+        selected_groups: groups,
+        denied_senders: ['sender-b'],
+        search: null,
+      });
+    if (width === 390) {
+      await expect(await openDutySearch(column)).toHaveValue('needle');
+      await expect(
+        column.getByRole('button', { name: 'needle 40 days ago', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true');
+    }
+    await cpu.detach();
+  });
+}
 
 for (const outcome of ['close', 'missing', 'error', 'replace', 'newest'] as const) {
   test(`#3571 clears pending search navigation on ${outcome} without landing a stale result @regression`, async ({
@@ -849,11 +1269,47 @@ for (const width of [1600, 390]) {
     await expect(column.getByRole('button', { name: 'needle match', exact: true })).toBeVisible();
     const options = page.getByRole('listbox', { name: 'Режим пошуку' });
     await expect(options).toBeVisible();
+    if (width === 390) {
+      await query.dispatchEvent('keydown', {
+        key: 'Enter',
+        keyCode: 229,
+        which: 229,
+        isComposing: true,
+      });
+      await expect(query).toBeFocused();
+      await expect(options).toBeVisible();
+    }
+    await query.press('Enter');
+    if (width === 390) await expect(query).not.toBeFocused();
+    else await expect(query).toBeFocused();
+    await expect(query).toHaveValue('needle');
+    await expect(column.locator('[data-duty-search-panel]')).toBeVisible();
+    await expect(options).toHaveCount(0);
+    await query.press('ArrowDown');
+    await expect(options).toBeVisible();
     await options.getByRole('option', { name: /Точний збіг/ }).click();
     await expect(options).toHaveCount(0);
     await expect
       .poll(() =>
         requests.some((request) => request.search === 'needle' && request.search_mode === 'Exact'),
+      )
+      .toBe(true);
+    await query.press('ArrowUp');
+    await expect(options).toBeVisible();
+    await query.press('ArrowUp');
+    await expect(query).toHaveAttribute(
+      'aria-activedescendant',
+      (await options.getByRole('option', { name: /Збіг за входженням/ }).getAttribute('id'))!,
+    );
+    await query.press('Enter');
+    if (width === 390) await expect(query).not.toBeFocused();
+    else await expect(query).toBeFocused();
+    await expect(query).toHaveValue('needle');
+    await expect
+      .poll(() =>
+        requests.some(
+          (request) => request.search === 'needle' && request.search_mode === 'Substring',
+        ),
       )
       .toBe(true);
     await expect(
@@ -1195,6 +1651,11 @@ for (const count of [2, 4]) {
       const column = columns.nth(index);
       const query = await openDutySearch(column);
       await expect(query).toBeFocused();
+      await column.evaluate(async (column) => {
+        await Promise.all(
+          column.getAnimations().map((animation) => animation.finished.catch(() => {})),
+        );
+      });
       await page.screenshot({ path: test.info().outputPath(`expanded-column-${index + 1}.png`) });
       const expanded = await geometry();
       expect(

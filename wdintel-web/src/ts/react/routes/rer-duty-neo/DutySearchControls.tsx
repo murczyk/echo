@@ -22,6 +22,7 @@ type Props = {
   updateQueryState: (updates: Partial<SearchState>) => void;
   label?: string;
   autoFocus?: boolean;
+  blurOnEnter?: boolean;
   panel?: boolean;
 };
 
@@ -30,6 +31,7 @@ export function DutySearchControls({
   updateQueryState,
   label = 'Пошук',
   autoFocus = false,
+  blurOnEnter = false,
   panel = false,
 }: Props) {
   const helpId = useId();
@@ -87,7 +89,22 @@ export function DutySearchControls({
   };
 
   return (
-    <div ref={controlsRef} className="flex min-w-0 items-center gap-echo-xs">
+    <div
+      ref={controlsRef}
+      className="flex min-w-0 items-center gap-echo-xs"
+      onKeyDown={(event) => {
+        if (
+          blurOnEnter &&
+          event.key === 'Enter' &&
+          event.target === inputRef.current &&
+          !event.nativeEvent.isComposing &&
+          event.keyCode !== 229
+        ) {
+          event.preventDefault();
+          inputRef.current?.blur();
+        }
+      }}
+    >
       <Autocomplete
         className="w-full min-w-0"
         freeSolo
@@ -159,7 +176,11 @@ export function DutySearchControls({
             inputRef={inputRef}
             placeholder={label}
             size="small"
-            inputProps={{ ...params.inputProps, 'aria-label': label }}
+            inputProps={{
+              ...params.inputProps,
+              'aria-label': label,
+              enterKeyHint: blurOnEnter ? 'search' : undefined,
+            }}
             InputProps={{
               ...params.InputProps,
               startAdornment: (

@@ -19,6 +19,8 @@ import {
   setStoredDutyNotificationSettingsForFeed,
 } from './notifications';
 import { DutySearchPanel } from './DutySearchPanel';
+import { useDutyColumnWidth, useDutyPanelPresence } from './duty-panel-motion';
+import './duty-panel-motion.css';
 import { DUTY_SEARCH_PANEL_WIDTH_PX } from './duty-layout';
 import { FeedColumnHeader } from './FeedColumnHeader';
 import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnContent';
@@ -337,6 +339,11 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   );
 
   const searchOpen = column.search?.open === true;
+  const expandedSearch = searchOpen && !narrowScreen;
+  const searchPresence = useDutyPanelPresence(searchOpen);
+  const groupPresence = useDutyPanelPresence(showGroups);
+  const baseWidth = view.searchBaseWidth;
+  useDutyColumnWidth(columnRef, expandedSearch, baseWidth, !narrowScreen);
   return (
     <Box
       ref={columnRef}
@@ -344,14 +351,12 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       data-duty-feed-id={feed.id}
       className={[
         'flex flex-col min-w-0 gap-0 min-h-0 h-full',
-        narrowScreen && !searchOpen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
+        narrowScreen && !expandedSearch && !baseWidth ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
       ].join(' ')}
       sx={{
-        width:
-          searchOpen && view.searchBaseWidth
-            ? view.searchBaseWidth + DUTY_SEARCH_PANEL_WIDTH_PX
-            : '100%',
-        maxWidth: maxWidth ?? '100%',
+        width: baseWidth ? baseWidth + (expandedSearch ? DUTY_SEARCH_PANEL_WIDTH_PX : 0) : '100%',
+        maxWidth: baseWidth ? 'none' : (maxWidth ?? '100%'),
+        flex: !baseWidth && !narrowScreen && feedCount > 1 ? '1 0 0px' : undefined,
         position: 'relative',
         scrollSnapAlign: narrowScreen ? 'start' : undefined,
         scrollSnapStop: narrowScreen ? 'always' : undefined,
@@ -400,14 +405,22 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNotificationStorageErrorChange={setNotificationStorageError}
         onNotificationStatusChanged={refreshNotificationStatus}
       />
-      <div className="flex min-h-0 min-w-0 flex-1">
-        {searchOpen && column.search ? (
+      <div className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {searchPresence.present && column.search ? (
           <div
-            className="flex h-full min-h-0 shrink-0"
-            style={{ width: DUTY_SEARCH_PANEL_WIDTH_PX }}
+            ref={searchPresence.ref}
+            className="absolute inset-y-0 left-0 z-[2] flex min-h-0 overflow-hidden"
+            style={{
+              width: narrowScreen
+                ? '100%'
+                : baseWidth
+                  ? `max(0px, calc(100% - ${baseWidth}px))`
+                  : DUTY_SEARCH_PANEL_WIDTH_PX,
+            }}
           >
             <DutySearchPanel
               search={column.search}
+              fullWidth={narrowScreen}
               groupInfos={column.messageCard.groupInfos}
               profiles={column.messageCard.profiles}
             />
@@ -417,8 +430,18 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           data-duty-feed-main
           className="relative flex h-full min-h-0 min-w-0 flex-col"
           style={{
-            flex: '1 1 0',
-            width: searchOpen ? `calc(100% - ${DUTY_SEARCH_PANEL_WIDTH_PX}px)` : '100%',
+            isolation: narrowScreen ? 'isolate' : undefined,
+            flex: baseWidth ? '0 0 auto' : '1 1 0',
+            width:
+              baseWidth ??
+              (expandedSearch ? `calc(100% - ${DUTY_SEARCH_PANEL_WIDTH_PX}px)` : '100%'),
+            marginLeft: narrowScreen
+              ? 0
+              : baseWidth
+                ? `max(0px, calc(100% - ${baseWidth}px))`
+                : searchOpen
+                  ? DUTY_SEARCH_PANEL_WIDTH_PX
+                  : 0,
           }}
         >
           {groupNavigation.showSelectedGroups ? (
@@ -441,18 +464,26 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             sx={{ position: 'relative' }}
           >
             <FeedColumnContent ref={contentRef} column={column} />
-            <GroupPanel
-              id={`duty-group-panel-${feed.id}`}
-              open={showGroups}
-              groups={dutyGroups}
-              scope={groupNavigation.scope}
-              onSelect={handleGroupSelect}
-              onClose={() => setShowGroups(false)}
-              triggerRef={groupsTriggerRef}
-              loading={filterPanel.toggles.groupCatalogLoading}
-              error={filterPanel.toggles.groupCatalogError?.message}
-              onRetry={filterPanel.actions.onReloadGroupCatalog}
-            />
+            {groupPresence.present ? (
+              <div
+                ref={groupPresence.ref}
+                className="duty-group-motion absolute inset-0 z-20 pointer-events-none"
+              >
+                <GroupPanel
+                  id={`duty-group-panel-${feed.id}`}
+                  open={showGroups}
+                  renderExit
+                  groups={dutyGroups}
+                  scope={groupNavigation.scope}
+                  onSelect={handleGroupSelect}
+                  onClose={() => setShowGroups(false)}
+                  triggerRef={groupsTriggerRef}
+                  loading={filterPanel.toggles.groupCatalogLoading}
+                  error={filterPanel.toggles.groupCatalogError?.message}
+                  onRetry={filterPanel.actions.onReloadGroupCatalog}
+                />
+              </div>
+            ) : null}
           </Box>
           {actions.onCreateMessage && !panelOpen ? (
             <Box

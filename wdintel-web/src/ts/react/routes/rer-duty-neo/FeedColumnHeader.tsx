@@ -1,7 +1,6 @@
 import { Badge, Box, Button, IconButton, Tooltip } from '@mui/material';
+import type { ButtonProps } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import { PowerIconButton } from '../../components/PowerIconButton';
-import { PowerButton } from '../../components/PowerButton';
 import { DUTY_SEARCH_BLOCKED_TEXT } from './useDutySearch';
 import type { DutySearchColumn } from './useDutySearch';
 import AddIcon from '@mui/icons-material/Add';
@@ -199,6 +198,10 @@ function HeaderPanelToggle({
   );
 }
 
+function SearchToggle({ iconOnly, ...props }: ButtonProps & { iconOnly: boolean }) {
+  return iconOnly ? <IconButton {...props} /> : <Button {...props} />;
+}
+
 export function FeedColumnHeader({
   search,
   narrowScreen,
@@ -233,7 +236,6 @@ export function FeedColumnHeader({
   onNotificationStatusChanged,
 }: FeedColumnHeaderProps) {
   const iconOnlyHeader = narrowScreen || feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
-  const SearchToggle = iconOnlyHeader ? PowerIconButton : PowerButton;
   const hasActiveFilter = filterPanel.hasActiveFilter;
 
   return (
@@ -324,6 +326,7 @@ export function FeedColumnHeader({
               >
                 <span className="flex w-full items-stretch">
                   <SearchToggle
+                    iconOnly={iconOnlyHeader}
                     className="duty-header-panel-toggle"
                     id={`duty-search-trigger-${feedId}`}
                     aria-label="Пошук у стрічці"

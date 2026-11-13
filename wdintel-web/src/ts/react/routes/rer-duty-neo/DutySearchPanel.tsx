@@ -1,12 +1,13 @@
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import { Box, LinearProgress } from '@mui/material';
-import { useLayoutEffect, useRef } from 'react';
+import { Box, IconButton, LinearProgress, linearProgressClasses } from '@mui/material';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import dayjs from 'dayjs';
-import { PowerIconButton } from '../../components/PowerIconButton';
 import { PowerButton } from '../../components/PowerButton';
 import { APP_TIME_ZONE } from '../../utils/misc';
 import { DutySearchControls } from './DutySearchControls';
+import { useDutyResultAppearance } from './duty-panel-motion';
+import { DUTY_SEARCH_PANEL_WIDTH_PX } from './duty-layout';
 import { dutyFeedPanelSurfaceSx } from './feed-panel-styles';
 import type { DutySearchColumn } from './useDutySearch';
 import type { FeedColumnModel } from './types';
@@ -116,9 +117,12 @@ export function DutySearchPanel({
   search,
   groupInfos,
   profiles,
-}: { search: DutySearchColumn } & ResultLabels) {
+  fullWidth = false,
+}: { search: DutySearchColumn; fullWidth?: boolean } & ResultLabels) {
   const { state } = search;
+  const autoFocus = !fullWidth || state.search.trim() === '';
   const listRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const selectedIndex = state.items.findIndex(([id]) => id === state.selectedId);
   const rememberPosition = () => {
@@ -166,6 +170,14 @@ export function DutySearchPanel({
     } else list.scrollTop = state.scrollTop;
     rememberPosition();
   }, [state.items]);
+  const identity = JSON.stringify([state.signature, state.search, state.searchMode, state.period]);
+  useDutyResultAppearance(resultsRef, listRef, state.items, identity);
+  useEffect(() => {
+    if (search.open) {
+      if (autoFocus)
+        listRef.current?.closest('section')?.querySelector<HTMLInputElement>('input')?.focus();
+    } else rememberPositionRef.current();
+  }, [search.open, autoFocus]);
   const navigate = (index: number) => {
     const item = state.items[index];
     if (item) {
@@ -181,6 +193,7 @@ export function DutySearchPanel({
       aria-label="Пошук у стрічці"
       data-duty-search-panel
       className="flex h-full w-full min-h-0 min-w-0 flex-col text-echo-text"
+      style={{ width: fullWidth ? '100%' : DUTY_SEARCH_PANEL_WIDTH_PX, flexShrink: 0 }}
       sx={dutyFeedPanelSurfaceSx}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.defaultPrevented) {
@@ -191,51 +204,74 @@ export function DutySearchPanel({
       }}
     >
       <div className="relative shrink-0 border-b border-solid border-echo-text/15 p-echo-md">
-        <DutySearchControls queryState={state} updateQueryState={search.onChange} autoFocus panel />
+        <DutySearchControls
+          queryState={state}
+          updateQueryState={search.onChange}
+          autoFocus={autoFocus}
+          panel
+          blurOnEnter={fullWidth}
+        />
         <div className="mt-echo-sm flex items-center justify-between gap-echo-xs">
-          <span
-            className="text-[length:var(--echo-typography-font-size-sm)] opacity-75"
+          <div
+            className="relative min-w-0 flex-1 text-[length:var(--echo-typography-font-size-sm)]"
             aria-live="polite"
           >
-            {state.total === null ? 'Результати' : `Знайдено: ${state.total}`}
-          </span>
+            <span className={state.pendingItems.length ? 'invisible' : 'opacity-75'}>
+              {state.total === null ? 'Результати' : `Знайдено: ${state.total}`}
+            </span>
+            {state.pendingItems.length ? (
+              <PowerButton
+                className="duty-search-pending absolute! inset-y-0! left-0! max-w-full! min-w-0! normal-case! tabular-nums"
+                size="small"
+                title={`Знайдено: ${state.total ?? state.items.length + state.pendingItems.length}`}
+                aria-label={`Нові результати: ${state.pendingItems.length}`}
+                onClick={() => {
+                  search.onShowNew();
+                  if (listRef.current) listRef.current.scrollTop = 0;
+                }}
+              >
+                <span className="truncate">Нові результати: {state.pendingItems.length}</span>
+              </PowerButton>
+            ) : null}
+          </div>
           <div className="flex items-center">
-            <PowerIconButton
+            <IconButton
               size="small"
               aria-label="Попередній результат"
               disabled={selectedIndex <= 0}
               onClick={() => navigate(selectedIndex - 1)}
             >
               <ArrowUpwardIcon fontSize="small" />
-            </PowerIconButton>
-            <PowerIconButton
+            </IconButton>
+            <IconButton
               size="small"
               aria-label="Наступний результат"
               disabled={state.items.length === 0 || selectedIndex >= state.items.length - 1}
               onClick={() => navigate(selectedIndex + 1)}
             >
               <ArrowDownwardIcon fontSize="small" />
-            </PowerIconButton>
+            </IconButton>
           </div>
         </div>
         {state.loading || state.loadingOlder ? (
           <LinearProgress
             aria-label="Завантаження результатів пошуку"
-            sx={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
+            sx={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              '@media (prefers-reduced-motion: reduce)': {
+                [`& .${linearProgressClasses.bar}`]: {
+                  animation: 'none',
+                  transform: 'none',
+                  width: '50%',
+                },
+              },
+            }}
           />
         ) : null}
       </div>
-      {state.pendingItems.length > 0 ? (
-        <PowerButton
-          size="small"
-          onClick={() => {
-            search.onShowNew();
-            if (listRef.current) listRef.current.scrollTop = 0;
-          }}
-        >
-          Нові результати: {state.pendingItems.length}
-        </PowerButton>
-      ) : null}
       <div
         ref={listRef}
         data-duty-search-list
@@ -260,9 +296,9 @@ export function DutySearchPanel({
         !state.error ? (
           <p className="p-echo-sm">Нічого не знайдено</p>
         ) : null}
-        <div className="shrink-0 divide-y divide-solid divide-echo-text/15">
+        <div ref={resultsRef} className="shrink-0 divide-y divide-solid divide-echo-text/15">
           {state.items.map((item) => (
-            <div key={item[0]} className="py-echo-xs">
+            <div key={item[0]} data-duty-search-row={item[0]} className="py-echo-xs">
               <DutySearchResult
                 item={item}
                 search={search}

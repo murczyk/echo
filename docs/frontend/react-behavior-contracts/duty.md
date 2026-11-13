@@ -112,6 +112,16 @@
 - **Expected observable result:** Escape and outside interaction close only their owning panel; transparent overlays do not block the feed; narrow layouts retain one mobile header owner while available actions remain reachable.
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
+## Duty search motion and reading continuity
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-search-motion-continuity`
+- **Expected observable result:** search opens in 180ms and closes in 140ms by resizing its whole column together with the header; source text widths and preceding columns stay fixed. The header and message cards stay within the column throughout the transition; search is clipped to the space left beside the feed and never fades over returning cards. Search/group/column switches overlap entry and exit, accept immediate reversals, and leave exiting content inert. Result navigation remains instant. The first ready list for a query/mode fades together in 100ms; cached reopen, refresh and live updates do not replay that fade. Pending new matches occupy the existing header area and preserve list geometry, scrollTop and the same visible row's viewport position; applying them moves the result list to the top.
+- **Responsive and keyboard requirements:** narrow layouts overlay search at the source column's full width without expanding it or adding horizontal overflow, retaining one active feed tree. Selecting a result closes the mobile overlay without canceling its context navigation; reopening restores the query, results, selection and list position until explicitly cleared. Escape restores the owning trigger promptly, and stale transition/focus callbacks cannot override a later open. Reduced motion removes new spatial/fade effects, search progress animation and Duty tab indicator movement, including preference changes during a transition; existing linked-frame cleanup remains intact.
+- **API endpoint and compatibility requirements:** unchanged; search loading and source-context loading remain separate.
+- **Existing test(s):** `wdintel-web/tests/e2e/rer-duty-search.spec.ts`, `wdintel-web/tests/e2e/group-feed-navigation-duty.spec.ts`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutySearch.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/RerDutyNeoWorkspace.spec.tsx`.
+- **Original Echo issue/PR:** [#3571](https://github.com/echoua/echo/issues/3571).
+
 ## Duty embedded-editor feed layout
 
 - **Status:** normative

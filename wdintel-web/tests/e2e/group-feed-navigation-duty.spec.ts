@@ -394,39 +394,108 @@ test.describe('Duty group feed navigation', () => {
     );
   });
 
-  test('opens the group list over the mobile feed and preserves its scroll position', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 390, height: 760 });
-    await installGroupNavigationMocks(page);
-    await page.goto('/rer-duty-neo');
-    const column = page.locator('[data-duty-feed-column]');
-    const scroller = column.locator('[data-duty-feed-scroller="true"]');
-    await scroller.evaluate((element) => {
-      element.scrollTop = 37;
-    });
-    const before = await scroller.evaluate((element) => element.scrollTop);
-    await expect(column.getByRole('button', { name: 'Додати повідомлення' })).toBeVisible();
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`#3571 opens the mobile group list with ${reducedMotion} motion and preserves reading position @regression`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 760 });
+      await installGroupNavigationMocks(page);
+      await page.route('**/api/rer-importer/get-inbox', (route) => {
+        const request = route.request().postDataJSON();
+        return route.fulfill({
+          json: {
+            ...inboxResponse(null),
+            page_limit: 100,
+            inbox_items:
+              request.before_id_noninclusive != null || request.since_id_noninclusive != null
+                ? []
+                : Array.from({ length: 20 }, (_, index) => [
+                    1000 + index,
+                    message(
+                      1000 + index,
+                      groups[index % groups.length].masterKey,
+                      'Synthetic reading context '.repeat(3),
+                    ),
+                  ]),
+          },
+        });
+      });
+      await page.emulateMedia({ reducedMotion });
+      const cpu = await page.context().newCDPSession(page);
+      await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      await page.goto('/rer-duty-neo');
+      const column = page.locator('[data-duty-feed-column]');
+      const scroller = column.locator('[data-duty-feed-scroller="true"]');
+      await expect(column.locator('[data-duty-message-id]')).toHaveCount(20);
+      await scroller.evaluate((element) => {
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event('scroll', { bubbles: true }));
+      });
+      await expect(column.getByText('Немає старіших повідомлень', { exact: true })).toBeVisible();
+      await expect(column.locator('[data-message-feed-skeleton][role="status"]')).toHaveCount(0);
+      await scroller.evaluate((element) => {
+        element.scrollTop = 37;
+        element.dispatchEvent(new Event('scroll', { bubbles: true }));
+      });
+      const before = await scroller.evaluate((element) => element.scrollTop);
+      expect(before).toBeGreaterThan(0);
+      await expect(column.getByRole('button', { name: 'Додати повідомлення' })).toBeVisible();
 
-    await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
-    await expect(column.locator('[data-group-panel][data-variant="overlay"]')).toBeVisible();
-    await expect(column.locator('[data-group-panel-backdrop]')).toHaveCount(0);
-    await expect(column.locator('[data-group-panel]')).toHaveCSS(
-      'animation-name',
-      'group-navigation-panel-enter',
-    );
-    await expect(column.locator('[data-group-panel]')).toHaveCSS('animation-duration', '0.2s');
-    expect(
       await column.evaluate((element) => {
-        const header = element.querySelector('[data-duty-feed-header-layout]');
-        const panel = element.querySelector('[data-group-panel]');
-        return (
-          header != null &&
-          panel != null &&
-          panel.getBoundingClientRect().top >= header.getBoundingClientRect().bottom
-        );
-      }),
-    ).toBe(true);
-    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(before);
-  });
+        const observer = new MutationObserver(() => {
+          const motion = element.querySelector<HTMLElement & { entry?: Animation }>(
+            '.duty-group-motion',
+          );
+          if (!motion) return;
+          observer.disconnect();
+          motion.entry = motion.getAnimations()[0];
+          if (motion.entry) {
+            motion.entry.pause();
+            motion.entry.currentTime = Number(motion.entry.effect!.getTiming().duration) / 2;
+          }
+          motion.dataset.motionCaptured = 'true';
+        });
+        observer.observe(element, { childList: true, subtree: true });
+      });
+      await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
+      await expect(column.locator('[data-group-panel][data-variant="overlay"]')).toBeVisible();
+      await expect(column.locator('[data-group-panel-backdrop]')).toHaveCount(0);
+      const motion = column.locator('[data-motion-captured="true"]');
+      await expect(motion).toHaveCount(1);
+      const appearance = await motion.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          opacity: Number(style.opacity),
+          transform: style.transform,
+          animations: element.getAnimations().length,
+        };
+      });
+      if (reducedMotion === 'reduce') {
+        expect(appearance).toEqual({ opacity: 1, transform: 'none', animations: 0 });
+      } else {
+        expect(appearance.opacity).toBeGreaterThan(0);
+        expect(appearance.opacity).toBeLessThan(1);
+        expect(appearance.transform).not.toBe('none');
+        await motion.evaluate(async (element) => {
+          const entry = (element as HTMLElement & { entry: Animation }).entry;
+          entry.play();
+          await entry.finished;
+        });
+        await expect(motion).toHaveCSS('opacity', '1');
+        await expect(motion).toHaveCSS('transform', 'none');
+      }
+      expect(
+        await column.evaluate((element) => {
+          const header = element.querySelector('[data-duty-feed-header-layout]');
+          const panel = element.querySelector('[data-group-panel]');
+          return (
+            header != null &&
+            panel != null &&
+            panel.getBoundingClientRect().top >= header.getBoundingClientRect().bottom
+          );
+        }),
+      ).toBe(true);
+      await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(before);
+    });
+  }
 });

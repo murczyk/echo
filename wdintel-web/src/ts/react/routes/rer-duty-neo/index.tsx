@@ -523,6 +523,7 @@ export function RerDutyNeoPage({
   const dutySearch = useDutySearch({
     messageFeeds,
     enabled: feeds.enableDutySearch,
+    closeOnSelect: narrowScreen,
     buildReqForFeed: feeds.buildReqForFeed,
     pollIntervalMs: feeds.pollIntervalMs,
     navigate: (feedId, reference, item) => navigateInFeed(feedId, reference, 'auto', item),

@@ -191,19 +191,44 @@ Desktop search adds a 270px track to the left of its source feed, below a shared
 full-width column header, with horizontal overflow. Results show group, sender,
 creation time and an emphasized matching snippet. Sibling feed widths remain
 stable. Selecting a result jumps to its message without animated scrolling,
-retaining the surrounding feed context. Narrow/editor active-only layouts still mount
-one feed and preserve its source width. Explicit close returns keyboard focus to
+retaining the surrounding feed context. On narrow screens, search overlays the
+source feed at its full width without widening the column or adding horizontal
+overflow. Selecting a result closes the overlay and reveals the message with
+its surrounding context; reopening restores the query, results, selection and
+list position until the query is deliberately cleared. On mobile, opening an
+empty search focuses the input; reopening a saved query leaves it unfocused so
+results can be navigated without opening the keyboard. Clearing the query
+focuses the input again. Receiving results while typing does not steal focus.
+Enter in the mobile search
+input dismisses the keyboard without closing search or clearing the query;
+keyboard selection of a search mode still applies before focus is removed.
+Narrow/editor active-only
+layouts still mount one feed and preserve its source width. Explicit close returns keyboard focus to
 the source search action. Search popups own Escape before the enclosing panel.
 Search results reuse their known message ID without a context-lookup request.
 Loaded messages land directly; unloaded messages retain the readable feed during
 source-filter validation, then use the feed skeleton while loading surrounding
 messages. The search panel's progress bar only indicates result loading and does
-not change the list's geometry. Closing, changing the query or selecting another
-result cancels the previous landing; unavailable results and API errors use the
+not change the list's geometry. Explicitly closing search, changing the query or
+selecting another result cancels the previous landing. Automatic mobile closure
+after result selection preserves that result's pending landing. Unavailable
+results and API errors use the
 page snackbar.
 The explicit newest-message action clears that feed's selected search result
 and cancels its pending search landing, retaining the query, results and list
 position. Other feeds' search selections remain unchanged.
+Search entry (180ms) and exit (140ms) animate the whole column's width,
+including its header. Message widths stay fixed, following columns move with
+the resized column, and the search panel is clipped to its remaining space so
+it never fades over returning cards. Narrow layouts use the full-width overlay
+without a column-width transition.
+Repeated search/group toggles and
+result steps apply immediately, including during a transition; exiting panels
+are inert. Initial results appear together once (100ms); refreshes retain the
+existing rows; newly added visible results fade together in 90ms. Pending matches
+use the existing header area, with the total in the action's tooltip, so their
+count never moves the reading row. Reduced motion
+removes these effects and keeps search progress and the Duty tab indicator static.
 The existing feed keyword filter remains **«Фільтр по ключовому слову»**. Applying
 a nonempty keyword closes the separate panel and disables its action until the
 keyword is cleared; clearing never reopens it automatically. Analysis search

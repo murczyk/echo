@@ -13,7 +13,7 @@ import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { shouldUseActiveFeedLayout } from './duty-editor-layout';
-import { DUTY_SEARCH_PANEL_WIDTH_PX, DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
+import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
 import { MessageFeedSkeletons, type AnchorSnapshot } from '../shared/message-feed';
 
 function DutyNeoInitialLoadingSkeletonFeedHeader({
@@ -333,7 +333,7 @@ export function RerDutyNeoWorkspace({
         <DutyNeoInitialLoadingSkeleton feedCount={messageFeeds.length} narrow={activeFeedOnly} />
       ) : (
         <Box
-          ref={editorEmbeddedOpen || searchFeedId ? workspaceRef : undefined}
+          ref={workspaceRef}
           data-duty-workspace-main
           className="h-full min-h-0 w-full overflow-hidden flex gap-2"
           sx={{
@@ -455,6 +455,7 @@ export function RerDutyNeoWorkspace({
                         backgroundColor: 'primary.main',
                         transform: `translateX(${activeFeedIndex * 100}%)`,
                         transition: 'transform 0.2s ease',
+                        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
                       }}
                     />
                   )}
@@ -501,30 +502,23 @@ export function RerDutyNeoWorkspace({
                   data-duty-feed-tracks
                   className="h-full min-h-0 w-full overflow-x-auto overflow-y-hidden"
                   sx={{
-                    display: 'grid',
-                    alignItems: 'start',
-                    justifyContent: messageFeeds.length <= 1 ? 'center' : 'stretch',
-                    justifyItems: messageFeeds.length <= 1 ? 'center' : 'stretch',
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    justifyContent: messageFeeds.length <= 1 ? 'center' : 'flex-start',
                     gap: messageFeeds.length <= 1 ? 1 : 2,
-                    gridTemplateColumns:
-                      (trackWidth ?? 0) > 0
-                        ? messageFeeds
-                            .map((feed) => {
-                              const base =
-                                messageFeeds.length === 1
-                                  ? Math.min(trackWidth ?? 0, DUTY_SINGLE_FEED_MAX_WIDTH_PX)
-                                  : ((trackWidth ?? 0) - (messageFeeds.length - 1) * 16) /
-                                    messageFeeds.length;
-                              return `${base + (feed.id === searchFeedId ? DUTY_SEARCH_PANEL_WIDTH_PX : 0)}px`;
-                            })
-                            .join(' ')
-                        : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
                   }}
                 >
                   {messageFeeds.map((feed, index) => {
                     const column = buildFeedColumnModel(feed);
                     const columnView: FeedColumnModel['view'] = {
                       ...column.view,
+                      searchBaseWidth:
+                        (trackWidth ?? 0) > 0
+                          ? messageFeeds.length === 1
+                            ? Math.min(trackWidth ?? 0, DUTY_SINGLE_FEED_MAX_WIDTH_PX)
+                            : ((trackWidth ?? 0) - (messageFeeds.length - 1) * 16) /
+                              messageFeeds.length
+                          : undefined,
                       maxWidth: feed.id === searchFeedId ? '100%' : column.view.maxWidth,
                       scrollTrackingEnabled: true,
                       workspaceFabAvoidance: 'none',
