@@ -28,8 +28,7 @@ async fn create_unit_for_message_for_login(
     env: &Env,
     mut req: CreateUnitWithAutoNetworkReq,
 ) -> anyhow::Result<Unit> {
-    let name = unit_name_req(&req.unit);
-    if name.trim().is_empty() {
+    if unit_name_req(&req.unit).trim().is_empty() {
         return Err(AppError::BL {
             msg: "Вкажіть назву нового підрозділу.".to_string(),
         })
@@ -38,9 +37,10 @@ async fn create_unit_for_message_for_login(
     clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req.unit)
         .await
         .c(h!())?;
-    let transaction = begin_unit_creation_transaction(&env.dbx, &req.unit)
+    let transaction = begin_unit_creation_transaction(&env.dbx, &mut req.unit)
         .await
         .c(h!())?;
+    let name = unit_name_req(&req.unit);
     lock_unit_name_for_creation(&transaction, &name)
         .await
         .c(h!())?;
@@ -335,6 +335,39 @@ mod tests {
                 serde_json::from_str::<EventMsg>(&event).unwrap().event_type
             })
             .collect()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3527_message_creation_reuses_inherited_generated_name() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                battalion: Set("3535 бат".to_string()),
+                military_district: Set("ПКС".to_string()),
+                army_region: Set("ЗС РФ".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut req = request("");
+        req.unit.name = None;
+        let unit = create_unit_for_message_for_login(&login, &env, req.clone())
+            .await
+            .unwrap();
+        assert_eq!(unit.name, "3535 бат ПКС");
+        assert_eq!(unit.military_district, "ПКС");
+        assert_eq!(unit.army_region, "ЗС РФ");
+        let repeated = create_unit_for_message_for_login(&login, &env, req)
+            .await
+            .unwrap();
+        assert_eq!(repeated.id, unit.id);
     }
 
     #[tokio::test]
