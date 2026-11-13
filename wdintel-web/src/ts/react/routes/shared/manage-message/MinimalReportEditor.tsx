@@ -1,3 +1,4 @@
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import {
   Button,
@@ -42,6 +43,8 @@ export type MinimalReportEditorProps = {
   onSubmit: FormEventHandler<HTMLFormElement>;
   onRequestClose: () => void;
   onExpand: () => void;
+  /** Present only for an existing report; an emptied text cannot be saved, so this is its only removal path. */
+  onDelete: (() => void) | null;
 };
 
 function OriginalReportText({ text }: { text: string }) {
@@ -108,6 +111,7 @@ export function MinimalReportEditor({
   onSubmit,
   onRequestClose,
   onExpand,
+  onDelete,
 }: MinimalReportEditorProps) {
   const surfaceRef = useRef<HTMLElement | null>(null);
   const reportTextRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -183,6 +187,17 @@ export function MinimalReportEditor({
                   )}
                 />
                 <div className="flex flex-wrap items-center justify-end gap-x-echo-sm gap-y-echo-xs">
+                  {onDelete ? (
+                    <Button
+                      size="small"
+                      color="error"
+                      startIcon={<DeleteOutlineIcon />}
+                      onClick={onDelete}
+                      disabled={busy}
+                    >
+                      Видалити
+                    </Button>
+                  ) : null}
                   <div className="min-w-0 flex-1 basis-40">
                     <MinimalReportFooterNote
                       destinationNote={destinationNote}
