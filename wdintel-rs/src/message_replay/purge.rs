@@ -47,6 +47,10 @@ pub async fn purge_batch(
 ///   repair either reference.
 ///
 /// Every condition is in the query, so a skipped message cannot stall it.
+/// The marker is inlined so the planner can use the partial index on it
+/// (`m20261113_114713_legacy_replay_marker_index`), and there is no
+/// `DISTINCT`, so `LIMIT` ends the scan early. `goi_association.message_uid`
+/// has no index, so its check is a set Postgres hashes once per batch.
 pub async fn purge_legacy_batch(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
@@ -61,16 +65,17 @@ pub async fn purge_legacy_batch(
     let rows = txn
         .query_all_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            r#"
-            SELECT DISTINCT c.signal_message_id
+            format!(
+                r#"
+            SELECT c.signal_message_id
             FROM sigint_comment c
             JOIN signal_message m ON m.id = c.signal_message_id
-            WHERE c.login_id = $1
-              AND c.comment = $2
+            WHERE c.comment = '{MESSAGE_REPLAY_LEGACY_MARKER}'
+              AND c.login_id = $1
               AND c.created_at < (
                 SELECT to_timestamp(applied_at) AT TIME ZONE 'UTC'
                 FROM seaql_migrations
-                WHERE version = $3
+                WHERE version = $2
               )
               AND c.created_at = m.timestamp
               AND m.deleted
@@ -85,19 +90,22 @@ pub async fn purge_legacy_batch(
               AND NOT EXISTS (
                 SELECT 1 FROM intel_product p WHERE p.intel_message_id = m.id
               )
-              AND NOT EXISTS (
-                SELECT 1 FROM goi_association g
-                WHERE g.message_uid = m.message_uid
+              AND (
+                m.message_uid IS NULL
+                OR m.message_uid NOT IN (
+                  SELECT g.message_uid FROM goi_association g
+                  WHERE g.message_uid IS NOT NULL
+                )
               )
               AND NOT EXISTS (
                 SELECT 1 FROM ai_intel_report_attempt a
                 WHERE a.source_message_id = m.id
               )
-            LIMIT $4
-            "#,
+            LIMIT $3
+            "#
+            ),
             [
                 system_login_id.into(),
-                MESSAGE_REPLAY_LEGACY_MARKER.into(),
                 MESSAGE_REPLAY_INSTALL_MIGRATION.into(),
                 (MESSAGE_REPLAY_PURGE_BATCH_SIZE as i64).into(),
             ],
@@ -110,6 +118,7 @@ pub async fn purge_legacy_batch(
         .collect::<Result<Vec<_>, _>>()
         .c(h!())?;
     message_ids.sort_unstable();
+    message_ids.dedup();
     purge_messages(txn, message_ids, "purged legacy replayed messages")
         .await
         .c(h!())

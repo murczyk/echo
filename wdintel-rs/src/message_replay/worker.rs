@@ -27,8 +27,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Set once no copy of the replay before #4110 is left. None can appear
-/// again, so the process stops looking for them; the first look can scan
-/// every comment of the system login.
+/// again, so the process stops looking for them.
 static LEGACY_PURGED: AtomicBool = AtomicBool::new(false);
 
 enum Step {
@@ -104,10 +103,14 @@ async fn run_step(
     env: &Env,
     redis: &mut ConnectionManager,
 ) -> anyhow::Result<Step> {
+    if let Some(purged_ids) = purge_legacy_next(env).await.c(h!())? {
+        return Ok(Step::Progress(purged_ids));
+    }
     let txn = env.dbx.begin().await.c(h!())?;
     let Some(replay_session) = session::lock_for_worker(&txn).await.c(h!())?
     else {
-        return purge_legacy_next(txn).await;
+        txn.commit().await.c(h!())?;
+        return Ok(Step::Idle);
     };
     match replay_session.state.as_str() {
         session::STATE_RUNNING => {
@@ -229,23 +232,25 @@ async fn purge_next(
     Ok(Step::Progress(purged_ids))
 }
 
-/// With no session, removes the copies the replay before #4110 left behind.
-async fn purge_legacy_next(txn: DatabaseTransaction) -> anyhow::Result<Step> {
+/// Removes a batch of the copies the replay before #4110 left behind, ahead
+/// of any session's work, so a session that never ends cannot hold it off.
+/// Returns `None` once none is left.
+async fn purge_legacy_next(env: &Env) -> anyhow::Result<Option<Vec<i64>>> {
     if LEGACY_PURGED.load(Ordering::Relaxed) {
-        txn.commit().await.c(h!())?;
-        return Ok(Step::Idle);
+        return Ok(None);
     }
+    let txn = env.dbx.begin().await.c(h!())?;
     let purged_ids = purge::purge_legacy_batch(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     if purged_ids.is_empty() {
         LEGACY_PURGED.store(true, Ordering::Relaxed);
-        return Ok(Step::Idle);
+        return Ok(None);
     }
     info!(
         "message_replay: purged {} copies left by the previous replay",
         purged_ids.len()
     );
-    Ok(Step::Progress(purged_ids))
+    Ok(Some(purged_ids))
 }
 
 fn log_emitted(
