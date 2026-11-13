@@ -7308,6 +7308,7 @@ describe('ManageMessageDrawer edit mode', () => {
       expect(panel?.textContent).toContain('Створити розвіддонесення');
       expect(panel?.textContent).toContain('original copied body');
       expect(panel?.textContent).toContain('Без надсилання в групу.');
+      expect(panel?.textContent).not.toContain('Видалити');
       expect(textFieldPropsByLabel.has('Текст розвіддонесення')).toBe(true);
       expect(textFieldPropsByLabel.has('Текст оригінального повідомлення')).toBe(false);
       expect(textFieldPropsByLabel.has('Відправити в групу')).toBe(false);
@@ -7561,6 +7562,51 @@ describe('ManageMessageDrawer edit mode', () => {
         7,
         expect.objectContaining({ full_body: 'edited report', signal_group_master_key: 'g-1' }),
       );
+      await act(async () => root.unmount());
+    });
+
+    it('deletes an existing report from the panel after confirmation', async () => {
+      const onClose = vi.fn();
+      const onDeleteSuccess = vi.fn();
+      const { container, host, onExpand, root } = setUpMinimalReport();
+      await act(async () =>
+        root.render(
+          reportDrawer(
+            { host, onExpand },
+            {
+              reportSource: null,
+              editAsReport: true,
+              editTarget: { id: 7, message: buildMessage({ text: 'old report' }) },
+              onClose,
+              onDeleteSuccess,
+            },
+          ),
+        ),
+      );
+
+      const deleteButton = Array.from(host.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Видалити',
+      );
+      expect(deleteButton).toBeDefined();
+      await act(async () =>
+        deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+      );
+      expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
+        'Видалити розвіддонесення?',
+      );
+      expect(inboxMessageActionMocks.deleteMessage).not.toHaveBeenCalled();
+
+      const confirmButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Підтвердити видалення',
+      );
+      await act(async () => {
+        confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+
+      expect(inboxMessageActionMocks.deleteMessage).toHaveBeenCalledWith({ id: 7 });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onDeleteSuccess).toHaveBeenCalledWith(7);
       await act(async () => root.unmount());
     });
   });
