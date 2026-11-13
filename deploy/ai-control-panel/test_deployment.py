@@ -345,6 +345,27 @@ class Sync(DeploymentFixture):
         self.assertIn('WARNING:', text)
         self.assertEqual(calls, [])
 
+    def test_unfinished_local_journal_is_never_reported_current(self):
+        calls, run = self.panel()
+        self.inventories[DEFAULT] = inventory(selected=NEW)
+        journals = self.controller.repo / '.dev-runtime/ai-control-panel'
+        journals.mkdir(parents=True)
+        for content, synced, expected in [
+            ('{"phase": "host_complete"}', False, 'Unfinished local rollout of echo-cbr (phase host_complete)'),
+            ('not json', False, 'Unreadable local rollout journal'),
+            ('{"phase": "complete"}', True, 'is current'),
+        ]:
+            with self.subTest(content=content):
+                (journals / 'echo-cbr.json').write_text(content)
+                result, text = self.sync(run)
+                self.assertEqual(result, synced, text)
+                self.assertIn(expected, text)
+                if not synced:
+                    self.assertIn('WARNING:', text)
+        (journals / 'echo-cbr.json').write_text('{"phase": "disabled"}')
+        self.assertIn('just ai-control-panel recover --host echo-cbr', self.notice())
+        self.assertEqual(calls, [])
+
     def test_interrupted_rollout_is_never_reported_current(self):
         calls, run = self.panel()
         self.inventories[DEFAULT] = inventory(selected=NEW)
@@ -371,6 +392,7 @@ class PanelRun(unittest.TestCase):
                 import json, os, signal, sys, time
                 from pathlib import Path
                 request = json.load(sys.stdin)
+                mark = Path(os.environ['PANEL_MARK'])
                 Path(os.environ['PANEL_SEEN']).write_text(json.dumps({'argv': sys.argv[1:], 'request': request,
                                                              'own_session': os.getsid(0) == os.getpid()}))
                 def emit(value): print(json.dumps(value), flush=True)
@@ -383,21 +405,27 @@ class PanelRun(unittest.TestCase):
             if not lost_terminal:
                 capture.enter_context(contextlib.redirect_stdout(output))
                 capture.enter_context(contextlib.redirect_stderr(errors))
-            with mock.patch.dict(os.environ, {'PANEL_SEEN': str(seen)}), \
+            mark = repo / 'mark'
+            with mock.patch.dict(os.environ, {'PANEL_SEEN': str(seen), 'PANEL_MARK': str(mark)}), \
                     mock.patch.object(NOTICE.tempfile, 'tempdir', str(logs)), capture:
-                ok = NOTICE.run_panel(repo, 'echo-cbr', NEW, dry_run)
+                try:
+                    ok = NOTICE.run_panel(repo, 'echo-cbr', NEW, dry_run)
+                except Exception as error:
+                    ok = error
             [log] = logs.glob('echo-ai-control-panel-*.log')
-            leftover = list((repo / '.dev-runtime/ai-control-panel').iterdir())
-            return ok, output.getvalue() + errors.getvalue(), json.loads(seen.read_text()), log.read_text(), leftover
+            return SimpleNamespace(
+                ok=ok, text=output.getvalue() + errors.getvalue(), seen=json.loads(seen.read_text()), log=log.read_text(),
+                leftover=list((repo / '.dev-runtime/ai-control-panel').iterdir()), mark=mark.read_text() if mark.exists() else None)
 
     def test_success_prints_messages_and_the_target_row(self):
-        ok, text, seen, log, leftover = self.run_panel('''
+        run = self.run_panel('''
             emit({'message': 'Preview passed; no changes made. Selected: echo-cbr'})
             emit({'hosts': [{'host': 'echo-other'}, {'host': 'echo-cbr', 'agent_host': 'vm', 'namespace': 'echo-cbr',
                   'deployed': 'old', 'required_release': 'new', 'eligibility': {request['release']: 'Ready'}}]})
             emit({'diagnostic': 'only in the log'})
             print('plain text')
         ''', dry_run=True)
+        ok, text, seen, log, leftover = run.ok, run.text, run.seen, run.log, run.leftover
         self.assertTrue(ok, text)
         self.assertEqual(seen['argv'][:2], ['upgrade', '--repo'])
         self.assertEqual(seen['request']['selected'], ['echo-cbr'])
@@ -415,12 +443,12 @@ class PanelRun(unittest.TestCase):
     def test_error_event_or_exit_status_fails(self):
         for body in ["emit({'message': 'boom', 'error': True})\n", "sys.exit(3)\n"]:
             with self.subTest(body=body):
-                self.assertFalse(self.run_panel(body)[0])
+                self.assertFalse(self.run_panel(body).ok)
 
     def test_termination_signals_ask_the_panel_to_stop_and_wait_for_it(self):
         for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             with self.subTest(signal=number.name):
-                ok, text, seen, log, leftover = self.run_panel(f'''
+                run = self.run_panel(f'''
                     os.kill(os.getppid(), {int(number)})
                     os.kill(os.getppid(), {int(number)})
                     cancel = Path(request['cancel_file'])
@@ -429,10 +457,10 @@ class PanelRun(unittest.TestCase):
                         time.sleep(0.05)
                     emit({{'message': 'Cancelled at a safe boundary' if cancel.exists() else 'never cancelled'}})
                 ''')
-                self.assertFalse(ok)
-                self.assertIn('Cancelled at a safe boundary', text)
-                self.assertEqual(text.count('Cancellation requested'), 1)
-                self.assertEqual(leftover, [])
+                self.assertFalse(run.ok)
+                self.assertIn('Cancelled at a safe boundary', run.text)
+                self.assertEqual(run.text.count('Cancellation requested'), 1)
+                self.assertEqual(run.leftover, [])
         for number, handler in [(signal.SIGINT, signal.default_int_handler), (signal.SIGTERM, signal.SIG_DFL),
                                 (signal.SIGHUP, signal.SIG_DFL)]:
             self.assertIs(signal.getsignal(number), handler)
@@ -442,7 +470,7 @@ class PanelRun(unittest.TestCase):
             def write(self, text):
                 raise OSError(5, 'Input/output error')
         with contextlib.redirect_stdout(Gone()), contextlib.redirect_stderr(Gone()):
-            ok, text, seen, log, leftover = self.run_panel('''
+            run = self.run_panel('''
                 os.kill(os.getppid(), signal.SIGHUP)
                 cancel = Path(request['cancel_file'])
                 deadline = time.monotonic() + 5
@@ -452,10 +480,67 @@ class PanelRun(unittest.TestCase):
                     emit({'message': f'step {index}'})
                 emit({'message': 'Cancelled at a safe boundary' if cancel.exists() else 'never cancelled'})
             ''', lost_terminal=True)
-        self.assertFalse(ok)
-        self.assertEqual(text, '')
-        self.assertIn('step 199', log)
-        self.assertIn('Cancelled at a safe boundary', log)
+        self.assertFalse(run.ok)
+        self.assertEqual(run.text, '')
+        self.assertIn('step 199', run.log)
+        self.assertIn('Cancelled at a safe boundary', run.log)
+
+    def test_a_failing_session_log_never_stops_the_upgrade(self):
+        real = tempfile.NamedTemporaryFile
+        def failing(*args, **kwargs):
+            file = real(*args, **kwargs)
+            writes = iter(range(3))
+            original = file.write
+            def write(text):
+                if next(writes, None) is None:
+                    raise OSError(28, 'No space left on device')
+                return original(text)
+            file.write = write
+            return file
+        with mock.patch.object(NOTICE.tempfile, 'NamedTemporaryFile', failing):
+            run = self.run_panel('''
+                for index in range(200):
+                    emit({'message': f'step {index}'})
+                emit({'message': 'upgraded'})
+            ''')
+        self.assertIs(run.ok, True, run.text)
+        self.assertIn('AI control panel log stopped', run.text)
+        self.assertIn('upgraded', run.text)
+        self.assertNotIn('step 3', run.log)
+
+    def test_an_error_while_reading_stops_the_panel_and_waits_for_it(self):
+        original = NOTICE.show
+        def broken(event, host, release):
+            if event.get('message') == 'first':
+                raise RuntimeError('display failed')
+            return original(event, host, release)
+        with mock.patch.object(NOTICE, 'show', broken):
+            run = self.run_panel('''
+                # A runner that stops reading would block this panel on a full pipe forever;
+                # end it instead, so the test fails rather than hangs.
+                signal.alarm(10)
+                emit({'message': 'first'})
+                cancel = Path(request['cancel_file'])
+                deadline = time.monotonic() + 5
+                while not cancel.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                for index in range(2000):
+                    emit({'message': f'still writing {index}'})
+                mark.write_text('stopped at a safe boundary' if cancel.exists() else 'never cancelled')
+            ''')
+        self.assertIsInstance(run.ok, RuntimeError)
+        # The panel saw the request to stop, wrote all its output and exited before run_panel raised.
+        self.assertEqual(run.mark, 'stopped at a safe boundary')
+        self.assertEqual(run.leftover, [])
+
+    def test_undecodable_output_is_shown_not_fatal(self):
+        run = self.run_panel('''
+            sys.stdout.buffer.write(b"\\xff\\xfe not utf-8\\n")
+            sys.stdout.flush()
+            emit({'message': 'upgraded'})
+        ''')
+        self.assertIs(run.ok, True, run.text)
+        self.assertIn('not utf-8', run.text)
 
 
 class RecipeAdvisory(unittest.TestCase):
