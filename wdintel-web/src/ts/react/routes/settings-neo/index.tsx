@@ -123,6 +123,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       messageSortBy: dutySettings.messageSortBy,
       messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
       minimalReportWindowEnabled: dutySettings.minimalReportWindowEnabled,
+      dutyRememberReportGroup: dutySettings.dutyRememberReportGroup,
+      analysisRememberReportGroup: dutySettings.analysisRememberReportGroup,
       importantOnlyMyOrganism: dutySettings.importantOnlyMyOrganism,
       ...overrides,
     });
@@ -332,6 +334,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 scheduleDutySettingsSave({ disableAutoScroll: value });
               }}
               minimalReportWindowEnabled={dutySettings.minimalReportWindowEnabled}
+              rememberReportGroup={dutySettings.dutyRememberReportGroup}
+              onRememberReportGroupChange={(value) => {
+                dutySettings.setDutyRememberReportGroup(value);
+                scheduleDutySettingsSave({ dutyRememberReportGroup: value });
+              }}
               onMinimalReportWindowEnabledChange={(value) => {
                 dutySettings.setMinimalReportWindowEnabled(value);
                 scheduleDutySettingsSave({ minimalReportWindowEnabled: value });
@@ -423,6 +430,21 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       scheduleDutySettingsSave({ messageSortBy: value });
                     }}
                     loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                  />
+
+                  <FormControlLabel
+                    className="m-0"
+                    control={
+                      <Switch
+                        checked={dutySettings.analysisRememberReportGroup}
+                        onChange={(_, checked) => {
+                          dutySettings.setAnalysisRememberReportGroup(checked);
+                          scheduleDutySettingsSave({ analysisRememberReportGroup: checked });
+                        }}
+                        disabled={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                      />
+                    }
+                    label="Розвіддонесення: зберігати вибір групи"
                   />
 
                   <SettingsMessageCard

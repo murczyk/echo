@@ -596,6 +596,8 @@ describe('SettingsNeoPage', () => {
       aiPositionHighlightsEnabled: false,
       messageAutoParseEnabled: false,
       minimalReportWindowEnabled: false,
+      dutyRememberReportGroup: true,
+      analysisRememberReportGroup: true,
       importantOnlyMyOrganism: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',

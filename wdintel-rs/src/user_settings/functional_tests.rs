@@ -427,6 +427,8 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     assert!(!settings.large_media_previews);
     assert!(!settings.minimal_report_window_enabled);
     assert!(!settings.important_only_my_organism);
+    assert!(settings.duty_remember_report_group);
+    assert!(settings.analysis_remember_report_group);
     assert_eq!(
         serde_json::to_value(&settings).unwrap()["largeMessageCardText"],
         false
@@ -435,6 +437,8 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     settings["aiPositionHighlightsEnabled"] = true.into();
     settings["minimalReportWindowEnabled"] = true.into();
     settings["importantOnlyMyOrganism"] = true.into();
+    settings["dutyRememberReportGroup"] = false.into();
+    settings["analysisRememberReportGroup"] = false.into();
     settings["largeMediaPreviews"] = true.into();
     settings["largeMessageCardText"] = true.into();
     let saved: UserDutySettingsDto = test::call_and_read_body_json(
@@ -450,6 +454,8 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     assert!(saved.large_media_previews);
     assert!(saved.minimal_report_window_enabled);
     assert!(saved.important_only_my_organism);
+    assert!(!saved.duty_remember_report_group);
+    assert!(!saved.analysis_remember_report_group);
     assert_eq!(
         serde_json::to_value(&saved).unwrap()["largeMessageCardText"],
         true
@@ -475,6 +481,14 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
         .unwrap()
         .remove("largeMessageCardText");
     settings["tagsLayout"] = "hidden".into();
+    settings
+        .as_object_mut()
+        .unwrap()
+        .remove("dutyRememberReportGroup");
+    settings
+        .as_object_mut()
+        .unwrap()
+        .remove("analysisRememberReportGroup");
     let saved: UserDutySettingsDto = test::call_and_read_body_json(
         &app,
         test::TestRequest::put()
@@ -489,6 +503,8 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     assert!(saved.minimal_report_window_enabled);
     assert!(saved.important_only_my_organism);
     assert_eq!(saved.tags_layout, DutyTagsLayout::Hidden);
+    assert!(!saved.duty_remember_report_group);
+    assert!(!saved.analysis_remember_report_group);
     assert_eq!(
         serde_json::to_value(&saved).unwrap()["largeMessageCardText"],
         true
@@ -511,7 +527,7 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
         &app,
         test::TestRequest::get()
             .uri("/api/user/settings")
-            .cookie(cookie)
+            .cookie(cookie.clone())
             .to_request(),
     )
     .await;
@@ -523,4 +539,28 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
         serde_json::to_value(&settings).unwrap()["largeMessageCardText"],
         false
     );
+    for (duty, analysis) in [(true, false), (false, true)] {
+        let mut settings = serde_json::to_value(&settings).unwrap();
+        settings["dutyRememberReportGroup"] = duty.into();
+        settings["analysisRememberReportGroup"] = analysis.into();
+        let _: UserDutySettingsDto = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::put()
+                .uri("/api/user/settings")
+                .cookie(cookie.clone())
+                .set_json(&settings)
+                .to_request(),
+        )
+        .await;
+        let loaded: UserDutySettingsDto = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/user/settings")
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(loaded.duty_remember_report_group, duty);
+        assert_eq!(loaded.analysis_remember_report_group, analysis);
+    }
 }

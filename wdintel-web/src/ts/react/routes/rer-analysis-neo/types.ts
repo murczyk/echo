@@ -309,6 +309,7 @@ export type AnalysisPageState = {
   largeMediaPreviews: boolean;
   largeMessageCardText: boolean;
   messageCardQuickAction: MessageCardQuickAction;
+  rememberReportGroup: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;

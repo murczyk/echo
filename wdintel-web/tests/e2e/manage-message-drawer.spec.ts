@@ -299,6 +299,68 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       });
     });
 
+    test(`${host} disables report group memory independently in user settings`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1600, height: 1000 });
+      await openCreateEditorWithLinkedMessage(page, host);
+      await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
+      let settings = await page.evaluate(() => fetch('/api/user/settings').then((r) => r.json()));
+      await page.route('**/api/user/settings', async (route) => {
+        if (route.request().method() === 'PUT') settings = route.request().postDataJSON();
+        await route.fulfill({ json: settings });
+      });
+      await page.route('**/api/sigint/zones/list', (route) => route.fulfill({ json: [] }));
+      await page.route('**/api/1.1/messages/copy', (route) =>
+        route.fulfill({ json: { payloads: [{ full_body: 'Source report' }] } }),
+      );
+      const preference =
+        host === 'duty' ? 'dutyRememberReportGroup' : 'analysisRememberReportGroup';
+      const otherPreference =
+        host === 'duty' ? 'analysisRememberReportGroup' : 'dutyRememberReportGroup';
+      const otherSection = host === 'duty' ? 'analysis' : 'duty';
+      const label = 'Розвіддонесення: зберігати вибір групи';
+      await page.goto(`/settings-neo?section=${host}`);
+      await expect(page.getByRole('checkbox', { name: label, exact: true })).toBeChecked();
+      await page.getByRole('checkbox', { name: label, exact: true }).uncheck();
+      await expect.poll(() => settings[preference]).toBe(false);
+      expect(settings[otherPreference]).toBe(true);
+      await page.reload();
+      await expect(page.getByRole('checkbox', { name: label, exact: true })).not.toBeChecked();
+      await page.goto(`/settings-neo?section=${otherSection}`);
+      await expect(page.getByRole('checkbox', { name: label, exact: true })).toBeChecked();
+
+      await page.evaluate(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
+      await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
+      const openReport = async () => {
+        await page
+          .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
+          .first()
+          .click();
+        return page.locator('[data-manage-message-presentation]');
+      };
+      const editor = await openReport();
+      const group = editor.getByRole('combobox', { name: 'Відправити в групу' });
+      await expect(group).toHaveValue('');
+      await group.click();
+      await page.getByRole('option', { name: 'Не відправляти', exact: true }).click();
+      expect(await page.evaluate(() => localStorage.getItem('echo_lastReportDestination'))).toBe(
+        'e2e-group',
+      );
+      await editor.getByRole('button', { name: 'Закрити', exact: true }).click();
+      await page.getByRole('button', { name: 'Відхилити зміни', exact: true }).click();
+      await expect(
+        (await openReport()).getByRole('combobox', { name: 'Відправити в групу' }),
+      ).toHaveValue('');
+      await page.goto(`/settings-neo?section=${host}`);
+      await page.getByRole('checkbox', { name: label, exact: true }).check();
+      await expect.poll(() => settings[preference]).toBe(true);
+      await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
+      await expect(
+        (await openReport()).getByRole('combobox', { name: 'Відправити в групу' }),
+      ).toHaveValue('e2e-group');
+    });
+
     test(`@regression #4103 ${host} remembers the report destination across reload and replaces it`, async ({
       page,
     }) => {

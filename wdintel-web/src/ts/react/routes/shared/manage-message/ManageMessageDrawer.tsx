@@ -114,6 +114,7 @@ export type Props = {
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   intentKey?: string;
   initialGroupMasterKey?: string | null;
+  rememberReportGroup?: boolean;
   presentation?: ManageMessageEditorPresentation;
   minimalReport?: MinimalReportPresentation | null;
   interactionActive?: boolean;
@@ -1094,6 +1095,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             busy={busy}
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
+                            rememberReportGroup={props.rememberReportGroup}
                             groupEditable={
                               isReportMode || hasRole(props.currentUser?.roles, 'DeleteMsg')
                             }
