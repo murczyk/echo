@@ -1,4 +1,5 @@
 use super::*;
+use crate::entities::sea_orm_active_enums::IntelProductRelationKind;
 use crate::functest::tests::*;
 use chrono::{Duration, Utc};
 use serial_test::serial;
@@ -59,6 +60,39 @@ async fn commented_message(
     .await
     .unwrap();
     message.id
+}
+
+/// A hidden copy linked through `intel_product` as a source; returns the
+/// copy and the linked message.
+async fn linked_copy(
+    db: &DatabaseConnection,
+    system: uuid::Uuid,
+    kind: IntelProductRelationKind,
+) -> (i64, i64) {
+    let copy_id = commented_message(
+        db,
+        Fixture {
+            login_id: system,
+            comment: MESSAGE_REPLAY_LEGACY_MARKER,
+            deleted: true,
+            body: "Позивний Береза",
+            days_ago: 400,
+            stamped: true,
+        },
+    )
+    .await;
+    let intel = mk_signal_message(db, Default::default()).await.unwrap();
+    intel_product::ActiveModel {
+        intel_message_id: Set(intel.id),
+        source_message_id: Set(copy_id),
+        relation_kind: Set(kind),
+        created_at: Set(Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    (copy_id, intel.id)
 }
 
 async fn exists(db: &DatabaseConnection, id: i64) -> bool {
@@ -126,6 +160,11 @@ async fn issue_4110_purges_only_the_copies_the_previous_replay_left_behind() {
     )
     .await
     .unwrap();
+    // A comment linked as a message of its own, and a report citing a copy.
+    let (commented, linked_comment) =
+        linked_copy(db, system, IntelProductRelationKind::Comment).await;
+    let (cited, report) =
+        linked_copy(db, system, IntelProductRelationKind::Report).await;
     // The same text from a person, and another system comment.
     let by_user = commented_message(
         db,
@@ -160,11 +199,16 @@ async fn issue_4110_purges_only_the_copies_the_previous_replay_left_behind() {
         .await
         .unwrap()
         .is_none());
-    for kept in [live, parsed, edited, recent, migrated, by_user, other] {
+    for kept in [
+        live, parsed, edited, recent, migrated, commented, cited, by_user,
+        other,
+    ] {
         assert!(!purged.contains(&kept), "{kept} was purged");
         assert!(exists(db, kept).await);
     }
-    assert!(exists(db, comment_message.id).await);
+    for linked in [comment_message.id, linked_comment, report] {
+        assert!(exists(db, linked).await);
+    }
 }
 
 #[tokio::test]

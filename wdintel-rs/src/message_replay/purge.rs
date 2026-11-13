@@ -39,7 +39,9 @@ pub async fn purge_batch(
 ///   database's insert time and a message its interception time;
 /// - already soft-deleted, so no visible message is ever touched;
 /// - no comment migrated into a message of its own, which would be orphaned.
-///   The comment migration's lock is held, so none can be migrated meanwhile.
+///   The comment migration's lock is held, so none can be migrated meanwhile;
+/// - not linked through `intel_product` either way: a linked comment would be
+///   orphaned, and a report would lose its source.
 ///
 /// Every condition is in the query, so a skipped message cannot stall it.
 pub async fn purge_legacy_batch(
@@ -73,6 +75,12 @@ pub async fn purge_legacy_batch(
                 SELECT 1 FROM sigint_comment migrated
                 WHERE migrated.signal_message_id = m.id
                   AND migrated.migrated_signal_message_id IS NOT NULL
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM intel_product p WHERE p.source_message_id = m.id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM intel_product p WHERE p.intel_message_id = m.id
               )
             LIMIT $4
             "#,
