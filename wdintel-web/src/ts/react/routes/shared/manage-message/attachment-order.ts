@@ -23,14 +23,14 @@ export function attachmentPositions(
 export function moveAttachment(
   ids: string[],
   id: string,
-  direction: -1 | 1,
+  targetId: string,
   positions: ReadonlyMap<string, number>,
   overrides: Record<string, number>,
   initialize: boolean,
 ): Record<string, number> {
   const index = ids.indexOf(id);
-  const target = index + direction;
-  if (index < 0 || target < 0 || target >= ids.length) return overrides;
+  const target = ids.indexOf(targetId);
+  if (index < 0 || target < 0 || index === target) return overrides;
   const reordered = [...ids];
   reordered.splice(index, 1);
   reordered.splice(target, 0, id);

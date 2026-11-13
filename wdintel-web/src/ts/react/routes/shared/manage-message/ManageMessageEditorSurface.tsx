@@ -80,7 +80,7 @@ export function ManageMessageEditorSurface({
   fillEmbeddedSurface = false,
   transparentEmbeddedSurface = false,
 }: ManageMessageEditorSurfaceProps) {
-  const embeddedSurfaceRef = useRef<HTMLElement | null>(null);
+  const surfaceRef = useRef<HTMLElement | null>(null);
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [embeddedMounted, setEmbeddedMounted] = useState(presentation === 'embedded' && open);
 
@@ -101,14 +101,10 @@ export function ManageMessageEditorSurface({
   }, [open, presentation, reduceMotion]);
 
   useLayoutEffect(() => {
-    embeddedSurfaceRef.current?.toggleAttribute('inert', !open);
+    surfaceRef.current?.toggleAttribute('inert', !open);
   }, [embeddedMounted, open]);
 
-  useEditorEscapeClose(
-    embeddedSurfaceRef,
-    presentation === 'embedded' && open && !dismissDisabled,
-    onRequestClose,
-  );
+  useEditorEscapeClose(surfaceRef, open && !dismissDisabled, onRequestClose);
 
   if (presentation === 'modal') {
     return (
@@ -120,12 +116,14 @@ export function ManageMessageEditorSurface({
         sx={{ zIndex: 1200 }}
         ModalProps={{
           closeAfterTransition: true,
+          disableEscapeKeyDown: true,
           BackdropProps: {
             sx: (theme) => pageDrawerBackdropSx(theme),
           },
         }}
         slotProps={{
           paper: {
+            ref: surfaceRef,
             role: 'dialog',
             'aria-modal': true,
             'aria-labelledby': titleId,
@@ -147,7 +145,7 @@ export function ManageMessageEditorSurface({
 
   return (
     <Paper
-      ref={embeddedSurfaceRef}
+      ref={surfaceRef}
       component="aside"
       aria-labelledby={titleId}
       aria-hidden={open ? undefined : true}

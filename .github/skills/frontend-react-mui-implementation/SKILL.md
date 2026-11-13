@@ -26,6 +26,18 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 
 ## Procedure (checklist)
 
+- Inspect the approved reference and nearest existing interaction before building
+  a new control/list/panel variant. Preserve the approved scope and shared consumers.
+- Separate operation ownership: query edits, panel closure and navigation must
+  cancel only the work they own. Guard late responses before committing data or
+  metadata. Keep independent loading states independent.
+- Preserve response metadata required by the UI, including sender profiles,
+  across initial pages, older pages and refresh/bridge requests; merge through
+  the existing cache rather than dropping names to identifiers.
+- Follow the [verification scope](../../../docs/frontend/design-workflow.md#process-and-verification-scope)
+  and [regression checks](../frontend-regression-safety/SKILL.md) for affected
+  continuity, motion, mobile focus and layout combinations. No new role is implied.
+
 - For new React structure, use semantic HTML and Tailwind; reserve MUI/`Power*` for interactive components and component behavior.
 - Do not add layout-only `Box`, `Stack`, `Grid`, `Container`, wrappers concealing them, or structural `sx`.
 - Use named `echo-*` utilities and generated `theme.echo` values for new shared visual values. Keep MUI spacing and breakpoints as legacy compatibility APIs.
@@ -103,7 +115,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Use `npm run format:all` only for intentional whole-tree formatting.
 - `just build-front`
 - Run targeted TS tests if touched:
-- `cd wdintel-web && npm run test:ts`
+- `cd wdintel-web && npm run test:ts -- <affected.spec.ts[x]>`
 - Before adding or expanding tests, apply the **Test scope** rules in `CODE_REVIEW.md`. Running existing targeted tests does not require creating new tests.
 
 ## Definition of Done (checklist)

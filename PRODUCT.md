@@ -17,6 +17,13 @@ Three main user groups are confirmed by the product owner:
 
 These are product user groups; derive their technical permissions from existing role and server access contracts. Operational and analytical views, administrative views, and device access still depend on roles and server permissions. A visible control is not an authorization boundary. Relative task priorities, usage frequency, and typical working conditions still need confirmation.
 
+For RER users on «Оперативний», a confirmed primary task is reading messages
+from several groups in parallel columns in real time and reacting quickly when
+needed. Preserve reading position and surrounding message context while users
+search, inspect results or compose a report. Incoming messages must not take
+over a deliberately chosen reading position. This task priority is confirmed;
+device distribution and quantitative performance targets remain unmeasured.
+
 ## Product Purpose
 
 Support the handoff from raw information in draft groups, through analysts' processing and selection, to prepared information in curated groups that readers can conveniently consume.

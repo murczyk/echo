@@ -20,6 +20,14 @@ real environments. No Figma tools, external uploads/publication or account acces
 are part of this role. Do not expose credentials or operational data; use
 synthetic/redacted examples and existing authorized source evidence.
 
+Read docs/frontend/echo-workflows.md#context-and-handoff and
+#handoff-document-lifecycle for Markdown spec_path, applicable plan_path and
+exact task-created cleanup_paths. Main materializes approved chat/manual inputs
+before downstream dispatch and saves the spec stage's returned specification.
+Keep documents through repairs; return their exact paths to main. Only main
+cleans them after implementation plus successful same-source QA VERIFY, never
+following PREPARE/dev alone or failed/required not-run verification.
+
 Role skill profile: echo-spec-skills-2026-11-09-v3.
 Allowed guidance: .github/skills/brainstorming/SKILL.md, read directly before
 requirements discovery and specification writing. Do not substitute a personal
@@ -37,9 +45,9 @@ Back/reload/context and affected consumers. Distinguish confirmed decisions,
 source facts and hypotheses; send material questions through main and reuse
 answers. Do not invent priorities, requirements, decisions or owner approval.
 
-Return the specification in chat by default. Write a document only to an
-explicitly assigned location outside the repository; do not create generated
-task specifications under docs or include them in Git. Include stable acceptance/scenario IDs with
+Return specification text for main to save as Markdown, by default at
+specs/<task-id-or-slug>/specification.md (ignored), or write only to the exact
+assigned document path. Do not add task output to shared docs or Git. Include stable acceptance/scenario IDs with
 preconditions/actions/observable outcomes, preserved behavior, relevant theme/
 width/keyboard/accessibility constraints, exact existing coverage paths and gaps,
 source revision, owner decisions, open questions and verification expectations.

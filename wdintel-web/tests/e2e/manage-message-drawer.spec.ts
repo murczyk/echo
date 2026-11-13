@@ -1453,6 +1453,8 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
 
 for (const legacy of [false, true]) {
   test(`#3931 @regression message attachment reordering legacy=${legacy}`, async ({ page }) => {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
     const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
       messageText: 'Attachment order #3931',
     });
@@ -1481,15 +1483,56 @@ for (const legacy of [false, true]) {
     await page.getByRole('button', { name: 'Більше дій', exact: true }).first().click();
     await page.getByRole('menuitem', { name: 'Редагувати', exact: true }).first().click();
     const editor = page.locator('[data-manage-message-presentation]');
-    const move = editor.getByRole('button', { name: 'Перемістити 3.png вище', exact: true });
-    await move.focus();
-    await move.press('Enter');
-    await expect(editor.getByRole('button', { name: /^Більше дій для/ })).toHaveCount(3);
-    expect(
-      await editor
-        .getByRole('button', { name: /^Більше дій для/ })
-        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
-    ).toEqual(['Більше дій для 1.png', 'Більше дій для 3.png', 'Більше дій для 2.png']);
+    const move = editor.getByRole('button', { name: 'Змінити порядок 3.png', exact: true });
+    const target = editor.getByRole('button', { name: 'Змінити порядок 2.png', exact: true });
+    await expect(editor.getByRole('button', { name: /^Перемістити / })).toHaveCount(0);
+    if (legacy) {
+      await move.focus();
+      await move.press('Space');
+      await expect(move).toHaveAttribute('aria-pressed', 'true');
+      await move.press('ArrowUp');
+      await expect(page.getByRole('status')).toContainText('Позиція 2 із 3.');
+      await move.press('Space');
+    } else {
+      await move.scrollIntoViewIfNeeded();
+      await target.scrollIntoViewIfNeeded();
+      const sourceBox = await move.boundingBox();
+      const targetBox = await target.boundingBox();
+      expect(sourceBox).not.toBeNull();
+      expect(targetBox).not.toBeNull();
+      await page.mouse.move(
+        sourceBox!.x + sourceBox!.width / 2,
+        sourceBox!.y + sourceBox!.height / 2,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        sourceBox!.x + sourceBox!.width / 2 + 6,
+        sourceBox!.y + sourceBox!.height / 2,
+      );
+      await expect(page.getByRole('status')).toContainText('Позиція 3 із 3.');
+      const draggedCard = page.locator('[data-attachment-drag-overlay]');
+      await expect(draggedCard).toBeVisible();
+      await expect(draggedCard).toHaveAttribute('inert', '');
+      expect(
+        await draggedCard.evaluate((element) => getComputedStyle(element).backgroundColor),
+      ).toMatch(/^rgb\(/);
+      await expect(editor.getByRole('button', { name: /^Більше дій для/ })).toHaveCount(3);
+      await page.mouse.move(
+        targetBox!.x + targetBox!.width / 2,
+        targetBox!.y + targetBox!.height / 2,
+        { steps: 5 },
+      );
+      await expect(page.getByRole('status')).toContainText('Позиція 2 із 3.');
+      await page.mouse.up();
+      await expect(draggedCard).toHaveCount(0);
+    }
+    await expect
+      .poll(() =>
+        editor
+          .getByRole('button', { name: /^Більше дій для/ })
+          .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+      )
+      .toEqual(['Більше дій для 1.png', 'Більше дій для 3.png', 'Більше дій для 2.png']);
     await editor.getByRole('button', { name: 'Зберегти', exact: true }).click();
     await expect.poll(() => submissions.length).toBe(1);
     const orders = legacy
@@ -1501,4 +1544,82 @@ for (const legacy of [false, true]) {
       : [{ media_id: 'attachment-3', upload_url: null, order_f64: 1.5 }];
     expect(submissions[0]!.attachment_updates).toEqual({ replacements: [], renames: [], orders });
   });
+}
+
+for (const width of [1280, 390]) {
+  for (const sensor of ['pointer', 'keyboard']) {
+    test(`#3931 @regression message drawer Escape cancels ${sensor} reorder and retains draft width=${width}`, async ({
+      page,
+    }) => {
+      const session = await page.context().newCDPSession(page);
+      await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      await openCreateMessageDrawer(page, 'analysis');
+      await page.setViewportSize({ width, height: 844 });
+      await page.locator('input[type="file"]').setInputFiles([
+        { name: 'qa-narrow-first.txt', mimeType: 'text/plain', buffer: Buffer.from('first') },
+        { name: 'qa-narrow-second.txt', mimeType: 'text/plain', buffer: Buffer.from('second') },
+      ]);
+      const editor = page.locator('[data-manage-message-presentation]');
+      const draft = editor.getByRole('textbox', { name: 'Текст повідомлення' });
+      await draft.fill('narrow reorder draft');
+      const active = editor.getByRole('button', {
+        name: 'Змінити порядок qa-narrow-second.txt',
+        exact: true,
+      });
+      await active.focus();
+      if (sensor === 'pointer') {
+        await active.evaluate((element) =>
+          element.scrollIntoView({ block: 'center', behavior: 'instant' }),
+        );
+        const target = editor.getByRole('button', {
+          name: 'Змінити порядок qa-narrow-first.txt',
+          exact: true,
+        });
+        const sourceBox = (await active.boundingBox())!;
+        const targetBox = (await target.boundingBox())!;
+        await page.mouse.move(
+          sourceBox.x + sourceBox.width / 2,
+          sourceBox.y + sourceBox.height / 2,
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+          sourceBox.x + sourceBox.width / 2 + 8,
+          sourceBox.y + sourceBox.height / 2,
+        );
+        await expect(active).toHaveAttribute('aria-pressed', 'true');
+        await page.mouse.move(
+          targetBox.x + targetBox.width / 2,
+          targetBox.y + targetBox.height / 2,
+          { steps: 5 },
+        );
+      } else {
+        await active.press('Space');
+        await expect(active).toHaveAttribute('aria-pressed', 'true');
+        await active.press('ArrowUp');
+      }
+      await expect(page.getByRole('status')).toContainText('Позиція 1 із 2.');
+      await page.keyboard.press('Escape');
+      if (sensor === 'pointer') await page.mouse.up();
+      await expect(page.getByRole('status')).toContainText(
+        'Переміщення скасовано. Порядок вкладень не змінено.',
+      );
+      await expect(page.getByRole('dialog', { name: 'Відхилити незбережені зміни?' })).toHaveCount(
+        0,
+      );
+      await expect(active).toBeFocused();
+      await expect
+        .poll(() =>
+          editor
+            .getByRole('button', { name: /^Більше дій для/ })
+            .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+        )
+        .toEqual(['Більше дій для qa-narrow-first.txt', 'Більше дій для qa-narrow-second.txt']);
+      await expect(draft).toHaveValue('narrow reorder draft');
+      await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(
+        page.getByRole('dialog', { name: 'Відхилити незбережені зміни?' }),
+      ).toBeVisible();
+    });
+  }
 }

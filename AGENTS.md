@@ -10,6 +10,11 @@
 - See [context use](./docs/frontend/design-workflow.md) and
   [team tools](./docs/frontend/design-tools.md) for discovery, optional integrations,
   and verification limits. Personal plugins are not prerequisites.
+- Use the [proportionate process and verification scope](./docs/frontend/design-workflow.md#process-and-verification-scope)
+  for ordinary frontend tasks too: fix small local bugs directly unless roles
+  were explicitly invoked; select changed/affected feature tests during development
+  and reserve the full suite for the pre-PR check. Read the affected behavior contract
+  and inspect supplied design references; do not infer a role invocation from this rule.
 
 ## Figma links in ordinary tasks
 
