@@ -95,6 +95,102 @@ async fn linked_copy(
     (copy_id, intel.id)
 }
 
+/// A hidden copy a GOI association names by `message_uid`.
+async fn goi_named_copy(db: &DatabaseConnection, system: uuid::Uuid) -> i64 {
+    let copy_id = commented_message(
+        db,
+        Fixture {
+            login_id: system,
+            comment: MESSAGE_REPLAY_LEGACY_MARKER,
+            deleted: true,
+            body: "Позивний Береза",
+            days_ago: 400,
+            stamped: true,
+        },
+    )
+    .await;
+    let message_uid = format!("issue-4110-goi-{copy_id}");
+    signal_message::ActiveModel {
+        id: Set(copy_id),
+        message_uid: Set(Some(message_uid.clone())),
+        ..Default::default()
+    }
+    .update(db)
+    .await
+    .unwrap();
+    let organism = find_test_organism(db).await.unwrap();
+    let integration = goi_integration::ActiveModel {
+        owner_organism_id: Set(organism.id),
+        created_at: Set(Utc::now().fixed_offset()),
+        integration_type: Set(
+            crate::config::ORGANISM_GOI_INTEGRATION_TYPE_FULL.to_string(),
+        ),
+        server_key: Set(message_uid.clone()),
+        server_label: Set(message_uid.clone()),
+        ssh_host: Set(None),
+        ssh_user: Set(None),
+        ssh_port: Set(22),
+        path: Set("/goi".to_string()),
+        api_host: Set(None),
+        api_port: Set(8088),
+        api_login: Set(None),
+        api_password: Set(None),
+        disable_goi_to_echo_palitra_sync: Set(false),
+        maintainer_login_id: Set(None),
+        pause_worker: Set(false),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    goi_association::ActiveModel {
+        integration_id: Set(integration.id),
+        organism_id: Set(organism.id),
+        source_association_id: Set(copy_id),
+        source_created_at: Set(Utc::now().fixed_offset()),
+        row: Set(serde_json::json!({})),
+        created_at: Set(Utc::now().fixed_offset()),
+        deleted: Set(false),
+        call_signs: Set(serde_json::json!([])),
+        message_uid: Set(Some(message_uid)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    copy_id
+}
+
+/// A hidden copy an AI intel report attempt was made from.
+async fn attempted_copy(db: &DatabaseConnection, system: uuid::Uuid) -> i64 {
+    let copy_id = commented_message(
+        db,
+        Fixture {
+            login_id: system,
+            comment: MESSAGE_REPLAY_LEGACY_MARKER,
+            deleted: true,
+            body: "Позивний Береза",
+            days_ago: 400,
+            stamped: true,
+        },
+    )
+    .await;
+    ai_intel_report_attempt::ActiveModel {
+        id: Set(uuid::Uuid::now_v7()),
+        login_id: Set(find_test_login(db).await.unwrap().id),
+        source_message_id: Set(copy_id),
+        outcome: Set("failed".to_string()),
+        suggestions: Set(serde_json::json!([])),
+        duration_ms: Set(0),
+        created_at: Set(Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    copy_id
+}
+
 async fn exists(db: &DatabaseConnection, id: i64) -> bool {
     signal_message::Entity::find_by_id(id)
         .one(db)
@@ -165,6 +261,10 @@ async fn issue_4110_purges_only_the_copies_the_previous_replay_left_behind() {
         linked_copy(db, system, IntelProductRelationKind::Comment).await;
     let (cited, report) =
         linked_copy(db, system, IntelProductRelationKind::Report).await;
+    // A GOI association names this copy.
+    let goi_named = goi_named_copy(db, system).await;
+    // An AI intel report attempt was made from this one.
+    let attempted = attempted_copy(db, system).await;
     // The same text from a person, and another system comment.
     let by_user = commented_message(
         db,
@@ -200,8 +300,8 @@ async fn issue_4110_purges_only_the_copies_the_previous_replay_left_behind() {
         .unwrap()
         .is_none());
     for kept in [
-        live, parsed, edited, recent, migrated, commented, cited, by_user,
-        other,
+        live, parsed, edited, recent, migrated, commented, cited, goi_named,
+        attempted, by_user, other,
     ] {
         assert!(!purged.contains(&kept), "{kept} was purged");
         assert!(exists(db, kept).await);

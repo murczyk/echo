@@ -41,7 +41,10 @@ pub async fn purge_batch(
 /// - no comment migrated into a message of its own, which would be orphaned.
 ///   The comment migration's lock is held, so none can be migrated meanwhile;
 /// - not linked through `intel_product` either way: a linked comment would be
-///   orphaned, and a report would lose its source.
+///   orphaned, and a report would lose its source;
+/// - no GOI association names its `message_uid`, and no AI intel report
+///   attempt its id: GOI matching includes hidden messages, and nothing would
+///   repair either reference.
 ///
 /// Every condition is in the query, so a skipped message cannot stall it.
 pub async fn purge_legacy_batch(
@@ -81,6 +84,14 @@ pub async fn purge_legacy_batch(
               )
               AND NOT EXISTS (
                 SELECT 1 FROM intel_product p WHERE p.intel_message_id = m.id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM goi_association g
+                WHERE g.message_uid = m.message_uid
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM ai_intel_report_attempt a
+                WHERE a.source_message_id = m.id
               )
             LIMIT $4
             "#,
