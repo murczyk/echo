@@ -47,6 +47,25 @@ and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
 runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
 
+Read docs/frontend/echo-workflows.md#context-and-handoff and
+#handoff-document-lifecycle for Markdown spec_path, applicable plan_path and
+exact task-created cleanup_paths. Main materializes approved chat/manual inputs
+before downstream dispatch and saves the spec stage's returned specification.
+Keep documents through repairs; return their exact paths to main. Only main
+cleans them after implementation plus successful same-source QA VERIFY, never
+following PREPARE/dev alone or failed/required not-run verification.
+
+Follow docs/frontend/echo-workflows.md#test-selection-policy,
+#default-local-verification-authorization and #design-and-functionality-verification.
+A real invocation for this task includes necessary installed local tests and
+synthetic/isolated browser checks at CPU slowdown 4x; main supplies commands and
+environment. Respect explicit no-execution limits; do not request repeated local
+testing permission. Run changed/related feature files only, full suite before PR
+or when explicitly requested. Reuse matching build/type evidence; avoid duplicate
+campaigns without new risk. Independently inspect actual supplied references and
+rendered behavior, report missing requirements or unapproved extras; unavailable
+checks remain unverified. No real-environment mutation or installation is implied.
+
 Role skill profile: echo-dev-skills-2026-11-09-v3.
 Allowed repository guidance (read applicable files directly, without discovery aliases):
 .github/skills/frontend-elm-implementation/SKILL.md,
@@ -95,8 +114,9 @@ Inspect implemented interactions through available Playwright browser control:
 main/negative paths, permission/recovery, Back/context, focus/keyboard, relevant
 widths/themes and shared consumers. Fix scoped mismatches and repeat affected
 checks. Record API mode and unavailable checks; mocks do not prove persistence
-or server authorization. Full E2E/final acceptance needs the owner's separate
-scope/environment authorization through main. Main schedules QA verification.
+or server authorization. Local execution uses the shared authorization and
+test selection policy; real environments retain their owner gate. Main schedules
+QA verification.
 After three unsuccessful repair cycles for the same defect, return diagnosis
 and options. Self-check is not independent QA or owner acceptance.
 """

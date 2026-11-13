@@ -43,6 +43,18 @@ An explicitly approved layout may share the header surface across navigation
 columns. Avoid card wrappers, rounded outer borders, shadows and individual panel
 backgrounds unless the content needs a distinct surface. Use list items for navigation destinations.
 
+## Motion and state continuity
+
+For changing panels and lists, preserve the reader's visual anchor. Loading
+indicators must not shift content; skeletons reuse the loaded content's outer
+spacing and width. Keep header and body geometry within the same resizing
+container. Check opening, closing and reversal midpoints for clipping, flashing,
+late-disappearing content and incorrect stacking, including an open drawer and
+viewport resize. Respect reduced motion; motion must not delay action feedback.
+Reuse existing list selection, control, menu and feedback patterns. The
+[Duty search contract](docs/frontend/react-behavior-contracts/duty.md#independent-duty-search)
+owns the search-specific layout and state rules.
+
 ## Elevation & Depth
 
 Use the manifest's `shadow` roles for shared application structure. MUI internal elevations and transitions remain component implementation details. Distinguish overlays and layered content with the existing dialog/drawer/menu behavior, including focus and Escape handling; do not add decorative depth that obscures dense information.
