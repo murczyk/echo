@@ -297,6 +297,15 @@ describe('messenger right panel tab URL state', () => {
     expect(window.location.search).toBe('?messengerAccount=a1');
   });
 
+  it('is dropped when another account is picked', () => {
+    url('leftPanelTab=messenger&messengerAccount=a1&messengerPanel=media');
+    replaceMessengerQueryStateInUrl({
+      leftPanelTab: LeftPanelTab.Messenger,
+      messengerAccountId: 'a2',
+    });
+    expect(window.location.search).toBe('?leftPanelTab=messenger&messengerAccount=a2');
+  });
+
   it('is dropped when the messenger tab is left', () => {
     url('leftPanelTab=messenger&messengerAccount=a1&messengerPanel=media');
     replaceMessengerQueryStateInUrl({

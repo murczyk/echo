@@ -288,6 +288,7 @@ export function replaceMessengerQueryStateInUrl(state: MessengerQueryState): voi
       url.searchParams.delete(MESSENGER_CHAT_PARAM);
       url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
       url.searchParams.delete(MESSENGER_VIEW_PARAM);
+      url.searchParams.delete(MESSENGER_PANEL_PARAM);
     }
     if (state.messengerAccountId == null) url.searchParams.delete(MESSENGER_ACCOUNT_PARAM);
     else url.searchParams.set(MESSENGER_ACCOUNT_PARAM, state.messengerAccountId);
