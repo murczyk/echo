@@ -24,14 +24,26 @@ fn mode_for(enabled: bool) -> SandboxMode {
 }
 
 /// Sets the mode for the life of the process; later calls are ignored.
+/// `configured` is `media_sandbox_enabled`; absent keeps the sandbox off and
+/// warns, so existing deployments notice they decode media unisolated.
 /// With the sandbox enabled, a failed self-check stops startup: otherwise a
 /// broken sandbox would fail every media job, and device audio would reject
 /// each upload as invalid.
-pub async fn init(enabled: bool) -> anyhow::Result<()> {
+pub async fn init(configured: Option<bool>) -> anyhow::Result<()> {
+    let enabled = configured.unwrap_or(false);
     if MODE.set(mode_for(enabled)).is_err() {
         return Ok(());
     }
-    log::info!("echo-media sandbox enabled: {enabled}");
+    match configured {
+        None => log::warn!(
+            "media_sandbox_enabled is not set: echo-media sandbox is disabled, \
+             ffmpeg and ffprobe decode media without isolation; set \
+             media_sandbox_enabled = true in config.toml to enable it"
+        ),
+        Some(enabled) => {
+            log::info!("echo-media sandbox enabled: {enabled}")
+        }
+    }
     if enabled {
         self_check(&ffmpeg().c(h!())?).await.c(h!())?;
         log::info!("echo-media sandbox self-check passed");
