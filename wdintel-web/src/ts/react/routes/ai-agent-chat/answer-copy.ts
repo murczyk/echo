@@ -105,7 +105,8 @@ function writeTableRow(row: Element, writer: PlainTextWriter, listDepth: number)
 
 function writeList(list: Element, writer: PlainTextWriter, listDepth: number) {
   const ordered = list.tagName === 'OL';
-  let number = Number(list.getAttribute('start') ?? 1) || 1;
+  const start = Number(list.getAttribute('start') ?? 1);
+  let number = Number.isInteger(start) ? start : 1;
   writer.blockBreak(blockGap(listDepth));
   for (const item of list.children) {
     if (item.tagName !== 'LI') continue;

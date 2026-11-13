@@ -73,9 +73,14 @@ test('@regression #4182 AI answers copy code blocks and the whole answer', async
     timeout: 5000,
   });
 
-  await chat.getByRole('button', { name: 'Копіювати відповідь' }).click();
-  await page.getByRole('menuitem', { name: 'Копіювати як Markdown' }).click();
+  await chat.getByRole('button', { name: 'Копіювати відповідь' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitem', { name: 'Копіювати текст' })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Копіювати як Markdown' })).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(chat.getByRole('button', { name: 'Копіювати відповідь' })).toBeFocused();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(ANSWER);
 
   await chat.getByRole('button', { name: 'Копіювати відповідь' }).click();

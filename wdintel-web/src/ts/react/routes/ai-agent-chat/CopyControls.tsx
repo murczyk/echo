@@ -1,6 +1,6 @@
 import CheckIcon from '@mui/icons-material/Check';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
-import { IconButton, MenuItem, Tooltip, Typography } from '@mui/material';
+import { IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import {
   isValidElement,
   useCallback,
@@ -15,7 +15,6 @@ import type { ExtraProps } from 'react-markdown';
 
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import { PowerButton } from '../../components/PowerButton';
-import { PowerMenu } from '../../components/PowerMenu';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { copyRenderedAnswer } from './answer-copy';
 
@@ -112,7 +111,8 @@ export function AnswerCopyMenu({
           {copied ? <CheckIcon fontSize="small" /> : <ContentCopyOutlinedIcon fontSize="small" />}
         </IconButton>
       </Tooltip>
-      <PowerMenu
+      {/* Plain MUI Menu: PowerMenu wraps items in a div, which breaks arrow-key focus. */}
+      <Menu
         anchorEl={anchor}
         open={Boolean(anchor)}
         onClose={() => setAnchor(null)}
@@ -126,7 +126,7 @@ export function AnswerCopyMenu({
         <MenuItem onClick={() => choose(() => copyTextToClipboard(markdown))}>
           Копіювати як Markdown
         </MenuItem>
-      </PowerMenu>
+      </Menu>
     </>
   );
 }
