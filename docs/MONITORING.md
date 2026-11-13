@@ -528,7 +528,7 @@ Attribute values:
   `local_error`. The last two never reached the provider, so they are counted
   but add no duration sample.
 - Stream `outcome`: `completed`, `failed` or `cancelled`. `failed` includes a
-  stream that carried a provider error event and then closed cleanly.
+  stream that carried a provider error event, or closed without finishing.
 
 When reading the numbers:
 
@@ -570,9 +570,12 @@ steer users to a working model (`wdintel-rs/src/ai_engine/health.rs`, #4157).
 Every call through `AiEngineClient`, from every process, is counted in
 per-minute Redis counters under `ai-engine:health:<engine id>:<minute>` when it
 starts, and its outcome when it ends. A stream counts by how it ended, not by
-its headers: a stream that carried a provider error event (`data: {"error"…}`,
-`response.failed` or `error`) fails even if it closed cleanly. Calls and streams
-still running are tracked in `ai-engine:health:<engine id>:in-flight`. Once a
+its headers. The gateway reads its SSE events. A stream fails if an event
+carries `error` or is `response.failed`/`error`, and that counts at once, even
+if the client then leaves. It also fails if it closes without finishing:
+`[DONE]`, a `finish_reason`, or `response.completed`/`incomplete`. Calls and
+streams still running are listed in `ai-engine:health:<engine id>:in-flight`;
+entries older than 2 hours were left by a dead process and are ignored. Once a
 minute one instance, whichever claims
 `ai-engine:health:round`, checks every enabled engine:
 
@@ -586,8 +589,9 @@ minute one instance, whichever claims
 - If nobody called it for 10 minutes, it is probed at most once every 5
   minutes with a one-word chat completion, and any 2xx answer clears the mark.
   Probes are not counted as calls, and an engine someone still calls, or has a
-  call running on however long, is never probed; this is checked again just
-  before the probe is sent.
+  call running on however long, is never probed. This is checked again just
+  before the probe is sent; users take no lock, so a call can still start in
+  the milliseconds between that check and the probe.
 
 Only outcomes after the latest health change count; every writer stamps
 `health_updated_at`. The worker's unhealthy marks have no

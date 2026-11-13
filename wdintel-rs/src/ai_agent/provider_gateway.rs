@@ -13,7 +13,7 @@ use crate::config::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::types::{info, warn, Env, ShortContext};
+use crate::types::{info, warn, Deserialize, Env, ShortContext};
 use actix_web::http::{header, StatusCode};
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use bytes::Bytes;
@@ -706,6 +706,13 @@ async fn proxy_provider_call(
             "AI agent provider gateway rejected unexpected content type engine_id={} status={}",
             ai_engine.id, status
         );
+        // Its headers looked like success; the call failed all the same.
+        if streamed {
+            if let Some(mut timer) = client.start_stream_body_timer(&ai_engine)
+            {
+                timer.failed();
+            }
+        }
         return Ok(provider_error(
             StatusCode::BAD_GATEWAY,
             "Provider returned an invalid response",
@@ -773,61 +780,113 @@ async fn proxy_provider_call(
     )))
 }
 
-/// Provider failures that arrive inside an HTTP 200 stream: a chat-completion
-/// `data: {"error": …}` event, or a Responses `response.failed` or `error`
-/// event. Model text inside events is JSON-escaped, so it cannot match.
-const STREAM_ERROR_MARKERS: &[&[u8]] = &[
-    b"data: {\"error\"",
-    b"data:{\"error\"",
-    b"\"type\":\"response.failed\"",
-    b"\"type\": \"response.failed\"",
-    b"\"type\":\"error\"",
-    b"\"type\": \"error\"",
-];
-
-/// Watches a stream for [`STREAM_ERROR_MARKERS`], across chunk boundaries.
-#[derive(Default)]
-struct StreamErrorScan {
-    tail: Vec<u8>,
-    seen: bool,
+/// One SSE `data:` event, as far as its outcome goes.
+#[derive(Deserialize)]
+struct StreamEvent {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    error: Option<Value>,
+    choices: Option<Vec<StreamChoice>>,
 }
 
-impl StreamErrorScan {
+#[derive(Deserialize)]
+struct StreamChoice {
+    finish_reason: Option<String>,
+}
+
+/// Reads a provider's SSE events as they pass, to tell how the stream ended
+/// (#4157). A provider can report a failure inside an HTTP 200 stream: a
+/// chat-completion event with `error`, or a Responses `response.failed` or
+/// `error` event. A stream also succeeds only if it finished: `[DONE]`, a
+/// choice with a `finish_reason`, or `response.completed`/`incomplete`.
+#[derive(Default)]
+struct StreamOutcomeScan {
+    line: Vec<u8>,
+    failed: bool,
+    finished: bool,
+}
+
+impl StreamOutcomeScan {
     fn observe(&mut self, chunk: &[u8]) {
-        if self.seen {
+        for byte in chunk {
+            if *byte == b'\n' {
+                let line = std::mem::take(&mut self.line);
+                self.event(&line);
+            } else {
+                self.line.push(*byte);
+            }
+        }
+    }
+
+    /// The stream ended: a last line without a newline still counts.
+    fn end(&mut self) {
+        let line = std::mem::take(&mut self.line);
+        self.event(&line);
+    }
+
+    fn event(&mut self, line: &[u8]) {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        let Some(data) = line.strip_prefix(b"data:") else {
+            return;
+        };
+        let data = data.trim_ascii();
+        if data == b"[DONE]" {
+            self.finished = true;
             return;
         }
-        let mut window = std::mem::take(&mut self.tail);
-        window.extend_from_slice(chunk);
-        self.seen = STREAM_ERROR_MARKERS.iter().any(|marker| {
-            window.windows(marker.len()).any(|bytes| bytes == *marker)
-        });
-        let longest = STREAM_ERROR_MARKERS
+        let Ok(event) = serde_json::from_slice::<StreamEvent>(data) else {
+            return;
+        };
+        if event.error.as_ref().is_some_and(|error| !error.is_null())
+            || matches!(
+                event.kind.as_deref(),
+                Some("response.failed" | "error")
+            )
+        {
+            self.failed = true;
+        }
+        if matches!(
+            event.kind.as_deref(),
+            Some("response.completed" | "response.incomplete")
+        ) || event
+            .choices
             .iter()
-            .map(|marker| marker.len())
-            .max()
-            .unwrap_or(0);
-        let keep = window.len().saturating_sub(longest - 1);
-        self.tail = window.split_off(keep);
+            .flatten()
+            .any(|choice| choice.finish_reason.is_some())
+        {
+            self.finished = true;
+        }
     }
 }
 
-/// Times the stream and records how it ended: a stream that reported a
-/// provider error counts as failed even when it closed cleanly (#4157).
+/// Times the stream and records how it ended. A reported provider error
+/// counts as failed at once, even if the client then leaves; a stream that
+/// closed without finishing counts as failed too.
 fn observe_stream_body(
     stream: impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>>,
     timer: Option<StreamBodyTimer>,
 ) -> impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>> {
     futures_util::stream::unfold(
-        (Box::pin(stream), timer, StreamErrorScan::default()),
+        (Box::pin(stream), timer, StreamOutcomeScan::default()),
         |(mut stream, mut timer, mut scan)| async move {
             let chunk = stream.next().await;
             if let Some(timer) = timer.as_mut() {
                 match &chunk {
-                    None if scan.seen => timer.failed(),
-                    None => timer.completed(),
+                    None => {
+                        scan.end();
+                        if scan.finished && !scan.failed {
+                            timer.completed();
+                        } else {
+                            timer.failed();
+                        }
+                    }
                     Some(Err(_)) => timer.failed(),
-                    Some(Ok(bytes)) => scan.observe(bytes),
+                    Some(Ok(bytes)) => {
+                        scan.observe(bytes);
+                        if scan.failed {
+                            timer.failed();
+                        }
+                    }
                 }
             }
             chunk.map(|chunk| (chunk, (stream, timer, scan)))
@@ -981,29 +1040,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn issue_4157_stream_error_events_are_seen_across_chunks() {
-        let seen = |chunks: &[&str]| {
-            let mut scan = StreamErrorScan::default();
+    fn issue_4157_streams_succeed_only_when_they_finish_without_an_error() {
+        // (failed, finished) after the chunks and the end of the stream.
+        let scan = |chunks: &[&str]| {
+            let mut scan = StreamOutcomeScan::default();
             for chunk in chunks {
                 scan.observe(chunk.as_bytes());
             }
-            scan.seen
+            scan.end();
+            (scan.failed, scan.finished)
         };
-        assert!(seen(&[
-            "data: {\"error\": {\"message\": \"No deployments available\"}}\n\n"
-        ]));
-        assert!(seen(&[
-            "event: response.failed\ndata: {\"ty",
-            "pe\":\"response.failed\",\"response\":{}}\n\n",
-        ]));
-        assert!(seen(&[
-            "data: {\"type\": \"error\", \"code\": \"server_error\"}\n\n"
-        ]));
-        // Model text arrives JSON-escaped, so it never matches.
-        assert!(!seen(&[
-            "data: {\"choices\":[{\"delta\":{\"content\":\"\\\"type\\\":\\\"error\\\"\"}}]}\n\n",
-            "data: [DONE]\n\n",
-        ]));
+        // Reported failures, wherever the error sits and however it is spaced.
+        assert!(
+            scan(&["data: {\"error\": {\"message\": \"No deployments\"}}\n\n"])
+                .0
+        );
+        assert!(
+            scan(&["data: {\"id\":\"x\",\"error\":{\"code\":\"500\"}}\n\n"]).0
+        );
+        assert!(
+            scan(&[
+                "event: response.failed\ndata: {\"ty",
+                "pe\" : \"response.failed\",\"response\":{}}\n\n",
+            ])
+            .0
+        );
+        assert!(
+            scan(&["data: {\"type\": \"error\", \"code\": \"server_error\"}"])
+                .0
+        );
+        // Finished streams, of both APIs, and one ending on a finish reason.
+        assert_eq!(
+            scan(&["data: {\"choices\":[]}\n\n", "data: [DONE]\n\n"]),
+            (false, true)
+        );
+        assert_eq!(
+            scan(&["data: {\"type\":\"response.completed\",\"response\":{}}\r\n\r\n"]),
+            (false, true)
+        );
+        assert_eq!(
+            scan(&["data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"]),
+            (false, true)
+        );
+        // Truncated: empty, or cut after the first event.
+        assert_eq!(scan(&[]), (false, false));
+        assert_eq!(
+            scan(&[
+                "data: {\"type\":\"response.created\",\"response\":{}}\n\n"
+            ]),
+            (false, false)
+        );
+        // Model text arrives JSON-escaped and is not an error.
+        assert_eq!(
+            scan(&[
+                "data: {\"choices\":[{\"delta\":{\"content\":\"\\\"error\\\": 1\"},\"finish_reason\":null}]}\n\n",
+                "data: [DONE]\n\n",
+            ]),
+            (false, true)
+        );
     }
 
     #[test]
@@ -1309,7 +1403,8 @@ mod tests {
         let (client, metrics, recorder) = recording_engine_client();
         let ai_engine =
             checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
-        let chunk = Ok::<_, actix_web::Error>(Bytes::from_static(b"data"));
+        let chunk =
+            Ok::<_, actix_web::Error>(Bytes::from_static(b"data: [DONE]\n\n"));
 
         let completed = observe_stream_body(
             futures_util::stream::iter([chunk]),
@@ -1347,22 +1442,24 @@ mod tests {
         let events = Ok::<_, actix_web::Error>(Bytes::from_static(
             b"data: {\"error\": {\"message\": \"No deployments available\"}}\n\n",
         ));
-        let streamed = observe_stream_body(
-            futures_util::stream::iter([events]),
+        let mut streamed = Box::pin(observe_stream_body(
+            futures_util::stream::iter([events])
+                .chain(futures_util::stream::pending()),
             client.start_stream_body_timer(&ai_engine),
-        )
-        .collect::<Vec<_>>()
-        .await;
-        // The client still gets the event; only the outcome changes.
-        assert_eq!(streamed.len(), 1);
+        ));
+        // The client still gets the event, then leaves before the stream ends.
+        assert!(streamed.next().await.unwrap().is_ok());
+        drop(streamed);
         metrics.force_flush_for_test();
         assert_one_stream_sample(&recorder, "failed");
-        assert!(recorder
-            .find_with_attributes(
-                "echo.ai_provider.stream.duration",
-                &[("outcome", "completed"), ("process", "echo-test")],
-            )
-            .is_none());
+        for outcome in ["completed", "cancelled"] {
+            assert!(recorder
+                .find_with_attributes(
+                    "echo.ai_provider.stream.duration",
+                    &[("outcome", outcome), ("process", "echo-test")],
+                )
+                .is_none());
+        }
     }
 
     #[actix_web::test]

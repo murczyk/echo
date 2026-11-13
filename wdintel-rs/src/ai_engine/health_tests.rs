@@ -438,7 +438,7 @@ async fn issue_4157_a_call_running_longer_than_the_idle_window_blocks_the_probe(
     let id = engine.engine.id;
     // A call that started long ago, beyond the counters, and still runs.
     let health = HealthSink::new(env.redis.clone());
-    health.begin(id);
+    let call = health.begin(id);
     let mut redis = env.redis.clone();
     for _ in 0..50 {
         if in_flight(&mut redis, id).await.unwrap() == 1 {
@@ -456,7 +456,7 @@ async fn issue_4157_a_call_running_longer_than_the_idle_window_blocks_the_probe(
     run_round(&env, probe).await.unwrap();
     assert_eq!(probes.load(Ordering::SeqCst), 0);
     // Once it ends, the idle engine is probed.
-    health.end(id);
+    health.end(id, call);
     for _ in 0..50 {
         if in_flight(&mut redis, id).await.unwrap() == 0 {
             break;
@@ -466,4 +466,32 @@ async fn issue_4157_a_call_running_longer_than_the_idle_window_blocks_the_probe(
     run_round(&env, probe).await.unwrap();
     assert_eq!(probes.load(Ordering::SeqCst), 1);
     assert_eq!(reload(&env, id).await.unhealthy, Some(false));
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_4157_a_call_a_dead_process_left_behind_does_not_block_probes() {
+    let env = cleanup().await.unwrap();
+    let engine = idle_automatic_mark(&env, 200).await;
+    let id = engine.engine.id;
+    // Listed three hours ago and never ended.
+    let mut redis = env.redis.clone();
+    let _: () = redis::cmd("ZADD")
+        .arg(in_flight_key(id))
+        .arg(Utc::now().timestamp_millis() - 3 * 60 * 60 * 1000)
+        .arg(Uuid::now_v7().to_string())
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert_eq!(in_flight(&mut redis, id).await.unwrap(), 0);
+    let probes = AtomicUsize::new(0);
+    run_round(&env, |probed: ai_engine::Model| {
+        if probed.id == id {
+            probes.fetch_add(1, Ordering::SeqCst);
+        }
+        async { true }
+    })
+    .await
+    .unwrap();
+    assert_eq!(probes.load(Ordering::SeqCst), 1);
 }

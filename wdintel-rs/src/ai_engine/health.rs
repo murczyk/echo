@@ -51,8 +51,9 @@ const FIELD_OK: &str = "ok";
 const FIELD_FAILED: &str = "failed";
 /// Counters outlive the longest window they feed.
 const BUCKET_TTL_SECS: i64 = (AI_ENGINE_HEALTH_WINDOW_MINUTES + 5) * 60;
-/// Longer than any provider call or stream runs.
-const IN_FLIGHT_TTL_SECS: i64 = 2 * 60 * 60;
+/// Longer than any provider call or stream runs. A call still listed after
+/// this was left behind by a process that died.
+const IN_FLIGHT_MAX_MS: i64 = 2 * 60 * 60 * 1000;
 
 /// Where a client's call outcomes are counted.
 #[derive(Clone)]
@@ -70,30 +71,42 @@ impl HealthSink {
         self.spawn_increment(engine_id, FIELD_TOTAL);
     }
 
-    /// A call or stream is now running on the engine; [`Self::end`] once it
-    /// stops. The worker never probes an engine with one running, however long.
-    pub(super) fn begin(&self, engine_id: Uuid) {
-        self.spawn_in_flight(engine_id, 1);
+    /// A call or stream is now running on the engine; [`Self::end`] it once it
+    /// stops. The worker never probes an engine with one running, however
+    /// long, and drops entries older than `IN_FLIGHT_MAX_MS`.
+    pub(super) fn begin(&self, engine_id: Uuid) -> Uuid {
+        let call = Uuid::now_v7();
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return call;
+        };
+        let mut redis = self.redis.clone();
+        let started_ms = Utc::now().timestamp_millis();
+        runtime.spawn(async move {
+            let key = in_flight_key(engine_id);
+            let mut pipe = redis::pipe();
+            pipe.atomic();
+            pipe.zadd(&key, call.to_string(), started_ms).ignore();
+            pipe.expire(&key, IN_FLIGHT_MAX_MS / 1000).ignore();
+            if let Err(error) = pipe.query_async::<()>(&mut redis).await {
+                log::warn!(target: LOG_TARGET, "engine_id={engine_id} in-flight start failed: {error:?}");
+            }
+        });
+        call
     }
 
-    pub(super) fn end(&self, engine_id: Uuid) {
-        self.spawn_in_flight(engine_id, -1);
-    }
-
-    fn spawn_in_flight(&self, engine_id: Uuid, delta: i64) {
+    pub(super) fn end(&self, engine_id: Uuid, call: Uuid) {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
         let mut redis = self.redis.clone();
         runtime.spawn(async move {
-            let key = in_flight_key(engine_id);
-            let mut pipe = redis::pipe();
-            pipe.atomic();
-            pipe.incr(&key, delta).ignore();
-            // A crashed process leaves its calls counted; they expire with the key.
-            pipe.expire(&key, IN_FLIGHT_TTL_SECS).ignore();
-            if let Err(error) = pipe.query_async::<()>(&mut redis).await {
-                log::warn!(target: LOG_TARGET, "engine_id={engine_id} in-flight update failed: {error:?}");
+            let removed: redis::RedisResult<()> = redis::cmd("ZREM")
+                .arg(in_flight_key(engine_id))
+                .arg(call.to_string())
+                .query_async(&mut redis)
+                .await;
+            if let Err(error) = removed {
+                log::warn!(target: LOG_TARGET, "engine_id={engine_id} in-flight end failed: {error:?}");
             }
         });
     }
@@ -160,17 +173,23 @@ fn in_flight_key(engine_id: Uuid) -> String {
     format!("{AI_ENGINE_HEALTH_REDIS_PREFIX}{engine_id}:in-flight")
 }
 
-/// Calls and streams running on the engine now.
+/// Calls and streams running on the engine now, leaving out those a dead
+/// process left behind.
 async fn in_flight(
     redis: &mut ConnectionManager,
     engine_id: Uuid,
-) -> anyhow::Result<i64> {
-    let count: Option<i64> = redis::cmd("GET")
-        .arg(in_flight_key(engine_id))
-        .query_async(redis)
-        .await
-        .c(h!())?;
-    Ok(count.unwrap_or(0).max(0))
+) -> anyhow::Result<u64> {
+    let key = in_flight_key(engine_id);
+    let oldest = Utc::now().timestamp_millis() - IN_FLIGHT_MAX_MS;
+    let mut pipe = redis::pipe();
+    pipe.cmd("ZREMRANGEBYSCORE")
+        .arg(&key)
+        .arg("-inf")
+        .arg(oldest)
+        .ignore();
+    pipe.cmd("ZCARD").arg(&key);
+    let (count,): (u64,) = pipe.query_async(redis).await.c(h!())?;
+    Ok(count)
 }
 
 /// Whether nobody called the engine lately and nothing is running on it.

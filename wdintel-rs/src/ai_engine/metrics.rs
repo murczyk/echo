@@ -42,8 +42,9 @@ struct PendingCall {
 /// records it instead of letting the call vanish from the latency data.
 pub(super) struct ProviderCallAttempt {
     pending: Option<PendingCall>,
-    /// The engine's health counters, which see the same outcome (#4157).
-    health: Option<(HealthSink, uuid::Uuid)>,
+    /// The engine's health counters, which see the same outcome (#4157), with
+    /// the engine and this call's in-flight entry.
+    health: Option<(HealthSink, uuid::Uuid, uuid::Uuid)>,
     streaming: bool,
     provider_started_at: Option<Instant>,
 }
@@ -64,8 +65,8 @@ impl ProviderCallAttempt {
             health: health.map(|health| {
                 // Counted when it starts, so a long call shows the engine is in use.
                 health.record_start(engine.id);
-                health.begin(engine.id);
-                (health.clone(), engine.id)
+                let call = health.begin(engine.id);
+                (health.clone(), engine.id, call)
             }),
             streaming,
             provider_started_at: None,
@@ -92,8 +93,8 @@ impl ProviderCallAttempt {
     }
 
     fn record(&mut self, outcome: &'static str) {
-        if let Some((health, engine_id)) = self.health.take() {
-            health.end(engine_id);
+        if let Some((health, engine_id, call)) = self.health.take() {
+            health.end(engine_id, call);
             // A stream's headers only promise an answer; its timer records how
             // the stream ended instead.
             if !(self.streaming && outcome == "ok") {
@@ -131,7 +132,7 @@ impl Drop for ProviderCallAttempt {
 /// how it ended for the engine's health.
 pub(crate) struct StreamBodyTimer {
     pending: Option<(Arc<Metrics>, AiProviderLabels)>,
-    health: Option<(HealthSink, uuid::Uuid)>,
+    health: Option<(HealthSink, uuid::Uuid, uuid::Uuid)>,
     started_at: Instant,
 }
 
@@ -149,8 +150,8 @@ impl StreamBodyTimer {
             pending: sink
                 .map(|sink| (sink.metrics.clone(), sink.labels(engine))),
             health: health.map(|health| {
-                health.begin(engine.id);
-                (health.clone(), engine.id)
+                let call = health.begin(engine.id);
+                (health.clone(), engine.id, call)
             }),
             started_at: Instant::now(),
         })
@@ -165,8 +166,8 @@ impl StreamBodyTimer {
     }
 
     fn record(&mut self, outcome: &'static str) {
-        if let Some((health, engine_id)) = self.health.take() {
-            health.end(engine_id);
+        if let Some((health, engine_id, call)) = self.health.take() {
+            health.end(engine_id, call);
             if let Some(outcome) = stream_health_outcome(outcome) {
                 health.record(engine_id, outcome);
             }
