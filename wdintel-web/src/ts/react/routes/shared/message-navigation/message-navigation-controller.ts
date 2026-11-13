@@ -12,7 +12,10 @@ export type MessageNavigationHost<Landing> = {
 };
 
 export type MessageNavigationController = {
-  navigate: (reference: string) => Promise<MessageNavigationOutcome>;
+  navigate: (
+    reference: string,
+    resolvedContext?: InboxItemContextRsp,
+  ) => Promise<MessageNavigationOutcome>;
   cancel: () => void;
 };
 
@@ -44,7 +47,10 @@ export function createMessageNavigationController<Landing>(
     previous.host.invalidateNavigation();
   };
 
-  const navigate = async (reference: string): Promise<MessageNavigationOutcome> => {
+  const navigate = async (
+    reference: string,
+    resolvedContext?: InboxItemContextRsp,
+  ): Promise<MessageNavigationOutcome> => {
     cancel();
     const operation: Operation = { controller: new AbortController(), host: getHost() };
     active = operation;
@@ -59,9 +65,12 @@ export function createMessageNavigationController<Landing>(
     };
 
     try {
-      const resolution = await resolveLinkedMessageContext(reference, signal);
+      const resolution = resolvedContext
+        ? { status: 'found' as const, context: resolvedContext }
+        : await resolveLinkedMessageContext(reference, signal);
       if (!isCurrent()) return { status: 'cancelled' };
-      if (resolution.status === 'unavailable') return finish('unavailable');
+      if (resolution.status === 'unavailable' || resolution.context.message == null)
+        return finish('unavailable');
 
       let landing: Landing | null;
       try {

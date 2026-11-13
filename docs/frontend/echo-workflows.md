@@ -126,8 +126,9 @@ explicit order, but report missing prerequisites instead of silently reordering.
 Main may return defects to dev and repeat affected QA checks within an authorized
 dev+QA chain. After three unsuccessful repair cycles for the same defect, stop
 with diagnosis/options. A standalone QA request never starts a repair loop.
-Local checks use the [default authorization](#default-local-verification-authorization)
-and [test selection policy](#test-selection-policy). Human
+Task-scoped local E2E and browser verification follow the default authorization
+and [test selection policy](#test-selection-policy); do not request a separate testing-permission sentence. Real-environment
+mutations retain the operation/target approval gate in `AGENTS.md`. Human
 acceptance, QA verification and dev self-checks are distinct. Children never
 commit, push, manage PRs, merge or deploy; main follows existing Git permissions,
 and push/PR/publication is not implied by a workflow request. Real-environment
@@ -135,40 +136,119 @@ mutations retain the explicit `AGENTS.md` approval gate.
 
 ## Test selection policy
 
-Follow [process and verification scope](design-workflow.md#process-and-verification-scope).
-Main lists changed/related feature files and scenarios in each handoff; no
-unrelated suites. Full-suite execution belongs to the pre-PR check or an explicit
-request. Independent QA verifies affected outcomes itself, but need not repeat
+During development, QA preparation, verification and repairs, run tests only for
+changed features and features affected by shared-code changes. Main identifies
+those consumers and records explicit suite/file selections in the handoff;
+unrelated application areas stay out of the run. For example, use
+`npm run test:ts -- src/ts/react/routes/rer-duty-neo` for Duty Vitest coverage
+and select affected Playwright spec files instead of running every browser test.
+Build/type/lint checks remain applicable under the owning contracts.
+
+Run the full test suite as the pre-PR check coordinated by main or when explicitly requested. A local
+edit, dev completion, QA handoff or verification pass is not a full-suite trigger.
+Reuse a successful full run if the tested code has not changed; a subsequent
+code change requires fresh applicable validation before creating the PR.
+
+Follow the proportional [verification scope](design-workflow.md#process-and-verification-scope).
+Independent QA exercises affected outcomes itself, without automatically repeating
 every successful dev command. Reuse build/type evidence only for matching source
 and environment; rerun affected checks after changes or unresolved failures.
 
 ## Default local verification authorization
 
-Invoking dev or QA for implementation/preparation/verification includes the
-necessary installed local tests, synthetic browser checks and applicable
-build/type/format checks under the shared verification scope. Main supplies the
-actual commands and test environment; no repeated permission sentence is needed.
-Respect explicit no-execution limits. No package/browser installation, external
-upload or real-environment mutation is implied. Maintenance/quoted invocations
-are not product-test authorization.
+An actual invocation of `echo-dev` for approved implementation or `echo-qa` for
+task preparation/verification includes the necessary local verification. Main
+derives and records the affected baseline/regression tests, task-scoped E2E,
+browser checks and applicable build/type/lint commands and local API mode in the
+handoff. Use synthetic or isolated test-owned data; browser scenarios use CPU
+slowdown **4x**. QA prepare may run relevant baseline/RED checks as part of test
+preparation; it still cannot implement product behavior. The user need not repeat
+an additional sentence permitting these checks or reconfirm each transition.
 
-### CPU throttling baseline
+Use existing installed runners and browsers, reusing an appropriate local preview
+or starting the repository's task-local test/preview process when needed. Stop
+only processes started for this task; do not replace another running environment.
+Test data mutations stay within isolated test-owned resources. This permission
+does not include package/browser installation, unrelated test campaigns, external
+accounts/uploads or changes to shared databases and real environments. Staging,
+including `echo-staging`, production and all their mutations retain the explicit
+operation/target approval gate in `AGENTS.md`. Human acceptance is not implied.
 
-Affected browser interactions run with **CPU slowdown 4x** before interactions.
-Return the setting, scenarios, responsiveness observations and unavailable checks;
-an unthrottled run alone does not establish this baseline. Do not multiply the
-browser matrix beyond the changed behavior's risks.
+Explicit read-only, prepare-without-execution, command or environment restrictions
+take precedence and must be passed to the child. Missing tools/CPU controls or
+safe test resources remain reported gaps, not reasons to weaken checks or bypass
+sandbox approvals. Skill/configuration maintenance, quoted invocations and
+read-only role smokes do not invoke dev/QA or authorize product verification.
+This is task authorization, not a tool ACL or permission-mode change, and never
+invokes another stage or a real environment implicitly.
+
+## CPU throttling baseline
+
+Functionality is always developed with **CPU throttling: 4x slowdown** in mind.
+This is the default browser baseline for dev and QA, even when the approved spec
+does not repeat it. Dev accounts for it during implementation and self-checks;
+QA prepare includes it in affected browser scenarios and QA verify checks them.
+
+Use available browser CPU controls to set 4x before navigation/interactions and
+keep it enabled for affected flows, including relevant loading, input/filtering,
+scrolling and recovery, with representative data volumes. Check correctness and
+responsiveness against approved criteria; report freezes, delayed feedback and
+timing/race defects. Do not invent numerical performance budgets or hide failures
+with extra sleeps, retries or increased timeouts.
+
+Record browser, CPU setting/method, data volume, scenario IDs and observed results
+in dev/QA evidence. Unthrottled runs are supplementary. If authorized execution
+or CPU controls are unavailable, report the 4x scenarios as not-run/unverified
+with the reason; do not claim the baseline passed. Execution follows the default
+local verification authorization and any explicit owner restrictions. Browser
+CPU slowdown does not emulate network latency
+or backend load, and does not replace other required checks or environment gates.
 
 ## Design and functionality verification
 
-Pass actual Figma nodes, screenshots/videos, approved revisions and relevant
-existing component sources. Dev and QA each inspect the supplied references,
-compare the rendered affected states and exercise the specified behavior.
-Check for missing requirements and unapproved extra behavior. Builds/tests alone
-do not prove visual or interaction fidelity. Missing reference access or required
-runtime execution remains explicitly unverified and prevents a claimed complete
-pass for those criteria. Review-text screenshots are feedback to validate against
-source, not UI design references. Read-only reference access never permits edits.
+This check is mandatory for dev self-verification and QA verify; each role
+performs it itself. Main supplies the actual references and latest approved
+specification, including owner-approved amendments. A prior role's report,
+passing tests or a successful build does not replace direct inspection.
+
+- If Figma is supplied, open and inspect the relevant linked nodes and their
+  screenshots through the official read-only connection under [Figma access](figma-access.md).
+  If screenshots are supplied, view the actual images. Inspect both when both
+  are supplied; record which source/version and approved overrides apply.
+  Unapproved design proposals do not override approved requirements. Resolve
+  conflicting or ambiguous references through main before dependent changes.
+- Compare the rendered implementation with those references at corresponding
+  widths, themes and states. Check placement and side of panels, component
+  hierarchy, dimensions, spacing, typography, content and visible interaction
+  states. Record concrete expected/actual differences; do not infer visual
+  fidelity from source code or screenshots that were never opened.
+- Exercise the specification's user journeys and state transitions, including
+  relevant negative cases and preserved behavior. Map each new or changed
+  user-visible control, action and behavior to an approved requirement. Check
+  both that required functionality exists and that unspecified functionality
+  has not been added. Designs, backend capabilities, helpful ideas and tests
+  do not independently authorize new behavior. Missing requirements return
+  through main for an owner decision and specification update before dependent
+  implementation. Silence in a task spec is not permission to remove existing
+  behavior covered by the owning contracts; routine implementation details
+  within approved behavior do not need separate feature approval.
+- Dev fixes scoped discrepancies and repeats affected checks; QA reports
+  discrepancies to main without editing product code. Each returns concise
+  requirement/reference → observed outcome → pass/fail/not-run evidence,
+  including any unexpected functionality. QA must perform its own reference
+  comparison and behavioral checks, not adopt dev's verdict. QA prepare uses
+  these sources for coverage and expected outcomes, not an implementation pass.
+
+If reference access or required execution is unavailable, state the missing
+source/scenario and reason, continue independent permitted work, and mark the
+check unverified/not-run. Do not claim visual fidelity, functional completion
+or an overall QA pass while a required check is missing. An explicitly approved
+deviation must be recorded in the specification/approved reference; do not
+silently treat an observed mismatch as acceptable. This check grants no Figma
+writes, external uploads or real-environment mutations.
+
+Review-text screenshots are feedback to validate against actual source, not UI
+design references.
 
 For changed interactions, enforce the [motion acceptance gate](../../DESIGN.md#motion-and-state-continuity).
 Dev implements and self-checks it; QA independently observes the affected enter/exit
@@ -204,31 +284,44 @@ plan, prepared tests/coverage map, relevant contracts and code; it does not need
 the designer's exploratory conversation. Load only relevant references and return
 short evidence summaries rather than copying full logs between stages.
 
-Before designer/dev/QA dispatch, main saves the current specification to a readable Markdown
-file, by default `specs/<task-id-or-slug>/specification.md` from the Git root.
-The existing ignore rule keeps it local. Materialize approved in-chat/manual
-requirements too; a spec-role run is not a prerequisite. For requested technical
-planning, save `implementation-plan.md` beside it. Use an explicit user destination
-when supplied. Include latest decisions, approval/revision, criteria, source state
-and evidence limits; verify paths are readable from the destination checkout.
-Pass document links, not the exploratory transcript or complete logs. A spec
-stage creating new requirements consumes the task brief; main saves its returned
-specification before approval and any downstream handoff.
+Use a short brief with absolute artifact paths rather than copying complete
+code/logs. Every task specification must exist as a Markdown document before
+handoff. Main assigns `specs/<task-id-or-slug>/specification.md` from the Git root
+by default, or the user's explicit destination, without asking for routine path
+confirmation. The existing `specs/` ignore rule keeps the default artifacts local.
+Main materializes approved in-chat/manual requirements before dispatch too; a
+previous spec-role run is not required. Keep the document current after owner
+corrections and include the task, settled decisions, acceptance IDs, scope,
+source revision, approval status, coverage and evidence limits so a fresh agent
+can work without this chat. When technical planning is requested, main also
+saves `implementation-plan.md` beside it, referencing the exact spec revision.
+Pass `spec_path` and applicable `plan_path`, verify they are readable from the
+destination checkout/host, and return their links to the user. Saving documents
+does not grant approval or invoke another stage. Do not pass the exploratory
+conversation or reconstruct it from session history.
+For a new spec stage, main assigns the output path before dispatch; the role
+creates the Markdown document from the task brief. An input specification need
+not already exist for that authoring stage. Main saves approved manual inputs
+before downstream design/dev/QA dispatch.
 
 ```text
 role / stage / requested sequence:
 invocation: actual user request excerpt / named skill(s) / task and permitted stages
 authorization: owner-approved scope, current phase, execution permission
-spec_path (absolute Markdown path) / revision / owner approval and decisions:
-plan_path (when technical planning requested) / input spec revision:
-cleanup_paths (exact task-created temporary documents):
+spec_path (absolute Markdown path) / document revision / owner approval and decisions:
+plan_path (absolute Markdown path, when planning was requested) / input spec revision:
+cleanup_paths (exact temporary documents created for this task; retain until dev + QA verify pass):
 design_paths / design approval (when applicable):
+design references: actual Figma links/nodes and screenshot paths, versions/approval and applicable states
 output_preset / explicit task overrides:
 output_format / Figma target, permitted operations and synthetic input scope (when requested):
 revision / staged, unstaged and untracked starting changes:
 relevant_paths: contracts, source, shared consumers, prepared tests
 allowed_write_paths: assigned files or none
 allowed_commands: actual local commands, environment/API mode or none
+local verification: default task-scoped permission / explicit owner restrictions
+dev/QA CPU baseline: 4x slowdown; affected browser scenarios/data and execution limits
+spec/designer UX: mandatory ongoing analysis, best-practice check and findings in output
 stop_after:
 return: artifact paths, changes, commands/results, gaps and blockers
 ```
@@ -240,19 +333,20 @@ permissions; this configuration does not create independent sandboxes.
 
 | Artifact | Required content |
 | --- | --- |
-| Specification (spec role or manual input) | User/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; owner decisions and unresolved questions |
-| Design result (designer) | Input specification revision/approval; acceptance-ID → UX flow/frame/state mapping; reused component/token sources; design links/notes, observations, UX decisions, design approval and evidence limits; requirement gaps returned to the owner |
-| Implementation plan (main, only for requested planning/dev work) | Approved specification and needed design links; expected files/reasons; shared consumers/invariants; exact existing test paths/cases and gaps; new tests marked planned; small steps and real verification commands |
+| Specification (spec role or manual input) | Saved Markdown path and document revision/approval status; user/task/outcome; sources/revision; scope/non-goals; decisions versus hypotheses; stable acceptance/scenario IDs; preconditions/actions/results; business rules, state transitions, permissions, validation, recovery and context; applicable width/theme/accessibility requirements; UX analysis and best-practice check for spec-role output; owner decisions and unresolved questions |
+| Design result (designer) | Input specification revision/approval; acceptance-ID → UX flow/frame/state mapping; reused component/token sources; design links/notes, observations, UX decisions, UX analysis and best-practice check, design approval and evidence limits; requirement gaps returned to the owner |
+| Implementation plan (main, only for requested planning/dev work) | Saved Markdown path; input specification path/revision and approval evidence; needed design links; expected files/reasons; shared consumers/invariants; exact existing test paths/cases and gaps; new tests marked planned; small steps and real verification commands |
 | QA prepare result | Acceptance ID → existing/new test → preserved/changed behavior → observed result or not-run; gaps, baseline readiness, execution limits |
 | Dev result | Input versions/revision/dirty scope; expected versus actual changes; scenario/test outcomes; commands/environment/API mode; browser observations; deviations and unverified work |
 | QA verify result | Exact criteria/revision/dirty diff; pass/fail/not-run with evidence; severity, reproduction, expected/actual; coverage gaps and readiness for joint review |
 
-Main saves returned specifications using the handoff paths and returns their
-links; include an implementation plan only for requested planning/dev scope.
-Generated design notes/audit reports remain chat output or explicitly assigned
-external artifacts. Do not add temporary task output to shared `docs/` or Git.
-Durable behavior contracts and shared skill/workflow guidance are repository
-documentation, distinct from temporary handoff output.
+Task specifications and requested implementation plans are mandatory Markdown
+handoff documents at the assigned paths; chat summaries alone are insufficient.
+Design notes and audit reports still default to chat unless a document was
+assigned. Do not automatically put generated task artifacts under `docs/` or
+add them to Git. Shared skill/workflow documentation stays in the repository.
+An implementation plan still requires a separate planning/dev scope and belongs
+to main, not spec or designer.
 For Figma deliverables, images/screenshots are transient inspection evidence;
 do not save companion PNG/mockup files into repository documentation or link them
 there unless the user explicitly requests an export.
@@ -260,16 +354,53 @@ Keep role results in its evidence section or the task/PR, with full sanitized
 logs/captures in a stated ignored local directory. No report publication or new
 status database is implied. Resume from these materials after compaction.
 
-### Handoff document lifecycle
+## Handoff document lifecycle
 
-Main records exact task-created specification/plan `cleanup_paths`. Keep them
-available through implementation, QA and repairs. After implementation and a
-successful QA VERIFY for the same final source/dirty state, main records evidence
-outside those paths and automatically deletes only those temporary documents.
-Do not delete after QA PREPARE or dev alone; failed/interrupted/required not-run
-verification keeps the documents for continuation. A dev-only task never invokes
-QA merely to qualify for cleanup. Do not remove user-provided documents, another
-task's files, shared contracts, tests or captures, or delete a whole directory.
+Specifications and implementation plans created for a task are temporary handoff
+documents. Keep them available through dev, QA prepare/verify and any repairs.
+After implementation is complete and QA verify passes the applicable criteria
+for the same final revision/dirty diff, main records the final result and
+automatically deletes the exact task-created files listed in `cleanup_paths`.
+Dev and QA return these paths and completion/verification evidence to main;
+neither deletes the documents while another stage still needs them. No extra
+cleanup confirmation is needed for these generated files.
+
+Dev self-checks, QA prepare, a failed/interrupted verify or a required not-run
+check do not satisfy this condition: retain the files for continuation. Do not
+invoke an unrequested QA stage to unlock cleanup. Remove only the listed
+generated documents, never a whole `specs/` tree, another task's files,
+user-provided source documents, shared guidance, product code, tests or QA
+evidence. Honor an explicit user instruction to retain the documents. Saving or
+cleaning up artifacts does not grant Git, publication or deployment authority.
+
+## UX analysis and best-practice check
+
+Spec and designer must analyze UX throughout their work: establish the user task
+and current friction during discovery, assess meaningful alternatives as decisions
+are made, and recheck the proposed result before handoff. A final checklist alone
+does not replace this analysis. Use repository product context, contracts and
+actual source/artifacts; preserve established patterns and approved decisions.
+
+Check relevant UX principles: clear system status and feedback; familiar domain
+language and consistency; user control, Back/cancel and context preservation;
+error prevention and recovery; recognition over recall and cognitive load;
+efficient frequent tasks; information/action hierarchy; keyboard/focus,
+accessibility and responsive behavior; loading, empty, error and success states.
+Explain material tradeoffs rather than citing a generic best practice as proof.
+
+Include a **UX analysis** section in the specification or design notes: checked
+principles; scenario/acceptance ID → evidence or hypothesis → user impact →
+decision/proposed change and rationale → validation needed. Record supported
+no-change conclusions, unresolved risks and evidence limits; do not invent issues.
+For work without user-facing impact, state why the check is not applicable.
+
+Spec translates findings into proposed behavioral requirements and observable
+acceptance criteria for approval, leaving layout to designer. Designer checks
+concrete flows/states with repository Impeccable `critique`, documents UX choices
+and returns requirement changes to their owner before dependent work continues.
+Plugins, live previews and user research are not prerequisites for this analysis;
+label source-only/static checks and hypotheses. Heuristic review does not prove
+rendered interactions or user-tested usability and grants no extra tool access.
 
 ## Specification
 
@@ -288,7 +419,8 @@ Assign stable acceptance/scenario IDs and observable outcomes, preserve existing
 behavior, and name exact existing coverage/gaps without claiming tests ran.
 Describe applicable accessibility/theme/responsive constraints, leaving UX layout
 and styling to designer unless already constrained by the owner or contracts.
-Return the specification in chat, or write only its assigned external file. No wireframes,
+Write the specification to its assigned Markdown `spec_path`, update it after
+owner corrections and return the document link/revision in chat. No wireframes,
 Figma access, implementation plans, product code, executable tests or test/build
 execution. No Figma destination is needed. Return readiness/open questions and
 evidence limits, then stop for owner approval. Main owns technical planning.
@@ -354,6 +486,8 @@ Require the approved spec, implementation authorization and QA-prepared or
 otherwise equivalent tests/coverage map. Trivial docs/static styling can have an
 explicitly justified no-behavior-tests entry under `CODE_REVIEW.md`. Test readiness
 is not a claim that tests passed. Inspect actual files and the starting dirty state.
+Apply [design and functionality verification](#design-and-functionality-verification)
+before returning dev results.
 
 1. Execute authorized preserved baseline tests before product edits. Important affected user journeys missing coverage need QA preparation first. Observe relevant RED for changed behavior; a bug reproduction is RED while preserved neighbors remain green. Setup failures/flakes are not RED. If the required baseline cannot run, stop dependent edits.
 2. Implement the whole approved scope in small coherent blocks. Use existing components/tokens and stack skills. Inspect cumulative staged/unstaged/untracked changes after each block. Explain every new area; update the impact map and checks before shared-component/API expansion. Resolve material product changes through main.
@@ -363,8 +497,9 @@ is not a claim that tests passed. Inspect actual files and the starting dirty st
 
 Use repository `make-interfaces-feel-better` for approved details with Echo tokens
 and reduced-motion/accessibility rules. No new styling system or global visual
-change follows from loading it. Local execution follows the shared authorization
-and test selection policy; real environments retain their owner gate.
+change follows from loading it. Task-scoped local E2E is covered by the default
+verification authorization; real-environment approval and human acceptance remain
+separate.
 
 Before implementation, read repository [Ponytail](../../.github/skills/ponytail/SKILL.md)
 directly and apply its default `full` level unless the task selects `lite`/`ultra`.
@@ -392,20 +527,24 @@ These sources are unchanged; this workflow adds no `.agents/skills` aliases for 
 Main assigns exactly one mode. Use the repository `playwright-best-practices` and
 [regression guidance](../../.github/skills/frontend-regression-safety/SKILL.md)
 within that mode; guidance cannot authorize product fixes or extra execution.
+Apply [design and functionality verification](#design-and-functionality-verification)
+within the assigned prepare/verify mode.
 
 Read repository [systematic-debugging](../../.github/skills/systematic-debugging/SKILL.md)
 for failures and [verification-before-completion](../../.github/skills/verification-before-completion/SKILL.md)
 before returning prepare/verify results, not personal copies or Superpowers aliases.
-Default local execution is included for an actual QA task under the shared
-authorization, unless explicitly limited. Unexecuted checks remain not-run;
-a verify assignment does not permit product or permanent test/assertion edits.
+Necessary local execution is covered by an actual QA invocation unless the owner
+restricts it. Prepared tests that were not executed remain not-run; a verify
+assignment does not permit product or permanent test/assertion edits.
 
 **Prepare:** after spec approval, map stable acceptance IDs to existing tests/gaps,
 then add useful behavior tests/fixtures before product changes. Follow Echo's
 Playwright, Vitest, Elm and backend test boundaries. Preserve existing behavior
 with green baseline cases and identify changed behavior intended to fail before
-implementation. Execute only the commands allowed in the brief; without execution,
-record not-run instead of inventing RED/GREEN. Return readiness/gaps and stop.
+implementation. Main includes necessary local checks under the default
+verification authorization in the brief, honoring explicit owner limits. Without
+execution, record not-run instead of inventing RED/GREEN. Return readiness/gaps
+and stop.
 
 **Verify:** inspect the actual implementation/diff and criteria, not only the dev
 report. Run relevant authorized checks and rendered interactions; report missing

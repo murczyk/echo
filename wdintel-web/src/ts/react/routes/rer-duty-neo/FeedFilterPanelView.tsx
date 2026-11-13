@@ -1,5 +1,5 @@
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
-import { AnalysisSearchControls } from '../rer-analysis-neo/components/AnalysisSearchControls';
+import { DutySearchControls } from './DutySearchControls';
 import { useRadioFeatures } from '../shared/RadioFeatures';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
@@ -404,9 +404,7 @@ export function FeedFilterPanelView({
           onRenameExisting={savedFilters.onRenameExisting}
           onDeleteExisting={savedFilters.onDeleteExisting}
         />
-        {search ? (
-          <AnalysisSearchControls {...search} isCompactLayout={false} onClose={() => {}} />
-        ) : null}
+        {search ? <DutySearchControls {...search} label="Фільтр по ключовому слову" /> : null}
       </Box>
     </Box>
   );

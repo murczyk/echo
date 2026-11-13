@@ -64,7 +64,6 @@
   cursor: default;
 }
 
-.group-navigation-list-item:focus-visible,
 .group-navigation-panel:focus-visible {
   outline: 2px solid var(--echo-color-primary, var(--color-action));
   outline-offset: 2px;
@@ -91,27 +90,9 @@
   inline-size: 100%;
   min-block-size: 4rem;
   gap: 0.875rem;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid transparent;
-  border-radius: 0.625rem;
-  background: transparent;
-  color: var(--echo-color-text, var(--color-text));
   text-align: start;
   font: inherit;
   cursor: pointer;
-}
-
-.group-navigation-list-item:hover {
-  background: color-mix(in srgb, var(--echo-color-text, #fff) 6%, transparent);
-}
-
-.group-navigation-list-item[data-selected='true'] {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--echo-color-text, #fff) 8%, transparent);
-}
-
-.group-navigation-list-item[data-selected='true']:hover {
-  background: color-mix(in srgb, var(--echo-color-text, #fff) 10%, transparent);
 }
 
 .group-navigation-panel-layer {
@@ -134,12 +115,6 @@
   block-size: 100%;
   padding: 0.75rem;
   border: 0;
-  background: color-mix(
-    in srgb,
-    var(--echo-color-text, var(--color-text)) 4%,
-    var(--echo-color-surface-inactive, var(--color-card))
-  );
-  color: var(--echo-color-text, var(--color-text));
   box-shadow:
     inset -1px 0 var(--echo-color-divider, var(--color-divider)),
     0.75rem 0 1.5rem color-mix(in srgb, #000 32%, transparent);

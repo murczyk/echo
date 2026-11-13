@@ -3,11 +3,10 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 export const DUTY_FEED_COLUMN_SELECTOR = '[data-duty-feed-column]';
 
 export function findDutyFeedColumn(feedId: string | null): HTMLElement | null {
-  return (
-    Array.from(document.querySelectorAll<HTMLElement>(DUTY_FEED_COLUMN_SELECTOR)).find(
-      (column) => column.dataset.dutyFeedId === feedId,
-    ) ?? null
+  const column = Array.from(document.querySelectorAll<HTMLElement>(DUTY_FEED_COLUMN_SELECTOR)).find(
+    (column) => column.dataset.dutyFeedId === feedId,
   );
+  return column?.querySelector<HTMLElement>('[data-duty-feed-main]') ?? column ?? null;
 }
 
 type DutyMinimalReportEditorOptions = {

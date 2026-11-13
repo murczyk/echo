@@ -13,7 +13,10 @@ const COPIED_TEXT = 'E2E copied original body';
 async function openThreeColumnDuty(
   page: Page,
   minimalReportWindowEnabled: boolean,
-  dutyRememberReportGroup = true,
+  {
+    enableDutySearch = false,
+    dutyRememberReportGroup = true,
+  }: { enableDutySearch?: boolean; dutyRememberReportGroup?: boolean } = {},
 ) {
   await page.setViewportSize({ width: 1920, height: 1000 });
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({ messageText: SOURCE_TEXT });
@@ -24,6 +27,7 @@ async function openThreeColumnDuty(
   ] as (typeof inboxResponse.inbox_items)[number]);
   await installMessageCardMediaPreviewAssetRoutes(page);
   const dutyMocks = await installRerDutyShortStateMocks(page, {
+    enableDutySearch,
     inboxResponse,
     signalGroups: ['e2e-group'],
   });
@@ -89,7 +93,7 @@ test.describe('#4008 minimal report window', () => {
     page,
   }) => {
     await page.addInitScript(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
-    await openThreeColumnDuty(page, true, false);
+    await openThreeColumnDuty(page, true, { dutyRememberReportGroup: false });
     await openReportFromColumn(page, 1);
     const panel = page.locator('[data-manage-message-presentation="minimal"]');
     await expect(panel.getByText('Без надсилання в групу.')).toBeVisible();
@@ -173,7 +177,13 @@ test.describe('#4008 minimal report window', () => {
   });
 
   test('expands into the full side panel and keeps the draft', async ({ page }) => {
-    await openThreeColumnDuty(page, true);
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await openThreeColumnDuty(page, true, { enableDutySearch: true });
+    const source = page.locator('[data-duty-feed-column]').nth(2);
+    await source.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+    await source.getByRole('combobox', { name: /пошук/i }).fill('E2E');
+    await source.getByRole('combobox', { name: /пошук/i }).press('Escape');
     await openReportFromColumn(page, 2);
     const panel = page.locator('[data-manage-message-presentation="minimal"]');
     await expect(panel).toBeVisible();
@@ -184,6 +194,21 @@ test.describe('#4008 minimal report window', () => {
     const editor = page.locator('[data-manage-message-presentation="embedded"]');
     await expect(editor).toBeVisible();
     await expect(panel).toHaveCount(0);
+    await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
+    const column = page.locator('[data-duty-feed-column]');
+    await expect(column.getByRole('combobox', { name: /пошук/i })).toHaveValue('E2E');
+    await expect
+      .poll(async () => {
+        const [feed, workspace] = await Promise.all([
+          column.boundingBox(),
+          page.locator('[data-duty-workspace-main]').boundingBox(),
+        ]);
+        return (
+          feed!.x >= workspace!.x - 1 &&
+          feed!.x + feed!.width <= workspace!.x + workspace!.width + 1
+        );
+      })
+      .toBe(true);
     await expect(editor.getByRole('textbox', { name: 'Текст розвіддонесення' })).toHaveValue(
       'Чернетка',
     );

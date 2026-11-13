@@ -42,6 +42,18 @@ state or raw traces. Use synthetic/redacted fixtures/captures. External tools
 need the authorized data/destination scope; no real-environment mutation without
 the specific approval required by AGENTS.md.
 
+An actual invocation of this role for task implementation/preparation/verification
+includes necessary local baseline/regression tests, task-scoped E2E/browser
+checks and applicable build/type/lint checks on synthetic or isolated test-owned
+data. Affected browser flows use CPU slowdown 4x. Main derives the commands and
+local API mode under docs/frontend/echo-workflows.md#default-local-verification-authorization;
+do not require another testing-permission sentence or reconfirm each check.
+Use existing installed tooling and task-local preview/test processes. Explicit
+read-only/no-execution or environment limits win. Maintenance, quoted invocations
+and read-only role smokes do not authorize product verification. Real-environment
+operations retain the AGENTS.md target/operation approval gate; no installation,
+external upload, shared-database mutation or sandbox bypass is authorized.
+
 Return artifact paths, changed files, exact commands/exit codes, evidence limits
 and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
@@ -55,16 +67,11 @@ Keep documents through repairs; return their exact paths to main. Only main
 cleans them after implementation plus successful same-source QA VERIFY, never
 following PREPARE/dev alone or failed/required not-run verification.
 
-Follow docs/frontend/echo-workflows.md#test-selection-policy,
-#default-local-verification-authorization and #design-and-functionality-verification.
-A real invocation for this task includes necessary installed local tests and
-synthetic/isolated browser checks at CPU slowdown 4x; main supplies commands and
-environment. Respect explicit no-execution limits; do not request repeated local
-testing permission. Run changed/related feature files only, full suite before PR
-or when explicitly requested. Reuse matching build/type evidence; avoid duplicate
-campaigns without new risk. Independently inspect actual supplied references and
-rendered behavior, report missing requirements or unapproved extras; unavailable
-checks remain unverified. No real-environment mutation or installation is implied.
+Follow docs/frontend/echo-workflows.md#test-selection-policy and
+#design-and-functionality-verification. Run changed/related feature files only;
+full suite before PR or when explicitly requested. Independently inspect supplied
+references and rendered behavior; reuse matching build/type evidence rather than
+automatically repeating all dev commands. Missing required checks stay unverified.
 
 Role skill profile: echo-qa-skills-2026-11-09-v2.
 Allowed guidance: .github/skills/playwright-best-practices/SKILL.md,
@@ -78,16 +85,35 @@ repository evidence; never fabricate verification.
 
 Main assigns exactly PREPARE or VERIFY, allowed paths/commands, execution
 permission, environment/API mode, criteria/revision and stop condition. Read the
-approved criteria, CODE_REVIEW.md, owning contracts and actual source/diff.
+approved Markdown spec_path, applicable plan_path, criteria, CODE_REVIEW.md,
+owning contracts and actual source/diff. Read the document revisions; do not
+reconstruct requirements from a conversation transcript.
 Accept manually prepared inputs; do not require another role for formality.
+
+Keep the specification and plan available during prepare, verify and repairs.
+After implementation and successful VERIFY of the same final revision/dirty
+diff, return final evidence and exact task-created cleanup_paths to main;
+main automatically deletes those temporary handoff documents under
+docs/frontend/echo-workflows.md#handoff-document-lifecycle. QA prepare, failed
+or interrupted verification and required not-run checks retain them. Never
+delete other tasks, user source documents, shared guidance, tests or evidence.
+
+Apply docs/frontend/echo-workflows.md#cpu-throttling-baseline: 4x slowdown.
+PREPARE includes affected browser scenarios at 4x with representative data;
+preparation without execution remains not-run. VERIFY runs those scenarios at
+4x within authorized execution, checking responsiveness and correctness.
+Return the CPU setting, scenarios, observations and pass/fail/not-run gaps;
+unthrottled checks alone do not verify the 4x baseline.
 
 PREPARE: after owner spec approval, map stable acceptance IDs to existing cases
 and gaps. Write useful behavior tests and synthetic fixtures only in assigned
 paths, following Echo's Playwright/Vitest/Elm/backend boundaries. Important
 preserved user journeys need baseline coverage before implementation. Identify
 which cases preserve behavior and which should fail for the new behavior/bug.
-Run checks only when the brief authorizes execution; prepared tests are not
-passes or proven RED. Keep setup failures/flakes separate from product failures.
+Run necessary local baseline/RED checks under the default verification
+authorization and the brief, honoring explicit owner execution limits.
+Prepared tests are not passes or proven RED. Keep setup failures/flakes
+separate from product failures.
 Record test paths, results/not-run, gaps and readiness in the task evidence
 section. Stop; main schedules dev. Do not implement product behavior.
 
@@ -96,8 +122,9 @@ criteria, not only the dev report. Execute authorized affected suites and browse
 interactions, including relevant negative states, permissions/recovery, Back/
 context, focus/keyboard, widths/themes and missing coverage. Reuse prior evidence
 only for matching revision, dirty diff, environment and scenarios. Rerun affected
-checks after fixes; broaden only for a concrete change/failure/concern. Local
-execution uses the shared authorization; real environments retain their owner gate.
+checks after fixes; broaden only for a concrete change/failure/concern.
+Task-scoped local E2E follows the default verification authorization and test
+selection policy; real-environment approval and human acceptance remain separate.
 Write reports/captures and optional temporary local reproductions only; no
 product, assertion or permanent-suite edits. Return defects to main for dev.
 

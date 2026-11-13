@@ -20,6 +20,7 @@ import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
 
 export type DutyFeedColumnModelDeps = {
   feeds: RerDutyFeedsBundle;
+  searchColumnFor?: (feed: MessageFeedState) => FeedColumnModel['search'];
   editorSourceFeedId: string | null;
   editorHighlightedMessageId: number | null;
   linkedMessageFocus?: { feedId: string; filterSignature: string; focus: MessageFeedFocus } | null;
@@ -441,6 +442,7 @@ export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
       unreadBoundaryMessageId: unreadBoundaries.get(feed.id)?.messageId ?? null,
     },
     filterPanel: buildFeedFilterPanel(feed, deps),
+    search: deps.searchColumnFor?.(feed),
     groupNavigation: {
       scope: groupFilterScope(feed.filter.groupsSelected ?? []),
       showSelectedGroups: deps.dutySelectedGroupsEnabled,

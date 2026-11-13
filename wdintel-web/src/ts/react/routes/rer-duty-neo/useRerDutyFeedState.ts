@@ -41,6 +41,7 @@ import { useRerDutyReferenceData } from './useRerDutyReferenceData';
 import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
 import { useRerDutyShortState } from './useRerDutyShortState';
 import { createEmptyFeedState, useRerDutyInitialLoad } from './useRerDutyInitialLoad';
+import type { DutyFeedInitialTarget } from './useRerDutyInitialLoad';
 import { buildFeedCountSignature } from './rerDutyFeedCount';
 import { compareMessageTuple, messageOrderCursor, messageOrderTimestamp } from './utils';
 import { loadDutyNotificationPreview } from './dutyNotificationPreview';
@@ -821,15 +822,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     };
   }, []);
 
-  const feedInitialTargetByFeedIdRef = useRef<
-    Record<string, { beforeIdNoninclusive: number; messageIds: number[] } | undefined>
-  >({});
-  const setFeedInitialTarget = useCallback(
-    (feedId: string, target: { beforeIdNoninclusive: number; messageIds: number[] }) => {
-      feedInitialTargetByFeedIdRef.current[feedId] = target;
-    },
-    [],
+  const feedInitialTargetByFeedIdRef = useRef<Record<string, DutyFeedInitialTarget | undefined>>(
+    {},
   );
+  const setFeedInitialTarget = useCallback((feedId: string, target: DutyFeedInitialTarget) => {
+    const feed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+    if (!feed) return;
+    feedInitialTargetByFeedIdRef.current[feedId] = {
+      ...target,
+      filterSignature: stableStringify(feed.filter),
+    };
+  }, []);
 
   const loadFeedInitialMessages = useRerDutyInitialLoad({
     messageFeeds,
