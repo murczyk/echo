@@ -34,14 +34,24 @@ pub async fn purge_batch(
 /// So only a message that passes all of these is purged:
 /// - the system login's marker comment, from before this replay was
 ///   installed (its migration), when the old replay could still write it;
+/// - the comment written at exactly the message's `timestamp`: the old replay
+///   stamped both with one clock reading, while a parsed comment gets the
+///   database's insert time and a message its interception time;
 /// - already soft-deleted, so no visible message is ever touched;
-/// - the marker not in its own text, which rules out a parsed comment;
 /// - no comment migrated into a message of its own, which would be orphaned.
+///   The comment migration's lock is held, so none can be migrated meanwhile.
 ///
 /// Every condition is in the query, so a skipped message cannot stall it.
 pub async fn purge_legacy_batch(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT pg_advisory_xact_lock($1)",
+        [crate::sigint::comments::SIGINT_COMMENT_MIGRATION_LOCK_KEY.into()],
+    ))
+    .await
+    .c(h!())?;
     let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
     let rows = txn
         .query_all_raw(Statement::from_sql_and_values(
@@ -57,8 +67,8 @@ pub async fn purge_legacy_batch(
                 FROM seaql_migrations
                 WHERE version = $3
               )
+              AND c.created_at = m.timestamp
               AND m.deleted
-              AND strpos(lower(coalesce(m.body, '')), lower($2)) = 0
               AND NOT EXISTS (
                 SELECT 1 FROM sigint_comment migrated
                 WHERE migrated.signal_message_id = m.id

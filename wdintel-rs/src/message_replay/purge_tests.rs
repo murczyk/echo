@@ -11,15 +11,25 @@ struct Fixture<'a> {
     /// When the comment was written; the old replay wrote before this replay
     /// was installed.
     days_ago: i64,
+    /// The old replay stamped the comment and the message's `timestamp` with
+    /// one clock reading.
+    stamped: bool,
 }
 
 async fn commented_message(
     db: &DatabaseConnection,
     fixture: Fixture<'_>,
 ) -> i64 {
+    let written = Utc::now().naive_utc() - Duration::days(fixture.days_ago);
+    let timestamp = if fixture.stamped {
+        written
+    } else {
+        written - Duration::seconds(13)
+    };
     let message = mk_signal_message(
         db,
         signal_message::ActiveModel {
+            timestamp: Set(Some(timestamp)),
             deleted: Set(fixture.deleted),
             body: Set(Some(fixture.body.to_string())),
             ..Default::default()
@@ -42,9 +52,7 @@ async fn commented_message(
             signal_message_id: Set(message.id),
             login_id: Set(fixture.login_id),
             comment: Set(fixture.comment.to_string()),
-            created_at: Set(
-                Utc::now().naive_utc() - Duration::days(fixture.days_ago)
-            ),
+            created_at: Set(written),
             ..Default::default()
         },
     )
@@ -74,16 +82,29 @@ async fn issue_4110_purges_only_the_copies_the_previous_replay_left_behind() {
         deleted,
         body,
         days_ago,
+        stamped: true,
     };
     // A copy the old cleanup hid: the one thing to purge.
     let hidden =
         commented_message(db, copy(true, "Позивний Береза", 400)).await;
     // Still visible, so never touched.
     let live = commented_message(db, copy(false, "Позивний Береза", 400)).await;
-    // Comment parsing gave this real message the marker from its own text.
+    // Comment parsing gave these real messages the marker from their text,
+    // and one was edited afterwards: the comment has its own insert time.
     let parsed = commented_message(
         db,
-        copy(true, "Позивний Береза. Comment: [DUPLICATE]", 400),
+        Fixture {
+            stamped: false,
+            ..copy(true, "Позивний Береза. Comment: [duplicate]", 400)
+        },
+    )
+    .await;
+    let edited = commented_message(
+        db,
+        Fixture {
+            stamped: false,
+            ..copy(true, "Позивний Береза", 400)
+        },
     )
     .await;
     // Written after this replay was installed, so not the old replay's.
@@ -139,9 +160,62 @@ async fn issue_4110_purges_only_the_copies_the_previous_replay_left_behind() {
         .await
         .unwrap()
         .is_none());
-    for kept in [live, parsed, recent, migrated, by_user, other] {
+    for kept in [live, parsed, edited, recent, migrated, by_user, other] {
         assert!(!purged.contains(&kept), "{kept} was purged");
         assert!(exists(db, kept).await);
     }
     assert!(exists(db, comment_message.id).await);
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_4110_legacy_purge_waits_for_the_comment_migration() {
+    let env = cleanup().await.unwrap();
+    let db = &env.dbx;
+    let system = crate::users::system_login_id(db).await.unwrap();
+    let hidden = commented_message(
+        db,
+        Fixture {
+            login_id: system,
+            comment: MESSAGE_REPLAY_LEGACY_MARKER,
+            deleted: true,
+            body: "Позивний Береза",
+            days_ago: 400,
+            stamped: true,
+        },
+    )
+    .await;
+    // A comment migration batch is running: it could give the copy a
+    // migrated comment between the purge's lookup and its deletes.
+    let migration = db.begin().await.unwrap();
+    migration
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT pg_advisory_xact_lock($1)",
+            [
+                crate::sigint::comments::SIGINT_COMMENT_MIGRATION_LOCK_KEY
+                    .into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    let mut purge = std::pin::pin!(async {
+        let txn = db.begin().await.unwrap();
+        let batch = purge_legacy_batch(&txn).await.unwrap();
+        txn.commit().await.unwrap();
+        batch
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(500), &mut purge)
+            .await
+            .is_err(),
+        "the purge ran during the comment migration"
+    );
+    migration.commit().await.unwrap();
+    let purged =
+        tokio::time::timeout(std::time::Duration::from_secs(30), purge)
+            .await
+            .expect("the purge went on after the comment migration");
+    assert_eq!(purged, vec![hidden]);
+    assert!(!exists(db, hidden).await);
 }
