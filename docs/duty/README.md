@@ -187,23 +187,36 @@ never marks messages read and never mounts another MessageCard/media tree.
 Failed refreshes retain the cache; error/retry feedback appears in the page
 snackbar, outside the result panel.
 
-Desktop search adds a 270px track to the left of its source feed, below a shared
-full-width column header, with horizontal overflow. Results show group, sender,
+When the embedded message/report editor is open, search fits inside the remaining
+feed workspace rather than widening it. Keep all feeds at least 360px wide;
+when search would break that minimum, temporarily hide only search, preserving
+its cache and pausing its requests. If the feeds themselves do not fit, use the
+existing active-feed tabs. A manual search open in a tight editor layout overlays
+its source feed; selecting a result hides the overlay without losing the draft.
+Tab switches preserve the source search intent and editor draft. Closing the
+editor restores automatically hidden search, unless explicitly closed or replaced.
+Source and result-list reading anchors remain preserved.
+
+With the embedded editor closed, desktop search adds a 270px track to the left of its source feed, below a shared
+full-width column header. A single feed reserves that 270px inside the available
+width as the window narrows; multiple feeds keep their intentional horizontal
+expansion. Results show group, sender,
 creation time and an emphasized matching snippet. Sibling feed widths remain
 stable. Selecting a result jumps to its message without animated scrolling,
 retaining the surrounding feed context. On narrow screens, search overlays the
 source feed at its full width without widening the column or adding horizontal
 overflow. Selecting a result closes the overlay and reveals the message with
 its surrounding context; reopening restores the query, results, selection and
-list position until the query is deliberately cleared. On mobile, opening an
-empty search focuses the input; reopening a saved query leaves it unfocused so
+list position until the query is deliberately cleared. On mobile, the search action follows highlighting, before any column-close
+action. Opening an empty search focuses the input; reopening a saved query leaves it unfocused so
 results can be navigated without opening the keyboard. Clearing the query
 focuses the input again. Receiving results while typing does not steal focus.
 Enter in the mobile search
 input dismisses the keyboard without closing search or clearing the query;
 keyboard selection of a search mode still applies before focus is removed.
 Narrow/editor active-only
-layouts still mount one feed and preserve its source width. Explicit close returns keyboard focus to
+layouts still mount only one feed tree; embedded editor sizing follows the width
+budget above. Explicit close returns keyboard focus to
 the source search action. Search popups own Escape before the enclosing panel.
 Search results reuse their known message ID without a context-lookup request.
 Loaded messages land directly; unloaded messages retain the readable feed during
@@ -221,7 +234,9 @@ Search entry (180ms) and exit (140ms) animate the whole column's width,
 including its header. Message widths stay fixed, following columns move with
 the resized column, and the search panel is clipped to its remaining space so
 it never fades over returning cards. Narrow layouts use the full-width overlay
-without a column-width transition.
+without a column-width transition. With the embedded editor, search animates its
+reserved width together with the source feed; window resizing cancels obsolete
+geometry rather than animating toward an old width.
 Repeated search/group toggles and
 result steps apply immediately, including during a transition; exiting panels
 are inert. Initial results appear together once (100ms); refreshes retain the

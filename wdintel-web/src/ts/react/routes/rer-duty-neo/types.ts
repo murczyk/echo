@@ -33,6 +33,7 @@ export type FeedColumnModel = {
   view: {
     enableDutySearch?: boolean;
     searchBaseWidth?: number;
+    searchPresentation?: 'inline' | 'overlay' | 'hidden';
     /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible feed min-height. */
     narrowScreen?: boolean;
     /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */

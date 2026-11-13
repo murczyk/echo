@@ -46,6 +46,7 @@ export type DutySearchColumn = {
   navigating: boolean;
   state: SearchState;
   onOpen: () => void;
+  onVisibilityChange?: (visible: boolean) => void;
   onClose: (options?: { restoreFocus?: boolean }) => void;
   onChange: (updates: Partial<Pick<SearchState, 'search' | 'searchMode' | 'period'>>) => void;
   onRetry: () => void;
@@ -203,8 +204,9 @@ export function useDutySearch(dependencies: Dependencies) {
   const statesRef = useRef(states);
   const dependenciesRef = useRef(dependencies);
   dependenciesRef.current = dependencies;
+  const [suspendedFeedId, setSuspendedFeedId] = useState<string | null>(null);
   const activeRef = useRef(activeFeedId);
-  activeRef.current = activeFeedId;
+  activeRef.current = activeFeedId === suspendedFeedId ? null : activeFeedId;
   const requestRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const refreshPendingRef = useRef(false);
@@ -360,6 +362,7 @@ export function useDutySearch(dependencies: Dependencies) {
       }));
       return;
     }
+    if (suspendedFeedId === activeFeedId) return;
     const timer = setTimeout(() => {
       void run();
     }, SEARCH_DEBOUNCE_MS);
@@ -369,6 +372,7 @@ export function useDutySearch(dependencies: Dependencies) {
     };
   }, [
     activeFeedId,
+    suspendedFeedId,
     activeSignature,
     blocked,
     activeState?.search,
@@ -381,7 +385,7 @@ export function useDutySearch(dependencies: Dependencies) {
   ]);
 
   useInboxChangedMessageIds({
-    enabled: Boolean(activeFeedId) && !blocked,
+    enabled: Boolean(activeFeedId) && activeFeedId !== suspendedFeedId && !blocked,
     scopeKey: activeFeedId,
     minIntervalMs: dependencies.pollIntervalMs,
     onMessageIds: (ids) => {
@@ -429,8 +433,15 @@ export function useDutySearch(dependencies: Dependencies) {
       blocked: Boolean(feed.filter.search?.trim()),
       navigating: dependencies.navigatingFeedId === feed.id,
       state,
+      onVisibilityChange: (visible) => {
+        if (!visible) cancel();
+        setSuspendedFeedId((current) =>
+          visible ? (current === feed.id ? null : current) : feed.id,
+        );
+      },
       onOpen: () => {
         if (feed.filter.search?.trim()) return;
+        setSuspendedFeedId(null);
         focusRequestRef.current += 1;
         cancel();
         dependenciesRef.current.cancelNavigation();

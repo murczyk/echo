@@ -844,7 +844,11 @@ export function RerDutyNeoPage({
                     narrowScreen={narrowScreen}
                     onSelectFeed={(next) => {
                       setActiveFeedId(next);
-                      if (dutySearch.activeFeedId && next !== dutySearch.activeFeedId)
+                      if (
+                        !editorEmbeddedOpen &&
+                        dutySearch.activeFeedId &&
+                        next !== dutySearch.activeFeedId
+                      )
                         dutySearch.close();
                     }}
                     editorOpen={editorOpen}

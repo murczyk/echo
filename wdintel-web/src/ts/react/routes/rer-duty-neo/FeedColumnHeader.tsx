@@ -238,6 +238,48 @@ export function FeedColumnHeader({
   const iconOnlyHeader = narrowScreen || feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
   const hasActiveFilter = filterPanel.hasActiveFilter;
 
+  const searchToggle = search ? (
+    <div
+      className={`flex min-w-0 flex-1 items-stretch border-solid border-echo-divider ${narrowScreen ? 'border-l' : 'border-r'}`}
+    >
+      <Tooltip
+        title={search.blocked ? DUTY_SEARCH_BLOCKED_TEXT : search.open ? '' : 'Пошук у стрічці'}
+      >
+        <span className="flex w-full items-stretch">
+          <SearchToggle
+            iconOnly={iconOnlyHeader}
+            className="duty-header-panel-toggle"
+            id={`duty-search-trigger-${feedId}`}
+            aria-label="Пошук у стрічці"
+            aria-expanded={search.open}
+            disabled={search.blocked || showFilters || showNotificationPanel || showKeywordsPanel}
+            size="small"
+            {...(!iconOnlyHeader
+              ? { variant: 'text' as const, startIcon: <SearchIcon fontSize="small" /> }
+              : {})}
+            onClick={onToggleSearch}
+            sx={{
+              ...headerIconButtonSx,
+              ...(narrowScreen ? { height: 36, maxHeight: 36 } : {}),
+              width: '100%',
+              maxWidth: '100%',
+              ...(!iconOnlyHeader
+                ? {
+                    minWidth: 0,
+                    px: 1,
+                    backgroundColor: 'transparent',
+                    '& .MuiButton-startIcon': { flexShrink: 0, mr: 0.25 },
+                  }
+                : {}),
+              color: search.open ? 'primary.light' : 'text.primary',
+            }}
+          >
+            {iconOnlyHeader ? <SearchIcon fontSize="small" /> : 'Пошук'}
+          </SearchToggle>
+        </span>
+      </Tooltip>
+    </div>
+  ) : null;
   return (
     <Box
       sx={{
@@ -317,50 +359,7 @@ export function FeedColumnHeader({
             alignItems: 'stretch',
           }}
         >
-          {search ? (
-            <div className="flex min-w-0 flex-1 items-stretch border-r border-solid border-echo-divider">
-              <Tooltip
-                title={
-                  search.blocked ? DUTY_SEARCH_BLOCKED_TEXT : search.open ? '' : 'Пошук у стрічці'
-                }
-              >
-                <span className="flex w-full items-stretch">
-                  <SearchToggle
-                    iconOnly={iconOnlyHeader}
-                    className="duty-header-panel-toggle"
-                    id={`duty-search-trigger-${feedId}`}
-                    aria-label="Пошук у стрічці"
-                    aria-expanded={search.open}
-                    disabled={
-                      search.blocked || showFilters || showNotificationPanel || showKeywordsPanel
-                    }
-                    size="small"
-                    {...(!iconOnlyHeader
-                      ? { variant: 'text' as const, startIcon: <SearchIcon fontSize="small" /> }
-                      : {})}
-                    onClick={onToggleSearch}
-                    sx={{
-                      ...headerIconButtonSx,
-                      ...(narrowScreen ? { height: 36, maxHeight: 36 } : {}),
-                      width: '100%',
-                      maxWidth: '100%',
-                      ...(!iconOnlyHeader
-                        ? {
-                            minWidth: 0,
-                            px: 1,
-                            backgroundColor: 'transparent',
-                            '& .MuiButton-startIcon': { flexShrink: 0, mr: 0.25 },
-                          }
-                        : {}),
-                      color: search.open ? 'primary.light' : 'text.primary',
-                    }}
-                  >
-                    {iconOnlyHeader ? <SearchIcon fontSize="small" /> : 'Пошук'}
-                  </SearchToggle>
-                </span>
-              </Tooltip>
-            </div>
-          ) : null}
+          {!narrowScreen ? searchToggle : null}
           <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
             <HeaderPanelToggle
               mobile={narrowScreen}
@@ -451,6 +450,7 @@ export function FeedColumnHeader({
               onClick={onToggleKeywordsPanel}
             />
           </Box>
+          {narrowScreen ? searchToggle : null}
         </Box>
         <Box
           data-duty-feed-header-actions

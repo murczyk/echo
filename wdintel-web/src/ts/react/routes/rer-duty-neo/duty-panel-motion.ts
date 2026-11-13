@@ -58,41 +58,99 @@ export function useDutyPanelPresence(open: boolean) {
   return { ref, present: open || visible };
 }
 
+type DutyColumnSize = {
+  open: boolean;
+  baseWidth: number | undefined;
+  width: number | undefined;
+  layoutWidth: number | undefined;
+};
+
+function captureDutyColumnMotions(
+  element: HTMLElement | null,
+  before: DutyColumnSize,
+  after: DutyColumnSize,
+  animations: Map<HTMLElement, Animation>,
+) {
+  const targets: Array<[HTMLElement | null, Record<string, number>, Record<string, number>]> =
+    element &&
+    after.width !== undefined &&
+    before.width !== undefined &&
+    after.baseWidth !== undefined &&
+    before.baseWidth !== undefined
+      ? [
+          [element, { width: before.width }, { width: after.width }],
+          [
+            element.querySelector<HTMLElement>('[data-duty-feed-main]'),
+            { width: before.baseWidth, marginLeft: before.open ? DUTY_SEARCH_PANEL_WIDTH_PX : 0 },
+            { width: after.baseWidth, marginLeft: after.open ? DUTY_SEARCH_PANEL_WIDTH_PX : 0 },
+          ],
+          [
+            element.querySelector<HTMLElement>('[data-duty-search-panel]')?.parentElement ?? null,
+            { width: before.open ? DUTY_SEARCH_PANEL_WIDTH_PX : 0 },
+            { width: after.open ? DUTY_SEARCH_PANEL_WIDTH_PX : 0 },
+          ],
+        ]
+      : [];
+  return targets.flatMap(([target, from, to]) => {
+    if (!target) return [];
+    const running = animations.get(target)?.playState === 'running';
+    const style = running ? getComputedStyle(target) : null;
+    const frames = [from, to].map((values, index) =>
+      Object.fromEntries(
+        Object.entries(values).map(([property, value]) => [
+          property,
+          index === 0 && style ? style[property as 'width' | 'marginLeft'] : `${value}px`,
+        ]),
+      ),
+    );
+    return [{ target, frames }];
+  });
+}
+
 export function useDutyColumnWidth(
   ref: RefObject<HTMLElement | null>,
   open: boolean,
   baseWidth: number | undefined,
   enabled: boolean,
 ) {
-  const previous = useRef({ open, baseWidth, width: baseWidth });
-  const animationRef = useRef<Animation | null>(null);
+  const layoutWidth = ref.current?.parentElement?.clientWidth;
+  const previous = useRef({ open, baseWidth, width: baseWidth, layoutWidth });
+  const animations = useRef(new Map<HTMLElement, Animation>());
   useLayoutEffect(() => {
     const element = ref.current;
     const before = previous.current;
     const width = baseWidth ? baseWidth + (open ? DUTY_SEARCH_PANEL_WIDTH_PX : 0) : undefined;
-    previous.current = { open, baseWidth, width };
-    const from =
-      element && animationRef.current?.playState === 'running'
-        ? Number.parseFloat(getComputedStyle(element).width)
-        : before.width;
-    animationRef.current?.cancel();
-    if (
-      !element ||
-      !enabled ||
-      before.open === open ||
-      before.baseWidth !== baseWidth ||
-      from === undefined ||
-      width === undefined ||
-      from === width
-    )
+    const containerWidth = element?.parentElement?.clientWidth;
+    previous.current = { open, baseWidth, width, layoutWidth: containerWidth };
+    const resizing = before.layoutWidth !== containerWidth;
+    if (!enabled || resizing) {
+      for (const animation of animations.current.values()) animation.cancel();
+      animations.current.clear();
       return;
-    animationRef.current = animateDutyElement(
-      element,
-      [{ width: `${from}px` }, { width: `${width}px` }],
-      open ? 180 : 140,
-    );
-  }, [ref, open, baseWidth, enabled]);
-  useLayoutEffect(() => () => animationRef.current?.cancel(), []);
+    }
+    if (before.open === open && before.baseWidth === baseWidth) return;
+    const motions = captureDutyColumnMotions(element, before, previous.current, animations.current);
+    for (const animation of animations.current.values()) animation.cancel();
+    animations.current.clear();
+    const duration = open || (baseWidth ?? 0) < (before.baseWidth ?? 0) ? 180 : 140;
+    for (const { target, frames } of motions) {
+      const animation = animateDutyElement(target, frames, duration);
+      if (animation) {
+        animations.current.set(target, animation);
+        void animation.finished
+          .finally(() => {
+            if (animations.current.get(target) === animation) animations.current.delete(target);
+          })
+          .catch(() => {});
+      }
+    }
+  }, [ref, open, baseWidth, enabled, layoutWidth]);
+  useLayoutEffect(
+    () => () => {
+      for (const animation of animations.current.values()) animation.cancel();
+    },
+    [],
+  );
 }
 
 export function useDutyResultAppearance(

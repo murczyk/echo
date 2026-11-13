@@ -12,8 +12,12 @@ import {
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { useObservedWidth } from '../../hooks/use-observed-width';
-import { shouldUseActiveFeedLayout } from './duty-editor-layout';
-import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
+import {
+  DUTY_MIN_EDITOR_FEED_WIDTH,
+  DUTY_MULTI_FEED_GAP,
+  shouldUseActiveFeedLayout,
+} from './duty-editor-layout';
+import { DUTY_SEARCH_PANEL_WIDTH_PX, DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
 import { MessageFeedSkeletons, type AnchorSnapshot } from '../shared/message-feed';
 
 function DutyNeoInitialLoadingSkeletonFeedHeader({
@@ -300,6 +304,74 @@ export function RerDutyNeoWorkspace({
     activeFeedOnly && messageFeeds.length > 0
       ? (messageFeeds.find((feed) => feed.id === activeFeedId) ?? messageFeeds[0])
       : null;
+  const [overlaySearchFeedId, setOverlaySearchFeedId] = useState<string | null>(null);
+  const visibleFeedCount = activeFeedOnly ? 1 : messageFeeds.length;
+  const searchFits =
+    trackWidth == null ||
+    trackWidth >=
+      visibleFeedCount * DUTY_MIN_EDITOR_FEED_WIDTH +
+        Math.max(0, visibleFeedCount - 1) * DUTY_MULTI_FEED_GAP +
+        DUTY_SEARCH_PANEL_WIDTH_PX;
+  const searchVisible = Boolean(
+    searchFeedId &&
+    (!activeFeedOnly || activeOnlyFeed?.id === searchFeedId) &&
+    (!editorEmbeddedOpen || searchFits || overlaySearchFeedId === searchFeedId),
+  );
+  const searchVisibilityRef = useRef(buildFeedColumnModel);
+  searchVisibilityRef.current = buildFeedColumnModel;
+  useLayoutEffect(() => {
+    const feed = messageFeeds.find((feed) => feed.id === searchFeedId);
+    if (feed) searchVisibilityRef.current(feed).search?.onVisibilityChange?.(searchVisible);
+  }, [searchFeedId, searchVisible]);
+  useEffect(() => {
+    if (!editorEmbeddedOpen || overlaySearchFeedId !== searchFeedId) setOverlaySearchFeedId(null);
+  }, [editorEmbeddedOpen, overlaySearchFeedId, searchFeedId]);
+  const adaptEditorSearch = (column: FeedColumnModel): FeedColumnModel => {
+    if (!editorEmbeddedOpen) return column;
+    const presentation = !searchFits
+      ? overlaySearchFeedId === column.feed.id
+        ? 'overlay'
+        : 'hidden'
+      : 'inline';
+    const inlineSearch = searchVisible && searchFits;
+    const width =
+      trackWidth == null
+        ? undefined
+        : Math.max(
+            0,
+            (trackWidth -
+              Math.max(0, visibleFeedCount - 1) * DUTY_MULTI_FEED_GAP -
+              (inlineSearch ? DUTY_SEARCH_PANEL_WIDTH_PX : 0)) /
+              visibleFeedCount,
+          );
+    const search = column.search;
+    return {
+      ...column,
+      view: {
+        ...column.view,
+        searchBaseWidth:
+          width === undefined
+            ? undefined
+            : visibleFeedCount === 1
+              ? Math.min(width, DUTY_SINGLE_FEED_MAX_WIDTH_PX)
+              : width,
+        searchPresentation: presentation,
+      },
+      search: search
+        ? {
+            ...search,
+            onOpen: () => {
+              if (!searchFits) setOverlaySearchFeedId(column.feed.id);
+              search.onOpen();
+            },
+            onSelect: (item) => {
+              if (presentation === 'overlay') setOverlaySearchFeedId(null);
+              search.onSelect(item);
+            },
+          }
+        : undefined,
+    };
+  };
   const activeFeedIndex = activeOnlyFeed
     ? messageFeeds.findIndex((feed) => feed.id === activeOnlyFeed.id)
     : -1;
@@ -482,7 +554,7 @@ export function RerDutyNeoWorkspace({
                       ref={(el) => {
                         columnRefsRef.current[activeOnlyFeed.id] = el;
                       }}
-                      column={{
+                      column={adaptEditorSearch({
                         ...activeOnlyColumn,
                         view: {
                           ...activeOnlyColumn.view,
@@ -492,7 +564,7 @@ export function RerDutyNeoWorkspace({
                               ? 'none'
                               : activeOnlyColumn.view.maxWidth,
                         },
-                      }}
+                      })}
                     />
                   </Box>
                 ) : null
@@ -515,7 +587,16 @@ export function RerDutyNeoWorkspace({
                       searchBaseWidth:
                         (trackWidth ?? 0) > 0
                           ? messageFeeds.length === 1
-                            ? Math.min(trackWidth ?? 0, DUTY_SINGLE_FEED_MAX_WIDTH_PX)
+                            ? Math.min(
+                                Math.max(
+                                  0,
+                                  (trackWidth ?? 0) -
+                                    (feed.id === searchFeedId && !narrowScreen
+                                      ? DUTY_SEARCH_PANEL_WIDTH_PX
+                                      : 0),
+                                ),
+                                DUTY_SINGLE_FEED_MAX_WIDTH_PX,
+                              )
                             : ((trackWidth ?? 0) - (messageFeeds.length - 1) * 16) /
                               messageFeeds.length
                           : undefined,
@@ -532,7 +613,7 @@ export function RerDutyNeoWorkspace({
                         ref={(el) => {
                           columnRefsRef.current[feed.id] = el;
                         }}
-                        column={{
+                        column={adaptEditorSearch({
                           ...column,
                           view: columnView,
                           actions: {
@@ -545,7 +626,7 @@ export function RerDutyNeoWorkspace({
                               ? undefined
                               : (focusTarget) => openCreateMessageComposer(feed.id, focusTarget),
                           },
-                        }}
+                        })}
                       />
                     );
                   })}

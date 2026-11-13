@@ -180,6 +180,33 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     },
   );
 
+  it('#3571 suspends an automatically hidden editor search without losing its selection or landing', async () => {
+    await open();
+    await act(async () => {
+      column().onSelect(column().state.items[0]);
+      column().onScroll(120, [{ id: 5, offset: -12 }]);
+    });
+    const cached = column().state;
+    const requests = api.list.mock.calls.length;
+    vi.mocked(dependencies.cancelNavigation).mockClear();
+    await act(async () => column().onVisibilityChange?.(false));
+    await refresh();
+    expect(api.list).toHaveBeenCalledTimes(requests);
+    expect(column().open).toBe(true);
+    expect(column().state).toBe(cached);
+    expect(dependencies.cancelNavigation).not.toHaveBeenCalled();
+    await act(async () => column().onVisibilityChange?.(true));
+    await tick();
+    expect(api.list.mock.calls.length).toBeGreaterThan(requests);
+    expect(column().state).toMatchObject({
+      search: 'needle',
+      selectedId: 5,
+      scrollTop: 120,
+      anchors: [{ id: 5, offset: -12 }],
+    });
+    expect(dependencies.navigate).toHaveBeenCalledOnce();
+  });
+
   it('#3571 refreshes on inbox changes rather than idle feed polling or browser focus', async () => {
     await open();
     const calls = api.list.mock.calls.length;

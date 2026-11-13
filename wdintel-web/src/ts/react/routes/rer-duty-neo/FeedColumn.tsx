@@ -216,13 +216,13 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   }, [closeOtherPanels, column.search, showGroups]);
   const onToggleSearch = useCallback(() => {
     if (!column.search) return;
-    if (column.search.open) {
+    if (column.search.open && view.searchPresentation !== 'hidden') {
       column.search.onClose();
     } else {
       setShowGroups(false);
       column.search.onOpen();
     }
-  }, [column.search]);
+  }, [column.search, view.searchPresentation]);
   const handleCloseAction = useCallback(() => {
     if (showFilters || showNotificationPanel || showKeywordsPanel || showGroups) {
       closeOpenPanels();
@@ -338,8 +338,10 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [groupNavigation],
   );
 
-  const searchOpen = column.search?.open === true;
-  const expandedSearch = searchOpen && !narrowScreen;
+  const searchOpen = column.search?.open === true && view.searchPresentation !== 'hidden';
+  const displaySearch = column.search ? { ...column.search, open: searchOpen } : undefined;
+  const overlaySearch = narrowScreen || view.searchPresentation === 'overlay';
+  const expandedSearch = searchOpen && !overlaySearch;
   const searchPresence = useDutyPanelPresence(searchOpen);
   const groupPresence = useDutyPanelPresence(showGroups);
   const baseWidth = view.searchBaseWidth;
@@ -373,7 +375,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       }}
     >
       <FeedColumnHeader
-        search={column.search}
+        search={displaySearch}
         narrowScreen={narrowScreen}
         feedCount={feedCount}
         canRemove={canRemove}
@@ -406,12 +408,12 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNotificationStatusChanged={refreshNotificationStatus}
       />
       <div className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {searchPresence.present && column.search ? (
+        {searchPresence.present && displaySearch ? (
           <div
             ref={searchPresence.ref}
             className="absolute inset-y-0 left-0 z-[2] flex min-h-0 overflow-hidden"
             style={{
-              width: narrowScreen
+              width: overlaySearch
                 ? '100%'
                 : baseWidth
                   ? `max(0px, calc(100% - ${baseWidth}px))`
@@ -419,8 +421,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             }}
           >
             <DutySearchPanel
-              search={column.search}
-              fullWidth={narrowScreen}
+              search={displaySearch}
+              fullWidth={overlaySearch}
               groupInfos={column.messageCard.groupInfos}
               profiles={column.messageCard.profiles}
             />
@@ -435,7 +437,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             width:
               baseWidth ??
               (expandedSearch ? `calc(100% - ${DUTY_SEARCH_PANEL_WIDTH_PX}px)` : '100%'),
-            marginLeft: narrowScreen
+            marginLeft: overlaySearch
               ? 0
               : baseWidth
                 ? `max(0px, calc(100% - ${baseWidth}px))`
