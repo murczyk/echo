@@ -416,6 +416,7 @@ function MessageFeedInner<T, Id extends MessageFeedId = number>(
         disabled={oldestNavigation.loading}
       />
     ) : null;
+  const RefreshContainer = listTag === 'ul' ? 'li' : 'div';
   return (
     <MessageFeedItemRegistration setItemRef={scroll.setItemRef}>
       <MessageFeedViewport
@@ -451,18 +452,14 @@ function MessageFeedInner<T, Id extends MessageFeedId = number>(
             scrollerProps?.onScroll?.(event);
           },
         }}
-        beforeList={
-          <>
-            {beforeList}
-            {showRefreshSkeleton ? (
-              <div className="message-feed-refresh-overlay">
-                <MessageFeedSkeletons count={skeletonCount} position="refresh" />
-              </div>
-            ) : null}
-          </>
-        }
+        beforeList={beforeList}
         beforeMessages={
           <>
+            {showRefreshSkeleton ? (
+              <RefreshContainer className="message-feed-refresh-overlay">
+                <MessageFeedSkeletons count={skeletonCount} position="refresh" />
+              </RefreshContainer>
+            ) : null}
             {showAboveSkeleton ? (
               <MessageFeedSkeletons
                 listTag={listTag}

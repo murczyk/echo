@@ -22,12 +22,17 @@ import type {
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import type { GroupScope } from '../shared/group-navigation';
 
+import type { DutySearchColumn } from './useDutySearch';
+
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
 
 export type FeedColumnModel = {
   feed: MessageFeedState;
+  search?: DutySearchColumn;
   view: {
     enableDutySearch?: boolean;
+    searchBaseWidth?: number;
+    searchPresentation?: 'inline' | 'overlay' | 'hidden';
     /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible feed min-height. */
     narrowScreen?: boolean;
     /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */

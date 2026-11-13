@@ -16,9 +16,17 @@ import {
   messageOrderCursor,
   compareMessageTuple,
   windowInitialMessageItems,
+  stableStringify,
 } from './utils';
 import type { DutyFeedFilterOptions, MessageFeedState } from './utils';
 import type { MessageCursor } from './utils';
+
+export type DutyFeedInitialTarget = {
+  beforeIdNoninclusive: number;
+  messageIds: number[];
+  signal?: AbortSignal;
+  filterSignature?: string;
+};
 
 export function createEmptyFeedState(
   id: string,
@@ -77,7 +85,7 @@ type Params = {
   setFeedUnreadCursor: (feedId: string, cursor: MessageCursor | null) => void;
   getFeedUnreadCursor?: (feedId: string) => MessageCursor | null;
   feedInitialTargetByFeedIdRef?: MutableRefObject<
-    Record<string, { beforeIdNoninclusive: number; messageIds: number[] } | undefined>
+    Record<string, DutyFeedInitialTarget | undefined>
   >;
   installFeedUnreadCursorAndBaseline: (
     feed: MessageFeedState,
@@ -187,22 +195,41 @@ export function useRerDutyInitialLoad(params: Params) {
       const requestOptions = { signal: controller.signal };
       const requestGeneration = current.getFeedLoadGeneration(feedId);
       const preserveUnread = overrides?.preserveUnread ?? false;
-      const initialTarget = current.feedInitialTargetByFeedIdRef?.current?.[feedId];
-      if (initialTarget != null && current.feedInitialTargetByFeedIdRef) {
+      const pendingTarget = current.feedInitialTargetByFeedIdRef?.current?.[feedId];
+      const initialTarget =
+        pendingTarget?.filterSignature &&
+        pendingTarget.filterSignature !== stableStringify(feed.filter)
+          ? undefined
+          : pendingTarget;
+      if (pendingTarget != null && current.feedInitialTargetByFeedIdRef) {
         delete current.feedInitialTargetByFeedIdRef.current[feedId];
       }
+      const cancelNavigationLoad = () => {
+        controller.abort();
+        if (
+          current.controllersByFeedIdRef.current[feedId] !== controller ||
+          current.getFeedLoadGeneration(feedId) !== requestGeneration
+        )
+          return;
+        current.completeFeedReload(feedId);
+        current.setMessageFeeds((previous) =>
+          previous.map((candidate) =>
+            candidate.id === feedId ? { ...candidate, loading: false } : candidate,
+          ),
+        );
+      };
+      initialTarget?.signal?.addEventListener('abort', cancelNavigationLoad, { once: true });
       const effectiveBeforeId =
         overrides?.beforeIdNoninclusive ?? initialTarget?.beforeIdNoninclusive ?? null;
       const effectiveLoadLatest =
         overrides?.loadLatest ?? (effectiveBeforeId != null ? false : true);
-      const effectiveFeed = overrides
-        ? {
-            ...feed,
-            ...(overrides.highlightSignalsEnabled === undefined
-              ? {}
-              : { highlightSignalsEnabled: overrides.highlightSignalsEnabled }),
-          }
-        : feed;
+      const effectiveFeed = {
+        ...feed,
+        ...(initialTarget ? { historySinceMs: null, historyPeriodMs: null } : {}),
+        ...(overrides?.highlightSignalsEnabled === undefined
+          ? {}
+          : { highlightSignalsEnabled: overrides.highlightSignalsEnabled }),
+      };
       current.setMessageFeeds((previous) =>
         previous.map((candidate) =>
           candidate.id === feedId
@@ -212,6 +239,10 @@ export function useRerDutyInitialLoad(params: Params) {
       );
       current.setError(null);
       try {
+        if (initialTarget?.signal?.aborted) {
+          cancelNavigationLoad();
+          return;
+        }
         const inboxReq = current.buildReqForFeed(effectiveFeed, {
           loadLatest: effectiveLoadLatest,
           beforeIdNoninclusive: effectiveBeforeId,
@@ -352,6 +383,7 @@ export function useRerDutyInitialLoad(params: Params) {
         );
         return null;
       } finally {
+        initialTarget?.signal?.removeEventListener('abort', cancelNavigationLoad);
         if (current.controllersByFeedIdRef.current[feedId] === controller)
           delete current.controllersByFeedIdRef.current[feedId];
       }

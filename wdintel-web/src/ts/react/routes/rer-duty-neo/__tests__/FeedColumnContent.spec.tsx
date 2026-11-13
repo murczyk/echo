@@ -148,6 +148,59 @@ describe('FeedColumnContent', () => {
     fabState.explicitNavigationLoading = false;
   });
 
+  it('uses active search result marks without filtering or mutating the source feed', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const source = minimalInboxMessage({
+      text: 'Нова позиція',
+      textMarked: [{ CNTextC: { text: 'Нова позиція', begin: 0, end: 12 } }],
+    });
+    column.feed.items = [
+      [1, source],
+      [2, minimalInboxMessage({ text: 'Контекст' })],
+    ];
+    const search = {
+      open: true,
+      state: {
+        search: 'новий',
+        items: [
+          [
+            1,
+            {
+              ...source,
+              textMarked: [
+                { CNHighlightC: { text: 'Нова', begin: 0, end: 4 } },
+                { CNTextC: { text: ' позиція', begin: 4, end: 12 } },
+              ],
+            },
+          ],
+        ],
+      },
+    } as FeedColumnModel['search'];
+    const render = async (open: boolean) =>
+      act(async () =>
+        root.render(<FeedColumnContent column={{ ...column, search: { ...search!, open } }} />),
+      );
+    const marks = () =>
+      container.querySelectorAll('[data-duty-message-id="1"] .badge-highlighed-token');
+
+    await render(true);
+    expect(marks()).toHaveLength(1);
+    expect(marks()[0].textContent).toBe('Нова');
+    expect(container.querySelectorAll('[data-duty-message-id]')).toHaveLength(2);
+    expect(column.feed.filter.search).toBeNull();
+    expect(source.textMarked).toEqual([{ CNTextC: { text: 'Нова позиція', begin: 0, end: 12 } }]);
+    await render(false);
+    expect(marks()).toHaveLength(0);
+    await render(true);
+    expect(marks()).toHaveLength(1);
+    column.feed = { ...column.feed, items: [[1, { ...source, text: 'Змінений текст' }]] };
+    await render(true);
+    expect(marks()).toHaveLength(0);
+  });
+
   it('shows card group metadata only in all-groups feeds (#3727)', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);

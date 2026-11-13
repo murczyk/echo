@@ -971,7 +971,7 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(container.querySelector('[data-message-feed-skeleton]')).toBeNull();
   });
 
-  it('keeps real card nodes and scroll position mounted beneath a refresh skeleton', async () => {
+  it('keeps refresh skeletons inside the list without replacing cards or moving scroll', async () => {
     const feedRef = createRef<MessageFeedHandle>();
     const scrollOptions = {
       hasReachedStart: true,
@@ -984,7 +984,7 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
         items={[1, 2, 3, 4]}
         getMessageId={getId}
         scrollOptions={scrollOptions}
-        isLoading
+        isLoading={isLoading}
         renderMessage={renderMessage}
       />
     );
@@ -999,6 +999,9 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(feedRef.current?.getItemElement(2)).toBe(card);
     expect(scroller.scrollTop).toBe(48);
     expect(container.querySelector('[data-message-feed-skeleton="refresh"]')).not.toBeNull();
+    expect(container.querySelector('.message-feed-refresh-overlay')?.parentElement).toBe(
+      container.querySelector('.message-feed-list'),
+    );
     expect(scroller.getAttribute('data-message-feed-refreshing')).toBe('true');
     await act(async () => root.render(render(false)));
     expect(feedRef.current?.getItemElement(2)).toBe(card);

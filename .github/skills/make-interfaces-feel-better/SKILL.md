@@ -21,6 +21,17 @@ Use only the reference needed for the assigned UI detail.
 - Do not publish captures or send operational content to external tools. Use synthetic/redacted data in authorized local previews. No subagents, nested AI CLI, Git/release operations or environment changes.
 - A source review is not rendered verification. Report unavailable checks honestly; do not claim approval or usability from absence of findings.
 
+## Motion acceptance gate
+
+Apply [DESIGN.md: Motion and state continuity](../../../DESIGN.md#motion-and-state-continuity)
+as required acceptance criteria for the affected interaction, not optional polish.
+Use the animation/performance references only to realize those criteria; their
+sample timings and effects are not a mandate to animate every action. Verify
+enter/exit midpoints, rapid interruption, input/focus, stable geometry and reduced
+motion in the browser at CPU slowdown 4x. Known flicker, jumping, blocked actions
+or lost context prevents a completion claim; missing browser execution stays
+unverified. Keep scope and test selection proportional to the change.
+
 | Detail | Reference |
 | --- | --- |
 | Wrapping and numeric alignment | [Typography](typography.md) |

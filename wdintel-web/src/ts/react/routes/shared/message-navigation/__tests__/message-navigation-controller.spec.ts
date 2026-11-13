@@ -89,6 +89,48 @@ describe('linked-message navigation controller', () => {
     );
   });
 
+  it('uses an already resolved search result while retaining host validation', async () => {
+    const navigationHost = host();
+    navigationHost.materialize.mockResolvedValueOnce(null);
+    const outcome = await createMessageNavigationController(() => navigationHost, vi.fn()).navigate(
+      'target-41',
+      context,
+    );
+
+    expect(fetchInboxItemContext).not.toHaveBeenCalled();
+    expect(navigationHost.materialize).toHaveBeenCalledWith(context, expect.any(AbortSignal));
+    expect(navigationHost.land).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ status: 'landing-error' });
+  });
+
+  it('cancels a known result while its host is validating it', async () => {
+    const request = deferred<number | null>();
+    const navigationHost = host();
+    navigationHost.materialize.mockReturnValueOnce(request.promise);
+    const onOutcome = vi.fn();
+    const controller = createMessageNavigationController(() => navigationHost, onOutcome);
+    const result = controller.navigate('target-41', context);
+    await vi.waitFor(() => expect(navigationHost.materialize).toHaveBeenCalledOnce());
+    controller.cancel();
+    request.resolve(41);
+
+    expect(await result).toEqual({ status: 'cancelled' });
+    expect(fetchInboxItemContext).not.toHaveBeenCalled();
+    expect(navigationHost.land).not.toHaveBeenCalled();
+    expect(onOutcome).not.toHaveBeenCalled();
+  });
+
+  it('does not materialize an empty resolved context', async () => {
+    const navigationHost = host();
+    const result = await createMessageNavigationController(() => navigationHost, vi.fn()).navigate(
+      'hidden-41',
+      { ...context, message: null },
+    );
+    expect(result).toEqual({ status: 'unavailable' });
+    expect(fetchInboxItemContext).not.toHaveBeenCalled();
+    expect(navigationHost.materialize).not.toHaveBeenCalled();
+  });
+
   it.each(['context', 'materialize'] as const)('classifies a %s request failure', async (step) => {
     const navigationHost = host();
     if (step === 'context') fetchInboxItemContext.mockRejectedValueOnce(new Error('private group'));

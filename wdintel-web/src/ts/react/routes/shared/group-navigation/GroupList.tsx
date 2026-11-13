@@ -1,4 +1,5 @@
 import { GroupAvatar } from './GroupAvatar';
+import '../../../components/selectable-list.css';
 import type { GroupNavigationItem, GroupScope } from './group-navigation.types';
 
 type Props = {
@@ -60,7 +61,7 @@ export function GroupList({
               <li key={key}>
                 <button
                   type="button"
-                  className="group-navigation-list-item"
+                  className="group-navigation-list-item echo-selectable-list-item"
                   data-group-list-item
                   data-selected={selected ? 'true' : 'false'}
                   aria-current={selected ? 'true' : undefined}
@@ -90,7 +91,11 @@ export function GroupList({
         <div className="px-3 py-2" role="alert">
           <p>{error}</p>
           {onRetry ? (
-            <button type="button" className="group-navigation-list-item" onClick={onRetry}>
+            <button
+              type="button"
+              className="group-navigation-list-item echo-selectable-list-item"
+              onClick={onRetry}
+            >
               Повторити
             </button>
           ) : null}

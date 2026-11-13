@@ -18,6 +18,10 @@ import {
   resumeDutyNotificationAudioFromUserGesture,
   setStoredDutyNotificationSettingsForFeed,
 } from './notifications';
+import { DutySearchPanel } from './DutySearchPanel';
+import { useDutyColumnWidth, useDutyPanelPresence } from './duty-panel-motion';
+import './duty-panel-motion.css';
+import { DUTY_SEARCH_PANEL_WIDTH_PX } from './duty-layout';
 import { FeedColumnHeader } from './FeedColumnHeader';
 import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
@@ -201,12 +205,22 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     });
   }, [closeOtherPanels]);
   const onToggleGroups = useCallback(() => {
-    setShowGroups((open) => {
-      const next = !open;
-      if (next) closeOtherPanels('groups');
-      return next;
-    });
-  }, [closeOtherPanels]);
+    const next = !showGroups;
+    if (next) {
+      closeOtherPanels('groups');
+      if (column.search?.open) column.search.onClose({ restoreFocus: false });
+    }
+    setShowGroups(next);
+  }, [closeOtherPanels, column.search, showGroups]);
+  const onToggleSearch = useCallback(() => {
+    if (!column.search) return;
+    if (column.search.open && view.searchPresentation !== 'hidden') {
+      column.search.onClose();
+    } else {
+      setShowGroups(false);
+      column.search.onOpen();
+    }
+  }, [column.search, view.searchPresentation]);
   const handleCloseAction = useCallback(() => {
     if (showFilters || showNotificationPanel || showKeywordsPanel || showGroups) {
       closeOpenPanels();
@@ -330,6 +344,14 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [groupNavigation],
   );
 
+  const searchOpen = column.search?.open === true && view.searchPresentation !== 'hidden';
+  const displaySearch = column.search ? { ...column.search, open: searchOpen } : undefined;
+  const overlaySearch = narrowScreen || view.searchPresentation === 'overlay';
+  const expandedSearch = searchOpen && !overlaySearch;
+  const searchPresence = useDutyPanelPresence(searchOpen);
+  const groupPresence = useDutyPanelPresence(showGroups);
+  const baseWidth = view.searchBaseWidth;
+  useDutyColumnWidth(columnRef, expandedSearch, baseWidth, !narrowScreen);
   return (
     <Box
       ref={columnRef}
@@ -337,17 +359,19 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       data-duty-feed-id={feed.id}
       className={[
         'flex flex-col min-w-0 gap-0 min-h-0 h-full',
-        narrowScreen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
+        narrowScreen && !expandedSearch && !baseWidth ? 'shrink-0 grow-0 basis-full' : 'shrink-0',
       ].join(' ')}
       sx={{
-        width: '100%',
-        maxWidth: maxWidth ?? '100%',
+        width: baseWidth ? baseWidth + (expandedSearch ? DUTY_SEARCH_PANEL_WIDTH_PX : 0) : '100%',
+        maxWidth: baseWidth ? 'none' : (maxWidth ?? '100%'),
+        flex: !baseWidth && !narrowScreen && feedCount > 1 ? '1 0 0px' : undefined,
         position: 'relative',
         scrollSnapAlign: narrowScreen ? 'start' : undefined,
         scrollSnapStop: narrowScreen ? 'always' : undefined,
       }}
     >
       <FeedColumnHeader
+        search={displaySearch}
         narrowScreen={narrowScreen}
         feedCount={feedCount}
         canRemove={canRemove}
@@ -358,6 +382,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         dutyNotificationBellState={dutyNotificationBellState}
         onCreateFeed={onCreateFeed}
         onToggleGroups={onToggleGroups}
+        onToggleSearch={onToggleSearch}
         onToggleFilters={onToggleFilters}
         onToggleNotificationPanel={onToggleNotificationPanel}
         onToggleKeywordsPanel={onToggleKeywordsPanel}
@@ -378,39 +403,88 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNotificationStorageErrorChange={setNotificationStorageError}
         onNotificationStatusChanged={refreshNotificationStatus}
       />
-      {groupNavigation.showSelectedGroups ? (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 40,
-            left: '50%',
-            zIndex: 1,
-            maxWidth: 'calc(100% - 24px)',
-            transform: 'translateX(-50%)',
+      <div className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {searchPresence.present && displaySearch ? (
+          <div
+            ref={searchPresence.ref}
+            className="absolute inset-y-0 left-0 z-[2] flex min-h-0 overflow-hidden"
+            style={{
+              width: overlaySearch
+                ? '100%'
+                : baseWidth
+                  ? `max(0px, calc(100% - ${baseWidth}px))`
+                  : DUTY_SEARCH_PANEL_WIDTH_PX,
+            }}
+          >
+            <DutySearchPanel
+              search={displaySearch}
+              fullWidth={overlaySearch}
+              groupInfos={column.messageCard.groupInfos}
+              profiles={column.messageCard.profiles}
+            />
+          </div>
+        ) : null}
+        <div
+          data-duty-feed-main
+          className="relative flex h-full min-h-0 min-w-0 flex-col"
+          style={{
+            isolation: narrowScreen ? 'isolate' : undefined,
+            flex: baseWidth ? '0 0 auto' : '1 1 0',
+            width:
+              baseWidth ??
+              (expandedSearch ? `calc(100% - ${DUTY_SEARCH_PANEL_WIDTH_PX}px)` : '100%'),
+            marginLeft: overlaySearch
+              ? 0
+              : baseWidth
+                ? `max(0px, calc(100% - ${baseWidth}px))`
+                : searchOpen
+                  ? DUTY_SEARCH_PANEL_WIDTH_PX
+                  : 0,
           }}
         >
-          <GroupIsland group={islandGroup} />
-        </Box>
-      ) : null}
-      <Box
-        data-duty-feed-body
-        className="flex flex-col flex-1 min-h-0"
-        sx={{ position: 'relative' }}
-      >
-        <FeedColumnContent ref={contentRef} column={contentColumn} />
-        <GroupPanel
-          id={`duty-group-panel-${feed.id}`}
-          open={showGroups}
-          groups={dutyGroups}
-          scope={groupNavigation.scope}
-          onSelect={handleGroupSelect}
-          onClose={() => setShowGroups(false)}
-          triggerRef={groupsTriggerRef}
-          loading={filterPanel.toggles.groupCatalogLoading}
-          error={filterPanel.toggles.groupCatalogError?.message}
-          onRetry={filterPanel.actions.onReloadGroupCatalog}
-        />
-      </Box>
+          {groupNavigation.showSelectedGroups ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 8,
+                left: '50%',
+                zIndex: 1,
+                maxWidth: 'calc(100% - 24px)',
+                transform: 'translateX(-50%)',
+              }}
+            >
+              <GroupIsland group={islandGroup} />
+            </Box>
+          ) : null}
+          <Box
+            data-duty-feed-body
+            className="flex flex-col flex-1 min-h-0"
+            sx={{ position: 'relative' }}
+          >
+            <FeedColumnContent ref={contentRef} column={contentColumn} />
+            {groupPresence.present ? (
+              <div
+                ref={groupPresence.ref}
+                className="duty-group-motion absolute inset-0 z-20 pointer-events-none"
+              >
+                <GroupPanel
+                  id={`duty-group-panel-${feed.id}`}
+                  open={showGroups}
+                  renderExit
+                  groups={dutyGroups}
+                  scope={groupNavigation.scope}
+                  onSelect={handleGroupSelect}
+                  onClose={() => setShowGroups(false)}
+                  triggerRef={groupsTriggerRef}
+                  loading={filterPanel.toggles.groupCatalogLoading}
+                  error={filterPanel.toggles.groupCatalogError?.message}
+                  onRetry={filterPanel.actions.onReloadGroupCatalog}
+                />
+              </div>
+            ) : null}
+          </Box>
+        </div>
+      </div>
       {removeConfirmationOpen ? (
         <ConfirmDangerDialog
           open

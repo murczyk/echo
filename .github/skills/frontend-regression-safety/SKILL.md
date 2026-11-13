@@ -26,6 +26,27 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 
 ## Procedure (checklist)
 
+Apply [process and verification scope](../../../docs/frontend/design-workflow.md#process-and-verification-scope)
+to ordinary work as well as explicitly invoked roles. Read supplied references
+yourself and check approved behavior, not just the tests. For affected UI states:
+
+- Keep query, selection, scroll anchor and surrounding context through live updates
+  and panel changes unless the agreed action explicitly resets them.
+- Give independent operations separate loading and cancellation ownership.
+  An unrelated panel action must not abort navigation or reload another surface.
+- Keep loading/empty/error geometry stable; skeleton spacing matches loaded content.
+  A progress indicator belongs to its operation and must not resize the list.
+- Check animation midpoints, closing/reopening and rapid reversals for flashing,
+  clipping, detached headers and stale overlays; respect reduced motion.
+  Apply the [motion acceptance gate](../../../DESIGN.md#motion-and-state-continuity)
+  at CPU slowdown 4x, including immediate feedback, interruption and focus.
+  Record observed outcomes; end-state screenshots alone do not verify smoothness.
+- Select relevant combinations of panels/drawers, multiple columns and resize,
+  plus mobile keyboard/focus recovery. Do not expand every small fix into an
+  exhaustive matrix unrelated to the changed behavior.
+- Reuse existing controls, list states and feedback surfaces; retain useful
+  content after refresh errors. Keep field validation contextual where established.
+
 - REST API contract checks:
 - Confirm endpoint paths and methods unchanged unless explicitly intended.
 - Confirm request body keys and response parsing still match backend shape.
@@ -50,7 +71,9 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - Run project checks:
 - `just build-front`
 - For Elm-heavy changes: `cd wdintel-web && elm make <touched>.elm --output=/dev/null`
-- For TS-heavy changes when feasible: `cd wdintel-web && npm run test:ts`
+- For TS-heavy changes, select affected files explicitly:
+  `cd wdintel-web && npm run test:ts -- <affected.spec.ts[x]>`.
+  The full suite is reserved for the pre-PR check or an explicit request.
 - For message-card preview E2E changes, including shared preview shell/config/capabilities, preview dialogs/stages/actions/controls, `MessageCardContent`, and attachment-preview classification, run `cd wdintel-web && npx playwright test tests/e2e/message-card-media-preview.spec.ts`, and keep the smoke cases tagged `@smoke`.
 - If Chromium is unavailable, report the exact failure and request approval before running `cd wdintel-web && npm run e2e:install`; rerun the focused spec after installation.
 - If the local server or browser still cannot run, report the exact blocker and do not claim full E2E verification.
@@ -68,6 +91,8 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - UX regression checks completed across breakpoints and states.
 - Relevant URL/localStorage/user-settings persistence behavior is verified.
 - Relevant build/tests pass.
+- Changed interactions meet the motion acceptance gate; known flicker, jumps,
+  input blocking or focus/reading-position loss is fixed, not labelled optional polish.
 - Any necessary type/mock/doc updates are included.
 - No silent handling regressions for API errors.
 

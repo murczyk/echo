@@ -52,6 +52,109 @@ describe('#3571 Duty search history', () => {
     });
   }
 
+  it('#3571 reloads an unloaded historical target without retaining the adaptive cutoff', async () => {
+    const now = since + period;
+    const targetTime = now - 40 * 24 * 60 * 60 * 1000;
+    window.history.replaceState(
+      {},
+      '',
+      `/rer-duty-neo?state=${encodeURIComponent(
+        JSON.stringify({
+          messageFeeds: [
+            [
+              'mf-0',
+              { ...emptyFilter(), groupsSelected: ['group-a'], deniedSenders: ['sender-b'] },
+            ],
+          ],
+        }),
+      )}`,
+    );
+    const rows: Parameters<typeof inboxRsp>[0] = [
+      [4, minimalInboxMessage({ text: 'before context', createdAt: targetTime - 1000 })],
+      [5, minimalInboxMessage({ text: 'needle target', createdAt: targetTime })],
+      [6, minimalInboxMessage({ text: 'after context', createdAt: targetTime + 1000 })],
+      [90, minimalInboxMessage({ text: 'recent latest', createdAt: now - 1000 })],
+    ];
+    requests.fetchInboxMessages.mockImplementation(async (request) => {
+      const adaptive =
+        request.loadLatest === true &&
+        request.beforeIdNoninclusive == null &&
+        request.sinceIdNoninclusive == null &&
+        request.sinceDateInclusiveMs == null;
+      const lowerBound = adaptive ? since : request.sinceDateInclusiveMs;
+      return {
+        ...inboxRsp(
+          rows.filter(
+            ([id, message]) =>
+              (lowerBound == null || message.createdAt >= lowerBound) &&
+              (request.beforeIdNoninclusive == null || id < request.beforeIdNoninclusive) &&
+              (request.sinceIdNoninclusive == null || id > request.sinceIdNoninclusive),
+          ),
+        ),
+        historySinceMs: adaptive ? since : null,
+        historyPeriodMs: adaptive ? period : null,
+      };
+    });
+    requests.fetchMessagesByIdsWithMetadata.mockImplementation(async (ids, request) =>
+      inboxRsp(
+        rows.filter(
+          ([id, message]) =>
+            ids.includes(id) &&
+            (request.sinceDateInclusiveMs == null ||
+              message.createdAt >= request.sinceDateInclusiveMs),
+        ),
+      ),
+    );
+    await mount();
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([90]);
+    expect(apiRef.current!.messageFeeds[0].historySinceMs).toBe(since);
+    requests.fetchInboxMessages.mockClear();
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', { beforeIdNoninclusive: 5, messageIds: [5] });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true, {
+        preserveUnread: true,
+      });
+      await settleReactCommits();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([4, 5, 6, 90]);
+    expect(apiRef.current!.messageFeeds[0].historySinceMs).toBeNull();
+    expect(apiRef.current!.messageFeeds[0].historyPeriodMs).toBeNull();
+    for (const [request] of requests.fetchInboxMessages.mock.calls)
+      expect(request).toMatchObject({
+        sinceDateInclusiveMs: null,
+        selectedGroups: ['group-a'],
+        deniedSenders: ['sender-b'],
+        search: null,
+      });
+    expect(requests.fetchMessagesByIdsWithMetadata).toHaveBeenLastCalledWith(
+      [5],
+      expect.objectContaining({
+        sinceDateInclusiveMs: null,
+        selectedGroups: ['group-a'],
+        deniedSenders: ['sender-b'],
+        search: null,
+      }),
+      expect.anything(),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedOlderMessages('mf-0');
+      await settleReactCommits();
+    });
+    expect(requests.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        beforeIdNoninclusive: 4,
+        sinceDateInclusiveMs: null,
+      }),
+      expect.anything(),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedInitialMessages('mf-0', { loadLatest: true });
+      await settleReactCommits();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([90]);
+    expect(apiRef.current!.messageFeeds[0].historySinceMs).toBe(since);
+  });
+
   it('advances empty periods, retains filters, and retries the same period after failure', async () => {
     requests.fetchInboxMessages.mockResolvedValueOnce({
       ...inboxRsp([]),
