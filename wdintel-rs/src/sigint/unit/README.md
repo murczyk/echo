@@ -39,6 +39,10 @@ than broadening a filter.
 Analysis and Duty request only their selected/denied branches. Their unit-count
 APIs already return parent options and counts. The Callsigns sidebar requests
 paths only for units present in its statistics. Empty scopes need no request.
+Generated parent option labels include each non-empty echelon from the parent
+through army, in ascending order (for example, `1 мсб 27 омсбр 6 А`). Military
+district and army-region names stay outside these labels; catalog unit names
+and filter identities are preserved.
 Scoped revisions hash the returned contents, including resolved selections;
 clients send their known revision and unchanged responses return JSON `null`.
 
