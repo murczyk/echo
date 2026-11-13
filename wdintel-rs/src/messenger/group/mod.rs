@@ -881,7 +881,11 @@ pub async fn get_identity_rer_feed_groups(
     Ok(get_rer_feed_sigint_groups(dbx, &login).await.c(h!())?)
 }
 
-pub fn exclude_messenger_account_groups(mut groups: Vec<String>) -> Vec<String> {
-    groups.retain(|group| !group.starts_with(crate::config::MESSENGER_INGEST_GROUP_KEY_PREFIX));
+pub fn exclude_messenger_account_groups(
+    mut groups: Vec<String>,
+) -> Vec<String> {
+    groups.retain(|group| {
+        !group.starts_with(crate::config::MESSENGER_INGEST_GROUP_KEY_PREFIX)
+    });
     groups
 }

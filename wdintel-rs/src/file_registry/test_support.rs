@@ -8,11 +8,11 @@ use super::entities::{
 };
 use chrono::{Duration, Utc};
 use sea_orm::{
+    sea_query::Expr,
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     IntoActiveModel, QueryFilter, TransactionTrait,
-    sea_query::Expr,
 };
 use uuid::Uuid;
 

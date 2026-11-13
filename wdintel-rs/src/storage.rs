@@ -220,9 +220,8 @@ pub fn build_s3_operator(config: &S3Config) -> Result<Operator, AppError> {
 
 /// OpenDAL retry layer: 3 retries with exponential backoff to soften S3
 /// throttling and transient 5xx responses.
-fn s3_retry_layer() -> opendal::layers::RetryLayer<
-    impl opendal::layers::RetryInterceptor,
-> {
+fn s3_retry_layer(
+) -> opendal::layers::RetryLayer<impl opendal::layers::RetryInterceptor> {
     opendal::layers::RetryLayer::new()
         .with_min_delay(Duration::from_secs(1))
         .with_factor(2.0)
