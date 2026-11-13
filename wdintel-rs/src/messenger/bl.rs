@@ -1014,6 +1014,14 @@ pub async fn bl_group_update(
     req: &GroupUpdateReq,
     txn: &DatabaseTransaction,
 ) -> Result<BlGroupUpdateRes, AppError> {
+    crate::messenger::group::sending::set(
+        txn,
+        &req.master_key,
+        req.send_messages,
+        req.sender_organism_ids.as_deref(),
+    )
+    .await
+    .c(h!())?;
     let mut network_invalidation_enqueued = false;
     set_signal_group_color(txn, &req.master_key, req.color_key)
         .await

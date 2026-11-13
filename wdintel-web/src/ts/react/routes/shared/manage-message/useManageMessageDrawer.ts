@@ -49,6 +49,7 @@ import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
 import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
+import { readReportDestination, rememberReportDestination } from './report-destination';
 import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
 import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
 import { isAbortError } from '../../../services/api/client';
@@ -101,6 +102,7 @@ export type UseManageMessageDrawerProps = {
   quickSuggestionsEnabled?: boolean;
   intentKey?: string;
   initialGroupMasterKey?: string | null;
+  rememberReportGroup?: boolean;
 };
 
 export function useManageMessageDrawer({
@@ -124,7 +126,10 @@ export function useManageMessageDrawer({
   quickSuggestionsEnabled = true,
   intentKey,
   initialGroupMasterKey = null,
+  rememberReportGroup = true,
 }: UseManageMessageDrawerProps) {
+  const rememberReportGroupRef = useRef(rememberReportGroup);
+  rememberReportGroupRef.current = rememberReportGroup;
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
   const isReplyMode = !isEditMode && !reportSource && engagedMessageId != null;
@@ -389,13 +394,12 @@ export function useManageMessageDrawer({
   ]);
 
   const requirementsForGroup = useCallback(
-    (masterKey?: string) => {
-      const group = signalGroups.find(
-        (group) => group.masterKey === (masterKey || (isReplyMode ? initialGroupMasterKey : '')),
-      );
+    (masterKey?: string, additionalKeys: readonly string[] = []) => {
+      const keys = [masterKey || (isReplyMode ? initialGroupMasterKey : ''), ...additionalKeys];
+      const groups = signalGroups.filter((group) => keys.includes(group.masterKey));
       return {
-        unitRequired: !isEditMode && (group?.isSigintUnitMandatory ?? false),
-        deviceRequired: !isEditMode && (group?.isDeviceMandatory ?? false),
+        unitRequired: !isEditMode && groups.some((group) => group.isSigintUnitMandatory),
+        deviceRequired: !isEditMode && groups.some((group) => group.isDeviceMandatory),
       };
     },
     [signalGroups, isEditMode, isReplyMode, initialGroupMasterKey],
@@ -408,7 +412,7 @@ export function useManageMessageDrawer({
           isReplyMode,
           isReportMode,
           radioFeaturesAllowed,
-          requirementsForGroup(values.signalGroupMasterKey),
+          requirementsForGroup(values.signalGroupMasterKey, values.additionalSignalGroupMasterKeys),
         ),
       )(values, context, options),
     [isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed, requirementsForGroup],
@@ -423,7 +427,10 @@ export function useManageMessageDrawer({
 
   const { control, formState, getValues, setValue, reset, resetField } = methods;
   const formValues = useWatch({ control });
-  const { unitRequired, deviceRequired } = requirementsForGroup(formValues.signalGroupMasterKey);
+  const { unitRequired, deviceRequired } = requirementsForGroup(
+    formValues.signalGroupMasterKey,
+    formValues.additionalSignalGroupMasterKeys,
+  );
   const groupRequirementsBlocked =
     !isEditMode &&
     (!isReportMode ||
@@ -518,12 +525,13 @@ export function useManageMessageDrawer({
     const rawList = isEditMode
       ? (editTarget?.message.media ?? [])
       : (reportSource?.message.media ?? []);
-    return rawList.map((m) => {
+    return rawList.map((m, index) => {
       const raw = m as MessageMediaInfo & {
         file_name?: string | null;
         content_type?: string | null;
         size_bytes?: number | null;
         coordinate_status?: MessageMediaInfo['coordinateStatus'];
+        order_f64?: MessageMediaInfo['orderF64'];
       };
       const id = String(m.id ?? (raw as any).id ?? '');
       const fileName = m.fileName ?? raw.file_name ?? null;
@@ -532,6 +540,7 @@ export function useManageMessageDrawer({
       const href = m.href || (id ? `/api/messenger/media/${id}` : '');
       return {
         id,
+        orderF64: isReportCreateMode ? index + 1 : (m.orderF64 ?? raw.order_f64 ?? null),
         fileName,
         contentType,
         sizeBytes,
@@ -544,7 +553,7 @@ export function useManageMessageDrawer({
         kmzConversionStatus: m.kmzConversionStatus ?? (raw as any).kmz_conversion_status ?? null,
       };
     });
-  }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);
+  }, [isEditMode, isReportCreateMode, editTarget?.message.media, reportSource?.message.media]);
   const retainedAttachmentIds =
     isEditMode || isReportCreateMode
       ? existingMedia
@@ -677,6 +686,7 @@ export function useManageMessageDrawer({
     reset({
       ...getInitialCreateFormValues(),
       signalGroupMasterKey: getValues('signalGroupMasterKey'),
+      additionalSignalGroupMasterKeys: getValues('additionalSignalGroupMasterKeys'),
     });
     setDeviceNameInput('');
     setPostInput('');
@@ -726,6 +736,9 @@ export function useManageMessageDrawer({
       parsing: parserBlocksSubmit,
       schemaValid:
         (formState.isValid || reportDestinationMissing) &&
+        (formValues.additionalSignalGroupMasterKeys ?? []).every((key) =>
+          signalGroups.some((group) => group.masterKey === key),
+        ) &&
         (!unitRequired || Boolean(formValues.unit?.trim())) &&
         (!deviceRequired || Boolean(formValues.deviceName?.trim())),
       unitSelectionValid:
@@ -777,15 +790,16 @@ export function useManageMessageDrawer({
     uppyFiles,
   ]);
 
-  // Group requirements cannot apply here: the minimal panel has no group field.
   const reportDetailsMissing =
     isReportCreateMode &&
     reportCopyLoaded &&
-    !isMessageUnitSelectionValid(
+    (!isMessageUnitSelectionValid(
       formValues.unit,
       formValues.unitSelection,
       formValues.unitNetworkSelection,
-    );
+    ) ||
+      (unitRequired && !formValues.unit?.trim()) ||
+      (deviceRequired && !formValues.deviceName?.trim()));
 
   useEffect(() => {
     if (!formReady) {
@@ -809,7 +823,29 @@ export function useManageMessageDrawer({
         });
         setSignalGroups(available);
         setGroupsLoaded(true);
-        if (!isEditMode && !isReportMode && initialGroupMasterKey) {
+        const primaryGroupKey = getValues('signalGroupMasterKey');
+        const additionalGroupKeys = getValues('additionalSignalGroupMasterKeys') ?? [];
+        if (!isEditMode && !isReportMode) {
+          const selectedKeys = [primaryGroupKey, ...additionalGroupKeys].filter(Boolean);
+          const availableKeys = selectedKeys.filter((key) =>
+            available.some((group) => group.masterKey === key),
+          );
+          if (availableKeys.length !== selectedKeys.length) {
+            resetField('signalGroupMasterKey', { defaultValue: availableKeys[0] ?? '' });
+            setValue('additionalSignalGroupMasterKeys', availableKeys.slice(1), {
+              shouldDirty: true,
+              shouldValidate: true,
+            });
+            setReferenceDataError('Обрана група більше недоступна.');
+          }
+        }
+        if (
+          !isEditMode &&
+          !isReportMode &&
+          initialGroupMasterKey &&
+          !primaryGroupKey &&
+          additionalGroupKeys.length === 0
+        ) {
           if (available.some((group) => group.masterKey === initialGroupMasterKey)) {
             resetField('signalGroupMasterKey', { defaultValue: initialGroupMasterKey });
           } else {
@@ -818,16 +854,15 @@ export function useManageMessageDrawer({
           }
           return;
         }
-        // The MRU-seeded group is set synchronously on open, before this async list
-        // arrives. If that remembered key is no longer available (account switch,
-        // revoked access, deleted group), SystemSection renders it as an empty
-        // selection while the value still passes required-validation — letting submit
-        // or parse run against a group the user cannot actually see. Clear it so the
-        // user must pick a valid group.
-        if (!isEditMode && !isReportMode && getValues('signalGroupMasterKey')) {
+        if (
+          isReportCreateMode &&
+          getValues('signalGroupMasterKey') !== DO_NOT_SEND_GROUP_VALUE &&
+          getValues('signalGroupMasterKey')
+        ) {
           const seededKey = getValues('signalGroupMasterKey');
           if (!available.some((g) => g.masterKey === seededKey)) {
             resetField('signalGroupMasterKey', { defaultValue: '' });
+            if (rememberReportGroupRef.current) rememberReportDestination('');
           }
         }
       } catch (e) {
@@ -864,8 +899,10 @@ export function useManageMessageDrawer({
     intentKey,
     isEditMode,
     isReportMode,
+    isReportCreateMode,
     referenceDataRetryAttempt,
     resetField,
+    setValue,
   ]);
 
   useEffect(() => {
@@ -909,6 +946,7 @@ export function useManageMessageDrawer({
     } else if (isReportCreateMode && reportSource) {
       reset({
         ...EMPTY_FORM_VALUES,
+        signalGroupMasterKey: rememberReportGroupRef.current ? readReportDestination() : '',
         date: dayjs(),
         time: null,
       });
@@ -931,6 +969,17 @@ export function useManageMessageDrawer({
     getInitialCreateFormValues,
     intentKey,
   ]);
+
+  useEffect(() => {
+    if (
+      formReady &&
+      isReportCreateMode &&
+      !rememberReportGroup &&
+      !methods.getFieldState('signalGroupMasterKey').isDirty
+    ) {
+      resetField('signalGroupMasterKey', { defaultValue: '' });
+    }
+  }, [formReady, isReportCreateMode, rememberReportGroup, methods, resetField]);
 
   useEffect(() => {
     if (!formReady || !isReportMode) return;
@@ -961,7 +1010,7 @@ export function useManageMessageDrawer({
             ...copiedValues,
             full_body: '',
             text: '',
-            signalGroupMasterKey: '',
+            signalGroupMasterKey: getValues('signalGroupMasterKey'),
             deviceName: cyberEchoEnabled ? (reportSource.message.deviceName ?? '') : '',
           });
           setReportCopyLoadedSourceId(reportSource.id);
@@ -1182,6 +1231,7 @@ export function useManageMessageDrawer({
       reset({
         ...getInitialCreateFormValues(),
         signalGroupMasterKey: submittedValues.signalGroupMasterKey ?? '',
+        additionalSignalGroupMasterKeys: submittedValues.additionalSignalGroupMasterKeys ?? [],
         deviceName: cyberEchoEnabled ? (submittedValues.deviceName ?? '') : '',
         unit: submittedValues.unit ?? '',
         unitSelection: submittedValues.unitSelection,

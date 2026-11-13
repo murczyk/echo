@@ -21,7 +21,17 @@ current view. The backend rejects deletion while a request is queued or running.
 The composer remembers the last chosen provider in `localStorage`
 (`echo.ai-agent.provider-id`) and uses it for new dialogues. A missing or
 disabled provider falls back to the configured default; opening an existing
-conversation uses its own provider without changing the remembered one. See
+conversation uses the engine its newest request used without changing the
+remembered one. The provider can be changed at any turn; each answer's caption
+names the engine that wrote it (#4112).
+
+The provider list follows the order set on the admin cards. An engine an admin
+marked unhealthy shows in the warning colour with the admin's message. When the
+remembered, default or conversation engine is unhealthy, the composer selects the
+next healthy engine in that order and a warning above it offers to switch back; an
+unhealthy engine the user picked deliberately keeps its warning and offers the next
+healthy one. The configuration is fetched again on window focus and after each
+request, so a change during the session shows up without a reload. See
 [reasoning presets](../../../../../../docs/ai/reasoning-presets.md) for the
 remembered depth.
 
@@ -86,6 +96,20 @@ of the conversation. See the
 
 Regression coverage: `wdintel-web/tests/e2e/ai-agent-documents.spec.ts`.
 
+## Environment prewarm
+
+Typing the first draft text or attaching a file asks the backend
+(`POST /api/ai-agent/prewarm`) to start the user's agent container, so the
+request that follows skips most of «Готую середовище». The composer repeats the
+call at most once a minute and only while the draft keeps changing; it never
+fires on focus or page load. The backend throttles per user, does nothing while
+a request is active or another lifecycle operation holds the user's lock, keeps
+an already running container alive, and starts a stopped one only when two
+host slots stay free for real requests; the dispatcher enforces that reserve
+atomically across all namespaces on the agent host. A submission sent while a
+prewarm is starting waits for it rather than failing. A prewarmed container
+that no request uses stops after 3 minutes. Errors are logged, never shown.
+
 ## Live progress
 
 The composer shows **Зупинити** while this conversation has queued or running
@@ -127,7 +151,18 @@ animation or extra details.
 
 Failed request messages offer **Спробувати ще раз**, including after reload.
 Retry submits the original prompt as a new request in the same conversation
-with its provider and preserves any unsent composer draft. Retry is disabled
+with its provider and preserves any unsent composer draft.
+
+When the newest request ended with completion reason `provider_error` (the
+provider failed) or `model_refusal` (the model declined for policy reasons, or its
+content filter blocked it), it offers **Спробувати з {engine}** (`ModelFallback.tsx`,
+`provider-fallback.ts`). The suggestion is the next healthy engine in the admin
+order, skipping engines that already failed in the same unbroken run of failures,
+so GLM-5.3 → Flash → Sol does not loop. It resends the prompt in the same
+conversation, keeps the depth when that engine offers it, and leaves the
+remembered provider alone. Provider errors also offer **Спробувати ще раз** on the
+same engine. Failures without a reason, such as a harness upgrade, keep only the
+plain retry. Deep continuation is not offered for these reasons. Retry is disabled
 while a submission or another request is active; stream interruptions retain
 their separate reconnect action.
 

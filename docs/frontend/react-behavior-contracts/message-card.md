@@ -8,6 +8,12 @@
 - Disabling РЕР mode retains the unit heading and hides networks. Existing group visibility and device access rules still apply.
 - Existing tests: `wdintel-web/tests/e2e/message-card-rer-mode.spec.ts`, `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`.
 
+## AI network match
+
+- With the system setting «ШІ: головна мережа повідомлення» on, a message with several networks may carry `network_match`: AI certainty and the message's callsigns each network lists (`matchedCallsigns`), plus the main network the server picked. The only network holding the message's callsigns is the main network; otherwise the main network reaches 80% and leads the runner-up by 20 points. The card then shows only that network, followed by «і ще N»; the toggle unfolds every network in the server's order (main network, networks holding the message's callsigns, then by certainty) and switches to «згорнути». Certainty is not printed next to the network name: hovering a network's icon shows the message's callsigns that network lists, then the AI's confidence that the message belongs to that network and the AI reason.
+- Without `network_match` (setting off, a single network, or candidates that changed since scoring), or without a confident network, the card lists every network as before. Hiding networks («Режим РЕР» off) also drops the fold. Copying the binding and the navigation menu still list every network.
+- Existing tests: `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`. Backend: `wdintel-rs/src/ai_network_match/README.md`.
+
 ## Inbox metadata compatibility default
 
 - **Status:** operational compatibility
@@ -86,8 +92,8 @@
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** thumbnail retrieval uses the messenger media thumbnail route with same-origin credentials and server retry semantics.
 - **Responsive and keyboard requirements:** none at the loading boundary.
-- **Known race/idempotency constraints:** leaving the viewport cancels future polling until re-entry; terminal and unauthorized responses cannot schedule another retry.
-- **Source implementation:** `MessageCardVideoThumb.tsx`
+- **Known race/idempotency constraints:** leaving the viewport cancels future polling until re-entry; terminal and unauthorized responses cannot schedule another retry. The shared loader keys image state and callbacks by source; replacing an attachment cannot display a late thumbnail from the previous source. Forced navigation or unauthorized events cancel requests and revoke loaded Blob URLs.
+- **Source implementation:** `MessageCardVideoThumb.tsx`, shared `use-media-thumbnail.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
@@ -105,7 +111,7 @@
 - **API endpoint and compatibility requirements:** uses `/api/messenger/media/{id}/thumbnail`; images without a messenger media ID keep their original-image behavior.
 - **Responsive and keyboard requirements:** existing card controls remain unchanged.
 - **Known race/idempotency constraints:** offscreen cards do not request thumbnail bytes; returning to view can retry pending thumbnails.
-- **Source implementation:** `MessageCardImageThumb.tsx`, `MessageCardVideoThumb.tsx`
+- **Source implementation:** `MessageCardImageThumb.tsx`, shared `use-media-thumbnail.ts`. Device tiles reuse the loader with their own revision URL, request limit and icon fallback; the message image fallback policy remains unchanged.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 
 ## OCR and media-summary response safety
@@ -335,3 +341,15 @@ readiness applies only when coordinate status is absent. Maps retain lazy mounti
 and visible lookup errors. Regression coverage:
 `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
 and `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardCoordinateAttachment.spec.tsx`.
+
+## Attachment order
+
+Attachment arrays and the mixed-media preview carousel follow persisted `order_f64`, with UUID as the tie-breaker. Null positions sort last by UUID; messages with all positions null retain their UUID order. Existing media categories remain grouped on the card.
+
+Legacy galleries without explicit positions retain the original image order, including image URLs without media rows; enriching an image with media metadata does not move it. Explicit positions control gallery and carousel order once available.
+
+Both React and Elm accept media responses without `order_f64` as legacy attachments with an unset position.
+
+The message editor displays a single ordered attachment list. Its up/down controls work with the keyboard, include pending uploads, remain disabled during submission, and save through the existing message-edit request. On the first move of legacy attachments, positions are assigned to the whole message; later moves use a fractional position and preserve unaffected values. Positions are renumbered only if floating-point precision leaves no space between neighbors. Replacement images retain their original attachment's position; copied messages preserve source order independently.
+
+Regressions: `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`, `wdintel-web/tests/e2e/manage-message-drawer.spec.ts`, and `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.

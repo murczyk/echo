@@ -10,6 +10,7 @@ import {
   MAX_KMZ_PREVIEW_ENTRIES,
   MAX_KMZ_PREVIEW_EXPANDED_BYTES,
   MAX_KMZ_PREVIEW_SOURCE_BYTES,
+  MAX_MAP_PREVIEW_FEATURES,
 } from '../kmz-preview-utils';
 
 const encoder = new TextEncoder();
@@ -71,6 +72,130 @@ function streamingKmz(name: string, text: string): ArrayBuffer {
 }
 
 describe('parseKmzPreview', () => {
+  it('#3930 renders GPX waypoints, routes and separate track segments without conversion', () => {
+    const preview = parseKmzPreview(
+      buffer(`<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
+      <wpt lat="50" lon="30"><name>Точка</name></wpt>
+      <rte><name>Маршрут</name><rtept lat="50" lon="30"/><rtept lat="51" lon="31"/></rte>
+      <trk><name>Трек</name><trkseg><trkpt lat="50" lon="30"/><trkpt lat="51" lon="31"/></trkseg>
+      <trkseg><trkpt lat="52" lon="32"/><trkpt lat="53" lon="33"/></trkseg></trk>
+    </gpx>`),
+      'gpx',
+    );
+    expect(preview.points).toMatchObject([{ label: 'Точка', coords: { lat: 50, lng: 30 } }]);
+    expect(preview.lineStrings).toHaveLength(3);
+    expect(preview.lineStrings.map((line) => line.label)).toEqual(['Трек', 'Трек', 'Маршрут']);
+    expect(preview.lineStrings[1].coords).toEqual([
+      { lat: 52, lng: 32 },
+      { lat: 53, lng: 33 },
+    ]);
+  });
+
+  it('#3930 renders GeoJSON collections, multipoints and polygon holes with labels and styles', () => {
+    const preview = parseKmzPreview(
+      buffer(
+        JSON.stringify({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: { name: 'Геометрії', stroke: '#123456', fill: '#654321' },
+              geometry: {
+                type: 'GeometryCollection',
+                geometries: [
+                  {
+                    type: 'MultiPoint',
+                    coordinates: [
+                      [30, 50],
+                      [31, 51],
+                    ],
+                  },
+                  {
+                    type: 'LineString',
+                    coordinates: [
+                      [30, 50],
+                      [31, 51],
+                    ],
+                  },
+                  {
+                    type: 'Polygon',
+                    coordinates: [
+                      [
+                        [30, 50],
+                        [32, 50],
+                        [32, 52],
+                        [30, 50],
+                      ],
+                      [
+                        [30.2, 50.2],
+                        [31, 50.2],
+                        [31, 51],
+                        [30.2, 50.2],
+                      ],
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+      'geojson',
+    );
+    expect(preview.points).toHaveLength(2);
+    expect(preview.lineStrings).toMatchObject([{ label: 'Геометрії', color: '#123456' }]);
+    expect(preview.polygons).toMatchObject([
+      { label: 'Геометрії', strokeColor: '#123456', fillColor: '#654321' },
+    ]);
+    expect(preview.polygons[0].rings).toHaveLength(2);
+    expect(
+      parseKmzPreview(buffer('{"type":"Point","coordinates":[30,50]}'), 'geojson').points,
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    ['gpx', '<html/>'],
+    ['gpx', '<gpx><wpt></gpx>'],
+    ['gpx', '<!DOCTYPE gpx [<!ENTITY x "text">]><gpx/>'],
+    ['geojson', '{broken'],
+    ['geojson', '{"type":"FeatureCollection","features":[{"type":"Point","coordinates":[30,50]}]}'],
+    ['geojson', '{"type":"Point","coordinates":["30",50]}'],
+    ['geojson', '{"type":"Point","coordinates":[1e400,50]}'],
+    ['geojson', '{"type":"Point","coordinates":[181,50]}'],
+    ['geojson', '{"type":"LineString","coordinates":null}'],
+    [
+      'geojson',
+      '{"type":"Feature","geometry":{"type":"Point","coordinates":[30,50]},"properties":[]}',
+    ],
+  ] as const)('#3930 rejects malformed or unsafe %s input %s', (format, text) => {
+    expect(() => parseKmzPreview(buffer(text), format)).toThrow('MAP_MALFORMED');
+  });
+
+  it('#3930 bounds native GeoJSON coordinates and collection nesting', () => {
+    const coordinates = Array.from({ length: MAX_KMZ_PREVIEW_COORDINATES + 1 }, () => [30, 50]);
+    expect(() =>
+      parseKmzPreview(buffer(JSON.stringify({ type: 'MultiPoint', coordinates })), 'geojson'),
+    ).toThrow('KMZ_TOO_MANY_COORDINATES');
+    let geometry: unknown = { type: 'Point', coordinates: [30, 50] };
+    for (let i = 0; i < 40; i++) geometry = { type: 'GeometryCollection', geometries: [geometry] };
+    expect(() => parseKmzPreview(buffer(JSON.stringify(geometry)), 'geojson')).toThrow(
+      'MAP_MALFORMED',
+    );
+    expect(() =>
+      parseKmzPreview(buffer('{"type":"Point","coordinates":[30,50]}'), 'geojson', 10),
+    ).toThrow('KMZ_SOURCE_TOO_LARGE');
+    const geometries = Array.from({ length: MAX_MAP_PREVIEW_FEATURES + 1 }, () => ({
+      type: 'GeometryCollection',
+      geometries: [],
+    }));
+    expect(() =>
+      parseKmzPreview(
+        buffer(JSON.stringify({ type: 'GeometryCollection', geometries })),
+        'geojson',
+      ),
+    ).toThrow('MAP_TOO_MANY_FEATURES');
+  });
+
   it('keeps independently styled points, lines, polygons, and polygon holes', () => {
     const preview = parseKmzPreview(
       buffer(`<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>

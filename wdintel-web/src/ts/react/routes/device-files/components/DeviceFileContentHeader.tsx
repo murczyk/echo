@@ -1,88 +1,145 @@
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import { IconButton } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
-import { Typography } from '@mui/material';
-import { useEffect, useRef } from 'react';
+import { IconButton } from '@mui/material';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { FileBreadcrumb } from '../../../../../Bindings';
 import type { DeviceFileSelection } from '../device-file-archive';
-import { PowerButton } from '../../../components/PowerButton';
+import { DeviceFileBreadcrumbs } from './DeviceFileBreadcrumbs';
+import { PowerIconButton } from '../../../components/PowerIconButton';
 import type { useDeviceFilePreview } from '../use-device-file-preview';
+import {
+  MessageCardAttachmentPreviewHeader,
+  attachmentPreviewHeaderIconButtonSx,
+} from '../../shared/message-card/attachment-preview/MessageCardAttachmentPreviewHeader';
+import { MessageCardAttachmentPreviewInfoPopover } from '../../shared/message-card/attachment-preview/MessageCardAttachmentPreviewInfoPopover';
+import { AttachmentPreviewMobileCarouselNav } from '../../shared/message-card/attachment-preview/MessageCardAttachmentPreviewControls';
+import type { MessageCardPreviewNavigation } from '../../shared/message-card/attachment-preview/message-card-preview.types';
+import { formatSizeBytes } from '../../shared/message-card/message-card-image-utils';
+import { formatVideoTime } from '../../shared/message-card/message-card-video-utils';
+import { getFilePreviewKind } from '../../shared/message-card/file-preview-kind';
+import { formatDeviceDateTime } from '../../devices/helpers';
 
 export function DeviceFileContentHeader({
   file,
+  breadcrumbs,
   preview,
   sessionScoped = false,
   revisionPinned = false,
-  mobile = false,
-  zoom,
-  onZoomChange,
+  titleId = 'device-file-content-title',
+  navigation,
+  additionalActions,
+  onClose,
+  closeLabel,
   onFullscreen,
 }: {
   file: DeviceFileSelection;
+  breadcrumbs?: FileBreadcrumb[];
   preview: ReturnType<typeof useDeviceFilePreview>;
   sessionScoped?: boolean;
   revisionPinned?: boolean;
-  mobile?: boolean;
-  zoom?: number;
-  onZoomChange?: (zoom: number) => void;
+  titleId?: string;
+  navigation?: MessageCardPreviewNavigation;
+  additionalActions?: ReactNode;
+  onClose?: () => void;
+  closeLabel?: string;
   onFullscreen?: () => void;
 }) {
-  const path = file.absolutePath ?? (file.pathComponents.join(' / ') || file.name);
+  const [infoAnchor, setInfoAnchor] = useState<HTMLButtonElement | null>(null);
+  useEffect(() => setInfoAnchor(null), [file.entryId, file.revision]);
+  useEffect(() => {
+    if (preview.state === 'denied') setInfoAnchor(null);
+  }, [preview.state]);
+  const sizeBytes = preview.source?.sizeBytes ?? file.sizeBytes;
+  const kind = preview.source && getFilePreviewKind(preview.source);
   return (
-    <header
-      className={
-        mobile
-          ? 'flex shrink-0 flex-col items-start gap-echo-sm border-b border-echo-divider-subtle p-echo-md'
-          : 'flex min-h-echo-control-lg shrink-0 flex-wrap items-center gap-echo-md border-b border-echo-divider-subtle px-echo-lg py-echo-sm echo-sm:flex-nowrap'
-      }
-    >
-      {mobile ? (
-        <p className="m-0 text-[18px] font-semibold [overflow-wrap:anywhere]">{file.name}</p>
-      ) : null}
-      <Typography
-        component="h2"
-        variant="body2"
-        id="device-file-content-title"
-        title={path}
-        tabIndex={0}
-        className={
-          mobile
-            ? 'm-0 max-w-full font-normal! text-echo-text [overflow-wrap:anywhere]'
-            : 'm-0 min-w-0 flex-1 basis-full overflow-x-auto whitespace-nowrap font-normal! text-echo-text echo-sm:basis-auto'
+    <div className="@container/device-preview shrink-0">
+      <MessageCardAttachmentPreviewHeader
+        embedded
+        titleId={titleId}
+        fileName={file.name}
+        titleContent={
+          breadcrumbs ? (
+            <DeviceFileBreadcrumbs breadcrumbs={breadcrumbs} fileName={file.name} />
+          ) : undefined
         }
-      >
-        {path}
-      </Typography>
-      {file.revision != null ? (
-        <span className="inline-flex shrink-0 items-center gap-echo-xs whitespace-nowrap rounded-echo-sm bg-echo-success/20 px-echo-sm py-echo-xs text-echo-xs text-[color:color-mix(in_srgb,var(--echo-color-success)_60%,var(--echo-color-text))]">
-          <span aria-hidden="true" className="size-echo-xs rounded-full bg-current" />
-          Ревізія {file.revision} ·{' '}
-          {revisionPinned ? 'За посиланням' : sessionScoped ? 'Із вибраної сесії' : 'Поточна'}
-        </span>
-      ) : null}
-      <DeviceFileContentActions
-        preview={preview}
-        mobile={mobile}
-        zoom={zoom}
-        onZoomChange={onZoomChange}
-        onFullscreen={onFullscreen}
+        navigation={navigation}
+        onInfoClick={
+          preview.state !== 'denied' ? (event) => setInfoAnchor(event.currentTarget) : undefined
+        }
+        onClose={onClose}
+        closeLabel={closeLabel}
+        additionalActions={
+          <>
+            {additionalActions}
+            <DeviceFileContentActions preview={preview} onFullscreen={onFullscreen} />
+          </>
+        }
       />
-    </header>
+      {navigation && (
+        <div className="hidden justify-center bg-[#121212] text-white @max-[640px]/device-preview:flex">
+          <AttachmentPreviewMobileCarouselNav navigation={navigation} />
+        </div>
+      )}
+      <MessageCardAttachmentPreviewInfoPopover
+        open={infoAnchor != null && preview.state !== 'denied'}
+        anchorEl={infoAnchor}
+        onClose={() => setInfoAnchor(null)}
+        fields={[
+          { label: 'URL', value: preview.source?.originalHref || '—' },
+          { label: 'Файл', value: file.name },
+          { label: 'Тип', value: preview.source?.contentType || file.mimeType || '—' },
+          { label: 'Розмір файлу', value: sizeBytes === 0 ? '0 B' : formatSizeBytes(sizeBytes) },
+          ...(kind === 'image'
+            ? [
+                {
+                  label: 'Розмір зображення',
+                  value: preview.imageSize
+                    ? `${preview.imageSize.width} × ${preview.imageSize.height}`
+                    : '—',
+                },
+              ]
+            : []),
+          ...(kind === 'audio' || kind === 'video'
+            ? [
+                {
+                  label: 'Тривалість',
+                  value:
+                    preview.durationSeconds == null
+                      ? '—'
+                      : formatVideoTime(preview.durationSeconds),
+                },
+              ]
+            : []),
+          { label: 'ID', value: file.fileId || '—' },
+          {
+            label: 'Шлях',
+            value: file.absolutePath || file.virtualPath || file.pathComponents.join('/'),
+          },
+          ...(file.revision == null
+            ? []
+            : [
+                {
+                  label: 'Ревізія',
+                  value: `${file.revision} · ${revisionPinned ? 'За посиланням' : sessionScoped ? 'Із вибраної сесії' : 'Поточна'}`,
+                },
+              ]),
+          { label: 'Дата завантаження', value: formatDeviceDateTime(file.contentUploadedAt) },
+          {
+            label: 'Дата створення',
+            value: formatDeviceDateTime(file.fileMetadataCreatedAt),
+          },
+          { label: 'Дата зміни', value: formatDeviceDateTime(file.fileMetadataModifiedAt) },
+        ]}
+      />
+    </div>
   );
 }
 
 export function DeviceFileContentActions({
   preview,
-  mobile = false,
-  zoom,
-  onZoomChange,
   onFullscreen,
 }: {
   preview: ReturnType<typeof useDeviceFilePreview>;
-  mobile?: boolean;
-  zoom?: number;
-  onZoomChange?: (zoom: number) => void;
   onFullscreen?: () => void;
 }) {
   const downloadFocus = useRef<{ button: HTMLButtonElement; epoch: number | null } | null>(null);
@@ -102,27 +159,10 @@ export function DeviceFileContentActions({
   }, [preview.downloading, preview.epoch]);
   return (
     <>
-      {zoom != null && onZoomChange && (
-        <div className="flex shrink-0 items-center">
-          <IconButton
-            aria-label="Зменшити масштаб"
-            disabled={zoom <= 50}
-            onClick={() => onZoomChange(zoom - 25)}
-          >
-            <ZoomOutIcon />
-          </IconButton>
-          <span aria-live="polite">{zoom}%</span>
-          <IconButton
-            aria-label="Збільшити масштаб"
-            disabled={zoom >= 300}
-            onClick={() => onZoomChange(zoom + 25)}
-          >
-            <ZoomInIcon />
-          </IconButton>
-        </div>
-      )}
       {onFullscreen && (
         <IconButton
+          size="small"
+          sx={attachmentPreviewHeaderIconButtonSx}
           aria-label="На весь екран"
           disabled={preview.state !== 'ready'}
           onClick={onFullscreen}
@@ -130,14 +170,11 @@ export function DeviceFileContentActions({
           <FullscreenIcon />
         </IconButton>
       )}
-      <PowerButton
+      <PowerIconButton
         key={preview.epoch}
         size="small"
-        variant="contained"
-        disableElevation
-        sx={{ textTransform: 'none' }}
-        className={mobile ? '!min-h-echo-control-lg w-full shrink-0' : 'h-echo-control-sm shrink-0'}
-        startIcon={<DownloadIcon fontSize="small" />}
+        sx={attachmentPreviewHeaderIconButtonSx}
+        title={preview.downloading ? 'Завантаження…' : 'Скачати файл'}
         onClick={(event) => {
           downloadFocus.current = { button: event.currentTarget, epoch: preview.epoch };
           void preview.download();
@@ -146,8 +183,9 @@ export function DeviceFileContentActions({
         aria-busy={preview.downloading}
         aria-label="Скачати файл"
       >
-        {preview.downloading ? 'Завантаження…' : 'Скачати файл'}
-      </PowerButton>
+        <DownloadIcon fontSize="small" />
+        <span className="sr-only">Скачати файл</span>
+      </PowerIconButton>
     </>
   );
 }

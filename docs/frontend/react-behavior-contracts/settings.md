@@ -1,5 +1,21 @@
 # Settings
 
+## Report destination memory
+
+- Duty and Analysis each expose «Розвіддонесення: зберігати вибір групи» in
+  their settings tab. Both default to enabled, including missing values from
+  older responses and unset database columns.
+- `dutyRememberReportGroup` and `analysisRememberReportGroup` persist
+  independently through `/api/user/settings`; older clients that omit them
+  preserve the stored values.
+- Disabling a page's switch leaves new reports without a preselected group and
+  stops updating the remembered destination from that page. Manual selection
+  still works. Editing existing reports keeps their destination. The minimal
+  Duty report window uses the remembered destination when enabled and saves
+  without sending to a group when disabled.
+- Coverage: `wdintel-web/tests/e2e/manage-message-drawer.spec.ts` and
+  `wdintel-rs/src/user_settings/functional_tests.rs`.
+
 ## Analysis time-basis regression
 
 - **Behavior ID:** `react-settings-analysis-time-basis`
@@ -46,7 +62,7 @@
 ## System-setting persistence
 
 - **Behavior ID:** `react-system-settings-persistence`
-- **Expected observable result:** disabling the Duty minus menu, the Duty selected-groups indicator, or 2FA persists through save and the next load reflects the disabled state.
+- **Expected observable result:** disabling the Duty minus menu, the Duty selected-groups indicator, or 2FA persists through save and the next load reflects the disabled state. «ШІ: головна мережа повідомлення» is off by default; enabling it persists through save and reload, and saves from older admin clients keep its stored value ([#4095](https://github.com/echoua/echo/issues/4095)).
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
 

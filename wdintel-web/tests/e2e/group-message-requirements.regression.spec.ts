@@ -128,15 +128,21 @@ for (const flow of ['message', 'report'] as const) {
       name: flow === 'message' ? 'Група' : 'Відправити в групу',
       exact: true,
     });
-    await group.click();
-    await page.getByRole('option', { name: 'Обов’язкові 3935', exact: true }).click();
+    const chooseGroup = async (name: string) => {
+      await group.click();
+      await page.getByRole('option', { name, exact: true }).click();
+      if (flow === 'message') await group.press('Escape');
+    };
+    await chooseGroup('Обов’язкові 3935');
     const submit = page.getByRole('button', { name: 'Створити', exact: true });
     await expect(submit).toBeDisabled();
-    await group.click();
-    await page.getByRole('option', { name: 'Необов’язкові 3935', exact: true }).click();
+    await chooseGroup('Необов’язкові 3935');
+    if (flow === 'message') {
+      await expect(submit).toBeDisabled();
+      await chooseGroup('Обов’язкові 3935');
+    }
     await expect(submit).toBeEnabled();
-    await group.click();
-    await page.getByRole('option', { name: 'Обов’язкові 3935', exact: true }).click();
+    await chooseGroup('Обов’язкові 3935');
     await expect(submit).toBeDisabled();
     await page.getByRole('combobox', { name: 'Підрозділ', exact: true }).fill('Підрозділ 3935');
     await page.getByRole('option', { name: 'Підрозділ 3935', exact: true }).click();
@@ -149,7 +155,8 @@ for (const flow of ['message', 'report'] as const) {
     await expect.poll(() => submissions.length).toBe(1);
     expect(submissions[0]).toMatchObject({
       unit_id: 3935,
-      signal_group_master_key: 'required-3935',
+      signal_group_master_key: flow === 'message' ? 'optional-3935' : 'required-3935',
+      ...(flow === 'message' ? { additional_signal_group_master_keys: ['required-3935'] } : {}),
     });
     if (flow === 'message') expect(submissions[0]).toMatchObject({ device_name_id: 3935 });
   });

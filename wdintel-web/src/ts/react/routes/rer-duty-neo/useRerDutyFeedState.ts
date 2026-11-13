@@ -73,6 +73,8 @@ export type FeedStateDeps = {
   disableAutoScroll: boolean;
   deviceAccess: DeviceAccess;
   radioFeaturesAllowed?: boolean;
+  enableDutySearch?: boolean;
+  dutySearchReady?: boolean;
   hideNetworks?: boolean;
   networkVisibilityReady?: boolean;
   onFeedRemoved?: (feedId: string) => void;
@@ -234,12 +236,20 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
     true,
     setError,
+    {
+      unitIds: [],
+      selectionValues: messageFeeds.flatMap((feed) => [
+        ...(feed.filter.unitsSelected ?? []),
+        ...(feed.filter.unitsDenied ?? []),
+      ]),
+    },
   );
   const isFeedReady = useCallback(
     (feed: MessageFeedState) =>
-      unitHierarchy !== null ||
-      (feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) === 0,
-    [unitHierarchy],
+      (deps.dutySearchReady !== false || !feed.filter.search?.trim()) &&
+      ((unitHierarchy !== null && !unitHierarchyLoading) ||
+        (feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) === 0),
+    [deps.dutySearchReady, unitHierarchy, unitHierarchyLoading],
   );
   const effectiveFiltersReady = frequencyFiltersReady;
 
@@ -644,6 +654,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : feed.filter;
       const request = buildInboxReq({
         ...opts,
+        sinceDateInclusiveMs: deps.enableDutySearch ? feed.historySinceMs : null,
         filter: radioFeaturesAllowed
           ? filter
           : {
@@ -660,6 +671,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
+      if (!deps.enableDutySearch) {
+        request.search = null;
+        request.searchMode = null;
+      }
       return applyGroupScopeToInboxRequest(
         request,
         feed.groupScopeMasterKey
@@ -667,7 +682,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           : { kind: 'all' },
       );
     },
-    [deviceAccess.status, freqs, radioFeaturesAllowed, unitHierarchy],
+    [deps.enableDutySearch, deviceAccess.status, freqs, radioFeaturesAllowed, unitHierarchy],
   );
 
   useEffect(() => {

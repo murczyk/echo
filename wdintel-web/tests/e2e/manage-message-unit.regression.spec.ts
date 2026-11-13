@@ -568,6 +568,42 @@ for (const width of [390, 768]) {
   });
 }
 
+test('@regression #4022 parsed synonyms submitted the matched ID among duplicate unit names', async ({
+  page,
+}) => {
+  const units = [existingUnit, { ...existingUnit, id: 4022 }];
+  const submissions = await openDutyUnitEditor(page, {}, async (route) => {
+    await route.fulfill({ json: { units } });
+  });
+  await page.route('**/api/1.1/submit-direct/parse', (route) =>
+    route.fulfill({
+      json: {
+        text: '4022 parsed message',
+        unit_v2: existingUnit.name,
+        unit_id: 4022,
+        coords: [],
+        to: [],
+        locations: [],
+      },
+    }),
+  );
+  await page
+    .getByRole('textbox', { name: 'Текст повідомлення' })
+    .fill('Другий синонім 4022\n4022 parsed message');
+  const input = page.getByRole('combobox', { name: 'Підрозділ' });
+  await expect(input).toHaveValue(existingUnit.name);
+  await expect(input).toHaveAttribute('aria-invalid', 'false');
+  await input.click();
+  await expect(page.getByRole('option', { name: `${existingUnit.name} · №4022` })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await input.press('Escape');
+  await page.getByRole('button', { name: 'Створити', exact: true }).click();
+  await expect.poll(() => submissions.length).toBe(1);
+  expect(submissions[0]).toMatchObject({ unit: existingUnit.name, unit_id: 4022 });
+});
+
 test('@regression #3535 parsed exact names selected inactive units by ID', async ({ page }) => {
   const submissions = await openDutyUnitEditor(page);
   await page.route('**/api/1.1/submit-direct/parse', (route) =>

@@ -5,13 +5,17 @@ import { Type } from "typebox";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
+  SynthesisContentFilterError,
   BUDGET_INABILITY,
+  PARTIAL_GRACE_MS,
   budgetFallback,
   chooseBudgetAnswer,
   synthesizeBudgetEvidence,
   toolCallLimit,
+  terminalProviderFailure,
   validateExecutionPolicy,
   type ExecutionPolicy,
+  synthesisConversation,
 } from "./execution-policy.ts";
 import { fileCitationHref } from "./devices.ts";
 
@@ -160,6 +164,60 @@ test("#3724 returns a short notice, never raw excerpts, when synthesis ignores c
   assert.ok(!fallback.includes("Verified source text"));
   assert.ok(!fallback.includes("уривки джерел"));
   assert.ok(!fallback.includes("/rer-analysis-neo"));
+});
+
+test("incident 01a1d054: a cut-off synthesis hands over what it wrote, waiting only briefly", async () => {
+  const cases = [
+    [true, "aborted", undefined],
+    [false, "aborted", undefined],
+    [true, "aborted", "content_filter"],
+    // A provider failure that settles just after the deadline is not the deadline's cut.
+    [true, "error", undefined],
+  ] as const;
+  for (const [settles, stopReason, rawStopReason] of cases) {
+    const handsOver = settles && stopReason === "aborted" && rawStopReason === undefined;
+    const cancellation = new AbortController();
+    const partials: string[] = [];
+    const outcomes: any[] = [];
+    const response = synthesizeBudgetEvidence(
+      {
+        engine,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Report",
+        evidence,
+        maxTokens: 8192,
+        signal: cancellation.signal,
+        onPartial: (text) => partials.push(text),
+        onOutcome: (outcome) => outcomes.push(outcome),
+      },
+      (_engine, _context, options) =>
+        new Promise((resolve) => {
+          // As pi-ai does: the aborted message keeps what was streamed, hidden thinking apart.
+          if (settles)
+            options!.signal!.addEventListener("abort", () =>
+              resolve({
+                stopReason,
+                ...(rawStopReason ? { rawStopReason } : {}),
+                content: [
+                  { type: "thinking", thinking: "PRIVATE_THINKING" },
+                  { type: "text", text: "Written so far" },
+                ],
+              } as any),
+            );
+        }),
+    );
+    const abortedAt = Date.now();
+    cancellation.abort();
+    assert.equal(await response, null);
+    // A provider that ignores the abort delays the fallback by the grace period only.
+    assert.ok(Date.now() - abortedAt < PARTIAL_GRACE_MS + 500);
+    // Filtered or failed text is never handed over, even when it settles after the cut.
+    assert.deepEqual(partials, handsOver ? ["Written so far"] : []);
+    assert.equal(outcomes.at(-1).outcome, "aborted");
+    assert.equal(outcomes.at(-1).textCharacters, handsOver ? 14 : undefined);
+  }
 });
 
 test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds context", async () => {
@@ -423,4 +481,117 @@ test("#3985 document requests in short modes and Deep runs get their own budgets
     [toolCallLimit(undefined), toolCallLimit(balanced), toolCallLimit(document), toolCallLimit(queued), toolCallLimit(deep)],
     [128, 128, 128, 128, 1024],
   );
+});
+
+test("#4112 reports provider failures that end a run so Echo can offer another model", () => {
+  assert.deepEqual(
+    terminalProviderFailure(
+      new Error("provider request failed: provider_error: unclassified provider failure"),
+    ),
+    {
+      type: "completion_diagnostic",
+      stage: "answer",
+      outcome: "transient_error",
+      failureKind: "provider_error",
+    },
+  );
+  assert.equal(
+    terminalProviderFailure(
+      new Error("provider request failed: rate_limit: provider rate limit or model deployment cooldown"),
+    )?.failureKind,
+    "rate_limit",
+  );
+  assert.deepEqual(terminalProviderFailure(new SynthesisContentFilterError("filtered")), {
+    type: "completion_diagnostic",
+    stage: "answer",
+    outcome: "content_filter",
+  });
+  assert.equal(
+    terminalProviderFailure(
+      new Error("provider request failed: content_filter: provider content filter"),
+    )?.outcome,
+    "content_filter",
+  );
+  assert.equal(
+    terminalProviderFailure(
+      new Error("provider request failed: authorization: provider authorization rejected"),
+    ),
+    null,
+  );
+  assert.equal(
+    terminalProviderFailure(new Error("context checkpoint failed: error (reason: provider_error)"))
+      ?.outcome,
+    "transient_error",
+  );
+  assert.equal(
+    terminalProviderFailure(new Error("context checkpoint failed: error (reason: content_filter)"))
+      ?.outcome,
+    "content_filter",
+  );
+  assert.equal(
+    terminalProviderFailure(new Error("context checkpoint failed: error (reason: authorization)")),
+    null,
+  );
+  assert.equal(terminalProviderFailure(new Error("bootstrap exchange returned HTTP 500")), null);
+  assert.equal(terminalProviderFailure(new Error("work journal append failed")), null);
+});
+
+test("#4115 synthesis keeps the opening rules and the newest turns within its budget", () => {
+  const entry = (role: string, chars: number, tag: string) => ({ role, content: `${tag}${"x".repeat(chars - tag.length)}` });
+  const history = [
+    entry("user", 30, "rules"),
+    entry("assistant", 300, "a1"),
+    entry("user", 300, "u2"),
+    entry("assistant", 300, "a2"),
+    entry("user", 300, "u3"),
+  ];
+  const tags = (budget: number, from = history) =>
+    synthesisConversation(from, budget).map(({ content }) => content.replace(/x+$/, ""));
+  // 10 tokens of rules, then 100 per entry, newest first, oldest first in the result.
+  assert.deepEqual(tags(230), ["rules", "a2", "u3"]);
+  // A gap stops filling, so the recent part stays contiguous.
+  assert.deepEqual(tags(320, [...history.slice(0, 3), entry("assistant", 900, "big"), history[4]]), ["rules", "u3"]);
+  // Rules larger than half the budget give way to recent turns.
+  assert.deepEqual(tags(210, [entry("user", 330, "rules"), ...history.slice(1)]), ["a2", "u3"]);
+  // A short history is kept whole, without a duplicate opening.
+  assert.deepEqual(tags(10_000), ["rules", "a1", "u2", "a2", "u3"]);
+  assert.deepEqual(synthesisConversation([], 1000), []);
+  assert.deepEqual(Object.keys(synthesisConversation([{ role: "user", content: "a", citations: [] } as any], 10)[0]), ["role", "content"]);
+});
+
+test("#4125 statistics reach synthesis without crowding out cited sources", async () => {
+  const small = { ...engine, contextWindow: 24_000 };
+  // About 8,750 tokens of cited text fits alone; 6,250 more tokens of statistics would not.
+  const aggregate = { tool: "echo_frequency_summary", request: { period: { kind: "relative_days", days: 1 } }, result: { rows: "x".repeat(25_000) } };
+  const message = { ...evidence.messages[0], text: "y".repeat(35_000) };
+  const sent = async (packed: typeof evidence & { aggregates?: unknown[] }) => {
+    let serialized = "";
+    await synthesizeBudgetEvidence(
+      {
+        engine: small,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Частоти за добу",
+        evidence: packed as any,
+        maxTokens: 8192,
+        signal: new AbortController().signal,
+      },
+      async (_engine, context) => {
+        serialized = JSON.stringify(context.messages);
+        return { stopReason: "stop", content: [{ type: "text", text: "done" }] } as any;
+      },
+    );
+    return serialized;
+  };
+  const both = await sent({ messages: [message], files: [], aggregates: [aggregate] });
+  assert.match(both, /yyyy/);
+  assert.doesNotMatch(both, /statisticsFrom/);
+  const alone = await sent({ messages: [], files: [], aggregates: [aggregate] });
+  assert.match(alone, /statisticsFrom/);
+  assert.match(alone, /echo_frequency_summary/);
+  // Statistics are evidence: an uncited answer from them is not judged by saved notes alone.
+  const saved = { messages: [], files: [], saved: [{ text: "earlier", citations: ["/rer-analysis-neo?m=old"] }] };
+  assert.equal(chooseBudgetAnswer("42 повідомлення на 163.9350.", saved, []), budgetFallback());
+  assert.equal(chooseBudgetAnswer("42 повідомлення на 163.9350.", { ...saved, aggregates: [aggregate] }, []), "42 повідомлення на 163.9350.");
 });

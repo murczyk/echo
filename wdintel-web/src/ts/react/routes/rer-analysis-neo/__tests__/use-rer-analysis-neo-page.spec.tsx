@@ -378,10 +378,6 @@ describe('useRerAnalysisNeoPage', () => {
     systemSettingsMock.currentSystemSettings.mockResolvedValue({
       id: 7,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
       enableAudioTranscription: true,
@@ -838,10 +834,6 @@ describe('useRerAnalysisNeoPage', () => {
       systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
         id: 7,
         rerAnalysisUnitsExactMatchOnlyDefault: false,
-        rerDutyTestEnabled: false,
-        rerDutyInsertHistoricalInterceptions: false,
-        rerDutyTestSinceMs: 0,
-        rerDutyTestLimit: 1,
         rerDutyPollIntervalSec: 1,
         rerShortUrlEnabled: false,
         enableAudioTranscription: true,
@@ -1029,10 +1021,6 @@ describe('useRerAnalysisNeoPage', () => {
     systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
       id: 7,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
       enableAudioTranscription: true,
@@ -1236,10 +1224,6 @@ describe('useRerAnalysisNeoPage', () => {
     systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
       id: 7,
       rerAnalysisUnitsExactMatchOnlyDefault: true,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
       enableAudioTranscription: true,
@@ -1363,10 +1347,6 @@ describe('useRerAnalysisNeoPage', () => {
     systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
       id: 7,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
       disableBotTags: true,
@@ -1641,6 +1621,7 @@ describe('useRerAnalysisNeoPage', () => {
       await act(async () => {
         catalog.resolve({
           revision: parent,
+          selections: [],
           groups: [
             { id: 'group:2:6 А', label: '6 А', level: 2, parentIndex: null },
             {

@@ -259,6 +259,28 @@ where
     .await
 }
 
+/// Recalculates the messages linked to the network and intercepted since
+/// `since_ts`, through the invalidation workers.
+pub async fn invalidate_network_linked_inbox_since<C: ConnectionTrait>(
+    db: &C,
+    network_id: i64,
+    since_ts: NaiveDateTime,
+    context_msg: String,
+) -> anyhow::Result<()> {
+    enqueue_network_invalidation_task(
+        db,
+        Some(since_ts),
+        None,
+        NetworkInvalidationScope {
+            sigint_network_id: Some(network_id),
+            ..Default::default()
+        },
+        context_msg,
+    )
+    .await
+    .c(h!())
+}
+
 pub async fn invalidate_network_inbox_for_freq<'a, 'async_trait, C>(
     freq: &str,
     since_ts: Option<NaiveDateTime>,
@@ -451,6 +473,9 @@ where
     )
     .await
     .c(h!())?;
+    crate::ai_network_match::enqueue_for_calculated(dbx, &result)
+        .await
+        .c(h!())?;
     Ok(result)
 }
 

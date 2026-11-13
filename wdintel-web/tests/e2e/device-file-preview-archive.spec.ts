@@ -246,12 +246,16 @@ test('#3778 @regression ZIP history keeps nested bytes and source counts after t
       }
       await fileTree.getByTestId(`device-file-${file.fileId}`).click();
       const pane = page.getByTestId('device-file-content-pane');
+      const folder = page.getByRole('region', { name: 'Вміст папки', exact: true });
       const returnToArchive = () => fileTree.getByTestId(`device-file-${file.fileId}`).click();
-      await expect(pane).toContainText(`Ревізія ${file.revision}`);
-      const original = page.waitForEvent('download', { timeout: 90_000 });
-      await pane.getByRole('button', { name: 'Скачати файл', exact: true }).click();
-      expect(await readFile((await (await original).path())!)).toEqual(version.bytes);
-      await pane.getByRole('button', { name: 'Report.txt', exact: true }).click();
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get('directory_revision'))
+        .toBe(String(file.revision));
+      await expect(pane).toHaveCount(0);
+      const original = await reader.get(previewOriginalHref(deviceId, file.fileId, file.revision));
+      expect(original.status()).toBe(200);
+      expect(await original.body()).toEqual(version.bytes);
+      await folder.getByRole('button', { name: 'Відкрити файл Report.txt', exact: true }).click();
       await expect(pane.locator('pre')).toHaveText(`upper ${label}`);
       const downloaded = page.waitForEvent('download', { timeout: 90_000 });
       await pane.getByRole('button', { name: 'Скачати файл', exact: true }).click();
@@ -259,7 +263,7 @@ test('#3778 @regression ZIP history keeps nested bytes and source counts after t
         Buffer.from(`upper ${label}`),
       );
       await returnToArchive();
-      await pane.getByRole('button', { name: 'sound.wav', exact: true }).click();
+      await folder.getByRole('button', { name: 'Відкрити файл sound.wav', exact: true }).click();
       const player = pane.locator('custom-audio-player');
       await expect
         .poll(() =>
@@ -275,8 +279,8 @@ test('#3778 @regression ZIP history keeps nested bytes and source counts after t
         ),
       ).toContain(`/${sound.fileId}/revisions/${sound.revision}/preview/media`);
       await returnToArchive();
-      await pane.getByRole('button', { name: 'nested.zip', exact: true }).click();
-      await pane.getByRole('button', { name: 'inner.txt', exact: true }).click();
+      await folder.getByRole('button', { name: 'Відкрити папку nested.zip', exact: true }).click();
+      await folder.getByRole('button', { name: 'Відкрити файл inner.txt', exact: true }).click();
       await expect(pane.locator('pre')).toHaveText(`nested ${label}`);
       const nestedDownload = page.waitForEvent('download', { timeout: 90_000 });
       await pane.getByRole('button', { name: 'Скачати файл', exact: true }).click();
@@ -284,7 +288,7 @@ test('#3778 @regression ZIP history keeps nested bytes and source counts after t
       expect(nestedSaved.suggestedFilename()).toBe('inner.txt');
       expect(await readFile((await nestedSaved.path())!)).toEqual(Buffer.from(`nested ${label}`));
       await returnToArchive();
-      await pane.getByRole('button', { name: 'route.kml', exact: true }).click();
+      await folder.getByRole('button', { name: 'Відкрити файл route.kml', exact: true }).click();
       await expect(pane.locator('.leaflet-container')).toBeVisible();
     }
     expect((await summary()).totalFileCount).toBe(baseline.totalFileCount + 2);
@@ -636,8 +640,10 @@ test('@regression an unsafe archive path reports an error without publishing a t
     await tree.getByTestId(`device-file-${file.fileId}`).click();
     await expect(page.getByTestId('device-file-content-pane')).toContainText('небезпечний шлях');
     await expect(
-      tree.getByRole('button', { name: 'Згорнути файл echo-archive-tree.zip', exact: true }),
-    ).toBeVisible();
+      page
+        .getByTestId('device-file-content-pane')
+        .getByRole('region', { name: 'Вміст папки', exact: true }),
+    ).toHaveCount(0);
     await expect(tree.getByRole('button', { name: 'readme.txt', exact: true })).toHaveCount(0);
   } finally {
     await backend.dispose();
@@ -661,12 +667,12 @@ test('@regression an empty ZIP is prepared without a browser and opens as one em
     );
     expect(repeated.archive.rootEntryId).toBe(archive.archive.rootEntryId);
     await tree.getByTestId(`device-file-${file.fileId}`).click();
-    await expect(page.getByTestId('device-file-content-pane')).toContainText('Каталог порожній');
-    await expect(
-      page
-        .getByTestId('device-file-content-pane')
-        .getByRole('button', { name: 'Скачати файл', exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Вміст папки', exact: true })).toContainText(
+      'Папка порожня.',
+    );
+    await expect(page.getByTestId('device-file-content-pane')).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get('directory')).toBe(file.fileId);
+    expect(new URL(page.url()).searchParams.get('directory_revision')).toBe(String(file.revision));
   } finally {
     await backend.dispose();
   }
@@ -675,7 +681,7 @@ test('@regression an empty ZIP is prepared without a browser and opens as one em
 test('@regression case-only names keep separate persisted identities and exact download bytes', async ({
   page,
 }) => {
-  const { backend, bytes, list, memberHref, reader } = await openArchiveTree(page);
+  const { backend, file, bytes, list, memberHref, reader, receipt } = await openArchiveTree(page);
   try {
     const entries = (await list()).entries;
     const upper = entries.find((entry) => entry.name === 'Report.txt')!;
@@ -700,11 +706,12 @@ test('@regression case-only names keep separate persisted identities and exact d
       expect((await readFile((await result.path())!)).toString()).toBe(contents);
     }
     await tree.getByRole('button', { name: 'echo-archive-tree.zip', exact: true }).click();
-    const download = page.waitForEvent('download');
-    await pane.getByRole('button', { name: 'Скачати файл', exact: true }).click();
-    const original = await download;
-    expect(original.suggestedFilename()).toBe('echo-archive-tree.zip');
-    expect(await readFile((await original.path())!)).toEqual(bytes);
+    await expect(page.getByRole('region', { name: 'Вміст папки', exact: true })).toBeVisible();
+    await expect(pane).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get('directory_revision')).toBe(String(file.revision));
+    const original = await reader.get(receipt.originalHref);
+    expect(original.status()).toBe(200);
+    expect(await original.body()).toEqual(bytes);
   } finally {
     await backend.dispose();
   }

@@ -9,6 +9,7 @@
   "scripts": {
     "build": "rm -rf dist && elm-land build",
     "prebuild": "npm run tokens:check",
+    "postbuild": "python3 ../deploy/doc_media.py prepare --dist dist",
     "format:all": "node scripts/format-files.mjs all",
     "format:staged": "node scripts/format-files.mjs staged",
     "postinstall": "node scripts/strip-use-client.mjs && node scripts/enable-elm-land-vite-config.mjs",

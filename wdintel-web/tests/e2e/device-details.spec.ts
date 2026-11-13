@@ -15,6 +15,179 @@ const ANALYTICS_TAG_ID = '018f0000-0000-7000-8000-000000000006';
 const SEARCH_FILE_ONE_ID = '018f0000-0000-7000-8000-000000000012';
 const SEARCH_FILE_TWO_ID = '018f0000-0000-7000-8000-000000000013';
 
+for (const target of ['other', 'all'] as const) {
+  test(`@regression #3930 switching session clears pinned archive search to ${target}`, async ({
+    page,
+  }) => {
+    await installMocks(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const syncIds = [
+      '018f0000-0000-7000-8000-000000000021',
+      '018f0000-0000-7000-8000-000000000022',
+    ];
+    const sessions = syncIds.map((sync_id, index) => ({
+      sync_id,
+      device_id: DEVICE_ID,
+      mode: 'automatic',
+      status: 'completed',
+      analysis_run_id: null,
+      next_batch_index: 1,
+      counts: { received: 2, accepted: 2, created: 2, updated: 0, rejected: 0 },
+      created_at: `2026-09-21T1${index}:00:00Z`,
+      updated_at: NOW,
+      completed_at: NOW,
+      expires_at: null,
+    }));
+    await page.route('**/api/device/files/sessions/list', (route) =>
+      fulfillJson(route, { sessions, next_cursor: null }),
+    );
+    await page.route('**/api/device/files/sessions/get', (route) =>
+      fulfillJson(route, {
+        sync: sessions.find((item) => item.sync_id === route.request().postDataJSON().sync_id),
+      }),
+    );
+    await page.route('**/api/device/files/sessions/summaries', (route) =>
+      fulfillJson(route, {
+        summaries: route
+          .request()
+          .postDataJSON()
+          .sync_ids.map((sync_id: string) => ({
+            sync_id,
+            analysis: {
+              total_file_count: 2,
+              files_with_content_count: 1,
+              analyzed_file_count: 2,
+              items: [],
+            },
+          })),
+      }),
+    );
+    const searches: { sync_id: string; archive_revision: number }[] = [];
+    await page.route('**/api/device/files/search', (route) => {
+      const request = route.request().postDataJSON();
+      searches.push(request);
+      if (request.sync_id === syncIds[1] && request.archive_revision === 3)
+        return route.fulfill({ status: 400, json: { code: 'invalid_request' } });
+      return fulfillJson(route, { entries: [], next_cursor: null });
+    });
+    const query = new URLSearchParams({
+      sync_id: syncIds[0],
+      keep: '1',
+      search: 'report',
+      search_scope: DOCUMENTS_ID,
+      search_scope_revision: '3',
+      search_global: '0',
+      search_view: 'results',
+      search_root: DOCUMENTS_ID,
+      directory: DOCUMENTS_ID,
+      directory_revision: '3',
+    });
+    await page.goto(`/devices/${DEVICE_ID}/files?${query}`);
+    await expect.poll(() => searches.length).toBe(1);
+    expect(searches[0]).toMatchObject({ sync_id: syncIds[0], archive_revision: 3 });
+    const sidebar = page.getByTestId('device-sync-sessions-sidebar');
+    if (target === 'other') await sidebar.locator(`[data-sync-id="${syncIds[1]}"]`).click();
+    else await sidebar.getByRole('button', { name: /Усі сесії/ }).click();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('sync_id'))
+      .toBe(target === 'other' ? syncIds[1] : null);
+    const after = new URL(page.url()).searchParams;
+    for (const key of [
+      'search',
+      'search_scope',
+      'search_scope_revision',
+      'search_global',
+      'search_view',
+      'search_root',
+      'directory',
+      'directory_revision',
+    ])
+      expect(after.has(key), key).toBe(false);
+    expect(after.get('keep')).toBe('1');
+    await expect(
+      page.getByRole('textbox', { name: 'Пошук файлів за назвою', exact: true }),
+    ).toHaveValue('');
+    expect(
+      searches.some((request) => request.sync_id === syncIds[1] && request.archive_revision === 3),
+    ).toBe(false);
+    await page.goBack();
+    await expect(
+      page.getByRole('textbox', { name: 'Пошук файлів за назвою', exact: true }),
+    ).toHaveValue('report');
+    await expect.poll(() => searches.at(-1)?.sync_id).toBe(syncIds[0]);
+    expect(searches.at(-1)?.archive_revision).toBe(3);
+    await page.goForward();
+    await expect(
+      page.getByRole('textbox', { name: 'Пошук файлів за назвою', exact: true }),
+    ).toHaveValue('');
+  });
+}
+
+test('@regression #3930 returning to loaded Audio resumes its interrupted filter', async ({
+  page,
+}) => {
+  await installMocks(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route('**/api/device/audio/settings', (route) =>
+    route.fulfill({
+      json: {
+        device_id: DEVICE_ID,
+        enabled: false,
+        global_enabled: false,
+        can_manage_setting: false,
+        blocked_reason: null,
+      },
+    }),
+  );
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requests: { unprocessed_only: boolean }[] = [];
+  await page.route('**/api/device/audio/list', async (route) => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 2) await hold;
+    return route
+      .fulfill({
+        json: {
+          audio: [
+            {
+              id: JOURNAL_FILE_ID,
+              device_id: DEVICE_ID,
+              name: requests.length === 1 ? 'initial.wav' : 'filtered.wav',
+              recording_started_at: NOW,
+              recording_ended_at: NOW,
+              duration_seconds: 1,
+              processed: false,
+              processing_version: JOURNAL_FILE_ID,
+            },
+          ],
+          next_cursor: null,
+        },
+      })
+      .catch(() => {});
+  });
+  try {
+    await page.goto(`/devices/${DEVICE_ID}/audio`);
+    const sidebar = page.getByTestId('device-audio-sidebar');
+    await expect(sidebar.getByText('initial.wav', { exact: true })).toBeVisible();
+    await sidebar.getByRole('button', { name: 'Фільтри аудіо', exact: true }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Тільки необроблені', exact: true }).click();
+    await expect(sidebar).toHaveAttribute('aria-busy', 'true');
+    await openDeviceSection(page, 'Файли');
+    await openDeviceSection(page, 'Аудіо');
+    await expect(sidebar.getByText('filtered.wav', { exact: true })).toBeVisible();
+    await expect(sidebar).toHaveAttribute('aria-busy', 'false');
+    expect(requests).toHaveLength(3);
+    expect(requests[2].unprocessed_only).toBe(true);
+    await expect(
+      sidebar.getByRole('button', { name: 'Фільтри аудіо: тільки необроблені', exact: true }),
+    ).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
 test('@regression #3928 overview shows static tags without filters and keeps navigation usable across layouts', async ({
   page,
 }, testInfo) => {
@@ -31,6 +204,7 @@ test('@regression #3928 overview shows static tags without filters and keeps nav
     { extension: 'xlsx', content_count: 127, content_bytes: 77000000 },
     { extension: 'zip', content_count: 38, content_bytes: 22000000 },
   ];
+  let activityDays = extensions.map((entry) => ({ day: '2026-07-24', ...entry }));
   await page.route('**/api/device/analytics/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/tags')) return fulfillJson(route, { tags });
@@ -53,7 +227,7 @@ test('@regression #3928 overview shows static tags without filters and keeps nav
           content_pending: false,
           backfilled_at: NOW,
           extensions,
-          days: extensions.map((entry) => ({ day: '2026-07-24', ...entry })),
+          days: activityDays,
         },
         items: tags.map((tag) => ({ tag, file_count: 53, latest_file_entry_created_at: NOW })),
       });
@@ -63,40 +237,31 @@ test('@regression #3928 overview shows static tags without filters and keeps nav
   await page.goto(`/devices/${DEVICE_ID}`);
   const overview = page.getByTestId('device-details-overview');
   const activity = page.getByTestId('device-analytics-activity');
-  const activityToggle = activity.getByRole('button', { name: /Статистика завантажень/ });
   const breadcrumbs = page.getByRole('navigation', { name: 'Навігаційний шлях пристрою' });
   await expect(breadcrumbs.getByRole('link')).toHaveText(['Device Alpha']);
   await expect(breadcrumbs.getByRole('link')).toHaveAttribute('aria-current', 'page');
-  await expect(overview.getByRole('button', { name: 'Основне', exact: true })).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
-  await expect(activityToggle).toHaveAttribute('aria-expanded', 'true');
-  await activityToggle.click();
-  await expect(activityToggle).toHaveAttribute('aria-expanded', 'false');
-  await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
-  await page.screenshot({
-    animations: 'disabled',
-    path: testInfo.outputPath('overview-collapsed-dark.png'),
-  });
-  await overview.getByRole('button', { name: 'Основне', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  await expect(overview.getByRole('button', { name: 'Основне', exact: true })).toHaveAttribute(
-    'aria-expanded',
-    'true',
-  );
+  await expect(overview.getByRole('heading', { name: 'Основне', exact: true })).toBeVisible();
+  await expect(overview.getByRole('button', { name: 'Основне', exact: true })).toHaveCount(0);
+  await expect(activity.getByRole('heading', { name: 'Статистика завантажень' })).toBeVisible();
+  await expect(activity.getByRole('button', { name: /Статистика завантажень/ })).toHaveCount(0);
   await expect(overview.getByText('Device Alpha', { exact: true })).toBeInViewport();
-  await page.screenshot({
-    animations: 'disabled',
-    path: testInfo.outputPath('overview-expanded-dark.png'),
-  });
-  await overview.getByRole('button', { name: 'Основне', exact: true }).click();
-  await activityToggle.click();
+  const menuBox = await page.getByRole('navigation', { name: 'Меню пристрою' }).boundingBox();
+  expect(menuBox?.width).toBeLessThanOrEqual(180);
+  await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
   await expect(page.getByRole('img', { name: 'Завантаження файлів за днями' })).toBeVisible();
   await page.screenshot({
     animations: 'disabled',
     path: testInfo.outputPath('overview-days-dark.png'),
   });
+  const plot = page.getByRole('img', { name: 'Завантаження файлів за днями' });
+  const plotBox = await plot.boundingBox();
+  const activityBox = await activity.boundingBox();
+  expect(plotBox!.width / activityBox!.width).toBeGreaterThan(0.8);
+  const tagCard = page.getByRole('region', { name: 'Аналітичні теги', exact: true });
+  await expect(tagCard.getByRole('listitem')).toHaveCount(16);
+  const tagBox = await tagCard.boundingBox();
+  expect(tagBox!.x).toBeGreaterThan(activityBox!.x);
+  expect(Math.abs(tagBox!.y - activityBox!.y)).toBeLessThan(2);
   for (const [label, chart] of [
     ['За кількістю', 'Кількість файлів за типами'],
     ['За розміром', 'Розмір файлів за типами'],
@@ -157,8 +322,8 @@ test('@regression #3928 overview shows static tags without filters and keeps nav
   expect(tagFileRequests).toBe(0);
   await openDeviceSection(page, 'Журнал');
   await expect(page.getByRole('table', { name: 'Журнал синхронізації файлів' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Фільтр за тегами' })).toBeVisible();
-  await page.getByLabel('Без тегів', { exact: true }).check();
+  await expect(page.getByRole('region', { name: 'Фільтр за тегами' })).toHaveCount(0);
+  await page.goto(`/devices/${DEVICE_ID}/journal?untagged=1`);
   await openDeviceSection(page, 'Пристрій');
   await expect(page.getByRole('region', { name: 'Фільтр за тегами' })).toHaveCount(0);
   await expect(tagList.getByRole('listitem')).toHaveCount(16);
@@ -235,15 +400,29 @@ test('@regression #3928 overview shows static tags without filters and keeps nav
   uploadedCount = 0;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(audioCard).toContainText('0');
-  await expect(activityToggle).toHaveAttribute('aria-expanded', 'true');
   await page.getByRole('button', { name: 'Аудіо', exact: true }).click();
   await expect(page.getByText('Завантажених аудіо ще немає.', { exact: true })).toBeVisible();
+  activityDays = Array.from({ length: 180 }, (_, index) => ({
+    ...extensions[0],
+    day: new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10),
+  }));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(plot).toBeVisible();
+  await expect
+    .poll(() =>
+      plot.evaluate((node) => {
+        const scroller = node.parentElement!;
+        return scroller.scrollWidth > scroller.clientWidth && scroller.scrollLeft > 0;
+      }),
+    )
+    .toBe(true);
   expect(errors).toEqual([]);
 });
 
 test('@smoke @regression #3390 #3928 restores file session and tag-filter history', async ({
   page,
 }, testInfo) => {
+  test.setTimeout(60_000);
   await installMocks(page);
   const syncIds = ['018f0000-0000-7000-8000-000000000021', '018f0000-0000-7000-8000-000000000022'];
   const sessions = syncIds.map((id, index) => ({
@@ -286,15 +465,14 @@ test('@smoke @regression #3390 #3928 restores file session and tag-filter histor
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`/devices/${DEVICE_ID}?sync_id=${syncIds[0]}&keep=1`);
+  await expect(page.getByRole('navigation', { name: 'Меню пристрою' })).toBeVisible({
+    timeout: 30_000,
+  });
   const uploadStats = page.getByTestId('device-analytics-activity');
-  await expect(uploadStats.getByRole('button', { name: /Статистика завантажень/ })).toHaveAttribute(
-    'aria-expanded',
-    'true',
-  );
+  await expect(uploadStats.getByRole('heading', { name: 'Статистика завантажень' })).toBeVisible();
   await expect(uploadStats).toContainText('Аудіо за весь час');
   await expect(uploadStats.getByRole('img', { name: 'Завантаження аудіо за днями' })).toBeVisible();
   await expect(uploadStats.getByRole('button', { name: 'За днями', exact: true })).toHaveCount(0);
-  await uploadStats.getByRole('button', { name: /Статистика завантажень/ }).click();
   const right = page.getByTestId('device-sync-sessions-sidebar');
   await expect(right).toHaveCount(0);
   await expect(page.getByRole('button', { name: /праву панель/ })).toHaveCount(0);
@@ -364,8 +542,7 @@ test('@smoke @regression #3390 #3928 restores file session and tag-filter histor
     'true',
   );
   const showTagFilters = async () => {
-    await page.getByRole('button', { name: 'Показати пошук файлів', exact: true }).click();
-    const filters = page.getByRole('button', { name: /додаткові фільтри$/ });
+    const filters = page.getByRole('button', { name: 'Фільтри файлів', exact: true });
     await expect(filters).toBeVisible();
     if ((await filters.getAttribute('aria-expanded')) !== 'true') await filters.click();
   };
@@ -438,6 +615,54 @@ test('@smoke #3390 rejects an invalid files session URL without showing unfilter
   await expect(center.locator('#device-details-files-panel')).toBeVisible();
 });
 
+test('@regression #3928 journal ignores tag filters and paginates without loading tag options', async ({
+  page,
+}) => {
+  const tracker = await installMocks(page);
+  const requests: Array<Record<string, unknown>> = [];
+  await page.route('**/api/device/files/journal', async (route) => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    const continuation = body.cursor !== null;
+    return fulfillJson(route, {
+      entries: [
+        {
+          file_id: continuation ? SEARCH_FILE_TWO_ID : JOURNAL_FILE_ID,
+          name: continuation ? 'journal-second.log' : 'journal-first.log',
+          absolute_path: continuation ? '/logs/journal-second.log' : '/logs/journal-first.log',
+          has_content: true,
+          synchronized_at: NOW,
+          tags: continuation ? [] : [{ id: ANALYTICS_TAG_ID, name: 'Документи' }],
+        },
+      ],
+      total_count: 2,
+      next_cursor: continuation ? null : 'journal-next',
+    });
+  });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const query of [`tag_ids=${ANALYTICS_TAG_ID}&tag_match=all`, 'untagged=1']) {
+      requests.length = 0;
+      await page.goto(`/devices/${DEVICE_ID}/journal?${query}`);
+      const panel = page.locator('#device-details-journal-panel');
+      await expect(panel.getByText('journal-first.log', { exact: true })).toBeVisible();
+      await expect(panel.getByText('Документи', { exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Фільтр за тегами' })).toHaveCount(0);
+      await panel.getByRole('button', { name: 'Завантажити ще', exact: true }).click();
+      await expect(panel.getByText('journal-second.log', { exact: true })).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Завантажити ще', exact: true })).toHaveCount(
+        0,
+      );
+      expect(requests).toHaveLength(2);
+      expect(requests.map(({ cursor }) => cursor)).toEqual([null, 'journal-next']);
+      for (const body of requests) {
+        expect(body).toMatchObject({ tag_ids: null, tag_match: null, untagged: null });
+      }
+      expect(tracker.analyticsTagsRequestCount).toBe(0);
+    }
+  }
+});
+
 test('@regression #3928 ignores session URLs outside files on desktop and mobile', async ({
   page,
 }) => {
@@ -501,6 +726,8 @@ function root(entryId: string, name: string, pathSyntax: 'posix' | 'windows') {
     kind: 'directory',
     name,
     path_syntax: pathSyntax,
+    tags: [],
+    is_favorite: false,
     created_at: NOW,
     updated_at: NOW,
   };
@@ -538,6 +765,16 @@ function entry({
     created_at: NOW,
     updated_at: NOW,
     tags: [],
+    is_favorite: false,
+    is_viewed: false,
+    size_bytes: null,
+    revision: 1,
+    sync_id: null,
+    source_file_state: null,
+    archive: null,
+    is_archive: false,
+    archive_origin: null,
+    virtual_path: null,
   };
 }
 
@@ -545,12 +782,7 @@ function systemSettings() {
   return {
     id: null,
     rer_analysis_units_exact_match_only_default: false,
-    rer_duty_test_enabled: false,
-    rer_duty_insert_historical_interceptions: false,
-    rer_duty_test_since_ms: 0,
-    rer_duty_test_limit: 1,
     rer_duty_poll_interval_sec: 1,
-    rer_duty_test_replay_interval_sec: 1,
     short_url_enabled: false,
     rer_report_enabled: false,
     support_non_rer_interceptions: false,
@@ -576,6 +808,7 @@ function systemSettings() {
     disable_bot_tags: false,
     duty_exclude_menu_enabled: true,
     duty_selected_groups_enabled: true,
+    ai_network_match_enabled: false,
     analysis_aor_filter_enabled: false,
     ai_position_highlights_enabled: false,
     important_notify_all_enabled: true,
@@ -776,6 +1009,8 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
       });
       return;
     }
+    if (pathname === '/api/device/files/filter-options')
+      return fulfillJson(route, { extensions: ['log', 'txt', 'pdf', 'jpg', 'zip'] });
     if (pathname === '/api/device/files/roots') {
       tracker.rootsRequestCount += 1;
       await fulfillJson(route, {
@@ -844,7 +1079,19 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
                   }),
                 ]
               : [];
-      await fulfillJson(route, { breadcrumbs: [], entries, next_cursor: null });
+      const breadcrumbs =
+        request.parent_entry_id === DOCUMENTS_ID
+          ? [
+              { entry_id: POSIX_ROOT_ID, name: '/' },
+              { entry_id: DOCUMENTS_ID, name: 'documents' },
+            ]
+          : [
+              {
+                entry_id: request.parent_entry_id,
+                name: request.parent_entry_id === POSIX_ROOT_ID ? '/' : 'C:\\',
+              },
+            ];
+      await fulfillJson(route, { breadcrumbs, entries, next_cursor: null });
       return;
     }
     if (pathname === '/api/device/files/search') {
@@ -1318,6 +1565,9 @@ test('@smoke device details uses separate pages, an IDE-style Files sidebar, and
     }
   });
   const tracker = await installMocks(page);
+  await page.route('**/api/device/files/filter-options', (route) =>
+    fulfillJson(route, { extensions: ['log', 'txt', 'pdf'] }),
+  );
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/devices/${DEVICE_ID}`, { waitUntil: 'domcontentloaded' });
 
@@ -1342,7 +1592,6 @@ test('@smoke device details uses separate pages, an IDE-style Files sidebar, and
   expect(tracker.journalRequestCount).toBe(0);
   expect(tracker.rootsRequestCount).toBe(0);
   const metadataPanel = page.getByTestId('device-details-overview');
-  await metadataPanel.getByRole('button', { name: 'Основне', exact: true }).click();
   await expect(metadataPanel).toBeVisible();
   await expect(metadataPanel).toContainText('Назва');
   await expect(metadataPanel).toContainText('Device Alpha');
@@ -1378,177 +1627,108 @@ test('@smoke device details uses separate pages, an IDE-style Files sidebar, and
   await openDeviceSection(page, 'Файли');
   const filesSidebar = page.getByTestId('device-files-sidebar');
   const fileTree = filesSidebar.getByTestId('device-files-tree');
-  const contentPane = page.getByTestId('device-file-content-pane');
+  const folderContent = page.getByRole('region', { name: 'Вміст папки' });
   await expect(filesSidebar).toBeVisible();
   await expect(fileTree).toBeVisible();
-  await expect(contentPane).toBeVisible();
-  await expect(contentPane.getByRole('heading', { name: 'Вміст файлу' })).toBeVisible();
-  await expect(contentPane).toContainText('Виберіть файл у дереві або результатах пошуку.');
-  await expect(contentPane.getByRole('button')).toHaveCount(0);
-  await expect(contentPane.getByRole('textbox')).toHaveCount(0);
+  await expect(folderContent).toBeVisible();
+  await expect(
+    folderContent.getByRole('button', { name: 'Відкрити папку /', exact: true }),
+  ).toBeVisible();
   await expect.poll(() => tracker.rootsRequestCount).toBe(1);
-
-  const explorerModeButton = filesSidebar.getByRole('button', {
-    name: 'Показати файлове дерево',
-  });
-  const searchModeButton = filesSidebar.getByRole('button', { name: 'Показати пошук файлів' });
-  await expect(explorerModeButton).toHaveAttribute('aria-pressed', 'true');
-  await expect(explorerModeButton).toHaveAttribute('aria-controls', 'device-files-explorer-panel');
-  await expect(searchModeButton).toHaveAttribute('aria-pressed', 'false');
-  await expect(searchModeButton).toHaveAttribute('aria-controls', 'device-files-search-panel');
-  await expect(filesSidebar.getByLabel('Назва містить')).toBeHidden();
-
-  await expect(filesSidebar.getByLabel('Вибрати каталог / як область пошуку')).toBeVisible();
-  await expect(filesSidebar.getByLabel('Вибрати каталог C:\\ як область пошуку')).toBeVisible();
   await expect(fileTree.getByText('root.log', { exact: true })).toBeVisible();
   const rootFileRow = fileTree.getByRole('listitem').filter({ hasText: /^root\.log$/ });
   await expect(rootFileRow.getByText('.log', { exact: true })).toHaveCount(0);
   await expect(rootFileRow).not.toContainText('text/plain');
-  await expect(filesSidebar.getByLabel('Вибрати каталог Users як область пошуку')).toBeVisible();
-  await expect(filesSidebar.getByLabel('Завантаження кількості файлів')).toHaveCount(0);
+  await expect(filesSidebar.getByLabel('Відкрити папку Users')).toBeVisible();
   await expect.poll(() => tracker.subtreeCountRequestCount).toBe(1);
-  await expect(
-    filesSidebar.getByLabel(
-      'Вибрати каталог / як область пошуку; Файлів у каталозі та вкладених каталогах: 2',
-      { exact: true },
-    ),
-  ).toHaveCount(0);
   tracker.releaseSubtreeCounts();
-  await expect(filesSidebar.getByLabel('Завантаження кількості файлів')).toBeHidden();
   await expect(
-    filesSidebar.getByLabel(
-      'Вибрати каталог / як область пошуку; Файлів у каталозі та вкладених каталогах: 2',
-      { exact: true },
-    ),
+    filesSidebar.getByLabel('Відкрити папку /', {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
-    filesSidebar.getByLabel(
-      'Вибрати каталог C:\\ як область пошуку; Файлів у каталозі та вкладених каталогах: 0',
-      { exact: true },
-    ),
+    filesSidebar.getByLabel('Відкрити папку C:\\', {
+      exact: true,
+    }),
   ).toBeVisible();
-  await expect(
-    filesSidebar.getByLabel(
-      'Вибрати каталог Users як область пошуку; Файлів у каталозі та вкладених каталогах: 0',
-      { exact: true },
-    ),
-  ).toBeVisible();
-
-  const rootLabelBox = await filesSidebar
-    .getByLabel('Вибрати каталог / як область пошуку')
-    .getByText('/', { exact: true })
-    .boundingBox();
-  const documentsLabel = filesSidebar.getByLabel('Вибрати каталог documents як область пошуку');
-  const documentsLabelBox = await documentsLabel
-    .getByText('documents', { exact: true })
-    .boundingBox();
-  expect(documentsLabelBox?.x).toBeGreaterThan(rootLabelBox?.x ?? 0);
+  const rootLabel = filesSidebar.getByRole('button', { name: 'Відкрити папку /', exact: true });
+  const documentsLabel = filesSidebar.getByRole('button', { name: /^Відкрити папку documents/ });
+  const rootBox = await rootLabel.getByText('/', { exact: true }).boundingBox();
+  const documentsBox = await documentsLabel.getByText('documents', { exact: true }).boundingBox();
+  expect(documentsBox?.x).toBeGreaterThan(rootBox?.x ?? 0);
   await documentsLabel.click();
-
-  await searchModeButton.click();
-  await expect(explorerModeButton).toHaveAttribute('aria-pressed', 'false');
-  await expect(searchModeButton).toHaveAttribute('aria-pressed', 'true');
-  await expect(fileTree).toBeHidden();
-  const resetToRootButton = filesSidebar.getByRole('button', { name: 'Шукати від кореня /' });
-  await expect(resetToRootButton).toBeVisible();
-  await resetToRootButton.click();
-  await expect(resetToRootButton).toBeHidden();
-
-  const advancedFiltersButton = filesSidebar.locator(
-    'button[aria-controls="device-file-search-advanced-filters"]',
-  );
-  await advancedFiltersButton.focus();
+  await expect(
+    folderContent.getByRole('button', { name: 'Відкрити файл report.txt', exact: true }),
+  ).toBeVisible();
+  await rootLabel.click();
+  const filtersButton = page.getByRole('button', { name: 'Фільтри файлів', exact: true });
+  await filtersButton.focus();
   await page.keyboard.press('Enter');
-  await expect(advancedFiltersButton).toHaveAttribute('aria-expanded', 'true');
-  await expect(filesSidebar.getByLabel('MIME-типи')).toBeVisible();
-  await expect(filesSidebar.getByLabel('Розширення')).toBeVisible();
-  await filesSidebar.getByLabel('MIME-типи').fill('text/plain');
-  await filesSidebar.getByLabel('Розширення').fill('log');
-  await filesSidebar.getByRole('checkbox', { name: 'Файли' }).check();
-  const nameInput = filesSidebar.getByLabel('Назва містить');
+  await expect(filtersButton).toHaveAttribute('aria-expanded', 'true');
+  const filters = page.getByRole('form', { name: 'Фільтри файлів' });
+  await expect(filters.getByLabel('MIME-типи')).toHaveCount(0);
+  await filters.getByRole('combobox', { name: 'Розширення', exact: true }).fill('log');
+  await page.getByRole('option', { name: 'log', exact: true }).click();
+  await filters.getByRole('combobox', { name: 'Типи файлів', exact: true }).click();
+  await page.getByRole('option', { name: 'Документи', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(filters.getByRole('textbox', { name: 'Назва', exact: true })).toHaveCount(0);
+  await expect(filters.getByRole('button', { name: 'Знайти', exact: true })).toHaveCount(0);
+  const nameInput = page.getByRole('textbox', { name: 'Пошук файлів за назвою', exact: true });
   await nameInput.fill('duplicate');
-  await filesSidebar.getByRole('button', { name: 'Знайти', exact: true }).click();
-
-  await expect.poll(() => tracker.searchRequests.length).toBe(1);
-  expect(tracker.searchRequests[0]).toEqual({
+  await expect(filters.getByRole('button', { name: 'Застосувати', exact: true })).toHaveCount(0);
+  await nameInput.press('Enter');
+  await expect.poll(() => tracker.searchRequests.length).toBe(2);
+  expect(tracker.searchRequests[0]).toMatchObject({
     device_id: DEVICE_ID,
     sync_id: null,
     scope_entry_id: POSIX_ROOT_ID,
     name_query: 'duplicate',
-    kinds: ['file'],
-    mime_types: ['text/plain'],
-    extensions: ['log'],
-    file_metadata_modified_from: null,
-    file_metadata_modified_to: null,
+    kinds: null,
+    mime_types: null,
+    extensions: null,
+    filters: { file_types: ['document'], extensions: ['log'] },
     limit: 100,
     cursor: null,
-    tag_ids: null,
-    tag_match: null,
-    untagged: null,
+    has_content: true,
+    favorites_only: null,
+    unviewed_only: null,
   });
-  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(1);
-  await expect(filesSidebar.getByText('/shared/duplicate.log', { exact: true })).toHaveCount(1);
-  await filesSidebar.getByRole('button', { name: 'Завантажити ще' }).click();
-  await expect.poll(() => tracker.searchRequests.length).toBe(2);
+  await expect(folderContent.getByText('duplicate.log', { exact: true })).toHaveCount(2);
+  await expect(folderContent.getByText('/shared/duplicate.log', { exact: true })).toHaveCount(2);
+  await expect(folderContent.getByRole('button', { name: 'Завантажити ще' })).toHaveCount(0);
   expect(tracker.searchRequests[1]).toMatchObject({ cursor: 'search-page-2' });
-  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(2);
-  await expect(filesSidebar.getByText('/shared/duplicate.log', { exact: true })).toHaveCount(2);
-
+  await expect(folderContent.getByText('duplicate.log', { exact: true })).toHaveCount(2);
   const mainPanel = page.getByTestId('device-details-content');
-  const mainBeforeCollapse = await mainPanel.boundingBox();
+  const before = await mainPanel.boundingBox();
   await page.getByRole('button', { name: 'Згорнути ліву панель' }).click();
   await expect(filesSidebar).toBeHidden();
-  await expect(page.getByRole('complementary', { name: 'Файли' })).toHaveCount(0);
-  const hiddenSearchButtonFocused = await filesSidebar
-    .locator('button[aria-label="Показати пошук файлів"]')
-    .evaluate((button) => {
-      (button as HTMLButtonElement).focus();
-      return document.activeElement === button;
-    });
-  expect(hiddenSearchButtonFocused).toBe(false);
-  const mainAfterCollapse = await mainPanel.boundingBox();
-  expect(mainAfterCollapse?.width).toBeGreaterThan(mainBeforeCollapse?.width ?? 0);
-
+  const after = await mainPanel.boundingBox();
+  expect(after?.width).toBeGreaterThan(before?.width ?? 0);
   await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
   await expect(filesSidebar).toBeVisible();
-  await expect(searchModeButton).toHaveAttribute('aria-pressed', 'true');
   await expect(nameInput).toHaveValue('duplicate');
-  await expect(advancedFiltersButton).toHaveAttribute('aria-expanded', 'true');
-  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(2);
-
-  await page.setViewportSize({ width: 900, height: 900 });
-  await expect(page.getByRole('button', { name: 'Про пристрій', exact: true })).toBeVisible();
-  await expect(filesSidebar).toBeVisible();
-  const tabletSidebarBox = await filesSidebar.boundingBox();
-  const tabletMainBox = await mainPanel.boundingBox();
-  expect(tabletSidebarBox!.y).toBeGreaterThanOrEqual(tabletMainBox!.y);
-  expect(tabletSidebarBox!.x + tabletSidebarBox!.width).toBeLessThanOrEqual(
-    tabletMainBox!.x + tabletMainBox!.width,
-  );
-  await expect(contentPane).toBeHidden();
-
+  await expect(folderContent.getByText('duplicate.log', { exact: true })).toHaveCount(2);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('button', { name: 'Згорнути ліву панель' })).toBeHidden();
+  await expect(filesSidebar).toBeHidden();
+  await expect(folderContent).toBeVisible();
+  await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
   await expect(filesSidebar).toBeVisible();
   expect(await filesSidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
     true,
   );
-
-  await filesSidebar.getByRole('button', { name: 'Очистити' }).click();
-  await expect(nameInput).toHaveValue('');
-  await filesSidebar.getByRole('button', { name: 'Знайти', exact: true }).click();
-  const directoryResult = filesSidebar.getByRole('button', { name: 'documents', exact: true });
-  await expect(directoryResult).toBeVisible();
-  await directoryResult.click();
-  await expect(filesSidebar.getByText('duplicate.log', { exact: true })).toHaveCount(0);
-  await expect(resetToRootButton).toBeVisible();
-  await expect(filesSidebar).toContainText('Налаштуйте область і фільтри та виконайте пошук.');
-  await resetToRootButton.click();
+  await page.keyboard.press('Escape');
+  await expect(filesSidebar).toBeHidden();
+  await filters.getByRole('button', { name: 'Скинути фільтри' }).click();
+  await expect(nameInput).toHaveValue('duplicate');
   await nameInput.fill('empty');
   await nameInput.press('Enter');
-  await expect(filesSidebar).toContainText('За заданими фільтрами нічого не знайдено.');
-  await filesSidebar.getByRole('button', { name: 'Сховати результати' }).click();
-  await expect(filesSidebar).toContainText('Налаштуйте область і фільтри та виконайте пошук.');
+  await expect(folderContent).toContainText('За заданими фільтрами нічого не знайдено.');
+  await folderContent.getByRole('button', { name: 'Повернутися до папки' }).click();
+  await expect(
+    folderContent.getByRole('button', { name: 'Відкрити папку documents', exact: true }),
+  ).toBeVisible();
 
   await openDeviceSection(page, 'Журнал');
   await expect(journalTable).toBeHidden();
@@ -1573,7 +1753,7 @@ test('@smoke device details uses separate pages, an IDE-style Files sidebar, and
 for (const width of [1440, 390]) {
   test(`device file tree filters content and resets pagination at width ${width}`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     const tracker = await installMocks(page);
     tracker.releaseSubtreeCounts();
     await page.setViewportSize({ width, height: 1000 });
@@ -1606,32 +1786,40 @@ for (const width of [1440, 390]) {
     await page.goto(`/devices/${DEVICE_ID}`);
     await openDeviceSection(page, 'Файли');
     const sidebar = page.getByTestId('device-files-sidebar');
-    const filter = sidebar.getByRole('button', { name: /^Фільтри файлів/ });
+    const filter = page.getByRole('button', { name: 'Фільтри файлів', exact: true });
     const tree = sidebar.getByTestId('device-files-tree');
+    if (width < 1000) await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
     await expect(tree.getByText('available.txt', { exact: true })).toBeVisible();
-    await expect(tree.getByText('missing.txt', { exact: true })).toBeVisible();
-    for (const [label, value] of [
-      ['З контентом', true],
-      ['Без контенту', false],
-      ['Усі файли', null],
-    ] as const) {
-      await filter.click();
-      await page
-        .getByRole('menu', { name: 'Фільтри файлів' })
-        .getByRole('menuitemradio', { name: label, exact: true })
-        .click();
-      await expect.poll(() => requests.at(-1)?.has_content).toBe(value);
+    await expect(tree.getByText('missing.txt', { exact: true })).toHaveCount(0);
+    await expect.poll(() => requests.at(-1)?.has_content).toBe(true);
+    if (width < 1000) await page.keyboard.press('Escape');
+    await filter.click();
+    const panel = page.getByRole('form', { name: 'Фільтри файлів', exact: true });
+    const includeMissing = panel.getByRole('checkbox', {
+      name: 'Показувати файли без контенту',
+      exact: true,
+    });
+    await expect(includeMissing).not.toBeChecked();
+    for (const checked of [true, false]) {
+      await includeMissing.setChecked(checked);
+      if (width < 1000) await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
+      await expect.poll(() => requests.at(-1)?.has_content).toBe(checked ? null : true);
       expect(requests.at(-1)?.cursor).toBeNull();
-      await expect(tree.getByText('Немає файлів за вибраним фільтром')).toHaveCount(
-        value === null ? 0 : 1,
-      );
-      await expect(tree.getByText('available.txt', { exact: true })).toHaveCount(
-        value === false ? 0 : 1,
-      );
-      await expect(tree.getByText('missing.txt', { exact: true })).toHaveCount(
-        value === true ? 0 : 1,
-      );
+      await expect(tree.getByText('available.txt', { exact: true })).toHaveCount(1);
+      await expect(tree.getByText('missing.txt', { exact: true })).toHaveCount(checked ? 1 : 0);
+      if (width < 1000) await page.keyboard.press('Escape');
     }
+    await includeMissing.check();
+    await panel.getByRole('button', { name: 'Скинути фільтри', exact: true }).click();
+    await expect(includeMissing).not.toBeChecked();
+    await expect.poll(() => requests.at(-1)?.has_content).toBe(true);
+    expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`file-filters-${width}.png`),
+      animations: 'disabled',
+    });
   });
 }
 
@@ -1870,6 +2058,7 @@ test('@smoke @regression device files previews read only, explains unavailable s
     }),
     file_id: `018f0000-0000-7000-8000-00000000002${index}`,
     mime_type: sample.name.endsWith('.zip') ? 'application/zip' : 'application/octet-stream',
+    is_archive: sample.name.endsWith('.zip'),
     revision: 1,
   }));
   const missingFile = {
@@ -1887,14 +2076,12 @@ test('@smoke @regression device files previews read only, explains unavailable s
   page.on('request', (request) => {
     if (new URL(request.url()).pathname.endsWith('/content')) contentRequests.push(request.url());
   });
-  let downloadCount = 0;
-  page.on('download', () => downloadCount++);
   let downloadResponse: 'ok' | 'error' | 'interrupted' | 'pending' = 'ok';
   let finishDownload: (() => void) | null = null;
   // Real HTTP exercises interrupted and incomplete download response bodies.
   const server = createServer((request, response) => {
     const pathname = new URL(request.url!, 'http://localhost').pathname;
-    if (pathname.endsWith('/revisions/1/content')) {
+    if (/\/revisions\/1\/(content|preview\/media)$/.test(pathname)) {
       const sample = samples[files.findIndex((file) => file.file_id === pathname.split('/')[5])];
       if (!sample) {
         response.writeHead(404).end();
@@ -1906,7 +2093,10 @@ test('@smoke @regression device files previews read only, explains unavailable s
         return;
       }
       response.writeHead(200, {
-        'content-type': 'application/octet-stream',
+        'content-type':
+          pathname.endsWith('/preview/media') && sample.name.endsWith('.pdf')
+            ? 'application/pdf'
+            : 'application/octet-stream',
         'content-disposition': `attachment; filename="${Buffer.from(sample.name).toString('latin1')}"; filename*=UTF-8''${encodeURIComponent(sample.name)}`,
         'content-length': String(sample.bytes.length),
         'cache-control': 'private, no-store',
@@ -1947,20 +2137,39 @@ test('@smoke @regression device files previews read only, explains unavailable s
         next_cursor: null,
       }),
     );
+    await page.route('**/api/device/files/*/*/revisions/1/archive', (route) =>
+      fulfillJson(route, {
+        source: { device_id: DEVICE_ID, file_id: files[3].file_id, revision: 1 },
+        archive: {
+          state: 'ready',
+          archive_id: '018f0000-0000-7000-8000-000000000080',
+          root_entry_id: '018f0000-0000-7000-8000-000000000081',
+          reason: null,
+          message: null,
+          limit_name: null,
+        },
+        next_attempt_at: null,
+        poll_after_ms: 2000,
+        updated_at: NOW,
+      }),
+    );
     await page.route('**/api/device/files/*/*/revisions/1/content', (route) => route.continue());
+    await page.route('**/api/device/files/*/*/revisions/1/preview/media', (route) =>
+      route.continue(),
+    );
     await page.goto(`http://127.0.0.1:${address.port}/devices/${DEVICE_ID}`, {
       waitUntil: 'domcontentloaded',
     });
     await openDeviceSection(page, 'Файли');
     const pane = page.getByTestId('device-file-content-pane');
     const tree = page.getByTestId('device-files-tree');
-    await expect(page.getByTestId('device-files-sidebar')).toHaveCSS('width', '320px');
+    await expect(page.getByTestId('device-files-sidebar')).toHaveCSS('width', '280px');
     for (const sample of samples) {
       await tree.getByRole('button', { name: sample.name, exact: true }).click();
       await expect(
         pane.getByRole('heading', { name: `C:\\Users\\analyst\\Documents\\${sample.name}` }),
       ).toBeVisible();
-      await expect(pane.locator('header')).toHaveCSS('height', '48px');
+      expect((await pane.locator('header').boundingBox())!.height).toBeLessThanOrEqual(64);
       await expect(pane.locator('header h2')).toHaveCSS('font-size', '14px');
       await expect(pane.locator('header')).toContainText('Ревізія 1 · Поточна');
       if (sample.name.endsWith('TXT')) {
@@ -1977,7 +2186,7 @@ test('@smoke @regression device files previews read only, explains unavailable s
         ).toBeVisible();
         await expect(pane.locator('iframe')).toHaveAttribute('sandbox', '');
       } else if (sample.name.endsWith('zip')) {
-        await expect(pane.getByText('Архів порожній.', { exact: true })).toBeVisible();
+        await expect(pane.getByText('Каталог порожній', { exact: true })).toBeVisible();
       } else {
         await expect(
           pane.getByRole('heading', { name: 'Перегляд формату BIN не підтримується' }),
@@ -1996,7 +2205,7 @@ test('@smoke @regression device files previews read only, explains unavailable s
       expect(download.suggestedFilename()).toBe(sample.name);
       expect(await readFile((await download.path())!)).toEqual(sample.bytes);
     }
-    await test.step('PR #3500: observes GET failures and waits for the complete download body', async () => {
+    await test.step('native downloads report GET failures and preserve complete original bytes', async () => {
       const downloadButton = pane.getByRole('button', { name: 'Скачати файл' });
       const archive = samples[4];
       const archiveUrl = `/api/device/files/${DEVICE_ID}/${files[4].file_id}/revisions/1/content`;
@@ -2005,13 +2214,10 @@ test('@smoke @regression device files previews read only, explains unavailable s
       for (const failure of ['error', 'interrupted'] as const) {
         downloadResponse = failure;
         expect((await page.request.head(new URL(archiveUrl, page.url()).href)).status()).toBe(200);
+        const failedDownload = page.waitForEvent('download');
         await downloadButton.click();
-        const alert = pane.getByRole('alert').filter({ hasText: 'Помилка скачування файлу' });
-        await expect(alert).toBeVisible();
-        if (failure === 'error') await expect(alert).toContainText('Не вдалося розшифрувати файл');
-        else await expect(alert).toContainText('Перевірте мережу та спробуйте ще раз.');
+        expect(await (await failedDownload).failure()).not.toBeNull();
         await expect(downloadButton).toBeEnabled();
-        expect(downloadCount).toBe(samples.length);
         await tree.getByRole('button', { name: missingFile.name, exact: true }).click();
         await tree.getByRole('button', { name: archive.name, exact: true }).click();
       }
@@ -2019,8 +2225,7 @@ test('@smoke @regression device files previews read only, explains unavailable s
       const downloaded = page.waitForEvent('download');
       await downloadButton.click();
       await expect.poll(() => finishDownload !== null).toBe(true);
-      await expect(downloadButton).toBeDisabled();
-      expect(downloadCount).toBe(samples.length);
+      await expect(downloadButton).toBeEnabled();
       finishDownload!();
       const download = await downloaded;
       expect(download.suggestedFilename()).toBe(archive.name);
@@ -2071,8 +2276,9 @@ test('@smoke @regression device files previews read only, explains unavailable s
     await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
     files[0].revision = 2;
     files[0].has_content = false;
-    await page.getByRole('button', { name: 'Оновити файлові дані' }).click();
-    await expect(pane.getByRole('heading', { name: 'Вміст файлу' })).toBeVisible();
+    await page.getByRole('button', { name: 'Розгорнути праву панель', exact: true }).click();
+    await page.getByRole('button', { name: 'Оновити сесії', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Вміст папки' })).toBeVisible();
     await tree.getByRole('button', { name: samples[0].name, exact: true }).click();
     await expect(pane.locator('header')).toContainText('Ревізія 2 · Поточна');
     await expect(pane.getByRole('heading', { name: 'Контент файлу відсутній' })).toBeVisible();
@@ -2111,7 +2317,7 @@ test('@regression #3757 file URL expands ancestors and highlights a file beyond 
     }),
     file_id: fileId,
     revision: 2,
-    has_content: false,
+    has_content: true,
   };
   await page.route('**/api/device/files/locate', (route) => {
     expect(route.request().postDataJSON()).toEqual({ deviceId: DEVICE_ID, fileId, revision: 2 });
@@ -2131,21 +2337,34 @@ test('@regression #3757 file URL expands ancestors and highlights a file beyond 
       },
     });
   });
+  await page.route(`**/api/device/files/${DEVICE_ID}/${fileId}/revisions/2/content`, (route) =>
+    route.fulfill({
+      contentType: 'text/plain',
+      body: route.request().method() === 'HEAD' ? '' : 'linked file',
+      headers: { 'Content-Length': '11' },
+    }),
+  );
   const href = `/devices/${DEVICE_ID}?file=${fileId}&revision=2`;
   await page.goto(href);
   await expect(page).toHaveURL(`/devices/${DEVICE_ID}/files?file=${fileId}&revision=2`);
   await expect(page.getByTestId('device-details-navigation')).toHaveCount(0);
   await expect(page.getByTestId(`device-file-${fileId}`)).toHaveAttribute('aria-current', 'true');
   await expect(page.getByTestId('device-file-content-pane')).toContainText('linked.txt');
-  await expect(page.getByTestId('device-file-content-pane')).toContainText(
-    'Ревізія 2 · За посиланням',
+  await page
+    .getByTestId('device-file-content-pane')
+    .getByRole('button', { name: 'Інформація', exact: true })
+    .click();
+  await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toContainText(
+    '2 · За посиланням',
   );
+  await page.keyboard.press('Escape');
   await page.reload();
   await expect(page.getByTestId(`device-file-${fileId}`)).toHaveAttribute('aria-current', 'true');
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId('device-file-content-pane')).toBeVisible();
-  await page.getByRole('button', { name: 'До файлів', exact: true }).click();
-  await expect(page).toHaveURL(`/devices/${DEVICE_ID}/files`);
+  await page.getByRole('button', { name: 'До папки', exact: true }).click();
+  await expect(page).toHaveURL(`/devices/${DEVICE_ID}/files?directory=${DOCUMENTS_ID}`);
+  await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
   await expect(page.getByTestId(`device-file-${fileId}`)).toBeVisible();
 });
 

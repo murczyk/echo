@@ -54,6 +54,7 @@ messageStub =
     , unitIds = []
     , postId = Nothing
     , networkIds = Nothing
+    , networkMatch = Nothing
     , inboxTags = Nothing
     , messageUuid = Nothing
     , isTimeNull = Nothing

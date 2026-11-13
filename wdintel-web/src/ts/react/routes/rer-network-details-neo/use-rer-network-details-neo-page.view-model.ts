@@ -230,7 +230,6 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     openCallsignDrawerForCreate: actions.openCallsignDrawerForCreate,
     openCallsignDrawerForEdit: actions.openCallsignDrawerForEdit,
     closeCallsignDrawer: actions.closeCallsignDrawer,
-    setCallsignDrawerForm: actions.setCallsignDrawerForm,
     saveCallsignDrawer: actions.saveCallsignDrawer,
     callsignDeleteDialogOpen: state.callsignDeleteDialogOpen,
     callsignDeleteTarget: state.callsignDeleteTarget,

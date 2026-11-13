@@ -63,6 +63,10 @@ pub struct AiAgentProviderItem {
     pub id: String,
     pub name: String,
     pub model_name: String,
+    #[serde(default)]
+    pub unhealthy: bool,
+    #[serde(default)]
+    pub health_message: Option<String>,
 }
 
 #[derive(
@@ -145,6 +149,10 @@ pub struct AiAgentMessageItem {
     pub started_at: Option<i64>,
     #[serde(default)]
     pub completion_metadata: Option<AiAgentCompletionMetadata>,
+    #[serde(default)]
+    pub ai_engine_id: Option<String>,
+    #[serde(default)]
+    pub ai_engine_name: Option<String>,
     pub request_id: String,
     pub request_state: String,
     pub role: String,
@@ -174,6 +182,14 @@ pub struct AiAgentConversationDetail {
     pub created_at: i64,
     pub updated_at: i64,
     pub messages: Vec<AiAgentMessageItem>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAgentPrewarmReq {
+    pub ai_engine_id: Option<String>,
 }
 
 #[derive(
@@ -389,6 +405,8 @@ pub struct AiAgentAdminRequestListReq {
     pub state: Option<String>,
     pub suspicious: Option<bool>,
     pub page_start_id: Option<String>,
+    /// Matches either a request ID or a conversation ID.
+    pub search_id: Option<String>,
 }
 
 #[derive(

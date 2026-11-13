@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
-import { outputRetrySystemPrompt, runAgent, toolParameterNames, validatePayload, validationFields } from "./runner.ts";
+import { boundedResearchNotice, outputRetrySystemPrompt, runAgent, toolParameterNames, validatePayload, validationFields } from "./runner.ts";
 import {
   DEEP_RESEARCH_CONTINUATIONS,
   FlashResearch,
@@ -11,6 +12,7 @@ import {
   FLASH_RESEARCH_PAGINATION_REQUIRED,
   RESEARCH_CONTINUATIONS,
   RESEARCH_TUNING,
+  completedLines,
   continuationLimit,
   finalizationMultipliers,
   normalizedResearchUpdate,
@@ -21,6 +23,7 @@ import {
 import {
   providerCompletion,
   ResearchBudget,
+  terminalProviderFailure,
   validateExecutionPolicy,
   type ExecutionPolicy,
 } from "./execution-policy.ts";
@@ -52,6 +55,13 @@ const deepPolicy: ExecutionPolicy = {
 const STOP = { name: "", args: {} };
 // A model turn that ends with neither text nor a tool call, as GLM-5.3 does.
 const EMPTY = { name: "", args: {} };
+// A model turn that answers the request with text and no tool call.
+const ANSWER = { name: "", args: {} };
+// A model turn that writes the cited report itself after its tools, with no tool call.
+const REPORT = { name: "", args: {} };
+const historyCitation = "/rer-analysis-neo?m=archive-history";
+// Longer than any saved draft can be.
+const longFindings = "Botanical findings. ".repeat(420);
 // Models that end the request without any evidence to cite.
 const NO_EVIDENCE = ["deep-stalled", "deep-promise-only"];
 const initial = {
@@ -165,6 +175,9 @@ const scenarios = [
   "user-text-history",
   "history-aggregate",
   "user-map",
+  "research-report",
+  "research-report-history",
+  "research-report-note",
 ];
 
 // Every non-OpenAI engine with a budget runs the same harness as Flash.
@@ -216,6 +229,7 @@ for (const [scenario, modelName] of [
     });
     if (["user-text", "user-text-history", "user-map"].includes(scenario)) {
       calls.length = 0;
+      if (scenario.startsWith("user-text")) calls.push(ANSWER);
     } else if (scenario === "no-initial-plan") {
       calls.length = 0;
       read();
@@ -333,6 +347,7 @@ for (const [scenario, modelName] of [
     if (scenario === "refresh-final")
       for (const search of ["late survey", "later survey", "latest survey"])
         read({ period, search });
+    if (scenario.startsWith("research-report")) calls.push(REPORT);
     if (scenario === "empty-refresh")
       calls.push({ name: "update_research", args: initial });
     if (scenario === "tool-limit") {
@@ -645,6 +660,17 @@ for (const [scenario, modelName] of [
         }
         const call = calls.shift();
         if (call === EMPTY) return stream("");
+        if (call === ANSWER) return stream("The botanical survey is ready.");
+        // Incident 01a1d04a: research wrote the whole report itself after its tools.
+        if (call === REPORT)
+          return stream(
+            {
+              "research-report": `## Archive\n\n- ${longFindings}${draft}`,
+              "research-report-history": `## Archive\n\n- ${longFindings}[джерело](${historyCitation})`,
+              // A cited completion note must not replace the answer.
+              "research-report-note": `Findings saved. [джерело](${citation})`,
+            }[scenario]!,
+          );
         return stream(
           "PRIVATE_RESEARCH_NARRATION",
           call === STOP ? undefined : call,
@@ -682,7 +708,17 @@ for (const [scenario, modelName] of [
                   },
                 ],
               }
-            : {}),
+            : scenario === "research-report-history"
+              ? {
+                  history: [
+                    {
+                      role: "assistant",
+                      content: `An earlier finding. [джерело](${historyCitation})`,
+                      citations: [{ messageId: 9, messageIdentifier: "archive-history" }],
+                    },
+                  ],
+                }
+              : {}),
           contextWindow: 65_536,
           maxTokens: 8192,
           checkpointMaxTokens: 8192,
@@ -865,6 +901,28 @@ for (const [scenario, modelName] of [
       (event) => event.type === "completion_diagnostic",
     );
     assert.ok(diagnostics.some((event) => event.stage === "answer"));
+    // Incident 01a1c4a5: research that ran no tool answered from the whole conversation,
+    // and a synthesis that saw only the last turns rewrote the answer.
+    if (scenario.startsWith("user-text")) {
+      assert.equal(synthesisCalls, 0);
+      assert.equal(diagnostics.at(-1).outcome, "research_text");
+      assert.ok(!events.some((event) => event.summary === "Підсумовую зібрані джерела"));
+    }
+    // Incident 01a1d04a: a cited report research wrote after its tools is delivered, not
+    // rewritten by a synthesis that ran out of time; one citing only history is not new.
+    if (scenario === "research-report") {
+      assert.equal(synthesisCalls, 0);
+      assert.equal(forcedUpdates, 0);
+      assert.ok(answer.startsWith(`## Archive\n\n- ${longFindings}${draft}`));
+      assert.equal(diagnostics.at(-1).outcome, "research_text");
+      assert.ok(!events.some((event) => event.summary === "Підсумовую зібрані джерела"));
+    }
+    if (["research-report-history", "research-report-note"].includes(scenario)) {
+      assert.equal(synthesisCalls, 1);
+      assert.ok(!answer.includes(historyCitation));
+      assert.ok(!answer.includes("Findings saved"));
+      assert.ok(!diagnostics.some((event) => event.outcome === "research_text"));
+    }
     if (
       [
         "retry-length",
@@ -875,6 +933,14 @@ for (const [scenario, modelName] of [
     ) {
       assert.equal(synthesisCalls, 2);
       assert.equal(diagnostics.at(-1).outcome, "complete");
+    }
+    if (scenario === "retry-citation") {
+      // Incident 01a1d391: the log must say which check rejected the synthesis.
+      const rejected = diagnostics.find(
+        (event) => event.stage === "synthesis" && event.outcome === "citation_rejected",
+      );
+      // Its only link is to a message that was not retrieved, so it cites no source.
+      assert.equal(rejected.draftIssue, "no_citation");
     }
     if (scenario === "retry-deadline") {
       assert.equal(synthesisCalls, 1);
@@ -1081,6 +1147,142 @@ for (const [scenario, modelName] of [
     }
   });
 }
+
+const synthesisEngine = {
+  id: "glm-5.3",
+  name: "GLM-5.3",
+  provider: "echo-fixture",
+  api: "openai-completions" as const,
+  reasoning: false,
+  baseUrl: "http://127.0.0.1:9/v1",
+  input: ["text" as const],
+  contextWindow: 65_536,
+  maxTokens: 8192,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+};
+
+/**
+ * Runs the real provider stream: it writes `written`, then the finalization deadline
+ * passes while the provider is still writing, as in incident 01a1d054.
+ */
+async function cutOffSynthesis(
+  t: any,
+  research: FlashResearch,
+  written: string,
+): Promise<string> {
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init: any) => {
+    const chunk = {
+      id: "fixture",
+      object: "chat.completion.chunk",
+      choices: [{ index: 0, delta: { role: "assistant", content: written }, finish_reason: null }],
+    };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          init.signal?.addEventListener("abort", () =>
+            controller.error(new DOMException("Aborted", "AbortError")),
+          );
+          setTimeout(() => budget.finalization.abort(), 50);
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  try {
+    return await research.complete(
+      {
+        engine: synthesisEngine,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Summarize today's archive records.",
+        evidence: {
+          messages: [
+            {
+              messageId: 1,
+              messageIdentifier: "archive-1",
+              text: "The archive received a botanical survey.",
+              datetime: "2026-11-12T10:00:00Z",
+              author: "",
+              group: "",
+            },
+          ],
+          files: [],
+        },
+        maxTokens: 8192,
+        signal: budget.finalization.signal,
+      },
+      budget,
+    );
+  } finally {
+    budget.dispose();
+  }
+}
+
+test("incident 01a1d054: a synthesis cut off at the deadline delivers its finished cited lines", async (t) => {
+  const diagnostics: any[] = [];
+  const research = new FlashResearch(() => sources, undefined, (event) => diagnostics.push(event));
+  const written = `## Archive\n\n- ${draft}\n\n## Greenhouse\n\n- Reopened [джерело](/rer-analysis-neo?m=arch`;
+  const answer = await cutOffSynthesis(t, research, written);
+  assert.equal(answer, `## Archive\n\n- ${draft}`);
+  assert.equal(research.usedPartial, true);
+  assert.equal(research.usedFallback, true);
+  const synthesis = diagnostics.find((event) => event.stage === "synthesis");
+  assert.equal(synthesis.outcome, "aborted");
+  assert.equal(synthesis.textCharacters, written.length);
+  assert.equal(diagnostics.at(-1).outcome, "partial");
+  assert.equal(diagnostics.at(-1).textCharacters, answer.length);
+  t.mock.restoreAll();
+  // A final newline shows that the last line was finished.
+  const finished = new FlashResearch(() => sources);
+  assert.equal(await cutOffSynthesis(t, finished, `## Archive\n\n- ${draft}\n`), `## Archive\n\n- ${draft}`);
+  assert.equal(finished.usedPartial, true);
+});
+
+test("incident 01a1d054: a cut-off synthesis loses to a longer saved draft and never passes uncited", async (t) => {
+  const withDraft = new FlashResearch(() => sources);
+  await (withDraft.tool(() => {}) as any).execute("save", updated);
+  assert.equal(
+    await cutOffSynthesis(t, withDraft, `## A\n\n- Short [джерело](${citation})\n- unfinished`),
+    draft,
+  );
+  assert.equal(withDraft.usedPartial, false);
+  t.mock.restoreAll();
+  const diagnostics: any[] = [];
+  const uncited = new FlashResearch(() => sources, undefined, (event) => diagnostics.push(event));
+  assert.equal(
+    await cutOffSynthesis(t, uncited, "## A\n\n- An uncited finding\n- unfinished"),
+    FLASH_INABILITY,
+  );
+  assert.equal(uncited.usedPartial, false);
+  assert.equal(diagnostics.at(-1).outcome, "inability");
+});
+
+test("incident 01a1d04a: research's own report counts only when long and cited from this request's tools", () => {
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  // Restored work memory and history make a link citable, not freshly retrieved.
+  const research = new FlashResearch(() => sources);
+  const report = `## Archive\n\n- ${longFindings}${draft}`;
+  assert.equal(research.researchReport(report, budget, new Set()), undefined);
+  assert.equal(research.researchReport(report, budget, new Set([citation])), report);
+  assert.equal(research.researchReport(draft, budget, new Set([citation])), undefined);
+  budget.dispose();
+});
+
+test("incident 01a1d054: a cut-off answer says the time limit cut it", () => {
+  const notice = (deep: boolean) =>
+    boundedResearchNotice({ reason: "time_limit", deep, coverageLimited: true, unfinished: false, fallbackText: "x", partial: true });
+  assert.equal(notice(false), "Відповідь обірвано через ліміт часу; охоплення джерел неповне. Оберіть глибокий аналіз, щоб отримати повний звіт.");
+  assert.equal(notice(true), "Відповідь обірвано через ліміт часу; охоплення джерел неповне.");
+});
+
+test("incident 01a1d054: only finished lines of a cut-off answer remain", () => {
+  assert.equal(completedLines("# Report\n\n## A\n- one\n\n## B\n- tw"), "# Report\n\n## A\n- one");
+  assert.equal(completedLines("- unfinished [джерело](/rer"), "");
+  assert.equal(completedLines("## Only a heading\n- half"), "");
+});
 
 test("#3572 duration guard stops checkpoints before consuming the research reserve", (t) => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
@@ -1629,13 +1831,33 @@ const providerRejection = (status: number, message: string) =>
     headers: { "content-type": "application/json" },
   });
 
+const TEST_SKILLS = [
+  {
+    method: "POST",
+    path: "/api/user/sigint-groups-detailed",
+    skill: "accessible_group_details",
+    label: "List groups",
+    requestKind: "json",
+  },
+  {
+    method: "POST",
+    path: "/api/signal/inbox/messages",
+    skill: "inbox_messages",
+    label: "Read archive",
+    requestKind: "inboxMessages",
+  },
+];
+
 async function researchWithProviderScript(
   t: any,
   script: (() => Response)[],
   policyForRun: ExecutionPolicy = policy,
+  overrides: Record<string, unknown> = {},
+  echoResponses: Record<string, unknown> = {},
 ) {
   const events: any[] = [];
   const reads: unknown[] = [];
+  const echoRequests: { path: string; body: unknown }[] = [];
   const synthesisBodies: string[] = [];
   let researchCalls = 0;
   const oldSignals = {
@@ -1663,6 +1885,10 @@ async function researchWithProviderScript(
     }
     if (path === "/api/user/sigint-groups-detailed")
       return Response.json([{ master_key: "group.devops", name: "DEVOPS" }]);
+    if (path in echoResponses) {
+      echoRequests.push({ path, body: JSON.parse(init.body) });
+      return Response.json(echoResponses[path]);
+    }
     const purpose = new Headers(init.headers).get("x-echo-ai-purpose");
     if (purpose === "synthesis") {
       synthesisBodies.push(init.body);
@@ -1692,22 +1918,8 @@ async function researchWithProviderScript(
             timeZone: "Europe/Kyiv",
             requestStartedAtUtc: new Date().toISOString(),
           },
-          skills: [
-            {
-              method: "POST",
-              path: "/api/user/sigint-groups-detailed",
-              skill: "accessible_group_details",
-              label: "List groups",
-              requestKind: "json",
-            },
-            {
-              method: "POST",
-              path: "/api/signal/inbox/messages",
-              skill: "inbox_messages",
-              label: "Read archive",
-              requestKind: "inboxMessages",
-            },
-          ],
+          skills: TEST_SKILLS,
+          ...overrides,
         },
         false,
       ),
@@ -1720,19 +1932,22 @@ async function researchWithProviderScript(
   }
   const metadata = events.find((event) => event.type === "completion_metadata");
   const reason = metadata?.reason;
-  return { events, metadata, reads, reason, researchCalls, synthesisBodies };
+  const answer = events.findLast((event) => event.type === "assistant_snapshot")?.text?.trim();
+  return { answer, echoRequests, events, metadata, reads, reason, researchCalls, synthesisBodies };
 }
 
 const readArchive = () =>
   stream("", { name: "echo_inbox_messages", args: { period } });
 
 test("incident 01a1b210: a model failure before any tool gets one more attempt", async (t) => {
-  const { events, reads, reason, researchCalls } =
+  const { answer, events, reads, reason, researchCalls } =
     await researchWithProviderScript(t, [
       () => providerRejection(400, "unexpected model state"),
       readArchive,
       () => stream("Готово."),
     ]);
+  // Once a tool ran, synthesis writes the answer, not research's closing note.
+  assert.equal(answer, "Підсумок.");
   assert.equal(reads.length, 1);
   assert.equal(researchCalls, 3);
   assert.notEqual(reason, "provider_error");
@@ -1748,15 +1963,90 @@ test("incident 01a1b210: a model failure before any tool gets one more attempt",
   );
 });
 
+/** Model calls the runner made, by the purpose Echo's gateway sees. */
+function modelCalls(purpose: "research" | "synthesis"): number {
+  return (globalThis.fetch as any).mock.calls.filter((call: any) => {
+    if (!String(call.arguments[0]).endsWith("/chat/completions")) return false;
+    const synthesis = new Headers(call.arguments[1].headers).get("x-echo-ai-purpose") === "synthesis";
+    return purpose === "synthesis" ? synthesis : !synthesis;
+  }).length;
+}
+
+/** The snapshots the run wrote before it failed. */
+function snapshots(): unknown[] {
+  return (process.stdout.write as any).mock.calls.filter((call: any) =>
+    String(call.arguments[0]).startsWith('{"type":"assistant_snapshot"'),
+  );
+}
+
 test("incident 01a1b210: a repeated failure stops after one extra attempt", async (t) => {
-  const { reads, reason, researchCalls } = await researchWithProviderScript(t, [
-    () => providerRejection(400, "unexpected model state"),
-    () => providerRejection(400, "unexpected model state"),
-    readArchive,
-  ]);
-  assert.equal(researchCalls, 2);
-  assert.equal(reads.length, 0);
-  assert.equal(reason, "provider_error");
+  // Incident 01a1d35e: research that gathered nothing fails as a provider failure, so
+  // the chat offers a retry or another model instead of a synthesis without evidence.
+  await assert.rejects(
+    researchWithProviderScript(t, [
+      () => providerRejection(400, "unexpected model state"),
+      () => providerRejection(400, "unexpected model state"),
+      readArchive,
+    ]),
+    (error: unknown) => terminalProviderFailure(error)?.failureKind === "provider_error",
+  );
+  assert.equal(modelCalls("research"), 2);
+  assert.equal(modelCalls("synthesis"), 0);
+  assert.deepEqual(snapshots(), []);
+});
+
+test("incident 01a1d35e: a model without a ready deployment gets no second start", async (t) => {
+  // The gateway's cooldown answer, on a status pi does not retry so the test needn't
+  // wait out pi's backoff; the runner classifies the text as a rate limit either way.
+  await assert.rejects(
+    researchWithProviderScript(t, [
+      () =>
+        providerRejection(
+          400,
+          "No deployments available for selected model, Try again in 60 seconds. Passed model=glm-5.3-flash-uncensored",
+        ),
+      readArchive,
+      () => stream("Готово."),
+    ]),
+    (error: unknown) => terminalProviderFailure(error)?.failureKind === "rate_limit",
+  );
+  assert.equal(modelCalls("research"), 1);
+  assert.equal(modelCalls("synthesis"), 0);
+  assert.deepEqual(snapshots(), []);
+});
+
+test("incident 01a1d35e: restored findings still reach synthesis when research fails", async (t) => {
+  // A follow-up carries the previous request's saved findings: synthesis can answer
+  // from them, so the request is not failed as a provider outage.
+  const { synthesisBodies } = await researchWithProviderScript(
+    t,
+    [
+      () => providerRejection(400, "unexpected model state"),
+      () => providerRejection(400, "unexpected model state"),
+    ],
+    policy,
+    { workMemory: { version: 1, recap: `Saved botanical survey: ${draft}`, ...sources } },
+  );
+  assert.equal(synthesisBodies.length > 0, true);
+  assert.ok(synthesisBodies[0].includes("Saved botanical survey"));
+});
+
+test("incident 01a1d35e: a provider that answers after a cooldown gets the usual re-prompt", () => {
+  const research = new FlashResearch(() => sources);
+  const attempt = (message: unknown) => {
+    // Set by beforeProvider for each research call.
+    (research as any).researchStartedAt = Date.now();
+    research.researchCompleted(message);
+  };
+  const cooldown = { stopReason: "error", errorMessage: "429 No deployments available for selected model", content: [] };
+  const failure = { stopReason: "error", errorMessage: "400 unexpected model state", content: [] };
+  attempt(cooldown);
+  assert.equal(research.noteFailedStart(failure), false);
+  // A private update_research call succeeded: the model has a deployment again.
+  attempt({ stopReason: "toolUse", content: [{ type: "toolCall", name: "update_research" }] });
+  attempt(failure);
+  assert.equal(research.noteFailedStart(failure), true);
+  assert.equal(research.providerNeverAnswered, false);
 });
 
 test("incident 01a1b210: a failure after work started keeps the evidence and does not retry", async (t) => {
@@ -1840,4 +2130,246 @@ test("#4053 a failed-start message never logs the provider's text", () => {
     providerCompletion({ stopReason: "stop", content: [] }).failureKind,
     undefined,
   );
+});
+
+// Incident 01a1c4a5: a ticket-processing chat on GLM-5.3 Balanced. Research saw the opening
+// rules and answered in CSV without tools; synthesis saw only the last two turns, whose
+// answers were inability notices, and rewrote the CSV into a summary.
+const balancedPolicy: ExecutionPolicy = {
+  ...policy,
+  preset: "balanced",
+  maxRuntimeSeconds: 600,
+  finalizationSeconds: 120,
+};
+const OPENING_RULES = "OPENING_RULES: process every ticket into CSV with columns sidc,name,x,y.";
+const CSV =
+  '"sidc","name","x","y"\n"10062000001209020000","4 дшб 108 дшп","5277115","6671288"\n\n**Кількість обʼєктів: 1**';
+const ticketHistory = [
+  { role: "user", content: OPENING_RULES },
+  { role: "assistant", content: "Правила запамʼятав." },
+  { role: "user", content: "Доставочки: 108 дшп 4 дшб X-5277115 Y-6671288" },
+  { role: "assistant", content: CSV },
+  { role: "user", content: "Наступні доставочки: 108 дшп 4 дшб X-5288220 Y-6667351" },
+  { role: "assistant", content: FLASH_INABILITY },
+  { role: "user", content: "Інструкція по обробці тікетів в тебе є." },
+  { role: "assistant", content: FLASH_INABILITY },
+];
+const ticketFollowUp = {
+  prompt: "Оброби тікет мінування 1445 x-5280658 y-6671740",
+  history: ticketHistory,
+};
+
+test("incident 01a1c4a5: research that ran no tool delivers its own answer", async (t) => {
+  const { answer, events, metadata, researchCalls, synthesisBodies } =
+    await researchWithProviderScript(t, [() => stream(CSV)], balancedPolicy, ticketFollowUp);
+  assert.equal(answer, CSV);
+  assert.equal(researchCalls, 1);
+  assert.equal(synthesisBodies.length, 0);
+  assert.equal(metadata, undefined);
+  assert.ok(
+    events.some(
+      (event) =>
+        event.type === "completion_diagnostic" &&
+        event.stage === "answer" &&
+        event.outcome === "research_text",
+    ),
+  );
+  assert.ok(!events.some((event) => event.summary === "Підсумовую зібрані джерела"));
+});
+
+test("incident 01a1c4a5: Deep delivers the reply, not the note confirming no search was needed", async (t) => {
+  const { answer, researchCalls, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream(CSV), () => stream("Готово.")],
+    deepPolicy,
+    ticketFollowUp,
+  );
+  assert.equal(researchCalls, 2);
+  assert.equal(synthesisBodies.length, 0);
+  assert.equal(answer, CSV);
+});
+
+test("incident 01a1d35e: a provider failure after Deep's reply still delivers an answer", async (t) => {
+  // The provider answered once, so the run is not a provider outage: the failed search
+  // reminder must not discard the request.
+  const { answer } = await researchWithProviderScript(
+    t,
+    [() => stream(CSV), () => providerRejection(400, "unexpected model state")],
+    deepPolicy,
+    ticketFollowUp,
+  );
+  assert.ok(answer);
+});
+
+test("incident 01a1c4a5: after a failed start the retry's reply is the answer", async (t) => {
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => providerRejection(400, "unexpected model state"), () => stream(CSV)],
+    balancedPolicy,
+    ticketFollowUp,
+  );
+  assert.equal(synthesisBodies.length, 0);
+  assert.equal(answer, CSV);
+});
+
+test("incident 01a1c4a5: synthesis sees the opening rules and the newest turns", async (t) => {
+  const filler = (index: number) => `${index} ${"x".repeat(10_000)}`;
+  const history = [
+    { role: "user", content: OPENING_RULES },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      role: index % 2 ? "assistant" : "user",
+      content: filler(index),
+    })),
+  ];
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream("")],
+    balancedPolicy,
+    { ...ticketFollowUp, history },
+  );
+  assert.equal(answer, "Підсумок.");
+  assert.equal(synthesisBodies.length, 1);
+  const { conversation } = synthesisRequest(JSON.parse(synthesisBodies[0]));
+  assert.equal(conversation[0].content, OPENING_RULES);
+  assert.equal(conversation.at(-1).content, history.at(-1)!.content);
+  assert.ok(conversation.length > 4);
+  assert.ok(conversation.length < history.length);
+});
+
+test("incident 01a1c4a5: a reply with an invented link still goes to synthesis", async (t) => {
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream(`${CSV} [джерело](/rer-analysis-neo?m=missing)`)],
+    balancedPolicy,
+    ticketFollowUp,
+  );
+  assert.equal(synthesisBodies.length, 1);
+  assert.equal(answer, "Підсумок.");
+});
+
+test("incident 01a1c4a5: a document request still goes to synthesis", async (t) => {
+  const { synthesisBodies } = await researchWithProviderScript(
+    t,
+    [() => stream(CSV)],
+    { ...balancedPolicy, documentTask: true, maxRuntimeSeconds: 1800, finalizationSeconds: 240 },
+    ticketFollowUp,
+  );
+  assert.equal(synthesisBodies.length, 1);
+});
+
+// Generated from Echo's Rust request types by `just gen-ai-agent-schemas`.
+const REQUEST_SCHEMAS = JSON.parse(
+  readFileSync(
+    process.env.ECHO_AI_AGENT_REQUEST_SCHEMAS ?? new URL("../../wdintel-rs/src/ai_agent/request_schemas.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+test("#4125 a harmless extra key inside period no longer fails the read and is logged by name", async (t) => {
+  const { events, reads } = await researchWithProviderScript(t, [
+    () =>
+      stream("", {
+        name: "echo_inbox_messages",
+        args: { period: { ...period, timezone: "Europe/Kyiv", label: "SENSITIVE", hours: null } },
+      }),
+    () => stream(""),
+  ]);
+  assert.equal(reads.length, 1);
+  assert.ok(!events.some((event) => event.type === "tool_end" && event.is_error));
+  const diagnostics = events.filter((event) => event.type === "tool_diagnostic");
+  assert.deepEqual(diagnostics, [
+    {
+      type: "tool_diagnostic",
+      tool: "echo_inbox_messages",
+      reason: "ignored_arguments",
+      handledPrivately: false,
+      fields: "period.hours:ignored, period.timezone:ignored, period.label:ignored",
+    },
+  ]);
+  assert.ok(!JSON.stringify(diagnostics).includes("SENSITIVE"));
+});
+
+test("#4125 a period key that could move the window is rejected precisely", async (t) => {
+  const { events, reads } = await researchWithProviderScript(t, [
+    () => stream("", { name: "echo_inbox_messages", args: { period: { ...period, until: "2026-11-08" } } }),
+    () => stream(""),
+  ]);
+  assert.equal(reads.length, 0);
+  const failure = events.find((event) => event.type === "tool_diagnostic");
+  assert.equal(failure.reason, "invalid_arguments");
+  assert.equal(failure.fields, "period.until:additional");
+  const retryPrompt = (globalThis.fetch as any).mock.calls
+    .map((call: any) => String(call.arguments[1]?.body ?? ""))
+    .find((body: string) => body.includes("unsupported field"));
+  assert.match(retryPrompt, /unsupported field \\"until\\" for kind relative_days; allowed fields: kind, days/);
+});
+
+test("#4125 messages_by_uuid takes Echo's generated schema and the shapes models send", async (t) => {
+  const route = {
+    method: "POST",
+    path: "/api/rer-importer/messages-by-uuid",
+    skill: "messages_by_uuid",
+    label: "Read selected messages",
+    requestKind: "json",
+    requestSchema: REQUEST_SCHEMAS.messages_by_uuid,
+  };
+  const uuid = "01a1ba32-c862-7bcc-b685-d71d1d326f77";
+  const { echoRequests, events } = await researchWithProviderScript(
+    t,
+    [
+      () =>
+        stream("", {
+          name: "echo_messages_by_uuid",
+          args: { body: { messageUuids: [`[джерело](/rer-analysis-neo?m=${uuid.toUpperCase()})`] } },
+        }),
+      () => stream(""),
+    ],
+    policy,
+    { skills: [...TEST_SKILLS, route] },
+    { [route.path]: { messages: [] } },
+  );
+  assert.deepEqual(echoRequests, [{ path: route.path, body: { message_uuids: [uuid] } }]);
+  assert.ok(!events.some((event) => event.type === "tool_diagnostic"));
+  const tools = JSON.parse(
+    (globalThis.fetch as any).mock.calls.find((call: any) => String(call.arguments[0]).endsWith("/chat/completions")).arguments[1].body,
+  ).tools;
+  const tool = tools.find((entry: any) => entry.function.name === "echo_messages_by_uuid").function;
+  assert.equal(tool.description, REQUEST_SCHEMAS.messages_by_uuid.description);
+  assert.deepEqual(Object.keys(tool.parameters.properties), ["message_uuids"]);
+});
+
+test("#4125 statistics reach the tool-free synthesis even without a saved draft", async (t) => {
+  const route = {
+    method: "POST",
+    path: "/api/rer/analysis/ai/frequency-summary",
+    skill: "frequency_summary",
+    label: "Frequency activity",
+    requestKind: "analysisPeriod",
+  };
+  const summary = {
+    rows: [{ freq: "163.9350", count: 42, callsigns: ["Сокіл"], units: [], locations: [] }],
+    total_rows: 1,
+    row_values_truncated: false,
+  };
+  const { answer, synthesisBodies } = await researchWithProviderScript(
+    t,
+    [
+      () => stream("", { name: "echo_frequency_summary", args: { period } }),
+      () => stream("Найактивніша частота 163.9350: 42 повідомлення."),
+    ],
+    policy,
+    { skills: [...TEST_SKILLS, route] },
+    { [route.path]: summary },
+  );
+  assert.equal(answer, "Підсумок.");
+  assert.equal(synthesisBodies.length, 1);
+  const records = JSON.parse(synthesisBodies[0]).messages
+    .map((message: any) => message.content)
+    .filter((content: unknown) => typeof content === "string" && content.startsWith('{"statisticsFrom"'))
+    .map((content: string) => JSON.parse(content));
+  assert.equal(records.length, 1);
+  assert.equal(records[0].statisticsFrom, "echo_frequency_summary");
+  assert.deepEqual(records[0].request, { period });
+  assert.equal(records[0].result.rows[0].freq, "163.9350");
+  assert.equal(records[0].result.rows[0].count, 42);
 });

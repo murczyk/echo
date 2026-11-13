@@ -142,14 +142,7 @@ afterEach(() => {
 
 function renderJournal(journal: DeviceFileJournalState) {
   act(() => {
-    root?.render(
-      <DeviceFileJournal
-        journal={journal}
-        tagsState={{ tags: entry.tags, loaded: true, loading: false, error: null, reload: vi.fn() }}
-        tagFilter={{ tagIds: [], tagMatch: 'any', untagged: false }}
-        onTagFilterChange={vi.fn()}
-      />,
-    );
+    root?.render(<DeviceFileJournal journal={journal} />);
   });
 }
 

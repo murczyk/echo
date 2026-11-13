@@ -170,6 +170,10 @@ pub async fn evaluate(
         callsign_enabled: true,
         ocr_enabled: false,
         ocr_request_profile: String::new(),
+        unhealthy: None,
+        health_message: None,
+        health_updated_at: None,
+        health_updated_by_login_id: None,
     };
     let prompt = match &ps.prompt {
         Some(path) => std::fs::read_to_string(path).c(h!())?,

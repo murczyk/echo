@@ -25,6 +25,7 @@ actix-session = { version = "0.10.1", features = ["redis-session", "redis-pool"]
 clap = { version = "4.6.1", features = ["derive"] }
 dirs = "6.0.0"
 elm_rs = { version = "=0.2.1", features = ["uuid"] }
+schemars = { version = "1.2.1", features = ["uuid1"] }
 log = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -208,6 +209,7 @@ assets = [
 	[ "../wdintel-web/dist/data/*", "usr/share/echo/data/", "755", ],
 	[ "../wdintel-web/dist/fonts/*", "usr/share/echo/fonts/", "644", ],
 	[ "../wdintel-web/dist/releases/**/*", "usr/share/echo/releases/", "755", ],
+	[ "../wdintel-web/dist/doc-media/**/*", "usr/share/echo-docs/", "644", ],
 	[ "../wdintel-web/dist/*", "usr/share/echo/dist/", "755", ],
 	[ "../wdintel-web/dist/img/*", "usr/share/echo/img/", "755", ],
 	[ "../wdintel-web/dist/img/google_earth_icons/*", "usr/share/echo/img/google_earth_icons/", "755", ],

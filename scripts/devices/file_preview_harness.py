@@ -62,12 +62,18 @@ def load(root, profile="device-file-preview"):
     namespace = profile.replace("-", "_")
     root = Path(root).absolute()
     info = root.lstat()
+    persistent = profile == "device-file-preview" and root.parent == REPO / ".dev-runtime/device-files-lab/runtime"
     require(root == root.resolve() and root.name.startswith(f"echo-{profile}-") and
-            root.parent == Path(tempfile.gettempdir()).resolve() and stat.S_ISDIR(info.st_mode) and
+            (root.parent == Path(tempfile.gettempdir()).resolve() or persistent) and stat.S_ISDIR(info.st_mode) and
             info.st_uid == os.getuid() and not info.st_mode & 0o077,
             "Refusing a foreign, symlinked, or non-private test root")
     private_file(root / STATE_FILE)
     environment = json.loads((root / STATE_FILE).read_text())
+    if persistent:
+        parent = root.parent.stat()
+        require(parent.st_uid == os.getuid() and not parent.st_mode & 0o077 and
+                environment.get("lab_manager") == str(REPO / ".dev-runtime/device-files-lab/manage.py"),
+                "Persistent preview root requires its private local lab manager")
     run = environment["run"]
     require(environment.get("profile", "device-file-preview") == profile, "Test profile ownership mismatch")
     require(re.fullmatch(r"[a-f0-9]{20}", run) and environment["root"] == str(root) and

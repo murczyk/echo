@@ -36,6 +36,8 @@ export const attachmentPreviewHeaderIconButtonSx = {
 
 export function MessageCardAttachmentPreviewHeader({
   fileName,
+  titleContent,
+  titleId,
   openHref,
   download,
   downloadKey,
@@ -47,23 +49,29 @@ export function MessageCardAttachmentPreviewHeader({
   onInfoClick,
   infoSeverity,
   onClose,
+  closeLabel = 'Закрити',
+  embedded = false,
   isDownloadStarting,
   onDownloadStart,
   onChildOverlayChange,
   dismissChildOverlay,
 }: {
   fileName?: string | null;
+  titleContent?: ReactNode;
+  titleId?: string;
   openHref?: string | null;
   download?: AttachmentPreviewDownload;
   downloadKey?: string;
   downloadItems?: AttachmentPreviewDownloadItem[];
-  navigation: MessageCardPreviewNavigation;
+  navigation?: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;
   overflowAction?: ReactNode;
   status?: ReactNode;
   onInfoClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   infoSeverity?: 'warning' | 'error';
-  onClose: () => void;
+  onClose?: () => void;
+  closeLabel?: string;
+  embedded?: boolean;
   isDownloadStarting?: (downloadKey: string) => boolean;
   onDownloadStart?: (downloadKey: string) => boolean;
   onChildOverlayChange?: (open: boolean) => void;
@@ -88,7 +96,7 @@ export function MessageCardAttachmentPreviewHeader({
     downloadKey != null &&
     isDownloadStarting != null &&
     isDownloadStarting(downloadKey);
-  const hasCarousel = navigation.count > 1;
+  const hasCarousel = navigation != null && navigation.count > 1;
 
   const startDownload = (event: MouseEvent<HTMLElement>, key = downloadKey) => {
     if (
@@ -156,6 +164,11 @@ export function MessageCardAttachmentPreviewHeader({
 
   return (
     <Box
+      className={
+        embedded && navigation
+          ? '@min-[640px]/device-preview:grid! @min-[640px]/device-preview:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
+          : undefined
+      }
       sx={{
         position: 'relative',
         display: 'flex',
@@ -169,14 +182,24 @@ export function MessageCardAttachmentPreviewHeader({
         borderBottom: 1,
         borderColor: 'divider',
         color: 'text.primary',
-        zIndex: 1400,
+        zIndex: embedded ? 'auto' : 1400,
         flexShrink: 0,
       }}
     >
       {/* Left: File name + extension + Info button */}
       <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 1, pr: 2 }}>
-        {fileName ? (
+        {titleContent != null ? (
           <Typography
+            component="div"
+            id={titleId}
+            variant="subtitle2"
+            sx={{ minWidth: 0, fontWeight: 600, fontSize: '0.9rem', color: 'text.primary' }}
+          >
+            {titleContent}
+          </Typography>
+        ) : fileName ? (
+          <Typography
+            id={titleId}
             variant="subtitle2"
             sx={{
               fontWeight: 600,
@@ -221,68 +244,77 @@ export function MessageCardAttachmentPreviewHeader({
       </Box>
 
       {/* Center: Fixed Carousel Navigation & Counter (< 1 / 6 >) */}
-      <Stack
-        data-attachment-preview-header-navigation
-        direction="row"
-        spacing={0.5}
-        alignItems="center"
-        sx={{
-          position: 'absolute',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1,
-          display: { xs: 'none', sm: 'flex' },
-        }}
-      >
-        {hasCarousel ? (
-          <Tooltip title="Попереднє" enterDelay={300}>
-            <IconButton
-              aria-label="Попереднє"
-              size="small"
-              onClick={navigation.onPrevious}
-              disabled={navigation.disabled}
-              sx={iconButtonSx}
-              data-attachment-preview-nav="prev"
-            >
-              <ChevronLeftIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        ) : null}
-        <Typography
-          variant="caption"
-          className="font-mono"
-          data-attachment-preview-counter
+      {navigation ? (
+        <Stack
+          data-attachment-preview-header-navigation
+          className={embedded ? '@max-[640px]/device-preview:hidden!' : undefined}
+          direction="row"
+          spacing={0.5}
+          alignItems="center"
           sx={{
-            px: 1,
-            py: 0.25,
-            borderRadius: 1,
-            backgroundColor: 'action.hover',
-            color: 'text.primary',
-            fontWeight: 700,
-            fontSize: '0.75rem',
-            whiteSpace: 'nowrap',
+            position: embedded ? 'static' : 'absolute',
+            left: embedded ? undefined : '50%',
+            transform: embedded ? undefined : 'translateX(-50%)',
+            zIndex: 1,
+            display: embedded ? 'flex' : { xs: 'none', sm: 'flex' },
+            flexShrink: 0,
           }}
         >
-          {`${navigation.index + 1} / ${navigation.count}`}
-        </Typography>
-        {hasCarousel ? (
-          <Tooltip title="Наступне" enterDelay={300}>
-            <IconButton
-              aria-label="Наступне"
-              size="small"
-              onClick={navigation.onNext}
-              disabled={navigation.disabled}
-              sx={iconButtonSx}
-              data-attachment-preview-nav="next"
-            >
-              <ChevronRightIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        ) : null}
-      </Stack>
+          {hasCarousel ? (
+            <Tooltip title="Попереднє" enterDelay={300}>
+              <IconButton
+                aria-label="Попереднє"
+                size="small"
+                onClick={navigation.onPrevious}
+                disabled={navigation.disabled || navigation.previousDisabled}
+                sx={iconButtonSx}
+                data-attachment-preview-nav="prev"
+              >
+                <ChevronLeftIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+          <Typography
+            variant="caption"
+            className="font-mono"
+            data-attachment-preview-counter
+            sx={{
+              px: 1,
+              py: 0.25,
+              borderRadius: 1,
+              backgroundColor: 'action.hover',
+              color: 'text.primary',
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {`${navigation.index + 1} / ${navigation.count}`}
+          </Typography>
+          {hasCarousel ? (
+            <Tooltip title="Наступне" enterDelay={300}>
+              <IconButton
+                aria-label="Наступне"
+                size="small"
+                onClick={navigation.onNext}
+                disabled={navigation.disabled || navigation.nextDisabled}
+                sx={iconButtonSx}
+                data-attachment-preview-nav="next"
+              >
+                <ChevronRightIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+        </Stack>
+      ) : null}
 
       {/* Right: System actions: [Download] [Open in new tab] [Overflow] [Close (X)] */}
-      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0, zIndex: 2 }}>
+      <Stack
+        direction="row"
+        spacing={0.75}
+        alignItems="center"
+        sx={{ flexShrink: 0, zIndex: 2, justifySelf: 'end' }}
+      >
         {status}
         {additionalActions}
         {downloadButton == null ? null : (
@@ -352,11 +384,13 @@ export function MessageCardAttachmentPreviewHeader({
           </Tooltip>
         ) : null}
         {overflowAction}
-        <Tooltip title="Закрити" enterDelay={300}>
-          <IconButton aria-label="Закрити" size="small" onClick={onClose} sx={iconButtonSx}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        {onClose ? (
+          <Tooltip title={closeLabel} enterDelay={300}>
+            <IconButton aria-label={closeLabel} size="small" onClick={onClose} sx={iconButtonSx}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
       </Stack>
     </Box>
   );

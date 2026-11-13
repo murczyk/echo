@@ -63,7 +63,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const { tree: unitHierarchyTree, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
     sidebarOpen,
     (text) => setStatus({ kind: 'error', text }),
-    unitStats,
+    { unitIds: unitStats.map((unit) => unit.unitId) },
   );
   const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
     useState<SelectedSidebarUnitFilter | null>(() => readInitialSidebarFilterFromUrl());
@@ -290,6 +290,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     units,
     selectableUnits,
     sources,
+    callsigns,
     rows,
     sort,
     unitStatsView,

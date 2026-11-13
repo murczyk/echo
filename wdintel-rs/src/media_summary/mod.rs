@@ -585,6 +585,10 @@ mod tests {
             callsign_enabled: Set(true),
             ocr_enabled: Set(false),
             ocr_request_profile: Set("openai_vision".to_string()),
+            unhealthy: Set(None),
+            health_message: Set(None),
+            health_updated_at: Set(None),
+            health_updated_by_login_id: Set(None),
         }
         .insert(&env.dbx)
         .await
@@ -601,6 +605,10 @@ mod tests {
             callsign_enabled: Set(true),
             ocr_enabled: Set(false),
             ocr_request_profile: Set("openai_vision".to_string()),
+            unhealthy: Set(None),
+            health_message: Set(None),
+            health_updated_at: Set(None),
+            health_updated_by_login_id: Set(None),
         }
         .insert(&env.dbx)
         .await
@@ -612,6 +620,7 @@ mod tests {
         .await
         .unwrap();
         let media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),

@@ -9,6 +9,8 @@ import {
   DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   DEFAULT_MEDIA_SUMMARY_ENABLED,
   DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
+  DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
+  DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
 } from '../../hooks/duty-settings-defaults';
 import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
@@ -62,6 +64,8 @@ export type UserDutySettings = {
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: UserDutySettingsDto['aiPositionHighlightsEnabled'];
   minimalReportWindowEnabled: boolean;
+  dutyRememberReportGroup: boolean;
+  analysisRememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
 };
 
@@ -92,6 +96,8 @@ type UserDutySettingsWire = Omit<
   | 'messageAutoParseEnabled'
   | 'aiPositionHighlightsEnabled'
   | 'minimalReportWindowEnabled'
+  | 'dutyRememberReportGroup'
+  | 'analysisRememberReportGroup'
   | 'importantOnlyMyOrganism'
 > & {
   messageCardQuickAction?: MessageCardQuickAction | null;
@@ -111,6 +117,8 @@ type UserDutySettingsWire = Omit<
   messageAutoParseEnabled?: boolean | null;
   aiPositionHighlightsEnabled?: UserDutySettingsDto['aiPositionHighlightsEnabled'] | null;
   minimalReportWindowEnabled?: boolean | null;
+  dutyRememberReportGroup?: boolean | null;
+  analysisRememberReportGroup?: boolean | null;
   importantOnlyMyOrganism?: boolean | null;
 };
 
@@ -187,6 +195,9 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     aiPositionHighlightsEnabled: raw.aiPositionHighlightsEnabled ?? false,
     messageAutoParseEnabled: raw.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
     minimalReportWindowEnabled: raw.minimalReportWindowEnabled ?? false,
+    dutyRememberReportGroup: raw.dutyRememberReportGroup ?? DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
+    analysisRememberReportGroup:
+      raw.analysisRememberReportGroup ?? DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
     importantOnlyMyOrganism: raw.importantOnlyMyOrganism ?? false,
   };
 }
@@ -221,6 +232,8 @@ export async function saveUserSettings(
       aiPositionHighlightsEnabled: body.aiPositionHighlightsEnabled,
       messageAutoParseEnabled: body.messageAutoParseEnabled,
       minimalReportWindowEnabled: body.minimalReportWindowEnabled,
+      dutyRememberReportGroup: body.dutyRememberReportGroup,
+      analysisRememberReportGroup: body.analysisRememberReportGroup,
       importantOnlyMyOrganism: body.importantOnlyMyOrganism,
     },
     { signal },

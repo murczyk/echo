@@ -9,7 +9,7 @@ edits remain valid without filling newly required fields.
 Automated device-audio forwarding is exempt from these interactive requirements;
 it preserves its own device and unit metadata.
 
-The message editor validates the currently selected group's requirements and
+The message editor validates all selected groups' requirements and
 updates them when the destination changes. The server validates them again
 before saving. Required device names still require device access; users without
 that access cannot send to a group requiring a device. `POST /api/1.1/submit`

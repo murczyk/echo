@@ -7,12 +7,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 pub struct SystemSettingsCurrentRsp {
     pub id: Option<i64>,
     pub rer_analysis_units_exact_match_only_default: bool,
-    pub rer_duty_test_enabled: bool,
-    pub rer_duty_insert_historical_interceptions: bool,
-    pub rer_duty_test_since_ms: i64,
-    pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
-    pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
     pub rer_report_enabled: bool,
     pub support_non_rer_interceptions: bool,
@@ -24,6 +19,8 @@ pub struct SystemSettingsCurrentRsp {
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub devices_section_enabled: bool,
+    #[serde(default)]
+    pub doc_media_serve_from_b2: bool,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
     pub goi_association_message_uid_worker_enabled: bool,
@@ -44,6 +41,9 @@ pub struct SystemSettingsCurrentRsp {
     pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_duty_selected_groups_enabled")]
     pub duty_selected_groups_enabled: bool,
+    #[serde(default)]
+    pub enable_duty_search: bool,
+    pub ai_network_match_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
@@ -62,12 +62,7 @@ pub struct SystemSettingsCurrentRsp {
 pub struct SystemSettingsItem {
     pub id: i64,
     pub rer_analysis_units_exact_match_only_default: bool,
-    pub rer_duty_test_enabled: bool,
-    pub rer_duty_insert_historical_interceptions: bool,
-    pub rer_duty_test_since_ms: i64,
-    pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
-    pub rer_duty_test_replay_interval_sec: i64,
     pub created_at: i64,
     pub updated_at: i64,
     pub updated_by_login_id: Option<String>,
@@ -83,6 +78,8 @@ pub struct SystemSettingsItem {
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub devices_section_enabled: bool,
+    #[serde(default)]
+    pub doc_media_serve_from_b2: bool,
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
@@ -105,6 +102,9 @@ pub struct SystemSettingsItem {
     pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_duty_selected_groups_enabled")]
     pub duty_selected_groups_enabled: bool,
+    #[serde(default)]
+    pub enable_duty_search: bool,
+    pub ai_network_match_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
@@ -141,13 +141,7 @@ pub struct SystemSettingsListRsp {
 )]
 pub struct CreateSystemSettingsReq {
     pub rer_analysis_units_exact_match_only_default: bool,
-    pub rer_duty_test_enabled: bool,
-    pub rer_duty_insert_historical_interceptions: bool,
-    pub rer_duty_test_since_ms: i64,
-    pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
-    #[serde(default = "default_rer_duty_test_replay_interval_sec")]
-    pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
     #[serde(default)]
     pub rer_report_enabled: bool,
@@ -165,6 +159,8 @@ pub struct CreateSystemSettingsReq {
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     #[serde(default)]
     pub devices_section_enabled: bool,
+    #[serde(default)]
+    pub doc_media_serve_from_b2: bool,
     #[serde(default)]
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     #[serde(default = "default_sigint_comment_parsing_enabled")]
@@ -203,6 +199,9 @@ pub struct CreateSystemSettingsReq {
     pub ai_position_highlights_enabled: Option<bool>,
     #[serde(default)]
     pub duty_selected_groups_enabled: Option<bool>,
+    #[serde(default)]
+    pub enable_duty_search: Option<bool>,
+    pub ai_network_match_enabled: Option<bool>,
     #[serde(default)]
     pub important_notify_all_enabled: Option<bool>,
     #[serde(default = "default_true")]
@@ -252,21 +251,6 @@ fn default_true() -> bool {
     true
 }
 
-fn default_rer_duty_test_replay_interval_sec() -> i64 {
-    1
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct RerDutyTestReplayStatusRsp {
-    pub status: String,
-    pub source_count: i64,
-    pub next_source_position: Option<i64>,
-    pub generated_count: i64,
-    pub next_emit_at_ms: Option<i64>,
-}
-
 fn default_sigint_comment_parsing_enabled() -> bool {
     false
 }
@@ -308,10 +292,6 @@ mod tests {
     fn missing_boolean_settings_default_to_false() {
         let req: CreateSystemSettingsReq = serde_json::from_value(json!({
             "rer_analysis_units_exact_match_only_default": true,
-            "rer_duty_test_enabled": false,
-            "rer_duty_insert_historical_interceptions": false,
-            "rer_duty_test_since_ms": 0,
-            "rer_duty_test_limit": 1,
             "rer_duty_poll_interval_sec": 1,
             "short_url_enabled": false
         }))
@@ -326,7 +306,6 @@ mod tests {
         assert!(!req.disable_bot_tags);
         assert!(!req.hide_networks);
         assert!(req.analysis_aor_filter_enabled);
-        assert_eq!(req.rer_duty_test_replay_interval_sec, 1);
         assert!(req.exclude_orbit_other_units);
     }
 }

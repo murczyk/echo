@@ -69,6 +69,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     await act(async () => {
       catalog.resolve({
         revision: '3527',
+        selections: [],
         groups: [
           { id: 'group:2:6 А', label: '6 А', level: 2, parentIndex: null },
           { id: 'group:2:6 А|5:27 омсбр', label: '27 омсбр', level: 5, parentIndex: 0 },
@@ -317,10 +318,6 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.systemSettingsCurrent.mockResolvedValueOnce({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: true,
     });
@@ -408,10 +405,6 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.systemSettingsCurrent.mockResolvedValueOnce({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: true,
     });
@@ -455,10 +448,6 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     hoisted.systemSettingsCurrent.mockResolvedValueOnce({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: true,
     });

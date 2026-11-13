@@ -185,12 +185,15 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     () => mergeDeviceUnitStatsWithUnits(sidebarResource.unitStats, unitsById),
     [sidebarResource.unitStats, unitsById],
   );
-  const editHasChanges = useMemo(() => {
-    if (editDevice === null || editForm === null) return false;
-    return hasDeviceUpdatePatchChanges(
-      buildUpdateDevicePatch(editDevice, editForm, permissions.fieldPermissions),
-    );
-  }, [editDevice, editForm, permissions.fieldPermissions]);
+  const editHasChanges = useCallback(
+    (form: DeviceUpsertForm) => {
+      if (editDevice === null) return false;
+      return hasDeviceUpdatePatchChanges(
+        buildUpdateDevicePatch(editDevice, form, permissions.fieldPermissions),
+      );
+    },
+    [editDevice, permissions.fieldPermissions],
+  );
 
   const normalizedGlobalFilter = tableStateContext.globalFilter.trim();
   const querySnapshot = useMemo<DevicesQuerySnapshot>(
@@ -435,12 +438,6 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     setEditServerFieldErrors({});
   }, [editSubmitting]);
 
-  const changeEditForm = useCallback((form: DeviceUpsertForm | null) => {
-    setEditForm(form);
-    setEditError(null);
-    setEditServerFieldErrors({});
-  }, []);
-
   const submitEditDialog = useCallback(
     async (form: DeviceUpsertForm) => {
       if (!permissions.canEdit || editDevice === null || editDevice.archived || editSubmitting) {
@@ -660,7 +657,6 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     submitCreateDialog,
     openEditRow,
     closeEditDialog,
-    setEditForm: changeEditForm,
     submitEditDialog,
   };
 }

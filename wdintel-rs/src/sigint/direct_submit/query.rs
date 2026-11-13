@@ -865,6 +865,7 @@ where
         .filter(
             signal_message_media::Column::SignalMessageId.eq(signal_message_id),
         )
+        .order_by_asc(signal_message_media::Column::OrderF64)
         .order_by_asc(signal_message_media::Column::Id)
         .all(dbx)
         .await
@@ -888,6 +889,7 @@ where
         .filter(
             signal_message_media::Column::SignalMessageId.eq(signal_message_id),
         )
+        .order_by_asc(signal_message_media::Column::OrderF64)
         .order_by_asc(signal_message_media::Column::Id)
         .all(dbx)
         .await
@@ -904,7 +906,7 @@ where
     if signal_message_ids.is_empty() {
         return Ok(vec![]);
     }
-    Ok(signal_message_media::Entity::find()
+    let mut media = signal_message_media::Entity::find()
         .filter(
             signal_message_media::Column::SignalMessageId
                 .is_in(signal_message_ids.to_vec()),
@@ -913,7 +915,9 @@ where
         .lock(LockType::Update)
         .all(dbx)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    crate::messenger::media_order::sort(&mut media);
+    Ok(media)
 }
 
 pub async fn find_inbox_item_device_name_id<C>(
@@ -992,15 +996,31 @@ pub async fn copy_signal_message_media<C>(
     signal_message_id: i64,
     signal_message_uuid: Option<Uuid>,
     source_media: &[signal_message_media::Model],
-) -> Result<(), AppError>
+) -> Result<std::collections::HashMap<Uuid, Uuid>, AppError>
 where
     C: ConnectionTrait,
 {
-    crate::messenger::audio_ref::copy(
+    let start = crate::messenger::media_order::next(
+        dbx,
+        signal_message_id,
+        source_media.len(),
+    )
+    .await
+    .c(h!())?;
+    let source_media = source_media
+        .iter()
+        .enumerate()
+        .map(|(index, media)| {
+            let mut media = media.clone();
+            media.order_f64 = Some(start + index as f64);
+            media
+        })
+        .collect::<Vec<_>>();
+    let mut copied = crate::messenger::audio_ref::copy(
         env,
         dbx,
         signal_message_id,
-        source_media,
+        &source_media,
     )
     .await
     .c(h!())?;
@@ -1011,8 +1031,11 @@ where
             let storage_key = media.storage_key.clone().unwrap_or_else(|| {
                 crate::messenger::media::media_object_key(media)
             });
+            let id = Uuid::now_v7();
+            copied.insert(media.id, id);
             signal_message_media::ActiveModel {
-                id: Set(Uuid::now_v7()),
+                id: Set(id),
+                order_f64: Set(media.order_f64),
                 signal_message_id: Set(signal_message_id),
                 signal_message_uuid: Set(signal_message_uuid),
                 content_type: Set(media.content_type.clone()),
@@ -1031,7 +1054,7 @@ where
             .await
             .c(h!())?;
     }
-    Ok(())
+    Ok(copied)
 }
 
 pub async fn copy_signal_message_comments(
@@ -1728,6 +1751,10 @@ where
             networks.push(network);
         }
     }
+    let copied_network_ids = networks
+        .iter()
+        .map(|network| network.sigint_network_id)
+        .collect::<Vec<_>>();
     let network_models = networks
         .into_iter()
         .map(|network| {
@@ -1758,6 +1785,18 @@ where
     crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
         dbx,
         old_freq_ids.into_iter().chain(new_freq_ids),
+    )
+    .await
+    .c(h!())?;
+    crate::ai_network_match::forget_result(dbx, target_inbox_item_id)
+        .await
+        .c(h!())?;
+    crate::ai_network_match::enqueue_for_calculated(
+        dbx,
+        &std::collections::HashMap::from([(
+            target_inbox_item_id,
+            copied_network_ids,
+        )]),
     )
     .await
     .c(h!())?;
@@ -2229,6 +2268,67 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(sigint_inbox_item_network::Entity::find_by_id(history.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4095
+    #[tokio::test]
+    #[serial]
+    async fn issue_4095_copied_network_links_queue_ai_network_match() {
+        use crate::entities::{
+            ai_network_match_worker_job, sigint_inbox_item_network,
+        };
+        use crate::functest::tests::*;
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let engine =
+            crate::ai_worker::test_support::engine(&env.dbx, 200, "{}", false)
+                .await;
+        env.dbx
+            .execute_raw(crate::ai_network_match::sql(
+                "insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_poll_interval_sec, ai_network_match_enabled, updated_at) values (true, 5, true, now() at time zone 'utc' + interval '1 day')",
+                vec![],
+            ))
+            .await
+            .unwrap();
+        env.dbx
+            .execute_raw(crate::ai_network_match::sql(
+                "insert into ai_callsign_settings(id,prompt,worker_enabled,worker_ai_engine_id) values(1,'',true,$1) on conflict(id) do update set worker_enabled=true,worker_ai_engine_id=$1",
+                vec![engine.engine.id.into()],
+            ))
+            .await
+            .unwrap();
+        let source = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let target = mk_sigint_inbox_item(
+            &env.dbx,
+            crate::entities::sigint_inbox_item::ActiveModel {
+                datetime: Set(Some(chrono::Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for _ in 0..2 {
+            mk_sigint_inbox_item_network(
+                &env.dbx,
+                sigint_inbox_item_network::ActiveModel {
+                    sigint_inbox_item_id: Set(source.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        copy_inbox_networks(&env.dbx, &[source.id], target.id, target.id_uuid)
+            .await
+            .unwrap();
+
+        assert!(ai_network_match_worker_job::Entity::find_by_id(target.id)
             .one(&env.dbx)
             .await
             .unwrap()

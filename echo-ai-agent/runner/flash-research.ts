@@ -110,7 +110,7 @@ export const RESEARCH_TUNING: ResearchTuning = {
   checkpointPriorMs: 60_000,
 };
 
-export const FLASH_GUIDANCE = `Start working in your first turn: when the request needs Echo data, run the first retrieval right away, without announcing it first. Never end a turn with a plan, a promise or a progress note while work remains; call the tool in that same turn. update_research is not needed before retrieval. A name or unfamiliar word may be a callsign, a unit or a term from the reports even when it has an everyday meaning: search Echo for it before answering from general knowledge. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination, or read more than three pages of one search, without recording a concrete coverage need in paginationReason or refining the search; explicit exhaustive requests may continue pagination. A cited partial answer with a stated coverage gap is better than none. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Send report_progress together with another tool call in the same turn, never as a turn of its own. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. When the user asks for a document, saving it with echo_document_script is part of research: save it before the final update_research, because the tool-free synthesis cannot create files; when the budget warning arrives before it is saved, save it now from the evidence collected so far. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
+export const FLASH_GUIDANCE = `Start working in your first turn: when the request needs Echo data, run the first retrieval right away, without announcing it first. Never end a turn with a plan, a promise or a progress note while work remains; call the tool in that same turn. update_research is not needed before retrieval. A name or unfamiliar word may be a callsign, a unit or a term from the reports even when it has an everyday meaning: search Echo for it before answering from general knowledge. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination, or read more than three pages of one search, without recording a concrete coverage need in paginationReason or refining the search; explicit exhaustive requests may continue pagination. A cited partial answer with a stated coverage gap is better than none. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Send report_progress together with another tool call in the same turn, never as a turn of its own. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. When the user asks for a document, saving it with echo_document_script is part of research: save it before the final update_research, because the tool-free synthesis cannot create files; when the budget warning arrives before it is saved, save it now from the evidence collected so far. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer. A reply that calls no tool at all is delivered to the user as written: when the request needs no tool, such as reformatting or translating earlier text or applying the user's own instructions to text they supplied, write the complete answer in that reply, following the rules set earlier in the conversation, never a plan or a note.`;
 
 // Limits live in normalizedResearchUpdate, not here: a schema violation costs a whole
 // provider turn, and it was the most common failure of this tool in production.
@@ -286,6 +286,17 @@ function answerIssue(text: string, sources: Sources): AnswerIssue | undefined {
     : undefined;
 }
 
+/**
+ * The part of a cut-off answer that was finished: its last line may stop mid-sentence
+ * or mid-link, and a trailing heading would introduce nothing.
+ */
+export function completedLines(text: string): string {
+  const lines = text.split("\n").slice(0, -1);
+  while (lines.length && (!lines.at(-1)!.trim() || /^\s*#{1,6}\s/.test(lines.at(-1)!)))
+    lines.pop();
+  return lines.join("\n").trimEnd();
+}
+
 export function validatedFlashAnswer(
   text: string | null,
   sources: Sources,
@@ -348,6 +359,11 @@ export class FlashResearch {
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
   private startFailed = false;
+  // The gateway answered a call before the first tool with a cooldown (429): no
+  // deployment of the model was ready, and pi's retries already waited it out.
+  private startCooldown = false;
+  // Some research call got an answer from the provider, even one without a tool call.
+  private providerAnswered = false;
   private readonly groupProblems = new Set<string>();
   private readonly groupsRead = new Set<string>();
   private readonly actions = new Map<string, CompletedAction>();
@@ -357,11 +373,15 @@ export class FlashResearch {
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
   private researchStartedAt?: number;
+  // The longest validated part of a synthesis the finalization deadline cut off.
+  private partial?: string;
   private readonly sources: () => Sources;
   private readonly journal?: WorkJournal;
   private readonly diagnostic: (event: CompletionDiagnostic) => void;
   private readonly tuning: ResearchTuning;
   usedFallback = false;
+  /** The answer is the finished part of a synthesis cut off by the deadline. */
+  usedPartial = false;
 
   constructor(
     sources: () => Sources,
@@ -499,6 +519,37 @@ export class FlashResearch {
     );
   }
 
+  /** Research that called no tool wrote the answer itself, from the whole conversation. */
+  directAnswer(text: string, budget: ResearchBudget): string | undefined {
+    const answer = validatedFlashAnswer(text, this.sources());
+    if (answer)
+      this.diagnostic({
+        stage: "answer",
+        outcome: "research_text",
+        textCharacters: answer.length,
+        remainingMs: budget.remainingFinalizationMs(),
+      });
+    return answer;
+  }
+
+  /**
+   * Research that wrote the cited answer after its tools already did synthesis's work;
+   * rewriting it would spend the time left on the same evidence (incident 01a1d04a).
+   * Only a report longer than any draft counts: a shorter text may be the completion
+   * note research ends with, and the draft or synthesis covers it. It must cite a source
+   * this request's tools returned, so an answer repeated from history is not one.
+   */
+  researchReport(
+    text: string,
+    budget: ResearchBudget,
+    retrieved: ReadonlySet<string>,
+  ): string | undefined {
+    return text.trim().length > DRAFT_CHARACTERS &&
+      markdownLinks(text).some((href) => retrieved.has(href))
+      ? this.directAnswer(text, budget)
+      : undefined;
+  }
+
   hasGaps(): boolean {
     return (
       (this.state
@@ -578,14 +629,32 @@ export class FlashResearch {
 
   // Deep was asked for more effort, so it must not simply end on an answer from memory.
   // A provider failure before the first tool call loses no work, so one more
-  // attempt beats telling the user to repeat the request.
+  // attempt beats telling the user to repeat the request. Not after a cooldown: the
+  // gateway had no deployment of the model, and another attempt only waits out
+  // another one (incident 01a1d35e).
   noteFailedStart(message?: { stopReason?: unknown; errorMessage?: unknown }): boolean {
     const failure = completionFailure(message?.errorMessage);
     this.startFailed =
       message?.stopReason === "error" &&
       this.publicToolRuns === 0 &&
+      !this.startCooldown &&
       (failure === "provider_error" || failure === "transient_error");
     return this.startFailed;
+  }
+
+  /**
+   * Every research call failed at the provider and nothing was saved: synthesis would
+   * have no evidence and only the same failing model. A reply the provider did give,
+   * such as Deep's answer before its search reminder, keeps the usual completion.
+   */
+  get providerNeverAnswered(): boolean {
+    return (
+      !this.providerAnswered &&
+      this.publicToolRuns === 0 &&
+      this.retrievals === 0 &&
+      !this.state &&
+      !this.draft
+    );
   }
 
   private get failedStart(): boolean {
@@ -623,9 +692,17 @@ export class FlashResearch {
     if (this.researchStartedAt === undefined) return;
     const durationMs = Date.now() - this.researchStartedAt;
     this.completed("research", durationMs);
+    const completion = providerCompletion(message);
+    // Only the latest outcome counts: a provider that answered after a cooldown has
+    // recovered, so a later failure gets the usual re-prompt.
+    if (["stop", "toolUse", "length"].includes(completion.stopReason ?? "")) {
+      this.providerAnswered = true;
+      this.startCooldown = false;
+    } else if (completion.failureKind === "rate_limit" && this.publicToolRuns === 0)
+      this.startCooldown = true;
     this.diagnostic({
       stage: "research",
-      ...providerCompletion(message),
+      ...completion,
       durationMs,
       remainingMs: budget?.remainingTotalMs(),
     });
@@ -679,14 +756,30 @@ export class FlashResearch {
       correction = this.correctionInstructions(result.outcome);
     }
     this.usedFallback = true;
-    const answer = this.fallback();
+    const draft = this.fallback();
+    // Either is validated; the longer one keeps more of the cited findings.
+    this.usedPartial = Boolean(
+      this.partial &&
+        (draft === FLASH_INABILITY || this.partial.length > draft.length),
+    );
+    const answer = this.usedPartial ? this.partial! : draft;
     this.diagnostic({
       stage: "answer",
-      outcome: answer === FLASH_INABILITY ? "inability" : "fallback",
+      outcome: this.usedPartial
+        ? "partial"
+        : answer === FLASH_INABILITY
+          ? "inability"
+          : "fallback",
       textCharacters: answer.length,
       remainingMs: budget.remainingFinalizationMs(),
     });
     return answer;
+  }
+
+  private notePartial(text: string): void {
+    const answer = validatedFlashAnswer(completedLines(text), this.sources());
+    if (answer && answer.length > (this.partial?.length ?? 0))
+      this.partial = answer;
   }
 
   private async synthesisAttempt(
@@ -702,6 +795,7 @@ export class FlashResearch {
     let durationMs = 0;
     const candidate = await synthesizeBudgetEvidence({
       ...options,
+      onPartial: (text) => this.notePartial(text),
       onOutcome: (event) => {
         outcome = event.outcome as CompletionStatus;
         durationMs = event.durationMs ?? 0;
@@ -722,9 +816,11 @@ export class FlashResearch {
     const answer = validatedFlashAnswer(candidate, this.sources());
     if (candidate && !answer) {
       outcome = "citation_rejected";
+      const draftIssue = answerIssue(candidate, this.sources());
       this.diagnostic({
         stage: "synthesis",
         outcome,
+        ...(draftIssue ? { draftIssue } : {}),
         attempt,
         durationMs,
         remainingMs: budget.remainingFinalizationMs(),

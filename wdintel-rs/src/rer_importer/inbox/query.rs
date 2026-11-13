@@ -7,7 +7,8 @@ use crate::config::{
     ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES,
     ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS,
     ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS, INBOX_COUNT_INDEXED_MAX_DAYS,
-    INBOX_MESSAGES_PAGE_LIMIT, TAG_MINIMUM_CONFIDENCE,
+    INBOX_FRESH_TAIL_MESSAGE_ID_LIMIT, INBOX_MESSAGES_PAGE_LIMIT,
+    TAG_MINIMUM_CONFIDENCE,
 };
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
@@ -1265,18 +1266,17 @@ fn inbox_undefined_unit_counts_query(
         active_links.offset(0);
     }
     let mut query = messages.into_query();
-    // Match the linked arm's bigint/text types; an implicit coercion makes
-    // PostgreSQL wrap this arm, and the gateway then runs both arms serially.
+    // Keep these constants untyped: PostgreSQL then plans this arm as its own
+    // gateway query. One combined UNION query exceeds ClickHouse's per-query
+    // memory limit for broad scopes (docs/performance/3527-unit-stats.md).
     query
         .clear_selects()
         .expr_as(
-            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_ID)
-                .cast_as(Alias::new("bigint")),
+            Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_ID),
             Alias::new("unit_id"),
         )
         .expr_as(
-            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_NAME)
-                .cast_as(Alias::new("text")),
+            Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_NAME),
             Alias::new("name"),
         )
         .expr_as(
@@ -2731,9 +2731,59 @@ pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     req: &InboxMessagesReq,
     created_at_lower_bound: NaiveDateTime,
 ) -> Result<Vec<i64>, AppError> {
+    let Some(query) = build_postgres_fresh_tail_inbox_candidate_query(
+        dbx,
+        login,
+        env,
+        req,
+        created_at_lower_bound,
+    )
+    .await
+    .context(h!())?
+    else {
+        return Ok(Vec::new());
+    };
+    Ok(scan_inbox_candidate_pages(dbx, query, req)
+        .await
+        .context(h!())?)
+}
+
+/// The candidate query for messages created since `created_at_lower_bound`, or
+/// `None` when there are none.
+///
+/// A date-range candidate query starts from `sigint_inbox_item` in `datetime`
+/// order and reads `signal_message` through a fenced lateral join, so the
+/// `created_at` bound cannot narrow the scan. A tail with fewer matches than a
+/// page then walked the whole search window and hit the statement timeout
+/// (#4153). The tail's ids, read from the `created_at` index, let it use the
+/// primary key instead.
+pub(crate) async fn build_postgres_fresh_tail_inbox_candidate_query(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    created_at_lower_bound: NaiveDateTime,
+) -> Result<Option<Select<signal_message::Entity>>, AppError> {
     let mut candidate_req = req.clone();
     candidate_req.search = None;
-    let query = build_filtered_inbox_query_with_scope(
+    let tail_ids = if uses_inbox_candidate_range(
+        &candidate_req,
+        InboxQueryPurpose::Candidates,
+    ) {
+        fresh_tail_message_ids(
+            dbx,
+            created_at_lower_bound,
+            INBOX_FRESH_TAIL_MESSAGE_ID_LIMIT,
+        )
+        .await
+        .context(h!())?
+    } else {
+        None
+    };
+    if tail_ids.as_ref().is_some_and(Vec::is_empty) {
+        return Ok(None);
+    }
+    let mut query = build_filtered_inbox_query_with_scope(
         dbx,
         login,
         env,
@@ -2746,12 +2796,33 @@ pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     .await
     .context(h!())?
     .filter(signal_message::Column::CreatedAt.gte(created_at_lower_bound));
-    let query =
+    if let Some(ids) = tail_ids {
+        query = query.filter(sigint_inbox_item::Column::Id.is_in(ids));
+    }
+    Ok(Some(
         apply_fresh_tail_inbox_search(query, req, Some(created_at_lower_bound))
-            .c(h!())?;
-    Ok(scan_inbox_candidate_pages(dbx, query, req)
+            .c(h!())?,
+    ))
+}
+
+/// Ids of messages created since `created_at_lower_bound`, or `None` when there
+/// are more than `limit`: the caller then keeps the unrestricted query, which is
+/// slower but complete.
+async fn fresh_tail_message_ids(
+    dbx: &DatabaseConnection,
+    created_at_lower_bound: NaiveDateTime,
+    limit: u64,
+) -> anyhow::Result<Option<Vec<i64>>> {
+    let ids: Vec<i64> = SignalMessage::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .filter(signal_message::Column::CreatedAt.gte(created_at_lower_bound))
+        .limit(limit + 1)
+        .into_tuple()
+        .all(dbx)
         .await
-        .context(h!())?)
+        .c(h!())?;
+    Ok((ids.len() as u64 <= limit).then_some(ids))
 }
 
 pub(crate) async fn build_inbox_query_for_candidate_ids(
@@ -3983,22 +4054,18 @@ mod tests {
     }
 
     #[test]
-    fn undefined_unit_arm_matches_linked_arm_types_3527() {
+    fn undefined_unit_arm_stays_a_separate_gateway_query_3527() {
         let messages = signal_message::Entity::find()
             .select_only()
             .column(signal_message::Column::Id);
         let query = render_inbox_unit_stats_query(messages, None, false);
         let (_, undefined) = query.split_once(" UNION ALL ").unwrap();
 
+        // Typed constants let the gateway push the whole UNION into one
+        // ClickHouse query, which exceeded the per-query memory limit on Skhid.
         assert!(
             undefined.contains(&format!(
-                r#"CAST({ANALYSIS_STATS_UNDEFINED_UNIT_ID} AS bigint) AS "unit_id""#
-            )),
-            "{query}"
-        );
-        assert!(
-            undefined.contains(&format!(
-                r#"CAST('{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}' AS text) AS "name""#
+                r#"SELECT {ANALYSIS_STATS_UNDEFINED_UNIT_ID} AS "unit_id", '{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}' AS "name""#
             )),
             "{query}"
         );

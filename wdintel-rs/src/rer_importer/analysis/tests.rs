@@ -690,6 +690,8 @@ fn short_state_filter(
     groups_selected: Option<Vec<String>>,
 ) -> RerDutyQueryStateWf {
     RerDutyQueryStateWf {
+        search: None,
+        search_mode: None,
         groups_selected,
         groups_denied: None,
         senders_selected: None,
@@ -3069,6 +3071,108 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
             }
         }
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn fresh_tail_candidates_read_the_tail_by_id_4153() {
+    use crate::rer_importer::inbox::query::{
+        build_postgres_fresh_tail_inbox_candidate_query,
+        load_postgres_fresh_tail_inbox_candidates,
+    };
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    // Later than anything in the test dump, so the tail holds only these messages.
+    let tail_start = test_dt(2030, 3, 1, 10, 0);
+    let mut fresh = Vec::new();
+    for (minutes, label) in
+        [(-60, "Береза"), (1, "Береза"), (2, "Береза"), (3, "Дуб")]
+    {
+        let message = mk_analysis_message(
+            db,
+            label,
+            "155.2750",
+            tail_start + chrono::Duration::minutes(minutes),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        if minutes > 0 && label == "Береза" {
+            fresh.push(message.id);
+        }
+    }
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(
+            test_dt(2030, 2, 1, 0, 0).and_utc().timestamp_millis(),
+        ),
+        till_date_inclusive_ms: Some(
+            test_dt(2030, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        ),
+        search: Some("Берез".into()),
+        selected_groups: Some(vec![fixture
+            .alpha
+            .signal_group
+            .master_key
+            .clone()]),
+        sort_by: Some(InboxMessagesSortBy::IMSDatetime),
+        newest_first: Some(true),
+        ..Default::default()
+    };
+    let query = build_postgres_fresh_tail_inbox_candidate_query(
+        db,
+        &login.id,
+        &fixture.env,
+        &req,
+        tail_start,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    // The month-long scan only narrows when the inbox item itself is limited.
+    let sql = query.build(DbBackend::Postgres).to_string();
+    assert!(sql.contains(r#""sigint_inbox_item"."id" IN ("#), "{sql}");
+    let mut ids = load_postgres_fresh_tail_inbox_candidates(
+        db,
+        &login.id,
+        &fixture.env,
+        &req,
+        tail_start,
+    )
+    .await
+    .unwrap();
+    ids.sort();
+    assert_eq!(ids, fresh);
+    // Nothing created since the bound: no query at all.
+    assert!(build_postgres_fresh_tail_inbox_candidate_query(
+        db,
+        &login.id,
+        &fixture.env,
+        &req,
+        tail_start + chrono::Duration::days(1),
+    )
+    .await
+    .unwrap()
+    .is_none());
+    // Without a date range the query starts from signal_message, where the
+    // created_at bound is already indexed, so it is left as it was.
+    req.since_date_inclusive_ms = None;
+    req.till_date_inclusive_ms = None;
+    let sql = build_postgres_fresh_tail_inbox_candidate_query(
+        db,
+        &login.id,
+        &fixture.env,
+        &req,
+        tail_start,
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string();
+    assert!(!sql.contains(r#""sigint_inbox_item"."id" IN ("#), "{sql}");
 }
 
 #[tokio::test]

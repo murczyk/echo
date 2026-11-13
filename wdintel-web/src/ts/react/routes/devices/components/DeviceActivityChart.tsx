@@ -23,14 +23,14 @@ const GEOMETRY = {
   detailed: {
     bandWidth: 22,
     barWidth: 16,
-    plotHeight: 140,
+    plotHeight: 180,
     plotTop: 8,
     barRadius: 3,
   },
-} as const;
+};
 const Y_LABEL_WIDTH = 40;
-const Y_LABEL_FONT_SIZE = 11;
-const DAY_LABEL_FONT_SIZE = 12;
+const Y_LABEL_FONT_SIZE = '0.85rem';
+const DAY_LABEL_FONT_SIZE = '0.85rem';
 
 type Geometry = (typeof GEOMETRY)[keyof typeof GEOMETRY];
 
@@ -62,8 +62,7 @@ type Props = {
 
 const FADED_BAR_OPACITY = 0.4;
 
-/** Same layout as `NetworkDetailsActivityChart`, but in fixed pixels inside a horizontal
- * scroller so the full history fits; it opens scrolled to the latest day. */
+/** Short detailed histories fill the available width; longer histories scroll to the latest day. */
 export function DeviceActivityChart({
   days,
   variant = 'compact',
@@ -72,6 +71,19 @@ export function DeviceActivityChart({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<HoveredDay | null>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const detailed = variant === 'detailed';
+  const hasDays = days.length > 0;
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!detailed || !element) return;
+    const measure = () => setAvailableWidth(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [detailed, hasDays]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
@@ -86,8 +98,19 @@ export function DeviceActivityChart({
     );
   }
 
-  const detailed = variant === 'detailed';
-  const scale = chartScale(days, GEOMETRY[variant], detailed);
+  const geometry = GEOMETRY[variant];
+  const bandWidth = detailed
+    ? Math.max(geometry.bandWidth, availableWidth / days.length)
+    : geometry.bandWidth;
+  const scale = chartScale(
+    days,
+    {
+      ...geometry,
+      bandWidth,
+      barWidth: detailed ? Math.min(32, bandWidth * 0.7) : geometry.barWidth,
+    },
+    detailed,
+  );
 
   return (
     <>
@@ -374,7 +397,7 @@ function ActivityTooltip({
       }}
     >
       <Stack spacing={1}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
           {day.label}
         </Typography>
         {day.categories.length === 0 ? (

@@ -1,3 +1,4 @@
+use super::health::HealthSink;
 use super::metrics::{
     ProviderCallAttempt, ProviderMetricsSink, StreamBodyTimer,
 };
@@ -29,6 +30,7 @@ pub struct AiEngineClient {
     government_cooldowns: Arc<Mutex<HashMap<String, Arc<ProviderCooldown>>>>,
     preview_settings: Option<ai_gov_ua_settings::Model>,
     metrics: Option<ProviderMetricsSink>,
+    health: Option<HealthSink>,
     #[cfg(test)]
     token_endpoint: Option<Url>,
 }
@@ -62,6 +64,7 @@ impl AiEngineClient {
             government_cooldowns: Arc::default(),
             preview_settings: None,
             metrics: None,
+            health: None,
             #[cfg(test)]
             token_endpoint: None,
         })
@@ -79,13 +82,39 @@ impl AiEngineClient {
         self
     }
 
+    /// Counts every call's outcome per engine, so the health worker can mark an
+    /// engine unhealthy and back automatically (#4157).
+    pub fn with_health(mut self, redis: redis::aio::ConnectionManager) -> Self {
+        self.health = Some(HealthSink::new(redis));
+        self
+    }
+
+    /// The same client without health counting, for the health probe: a probe
+    /// is not a user's call, so it must not count as traffic.
+    pub(super) fn without_health(&self) -> Self {
+        Self {
+            http: self.http.clone(),
+            dbx: self.dbx.clone(),
+            secret_key: self.secret_key.clone(),
+            token: Mutex::new(None),
+            government_cooldowns: self.government_cooldowns.clone(),
+            preview_settings: self.preview_settings.clone(),
+            metrics: self.metrics.clone(),
+            health: None,
+            #[cfg(test)]
+            token_endpoint: self.token_endpoint.clone(),
+        }
+    }
+
     pub(crate) fn start_stream_body_timer(
         &self,
         engine: &ai_engine::Model,
     ) -> Option<StreamBodyTimer> {
-        self.metrics
-            .as_ref()
-            .map(|sink| StreamBodyTimer::start(sink, engine))
+        StreamBodyTimer::start(
+            self.metrics.as_ref(),
+            self.health.as_ref(),
+            engine,
+        )
     }
 
     pub(super) fn preview(&self, settings: ai_gov_ua_settings::Model) -> Self {
@@ -97,6 +126,7 @@ impl AiEngineClient {
             government_cooldowns: self.government_cooldowns.clone(),
             preview_settings: Some(settings),
             metrics: self.metrics.clone(),
+            health: None,
             #[cfg(test)]
             token_endpoint: self.token_endpoint.clone(),
         }
@@ -133,6 +163,7 @@ impl AiEngineClient {
     ) -> anyhow::Result<reqwest::Response> {
         let mut attempt = ProviderCallAttempt::start(
             self.metrics.as_ref(),
+            self.health.as_ref(),
             engine,
             is_streaming(Some(&body)),
         );

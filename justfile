@@ -147,6 +147,32 @@ dev-front:
 dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
+# Publish documentation media to the selected B2 bucket.
+[arg('bucket', long='bucket')]
+[arg('force', long='force', value='true')]
+[arg('only', long='only')]
+release-doc-media bucket="" force="false" only="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(release --extensions "mp4 webm jpg jpeg png mp3 gif svg ico")
+    if [[ -n "$1" ]]; then args+=(--bucket "$1"); fi
+    if [[ "$2" == "true" ]]; then args+=(--force); fi
+    if [[ -n "$3" ]]; then args+=(--only "$3"); fi
+    python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
+
+# Restore documentation media from the selected B2 bucket into this checkout.
+[arg('bucket', long='bucket')]
+[arg('force', long='force', value='true')]
+[arg('only', long='only')]
+download-doc-media bucket="" force="false" only="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(download)
+    if [[ -n "$1" ]]; then args+=(--bucket "$1"); fi
+    if [[ "$2" == "true" ]]; then args+=(--force); fi
+    if [[ -n "$3" ]]; then args+=(--only "$3"); fi
+    python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
+
 build-front:
     #!/bin/bash
     set -euxo pipefail
@@ -251,7 +277,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_favorite,file_view,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -277,7 +303,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables device_upload_finalization_job,device_upload_finalization_attempt,device_upload_finalization_budget,device_upload_finalization_terminal_metric,file_content_upload_object,analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_favorite,file_view,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
@@ -294,6 +320,14 @@ gen-elm:
 
 gen-ts:
     (cd wdintel-rs && cargo run -- --mode=debug gen-ts)
+
+# Export AI agent request schemas from Rust request types; runner tests check them.
+gen-ai-agent-schemas:
+    (cd wdintel-rs && WDINTEL_SKIP_TEST_DB_INIT=1 ECHO_UPDATE_AGENT_REQUEST_SCHEMAS=1 cargo test --bin wdintel-rs ai_agent::request_schemas::tests::contract_file_is_current)
+
+# AI agent harness (runner) unit tests.
+test-ai-agent:
+    (cd echo-ai-agent && npm test)
 
 test-fe:
     #!/bin/bash
@@ -2494,6 +2528,7 @@ deploy-vector-conf:
 
 docs:
     cd docs && zola build
+    python3 deploy/doc_media.py prepare --docs-public docs/public
 
 dev-docs:
     cd docs && zola serve
@@ -2506,7 +2541,7 @@ builder-build-docs: prepare-workspace
     if [[ "{{ builder }}" == "echo-gpu" ]]; then
       ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
       ssh {{ builder }} '(cd ~/workspace/echo && just prepare-workspace)'
-      ssh {{ builder }} '(cd ~/workspace/echo/docs && zola build)'
+      ssh {{ builder }} '(cd ~/workspace/echo && just docs)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs/echo-docs && PATH=$HOME/.local/bin:$PATH /home/ubuntu/.cargo/bin/cargo deb)'
       rsync {{ builder }}:~/workspace/echo/docs/echo-docs/target/debian/echo-docs_0.1.0-1_amd64.deb ~/Downloads/
     else

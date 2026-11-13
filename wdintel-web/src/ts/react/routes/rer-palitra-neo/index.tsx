@@ -556,9 +556,6 @@ function RerPalitraNeoPageBody() {
         kmzAnalyzing={page.kmzAnalyzing}
         kmzFile={page.kmzFile}
         kmzAnalysis={page.kmzAnalysis}
-        kmzColorOptions={page.kmzColorOptions}
-        selectedColorFromKmz={page.selectedColorFromKmz}
-        createMode={page.createMode}
         createForm={page.createForm}
         user={page.user}
         myScope={page.myScope}
@@ -567,10 +564,6 @@ function RerPalitraNeoPageBody() {
         allLogins={page.allLogins}
         availableAccessTypes={page.availableAccessTypes}
         onRequestAnalyzeKmz={page.requestAnalyzeKmz}
-        onSetKmzColorOptions={page.updateKmzColorOptions}
-        onSetSelectedColorFromKmz={page.setSelectedColorFromKmz}
-        onSetCreateMode={page.setCreateMode}
-        onSetCreateForm={page.updateCreateForm}
         onCreate={page.handleCreate}
       />
 
@@ -587,7 +580,6 @@ function RerPalitraNeoPageBody() {
         allLogins={page.allLogins}
         availableAccessTypes={page.availableAccessTypes}
         referenceDataReady={page.referenceDataReady}
-        onSetEditForm={page.updateEditForm}
         onSave={page.handleEditSave}
         disableRestoreFocus
       />

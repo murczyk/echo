@@ -239,6 +239,7 @@ mod tests {
         file_name: Option<&str>,
     ) -> signal_message_media::Model {
         signal_message_media::Model {
+            order_f64: None,
             id: uuid::Uuid::nil(),
             signal_message_id: 1,
             signal_message_uuid: Some(uuid::Uuid::now_v7()),

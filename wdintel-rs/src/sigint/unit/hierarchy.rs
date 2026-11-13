@@ -1,10 +1,11 @@
 use super::types::{
-    UnitHierarchyGroup, UnitHierarchyReq, UnitHierarchyRsp, UnitHierarchyUnit,
+    UnitHierarchyGroup, UnitHierarchyReq, UnitHierarchyRsp,
+    UnitHierarchySelection, UnitHierarchyUnit,
 };
 use crate::config::{
-    ROLE_CYBER_VIEWER_RESTRICTED, SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY,
-    SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, SIGINT_UNIT_TREE_RECONCILE_SECS,
-    SIGINT_UNIT_TREE_REDIS_KEY,
+    ROLE_CYBER_VIEWER_RESTRICTED, SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY,
+    SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY, SIGINT_UNIT_TREE_DIRTY_REDIS_KEY,
+    SIGINT_UNIT_TREE_RECONCILE_SECS, SIGINT_UNIT_TREE_REDIS_KEY,
 };
 use crate::entities::sigint_unit;
 use crate::error::AppError;
@@ -21,7 +22,7 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, FromQueryResult,
     QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 #[cfg(test)]
 mod tests;
@@ -61,21 +62,176 @@ pub async fn unit_hierarchy(
     .await
     .c(h!())?;
     let tree = load(&env).await.c(h!())?;
+    let tree = scope_tree(tree, &req).c(h!())?;
     Ok(Json(
         (req.known_revision.as_deref() != Some(tree.revision.as_str()))
             .then_some(tree),
     ))
 }
 
+fn scope_tree(
+    mut tree: UnitHierarchyRsp,
+    req: &UnitHierarchyReq,
+) -> anyhow::Result<UnitHierarchyRsp> {
+    let Some(unit_ids) = &req.unit_ids else {
+        return Ok(tree);
+    };
+    let mut included_units = unit_ids.iter().copied().collect::<BTreeSet<_>>();
+    let mut selections = req.selection_values.clone().unwrap_or_default();
+    selections.sort();
+    selections.dedup();
+    for value in selections {
+        if let Some(selection) = resolve_selection(&tree, &value) {
+            included_units.extend(&selection.exact_unit_ids);
+            if let Some(id) = selection.unit_ids.first() {
+                included_units.insert(*id);
+            }
+            tree.selections.push(selection);
+        }
+    }
+    tree.units.retain(|unit| included_units.contains(&unit.id));
+    retain_ancestor_paths(&mut tree);
+    tree.revision.clear();
+    tree.revision = sha256::digest(serde_json::to_vec(&tree).c(h!())?);
+    Ok(tree)
+}
+
+fn retain_ancestor_paths(tree: &mut UnitHierarchyRsp) {
+    let mut included_groups = BTreeSet::new();
+    for unit in &tree.units {
+        let mut index = unit.group_index;
+        while let Some(current) = index {
+            if !included_groups.insert(current) {
+                break;
+            }
+            index = tree.groups[current as usize].parent_index;
+        }
+    }
+    let indices = included_groups
+        .iter()
+        .enumerate()
+        .map(|(next, previous)| (*previous, next as u32))
+        .collect::<HashMap<_, _>>();
+    tree.groups = included_groups
+        .into_iter()
+        .map(|index| {
+            let mut group = tree.groups[index as usize].clone();
+            group.parent_index =
+                group.parent_index.map(|index| indices[&index]);
+            group
+        })
+        .collect();
+    for unit in &mut tree.units {
+        unit.group_index = unit.group_index.map(|index| indices[&index]);
+    }
+}
+
+fn resolve_selection(
+    tree: &UnitHierarchyRsp,
+    value: &str,
+) -> Option<UnitHierarchySelection> {
+    let parent = value.strip_prefix("unit-parent:");
+    let id = value.strip_prefix("unit-id:").and_then(|raw| {
+        raw.parse::<i64>()
+            .ok()
+            .filter(|id| *id > 0 && id.to_string() == raw)
+    });
+    let mut groups = BTreeSet::new();
+    let mut exact_unit_ids = BTreeSet::new();
+    let mut label = value.to_string();
+    if let Some(parent) = parent {
+        if let Some((index, group)) = tree
+            .groups
+            .iter()
+            .enumerate()
+            .find(|(_, group)| group.id == parent)
+        {
+            groups.insert(index as u32);
+            label = group.label.clone();
+            exact_unit_ids.extend(
+                tree.units
+                    .iter()
+                    .filter(|unit| unit.group_index == Some(index as u32))
+                    .map(|unit| unit.id),
+            );
+        }
+    } else {
+        for unit in tree.units.iter().filter(|unit| {
+            id == Some(unit.id) || (id.is_none() && unit.name.trim() == value)
+        }) {
+            exact_unit_ids.insert(unit.id);
+            label = unit.name.clone();
+            if let Some(index) = unit.group_index {
+                groups.insert(index);
+            }
+        }
+        if exact_unit_ids.is_empty() {
+            return None;
+        }
+    }
+    let unit_ids = descendant_unit_ids(tree, groups, &exact_unit_ids);
+    Some(UnitHierarchySelection {
+        value: value.to_string(),
+        label,
+        unit_ids,
+        exact_unit_ids: exact_unit_ids.into_iter().collect(),
+    })
+}
+
+fn descendant_unit_ids(
+    tree: &UnitHierarchyRsp,
+    groups: BTreeSet<u32>,
+    exact_unit_ids: &BTreeSet<i64>,
+) -> Vec<i64> {
+    let mut descendants = groups;
+    for (index, group) in tree.groups.iter().enumerate() {
+        if group
+            .parent_index
+            .is_some_and(|parent| descendants.contains(&parent))
+        {
+            descendants.insert(index as u32);
+        }
+    }
+    tree.units
+        .iter()
+        .filter(|unit| {
+            exact_unit_ids.contains(&unit.id)
+                || unit
+                    .group_index
+                    .is_some_and(|index| descendants.contains(&index))
+        })
+        .map(|unit| unit.id)
+        .collect()
+}
+
 pub(crate) async fn mark_dirty(
     redis: &mut impl ConnectionLike,
 ) -> anyhow::Result<()> {
-    redis::cmd("SET")
-        .arg(SIGINT_UNIT_TREE_DIRTY_REDIS_KEY)
-        .arg(true)
+    redis::pipe()
+        .atomic()
+        .set(SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, true)
+        .ignore()
+        .set(
+            SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY,
+            uuid::Uuid::now_v7().to_string(),
+        )
+        .ignore()
         .query_async::<()>(redis)
         .await
         .c(h!())
+}
+
+pub(crate) async fn catalog_revision(
+    redis: &mut impl ConnectionLike,
+) -> anyhow::Result<String> {
+    let revision: Option<String> = redis::cmd("GET")
+        .arg(SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY)
+        .query_async(redis)
+        .await
+        .c(h!())?;
+    let reconciliation =
+        chrono::Utc::now().timestamp() as u64 / SIGINT_UNIT_TREE_RECONCILE_SECS;
+    Ok(format!("{reconciliation}:{}", revision.unwrap_or_default()))
 }
 
 pub(crate) async fn mark_dirty_for_mode(mode: Mode) -> anyhow::Result<()> {
@@ -230,6 +386,7 @@ fn build(units: Vec<HierarchySource>) -> anyhow::Result<UnitHierarchyRsp> {
         revision: String::new(),
         groups: Vec::new(),
         units: Vec::with_capacity(units.len()),
+        selections: Vec::new(),
     };
     let mut groups = HashMap::new();
     for unit in units {

@@ -103,6 +103,9 @@ pub struct InboxMessage {
     pub location: Option<String>,
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
+    /// AI certainty per network; `None` keeps the full network list.
+    #[serde(default)]
+    pub network_match: Option<crate::ai_network_match::InboxNetworkMatch>,
     pub network_name: Option<String>,
     pub device_name: Option<String>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
@@ -234,6 +237,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             location: payload.location,
             tags: payload.tags,
             network_ids: payload.network_ids,
+            network_match: None,
             network_name: None,
             device_name: None,
             inbox_tags: payload.inbox_tags,
@@ -249,6 +253,8 @@ impl From<InboxInsertPayload> for InboxMessage {
 )]
 pub struct MessageMediaInfo {
     pub id: String,
+    #[serde(default)]
+    pub order_f64: Option<f64>,
     pub content_type: String,
     pub file_name: Option<String>,
     pub size_bytes: i64,
@@ -409,6 +415,7 @@ pub struct FreqDetailedPoint {
     PartialEq,
     Clone,
     Copy,
+    schemars::JsonSchema,
 )]
 pub enum InboxMessagesSortBy {
     IMSDatetime,
@@ -426,6 +433,7 @@ pub enum InboxMessagesSortBy {
     PartialEq,
     Clone,
     Copy,
+    schemars::JsonSchema,
 )]
 pub enum TagFilterOption {
     OneOfTags,
@@ -442,6 +450,7 @@ pub enum TagFilterOption {
     PartialEq,
     Clone,
     Copy,
+    schemars::JsonSchema,
 )]
 pub enum TagPresenceFilter {
     WithTags,
@@ -449,16 +458,32 @@ pub enum TagPresenceFilter {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct MessageIdsReq {
     pub message_ids: Vec<i64>,
+    #[schemars(skip)]
     pub inbox_req: Option<InboxMessagesReq>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+/// Read accessible intercepted messages by their UUIDs.
+#[derive(
+    Debug, Serialize, Deserialize, PartialEq, Clone, schemars::JsonSchema,
+)]
 pub struct MessageUuidsReq {
+    /// Message UUIDs: the `m=` value of an earlier citation link or a
+    /// `message_uuid` field. Read numeric message ids with messages_by_id.
+    #[schemars(length(min = 1, max = 100))]
     pub message_uuids: Vec<Uuid>,
+    #[schemars(skip)]
     pub inbox_req: Option<InboxMessagesReq>,
 }
 
@@ -473,6 +498,7 @@ pub struct MessageUuidsReq {
     Clone,
     Copy,
     Default,
+    schemars::JsonSchema,
 )]
 pub enum AnalysisSearchMode {
     #[default]
@@ -491,6 +517,7 @@ pub enum AnalysisSearchMode {
     PartialEq,
     Clone,
     Default,
+    schemars::JsonSchema,
 )]
 pub struct InboxMessagesReq {
     pub since_id_noninclusive: Option<i64>,
@@ -573,7 +600,15 @@ pub struct InboxMessagesReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct InboxItemContextReq {
     pub message_uid: String,
@@ -616,6 +651,8 @@ pub struct InboxWindowRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct InboxMessagesRsp {
+    pub history_since_ms: Option<i64>,
+    pub history_period_ms: Option<i64>,
     pub inbox_items: Vec<(i64, InboxMessage)>,
     pub poll_cursor_id: Option<i64>,
     pub callsigns: Vec<CallsignInfoRes>,
@@ -981,7 +1018,15 @@ pub struct SignalProfileSaveReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct AnalysisStatsReq {
     pub since_date_inclusive_ms: i64,
@@ -1031,7 +1076,15 @@ pub struct AnalysisStatsReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct AnalysisCallsignFrequencyMatchesReq {
     pub req: AnalysisStatsReq,
@@ -1700,6 +1753,10 @@ pub struct RerDutyQueryState {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct RerDutyQueryStateWf {
+    #[serde(default)]
+    pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub groups_selected: Option<Vec<String>>,
     pub groups_denied: Option<Vec<String>>,
     pub senders_selected: Option<Vec<String>>,
@@ -1822,16 +1879,36 @@ pub struct CallsignNetworkHint {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct MessageCommentsReq {
+    /// The numeric `id` of a message.
     pub message_id: i64,
 }
 
+/// Read the comments left on accessible messages.
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    schemars::JsonSchema,
 )]
 pub struct BatchMessageCommentsReq {
+    /// Messages whose comments to read.
+    #[schemars(length(min = 1, max = 100))]
     pub messages: Vec<MessageCommentsReq>,
 }
 
@@ -2035,6 +2112,7 @@ mod tests {
             "message_comments".to_string(),
             "message_uid".to_string(),
             "message_uuid".to_string(),
+            "network_match".to_string(),
             "network_name".to_string(),
             "parent_messages".to_string(),
             "signal_tokens".to_string(),

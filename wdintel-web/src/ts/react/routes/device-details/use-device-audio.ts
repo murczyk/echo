@@ -17,6 +17,14 @@ type ListState = {
   ready: boolean;
   selectedAudioId: string | null;
 };
+type ListIntent = {
+  deviceId: string;
+  canRead: boolean;
+  filter: boolean;
+  cursor: string | null;
+  more: boolean;
+  restoreSelection: boolean;
+};
 function emptyState(scope: string): ListState {
   return {
     scope,
@@ -47,7 +55,7 @@ async function readAudioPages(
   return { audio: [...rows.values()], nextCursor: response.nextCursor };
 }
 
-export function useDeviceAudio(deviceId: string, canRead: boolean) {
+export function useDeviceAudio(deviceId: string, canRead: boolean, active = true) {
   const [unprocessedOnly, commitFilter] = useState(false);
   const scope = `${deviceId}:${unprocessedOnly}:${canRead}`;
   const [stored, setStored] = useState(() => emptyState(scope));
@@ -57,7 +65,7 @@ export function useDeviceAudio(deviceId: string, canRead: boolean) {
   const sequence = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const pending = useRef(false);
-  const listIntent = useRef<{ filter: boolean } | null>(null);
+  const listIntent = useRef<ListIntent | null>(null);
   const failedFirstPageFilter = useRef<boolean | null>(null);
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
@@ -92,10 +100,18 @@ export function useDeviceAudio(deviceId: string, canRead: boolean) {
       });
       if (membershipChanged || interrupted) {
         const targetFilter = interrupted?.filter ?? unprocessedOnly;
+        listIntent.current = {
+          deviceId,
+          canRead,
+          filter: targetFilter,
+          cursor: null,
+          more: false,
+          restoreSelection: true,
+        };
         void loadPageRef.current(null, false, targetFilter, true);
       }
     },
-    [scope, unprocessedOnly],
+    [deviceId, canRead, scope, unprocessedOnly],
   );
   const processing = useDeviceAudioProcessing(deviceId, canRead, {
     row: (id) => currentRef.current.rows.find((row) => row.id === id),
@@ -110,13 +126,20 @@ export function useDeviceAudio(deviceId: string, canRead: boolean) {
       restoreSelection = false,
     ) => {
       const targetScope = `${deviceId}:${targetFilter}:${canRead}`;
-      if (!canRead || (more && pending.current)) return;
+      if (!canRead || !active || (more && pending.current)) return;
       const seq = ++sequence.current;
       controller.current?.abort();
       const request = new AbortController();
       controller.current = request;
       pending.current = true;
-      listIntent.current = { filter: targetFilter };
+      listIntent.current = {
+        deviceId,
+        canRead,
+        filter: targetFilter,
+        cursor,
+        more,
+        restoreSelection,
+      };
       setStored((previous) => {
         const next = previous.scope === scope ? previous : emptyState(scope);
         return more
@@ -180,22 +203,35 @@ export function useDeviceAudio(deviceId: string, canRead: boolean) {
         }
       }
     },
-    [deviceId, canRead, unprocessedOnly, scope],
+    [deviceId, canRead, active, unprocessedOnly, scope],
   );
 
   const loadPageRef = useRef(loadPage);
   loadPageRef.current = loadPage;
   useEffect(() => {
     setStored((previous) => (previous.scope === scope ? previous : emptyState(scope)));
-    void loadPageRef.current(null, false);
+    const interrupted = listIntent.current;
+    if (interrupted && (interrupted.deviceId !== deviceId || interrupted.canRead !== canRead))
+      listIntent.current = null;
+    if (active) {
+      const intent = listIntent.current;
+      if (intent)
+        void loadPageRef.current(
+          intent.cursor,
+          intent.more,
+          intent.filter,
+          intent.restoreSelection,
+        );
+      else if (!currentRef.current.ready) void loadPageRef.current(null, false);
+    }
     return () => {
       ++sequence.current;
       controller.current?.abort();
       pending.current = false;
-      listIntent.current = null;
+      setStored((previous) => ({ ...previous, loading: false, loadingMore: false }));
       failedFirstPageFilter.current = null;
     };
-  }, [deviceId, canRead]);
+  }, [deviceId, canRead, active]);
 
   const reload = useCallback(() => loadPage(null, false), [loadPage]);
   const retry = useCallback(

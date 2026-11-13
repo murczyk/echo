@@ -21,6 +21,7 @@ function buildEntry(overrides: Partial<DeviceFileTreeEntry> = {}): DeviceFileTre
     hasContent: false,
     mimeType: 'text/plain',
     extension: 'log',
+    contentUploadedAt: null,
     fileMetadataCreatedAt: NOW,
     fileMetadataModifiedAt: NOW,
     createdAt: NOW,

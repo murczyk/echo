@@ -18,13 +18,11 @@ import { downloadBlob } from '../../utils/download-blob';
 import {
   applyRestrictedAccess,
   buildPalitraNameWithSuffix,
-  DEFAULT_COLOR_HEX,
   formatErrorMessage,
   getInitialCreateForm,
   getSelectedDownloadablePalitras,
   getSelectedModifiablePalitras,
   isFormValid,
-  kmzColorOptionsFromAnalysis,
   palitraToForm,
   toCreateReq,
 } from './helpers';
@@ -49,13 +47,9 @@ type Props = {
   folderActionsBlocked: boolean;
   createOpen: boolean;
   createInFlight: boolean;
-  createForm: PalitraFormState;
   editPalitraId: number | null;
-  editForm: PalitraFormState | null;
   editInFlight: boolean;
   kmzFile: File | null;
-  kmzColorOptions: KmzColorOption[];
-  selectedColorFromKmz: string;
   archiveDialogPalitra: Palitra | null;
   archiveDialogOpen: boolean;
   downloadDialogPalitra: Palitra | null;
@@ -76,15 +70,12 @@ type Props = {
   pendingUploadPalitraIdRef: MutableRefObject<number | null>;
   createCloseClearErrorRef: MutableRefObject<boolean>;
   setStatus: SetState<UiStatus>;
-  setCreateMode: SetState<PalitraCreateMode>;
   setCreateOpen: SetState<boolean>;
   setCreateForm: SetState<PalitraFormState>;
   setCreateInFlight: SetState<boolean>;
   setKmzFile: SetState<File | null>;
   setKmzAnalysis: SetState<AnalyzeKmzResponse | null>;
   setKmzAnalyzing: SetState<boolean>;
-  setKmzColorOptions: SetState<KmzColorOption[]>;
-  setSelectedColorFromKmz: SetState<string>;
   setEditPalitraId: SetState<number | null>;
   setEditForm: SetState<PalitraFormState | null>;
   setEditInFlight: SetState<boolean>;
@@ -138,14 +129,11 @@ async function downloadPalitraWithDeltaFallback(
 export function createPalitraPageActionHandlers(props: Props) {
   function clearCreateFlow(clearError: boolean) {
     if (clearError) props.setStatus(null);
-    props.setCreateMode('basic');
     props.setCreateForm(getInitialCreateForm(props.user, props.myScope));
     props.setCreateInFlight(false);
     props.setKmzFile(null);
     props.setKmzAnalysis(null);
     props.setKmzAnalyzing(false);
-    props.setKmzColorOptions([]);
-    props.setSelectedColorFromKmz(DEFAULT_COLOR_HEX);
   }
 
   function resetCreateFlow(clearError = true) {
@@ -580,23 +568,11 @@ export function createPalitraPageActionHandlers(props: Props) {
     props.setKmzFile(file);
     props.setKmzAnalyzing(true);
     props.setKmzAnalysis(null);
-    props.setKmzColorOptions([]);
-    props.setSelectedColorFromKmz(DEFAULT_COLOR_HEX);
     props.setStatus(null);
 
     try {
       const analysis = await analyzePalitraKmz(file);
-      const colorOptions = kmzColorOptionsFromAnalysis(analysis);
-      const firstColor = colorOptions[0]?.colorHex ?? DEFAULT_COLOR_HEX;
-
       props.setKmzAnalysis(analysis);
-      props.setKmzColorOptions(colorOptions);
-      props.setSelectedColorFromKmz(firstColor);
-      props.setCreateForm((prev) => ({
-        ...prev,
-        colorHex: firstColor,
-        name: analysis.filename || prev.name,
-      }));
     } catch (analysisError) {
       props.setStatus({
         kind: 'error',
@@ -607,23 +583,22 @@ export function createPalitraPageActionHandlers(props: Props) {
     }
   }
 
-  async function handleCreate(mode: PalitraCreateMode) {
+  async function handleCreate(
+    mode: PalitraCreateMode,
+    form: PalitraFormState,
+    colors: KmzColorOption[],
+  ) {
     if (!props.kmzFile || props.createInFlight) return;
 
-    const normalizedForm = applyRestrictedAccess(
-      props.createForm,
-      props.user,
-      props.myScope,
-      props.allLogins,
-    );
+    const normalizedForm = applyRestrictedAccess(form, props.user, props.myScope, props.allLogins);
     if (!isFormValid(normalizedForm)) return;
 
     props.setCreateInFlight(true);
     props.setStatus(null);
 
     try {
-      if (mode === 'advanced' && props.kmzColorOptions.length > 0) {
-        const selectedOptions = props.kmzColorOptions.filter((option) => option.selected);
+      if (mode === 'advanced' && colors.length > 0) {
+        const selectedOptions = colors.filter((option) => option.selected);
         if (selectedOptions.length === 0) {
           props.setStatus({ kind: 'error', text: 'Оберіть хоча б один колір з KMZ.' });
           return;
@@ -668,13 +643,7 @@ export function createPalitraPageActionHandlers(props: Props) {
       }
 
       const createdPalitra = await createPalitraBasicWithKmz(
-        toCreateReq(
-          {
-            ...normalizedForm,
-            colorHex: props.selectedColorFromKmz,
-          },
-          props.loginIdsByName,
-        ),
+        toCreateReq(normalizedForm, props.loginIdsByName),
         props.kmzFile,
       );
       props.setPalitras((prev) => [createdPalitra, ...prev]);
@@ -689,15 +658,10 @@ export function createPalitraPageActionHandlers(props: Props) {
     }
   }
 
-  async function handleEditSave() {
-    if (!props.editForm || props.editPalitraId === null || props.editInFlight) return;
+  async function handleEditSave(form: PalitraFormState) {
+    if (props.editPalitraId === null || props.editInFlight) return;
 
-    const normalizedForm = applyRestrictedAccess(
-      props.editForm,
-      props.user,
-      props.myScope,
-      props.allLogins,
-    );
+    const normalizedForm = applyRestrictedAccess(form, props.user, props.myScope, props.allLogins);
     if (!isFormValid(normalizedForm)) return;
 
     props.setEditInFlight(true);

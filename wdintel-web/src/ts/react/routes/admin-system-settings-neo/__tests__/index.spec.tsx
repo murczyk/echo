@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
-  replayStatus: vi.fn(),
   cleanup: vi.fn(),
   notify: vi.fn(),
 }));
@@ -16,7 +15,6 @@ vi.mock('../RerReportSettings', () => ({ RerReportSettings: () => <div>Звіт 
 vi.mock('../../../services/api/system-settings', () => ({
   listSystemSettings: mocks.list,
   createSystemSettings: mocks.save,
-  getRerDutyTestReplayStatus: mocks.replayStatus,
   cleanupOrbitOtherUnits: mocks.cleanup,
 }));
 vi.mock('../../../components/PowerSnackbar', () => ({
@@ -86,14 +84,6 @@ function botTagsSwitch(container: HTMLElement): HTMLInputElement | null {
   );
 }
 
-function dutyTestSwitch(container: HTMLElement): HTMLInputElement | null {
-  return (
-    Array.from(container.querySelectorAll('label'))
-      .find((label) => label.textContent?.includes('Увімкнути тестове надходження повідомлень'))
-      ?.querySelector('input') ?? null
-  );
-}
-
 function signozMetricsControls(container: HTMLElement) {
   return {
     enabled: Array.from(container.querySelectorAll('label'))
@@ -121,13 +111,6 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.save.mockReset();
     mocks.list.mockResolvedValue([]);
     mocks.save.mockResolvedValue(undefined);
-    mocks.replayStatus.mockResolvedValue({
-      status: 'disabled',
-      sourceCount: 0,
-      nextSourcePosition: null,
-      generatedCount: 0,
-      nextEmitAtMs: null,
-    });
     mocks.cleanup.mockReset();
     mocks.cleanup.mockResolvedValue({ deletedCount: 0, activeUnits: [] });
     mocks.notify.mockReset();
@@ -255,6 +238,24 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(saveButton?.disabled).toBe(true);
     await act(async () => root.unmount());
   });
+  it('#3938 defaults documentation B2-only delivery off and persists the administrator choice', async () => {
+    const first = await renderPage();
+    const checkbox = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) =>
+          label.textContent?.includes('Завантажувати медіа документації безпосередньо з B2'),
+        )
+        ?.querySelector<HTMLInputElement>('input');
+    expect(checkbox(first.container)?.checked).toBe(false);
+    await act(async () => checkbox(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ docMediaServeFromB2: true }));
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, docMediaServeFromB2: true }]);
+    const reloaded = await renderPage();
+    expect(checkbox(reloaded.container)?.checked).toBe(true);
+    await act(async () => reloaded.root.unmount());
+  });
   it('saves the bot tag toggle', async () => {
     const { container, root } = await renderPage();
     const checkbox = botTagsSwitch(container);
@@ -282,18 +283,24 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(mocks.save).toHaveBeenLastCalledWith(expect.objectContaining({ hideNetworks: false }));
     await act(async () => root.unmount());
   });
-  it('persists disabling test message replay immediately', async () => {
-    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
-    mocks.list.mockResolvedValue([{ id: 1, deleted: false, rerDutyTestEnabled: true }]);
-    const { container, root } = await renderPage();
-    const checkbox = dutyTestSwitch(container);
-    expect(checkbox?.checked).toBe(true);
-
-    await act(async () => checkbox?.click());
-    await act(async () => Promise.resolve());
-
-    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ rerDutyTestEnabled: false }));
-    await act(async () => root.unmount());
+  // Regression: https://github.com/echoua/echo/issues/4095
+  it('#4095 saves the AI network match flag, off by default, and reloads it', async () => {
+    const networkMatchToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('ШІ: головна мережа повідомлення'))
+        ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const first = await renderPage();
+    expect(networkMatchToggle(first.container)?.checked).toBe(false);
+    await act(async () => networkMatchToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ aiNetworkMatchEnabled: true }),
+    );
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, aiNetworkMatchEnabled: true }]);
+    const reloaded = await renderPage();
+    expect(networkMatchToggle(reloaded.container)?.checked).toBe(true);
+    await act(async () => reloaded.root.unmount());
   });
   it('saves the Orbit exclusion setting', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#integrations');
@@ -348,6 +355,24 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.list.mockResolvedValue([{ id: 2, deleted: false, dutyExcludeMenuEnabled: false }]);
     const reloaded = await renderPage();
     expect(menuToggle(reloaded.container)?.checked).toBe(false);
+    await act(async () => reloaded.root.unmount());
+  });
+
+  it('#3571 saves Duty search in system settings and reloads the choice', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const first = await renderPage();
+    const searchToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Пошук в оперативному'))
+        ?.querySelector<HTMLInputElement>('input');
+    expect(searchToggle(first.container)?.checked).toBe(false);
+    await act(async () => searchToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ enableDutySearch: true }));
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, enableDutySearch: true }]);
+    const reloaded = await renderPage();
+    expect(searchToggle(reloaded.container)?.checked).toBe(true);
     await act(async () => reloaded.root.unmount());
   });
 

@@ -228,7 +228,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   useDocumentClickAway({
     enabled: showFilters,
     refs: [headerRef, filtersPanelRef],
-    ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root'],
+    ignoreSelectors: ['.MuiModal-root', '.MuiPopover-root', '[data-search-mode-option]'],
     shouldDismiss: shouldDismissPanelClick,
     onClickAway: closeFilters,
   });

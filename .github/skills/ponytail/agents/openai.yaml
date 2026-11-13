@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ponytail (Echo)"
+  short_description: "Minimal implementation within Echo contracts"
+  default_prompt: "Use $ponytail to keep this Echo change simple while preserving its approved scope and required checks."
+policy:
+  allow_implicit_invocation: false

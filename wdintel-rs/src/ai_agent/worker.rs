@@ -5,7 +5,8 @@ use super::{
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
-    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REQUEST_WORKER_COUNT,
+    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REASON_MODEL_REFUSAL,
+    AI_AGENT_REASON_PROVIDER_ERROR, AI_AGENT_REQUEST_WORKER_COUNT,
     AI_AGENT_RESPONSE_MAX_BYTES, AI_AGENT_RESPONSE_MAX_CHARS,
     AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES, AI_AGENT_USER_FAILURE_MESSAGE,
     AI_AGENT_WORKER_ERROR_SLEEP_SEC, AI_AGENT_WORKER_IDLE_SLEEP_MS,
@@ -33,7 +34,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::time::{Duration as StdDuration, Instant};
 use tokio::task::JoinSet;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
@@ -418,7 +419,9 @@ async fn process_claimed_request(
     cancellation: &CancellationToken,
 ) {
     let request_id = request.id;
-    let result = run_request(env, &request, cancellation).await;
+    let mut model_failure = None;
+    let result =
+        run_request(env, &request, cancellation, &mut model_failure).await;
     let revoke_result = auth::revoke_request(env, request_id).await;
     if let Err(err) = revoke_result {
         error!(
@@ -427,19 +430,26 @@ async fn process_claimed_request(
     }
     match result {
         Ok(RunOutcome::Completed(response, metadata)) => {
-            if let Err(err) =
-                complete_request(env, request_id, response, metadata).await
+            if let Err(err) = complete_request(
+                env,
+                request_id,
+                response,
+                metadata,
+                model_failure,
+            )
+            .await
             {
                 error!(
                     "AI agent completion persistence failed for {request_id}: {err:#?}"
                 );
-                let _ = fail_request(env, request_id, &err).await;
+                let _ = fail_request(env, request_id, &err, None).await;
             }
         }
         Ok(RunOutcome::Cancelled) => {}
         Err(err) => {
             error!("AI agent request failed for {request_id}: {err:#?}");
-            if let Err(persist_err) = fail_request(env, request_id, &err).await
+            if let Err(persist_err) =
+                fail_request(env, request_id, &err, model_failure).await
             {
                 error!(
                     "AI agent failure persistence failed for {request_id}: {persist_err:#?}"
@@ -453,6 +463,7 @@ async fn run_request(
     env: &Env,
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
+    model_failure: &mut Option<&'static str>,
 ) -> Result<RunOutcome, AppError> {
     let ai_engine =
         access::allowed_engine(&env.dbx, Some(request.ai_engine_id))
@@ -476,7 +487,7 @@ async fn run_request(
         });
     match tokio::time::timeout(
         timeout,
-        run_request_inner(env, request, cancellation, ai_engine),
+        run_request_inner(env, request, cancellation, ai_engine, model_failure),
     )
     .await
     {
@@ -499,6 +510,69 @@ async fn run_request(
                     .to_string(),
             })
         }
+    }
+}
+
+/// Phase timings up to the runner's first event, logged once per request so
+/// container warm-up can be compared across releases.
+struct EnvironmentTimings {
+    queue_ms: i64,
+    began: Instant,
+    container_start: Option<Instant>,
+    container_ms: Option<u128>,
+    runner_spawned: Option<Instant>,
+    reported: bool,
+}
+
+impl EnvironmentTimings {
+    fn new(request: &ai_agent_request::Model) -> Self {
+        let queue_ms = request
+            .started_at
+            .map(|started| (started - request.queued_at).num_milliseconds())
+            .unwrap_or_default();
+        Self {
+            queue_ms,
+            began: Instant::now(),
+            container_start: None,
+            container_ms: None,
+            runner_spawned: None,
+            reported: false,
+        }
+    }
+
+    fn container_start_began(&mut self) {
+        self.container_start = Some(Instant::now());
+    }
+
+    fn container_start_finished(&mut self) {
+        self.container_ms = self
+            .container_start
+            .map(|started| started.elapsed().as_millis());
+    }
+
+    fn runner_spawned(&mut self) {
+        self.runner_spawned = Some(Instant::now());
+    }
+
+    fn report_first_runner_event(&mut self, request_id: Uuid) {
+        if self.reported {
+            return;
+        }
+        self.reported = true;
+        let before_container_ms = self
+            .container_start
+            .map(|started| started.duration_since(self.began).as_millis())
+            .unwrap_or_default();
+        let runner_ms = self
+            .runner_spawned
+            .map(|spawned| spawned.elapsed().as_millis())
+            .unwrap_or_default();
+        info!(
+            "AI agent environment ready request_id={request_id} queue_ms={} before_container_ms={before_container_ms} container_ms={} runner_first_event_ms={runner_ms} total_ms={}",
+            self.queue_ms,
+            self.container_ms.unwrap_or_default(),
+            self.began.elapsed().as_millis()
+        );
     }
 }
 
@@ -582,6 +656,7 @@ async fn run_request_inner(
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
     ai_engine: crate::entities::ai_engine::Model,
+    model_failure: &mut Option<&'static str>,
 ) -> Result<RunOutcome, AppError> {
     let request_started_at = request
         .started_at
@@ -591,6 +666,7 @@ async fn run_request_inner(
     if cancellation.is_cancelled() {
         return Err(interrupted_error());
     }
+    let mut timings = EnvironmentTimings::new(request);
     let mut activity_titles = ActivityTitles::new(
         env.ai_engine_client.clone(),
         env.dbx.clone(),
@@ -633,6 +709,7 @@ async fn run_request_inner(
     {
         return Ok(RunOutcome::Cancelled);
     }
+    timings.container_start_began();
     let Some(linked) = lifecycle::start_for_request(
         env,
         request.id,
@@ -643,6 +720,7 @@ async fn run_request_inner(
     else {
         return Ok(RunOutcome::Cancelled);
     };
+    timings.container_start_finished();
     if cancellation.is_cancelled() {
         return Err(interrupted_error());
     }
@@ -808,6 +886,7 @@ async fn run_request_inner(
     }
     let payload = bounded_runner_payload(runner_payload, history)?;
     let dispatcher = DispatcherClient::from_env(env).await?;
+    timings.runner_spawned();
     let mut stream = dispatcher
         .start_stream(
             "run_request",
@@ -833,6 +912,7 @@ async fn run_request_inner(
                     return Ok(RunOutcome::Cancelled);
                 }
                 if let Some(event) = envelope.event {
+                    timings.report_first_runner_event(request.id);
                     runner_event_count = runner_event_count.saturating_add(1);
                     runner_event_bytes = runner_event_bytes.saturating_add(
                         serde_json::to_vec(&event).c(h!())?.len(),
@@ -852,6 +932,7 @@ async fn run_request_inner(
                     }
                     if let Some(diagnostic) = events::completion_diagnostic(&event) {
                         info!("AI agent completion request_id={} diagnostic={diagnostic}", request.id);
+                        *model_failure = next_model_failure(*model_failure, &diagnostic);
                         continue;
                     }
                     if let Some(diagnostic) = events::tool_diagnostic(&event) {
@@ -860,8 +941,12 @@ async fn run_request_inner(
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
                         if event_type == "completion_metadata" {
-                            if execution_policy.is_none() { continue; }
-                            completion_metadata = Some(serde_json::from_value(payload.clone()).c(h!())?);
+                            let metadata: super::types::AiAgentCompletionMetadata =
+                                serde_json::from_value(payload.clone()).c(h!())?;
+                            let publish = keeps_runner_metadata(execution_policy.is_some(), &metadata);
+                            // Kept even when hidden: completion may still turn it into a provider failure.
+                            completion_metadata = Some(metadata);
+                            if !publish { continue; }
                         }
                         let update = events::assistant_text_update(&event_type, &payload);
                         let (response_bytes, next_chars) = match &update {
@@ -1439,11 +1524,92 @@ fn interrupted_error() -> AppError {
     }
 }
 
-async fn complete_request(
+/// The model failure still standing after a provider diagnostic, so a run
+/// that ends on it can offer another model. A later provider reply or an
+/// authorization failure clears an earlier one; progress outcomes keep it.
+fn next_model_failure(
+    current: Option<&'static str>,
+    diagnostic: &Value,
+) -> Option<&'static str> {
+    let outcome = diagnostic.get("outcome").and_then(Value::as_str);
+    if outcome == Some("authorization")
+        || diagnostic.get("failureKind").and_then(Value::as_str)
+            == Some("authorization")
+    {
+        return None;
+    }
+    match outcome {
+        // The provider answered, even if the answer itself was unusable.
+        Some(
+            "complete" | "output_limit" | "empty" | "citation_rejected"
+            | "no_evidence" | "research_text" | "partial",
+        ) => None,
+        Some("content_filter") => Some(AI_AGENT_REASON_MODEL_REFUSAL),
+        Some("provider_error" | "transient_error") => {
+            Some(AI_AGENT_REASON_PROVIDER_ERROR)
+        }
+        _ => current,
+    }
+}
+
+/// Runs without an execution policy (reasoning presets off) show no coverage
+/// notices, but a provider failure still lets the chat offer another model.
+fn keeps_runner_metadata(
+    has_execution_policy: bool,
+    metadata: &super::types::AiAgentCompletionMetadata,
+) -> bool {
+    has_execution_policy || metadata.reason == AI_AGENT_REASON_PROVIDER_ERROR
+}
+
+/// Research that only fell back to a saved draft because the provider kept
+/// failing reports the provider, not unfinished research, so the chat
+/// offers another model instead of a Deep continuation on the same one.
+fn provider_limited_metadata(
+    metadata: Option<super::types::AiAgentCompletionMetadata>,
+    model_failure: Option<&str>,
+) -> Option<super::types::AiAgentCompletionMetadata> {
+    match metadata {
+        Some(mut metadata)
+            if metadata.reason == "incomplete_research"
+                && model_failure == Some(AI_AGENT_REASON_PROVIDER_ERROR) =>
+        {
+            metadata.reason = AI_AGENT_REASON_PROVIDER_ERROR.to_string();
+            Some(metadata)
+        }
+        metadata => metadata,
+    }
+}
+
+/// The runner's own metadata wins; otherwise a policy refusal in the answer
+/// is recorded so the chat can offer another model.
+fn completed_metadata(
+    response: &str,
+    metadata: Option<super::types::AiAgentCompletionMetadata>,
+) -> (Option<super::types::AiAgentCompletionMetadata>, bool) {
+    if metadata.is_some() || !super::refusal::is_policy_refusal(response) {
+        return (metadata, false);
+    }
+    (
+        Some(model_failure_metadata(AI_AGENT_REASON_MODEL_REFUSAL)),
+        true,
+    )
+}
+
+fn model_failure_metadata(
+    reason: &str,
+) -> super::types::AiAgentCompletionMetadata {
+    super::types::AiAgentCompletionMetadata {
+        coverage_limited: false,
+        reason: reason.to_string(),
+    }
+}
+
+pub(super) async fn complete_request(
     env: &Env,
     request_id: Uuid,
     response: String,
-    metadata: Option<super::types::AiAgentCompletionMetadata>,
+    runner_metadata: Option<super::types::AiAgentCompletionMetadata>,
+    model_failure: Option<&str>,
 ) -> Result<bool, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
@@ -1452,6 +1618,20 @@ async fn complete_request(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    let has_policy = request.execution_policy.is_some();
+    let visible = |metadata: Option<
+        super::types::AiAgentCompletionMetadata,
+    >| {
+        metadata.filter(|metadata| keeps_runner_metadata(has_policy, metadata))
+    };
+    let limited = visible(provider_limited_metadata(
+        runner_metadata.clone(),
+        model_failure,
+    ));
+    let (metadata, detected_refusal) = completed_metadata(&response, limited);
+    // The browser already holds what the runner published; send what Echo changed.
+    let publish_metadata =
+        detected_refusal || metadata != visible(runner_metadata);
     if request.state == "cancelled" || request.cancellation_requested {
         txn.commit().await.c(h!())?;
         return Ok(false);
@@ -1485,6 +1665,16 @@ async fn complete_request(
     super::citations::persist_referenced(&txn, request_id, &response)
         .await
         .c(h!())?;
+    if publish_metadata {
+        events::append_in_transaction(
+            &txn,
+            request_id,
+            "completion_metadata",
+            serde_json::to_value(&metadata).c(h!())?,
+        )
+        .await
+        .context(h!())?;
+    }
     events::append_in_transaction(
         &txn,
         request_id,
@@ -1497,10 +1687,11 @@ async fn complete_request(
     Ok(true)
 }
 
-async fn fail_request(
+pub(super) async fn fail_request(
     env: &Env,
     request_id: Uuid,
     err: &AppError,
+    model_failure: Option<&str>,
 ) -> Result<(), AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
@@ -1519,8 +1710,14 @@ async fn fail_request(
     let message =
         access::truncate(format!("{err:#}"), AI_AGENT_ERROR_MAX_CHARS);
     let mut request = request.into_active_model();
+    let metadata = model_failure.map(model_failure_metadata);
     request.state = Set("failed".to_string());
     request.error = Set(Some(message.clone()));
+    request.completion_metadata = Set(metadata
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .c(h!())?);
     request.completed_at = Set(Some(now));
     request.updated_at = Set(now);
     request.update(&txn).await.c(h!())?;
@@ -1531,6 +1728,16 @@ async fn fail_request(
         now,
     )
     .await?;
+    if let Some(metadata) = &metadata {
+        events::append_in_transaction(
+            &txn,
+            request_id,
+            "completion_metadata",
+            serde_json::to_value(metadata).c(h!())?,
+        )
+        .await
+        .context(h!())?;
+    }
     events::append_in_transaction(
         &txn,
         request_id,
@@ -1594,7 +1801,7 @@ async fn recover_interrupted_requests(env: &Env) -> Result<(), AppError> {
             msg: "AI agent request was interrupted by worker restart"
                 .to_string(),
         };
-        if let Err(err) = fail_request(env, request.id, &err).await {
+        if let Err(err) = fail_request(env, request.id, &err, None).await {
             failure_count += 1;
             error!(
                 "Could not persist interrupted AI agent request {}: {err:#?}",
@@ -1919,6 +2126,118 @@ mod tests {
                 government,
             ),
             regular
+        );
+    }
+
+    #[test]
+    fn issue_4112_provider_diagnostics_choose_the_chat_reason() {
+        let after = |diagnostics: &[serde_json::Value]| {
+            diagnostics.iter().fold(None, |current, diagnostic| {
+                super::next_model_failure(current, diagnostic)
+            })
+        };
+        let failed = json!({"outcome": "transient_error", "httpStatus": 503});
+        assert_eq!(
+            after(std::slice::from_ref(&failed)),
+            Some("provider_error")
+        );
+        assert_eq!(
+            after(&[json!({"outcome": "provider_error", "stage": "research"})]),
+            Some("provider_error")
+        );
+        assert_eq!(
+            after(&[json!({"outcome": "content_filter"})]),
+            Some("model_refusal")
+        );
+        assert_eq!(
+            after(&[failed.clone(), json!({"outcome": "continued"})]),
+            Some("provider_error"),
+            "progress keeps the failure"
+        );
+        assert_eq!(
+            after(&[failed.clone(), json!({"outcome": "complete"})]),
+            None,
+            "a later reply succeeded"
+        );
+        assert_eq!(
+            after(&[
+                failed.clone(),
+                json!({"outcome": "transient_error", "failureKind": "authorization"})
+            ]),
+            None,
+            "authorization ended the run"
+        );
+        assert_eq!(
+            after(&[failed.clone(), json!({"outcome": "authorization"})]),
+            None
+        );
+        assert_eq!(
+            after(&[failed.clone(), json!({"outcome": "citation_rejected"})]),
+            None,
+            "the provider answered"
+        );
+        assert_eq!(
+            after(&[failed.clone(), json!({"outcome": "research_text"})]),
+            None,
+            "#4115: research's own reply was delivered"
+        );
+        assert_eq!(
+            after(&[failed, json!({"outcome": "partial"})]),
+            None,
+            "the finished part of a cut-off synthesis was delivered"
+        );
+    }
+
+    #[test]
+    fn issue_4112_legacy_runs_keep_only_provider_failures() {
+        let metadata =
+            |reason: &str| crate::ai_agent::types::AiAgentCompletionMetadata {
+                coverage_limited: true,
+                reason: reason.to_string(),
+            };
+        assert!(super::keeps_runner_metadata(
+            false,
+            &metadata("provider_error")
+        ));
+        assert!(!super::keeps_runner_metadata(
+            false,
+            &metadata("time_limit")
+        ));
+        assert!(super::keeps_runner_metadata(true, &metadata("time_limit")));
+    }
+
+    #[test]
+    fn issue_4112_provider_failure_replaces_incomplete_research() {
+        let metadata = |reason: &str| {
+            Some(crate::ai_agent::types::AiAgentCompletionMetadata {
+                coverage_limited: true,
+                reason: reason.to_string(),
+            })
+        };
+        assert_eq!(
+            super::provider_limited_metadata(
+                metadata("incomplete_research"),
+                Some("provider_error")
+            ),
+            metadata("provider_error")
+        );
+        assert_eq!(
+            super::provider_limited_metadata(
+                metadata("incomplete_research"),
+                None
+            ),
+            metadata("incomplete_research")
+        );
+        assert_eq!(
+            super::provider_limited_metadata(
+                metadata("time_limit"),
+                Some("provider_error")
+            ),
+            metadata("time_limit")
+        );
+        assert_eq!(
+            super::provider_limited_metadata(None, Some("provider_error")),
+            None
         );
     }
 

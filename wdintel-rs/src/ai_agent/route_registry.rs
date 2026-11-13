@@ -308,17 +308,34 @@ pub fn is_allowed(method: &Method, path: &str) -> bool {
 }
 
 pub fn skills_json() -> serde_json::Value {
-    serde_json::to_value(ROUTES).expect("AI agent route registry serializes")
+    skills_for_devices(true)
 }
 
 pub fn skills_for_devices(allowed: bool) -> serde_json::Value {
-    serde_json::to_value(
+    serde_json::Value::Array(
         ROUTES
             .iter()
             .filter(|route| allowed || !route.skill.starts_with("device_"))
-            .collect::<Vec<_>>(),
+            .map(skill_json)
+            .collect(),
     )
-    .expect("AI agent routes serialize")
+}
+
+/// A passthrough route carries its request schema, which the runner uses as
+/// the tool's parameters. Adapted routes are checked against
+/// `request_schemas::CONTRACT_FILE` in the runner tests instead, which keeps
+/// the run payload small.
+fn skill_json(route: &ReadOnlyRoute) -> serde_json::Value {
+    let mut skill =
+        serde_json::to_value(route).expect("AI agent route serializes");
+    if route.request_kind == "json" {
+        if let Some(schema) =
+            super::request_schemas::request_schema(route.skill)
+        {
+            skill["requestSchema"] = schema;
+        }
+    }
+    skill
 }
 
 #[cfg(test)]
@@ -331,6 +348,7 @@ mod tests {
         assert!(is_allowed(&Method::POST, "/api/rer-importer/get-inbox"));
         assert!(!is_allowed(&Method::POST, "/api/user"));
         assert!(!is_allowed(&Method::POST, "/api/ai-agent/requests/create"));
+        assert!(!is_allowed(&Method::POST, "/api/ai-agent/prewarm"));
         assert!(!is_allowed(
             &Method::POST,
             "/api/rer-importer/delete-message"
@@ -429,6 +447,26 @@ mod tests {
             .find(|route| route.skill == "messages_by_uuid")
             .unwrap();
         assert_eq!(messages_by_uuid.request_kind, "json");
+    }
+
+    #[test]
+    fn passthrough_routes_carry_their_request_schema() {
+        let skills = skills_json();
+        let schema_of = |skill: &str| {
+            skills
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|route| route["skill"] == skill)
+                .unwrap()
+                .get("requestSchema")
+                .cloned()
+        };
+        assert!(schema_of("messages_by_uuid").is_some());
+        assert!(schema_of("message_comments_batch").is_some());
+        assert!(schema_of("accessible_group_details").is_none());
+        assert!(schema_of("inbox_messages").is_none());
+        assert_eq!(skills_for_devices(true), skills);
     }
 
     #[test]

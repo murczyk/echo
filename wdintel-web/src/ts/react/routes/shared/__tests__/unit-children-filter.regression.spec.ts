@@ -163,7 +163,15 @@ describe('unit descendants regression #3527', () => {
   });
 
   it('always expands a parent without its own catalog row, including older disabled filters', () => {
-    const withoutParent = buildUnitHierarchyIndex(units.filter((row) => row.id !== 20));
+    const withoutParent = buildUnitHierarchyIndex(
+      units
+        .filter((row) => row.id !== 20)
+        .map((row) =>
+          [21, 22].includes(row.id)
+            ? { ...row, corps: '1 АК', division: '2 мсд', battalion: '1 мсб' }
+            : row,
+        ),
+    );
     const options = aggregateUnitParentOptions(
       [
         { value: 'unit-id:21', label: units[2].name, count: 5 },
@@ -171,7 +179,16 @@ describe('unit descendants regression #3527', () => {
       ],
       withoutParent,
     );
-    const parent = options.find((option) => option.label === '27 омсбр')!;
+    expect(options.filter((option) => option.value.startsWith('unit-parent:'))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: '1 мсб 27 омсбр 2 мсд 1 АК 6 А', count: 11 }),
+        expect.objectContaining({ label: '27 омсбр 2 мсд 1 АК 6 А', count: 11 }),
+        expect.objectContaining({ label: '2 мсд 1 АК 6 А', count: 11 }),
+        expect.objectContaining({ label: '1 АК 6 А', count: 11 }),
+      ]),
+    );
+    expect(options.some((option) => /Регіон|Округ/.test(option.label))).toBe(false);
+    const parent = options.find((option) => option.label === '27 омсбр 2 мсд 1 АК 6 А')!;
     expect(parent.count).toBe(11);
     const filter = { ...emptyFilter(), unitsSelected: [parent.value] };
     expect(

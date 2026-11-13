@@ -167,6 +167,9 @@ async fn new_env_from_config(
             .c(h!())?;
     }
     if initialize {
+        crate::system_settings::import_legacy_duty_search_config(&dbx, &config)
+            .await
+            .c(h!())?;
         crate::ai_agent::dispatcher::import_legacy_config(
             &dbx,
             config.ai_agent_dispatcher.as_ref(),
@@ -296,7 +299,8 @@ async fn new_env_from_config(
             config.totp_strongbox_key.clone(),
         )
         .c(h!())?
-        .with_metrics(metrics.clone(), ai_provider_metrics_process()),
+        .with_metrics(metrics.clone(), ai_provider_metrics_process())
+        .with_health(redis.clone()),
     );
     let env = Env {
         ai_engine_client,
@@ -306,6 +310,7 @@ async fn new_env_from_config(
         redisb: redisb.clone(),
         s3,
         s3_config,
+        doc_media: Arc::new(crate::doc_media::DocMedia::new(&config, mode)),
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         unit_merge_guard_slots: Arc::new(tokio::sync::Semaphore::new(
@@ -323,6 +328,7 @@ async fn new_env_from_config(
         metrics,
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),
+        unit_header_synonyms: Arc::new(Default::default()),
         callsigns_whitelist: callsigns_whitelist.clone(),
         version: version.clone(),
         replicas,
@@ -709,6 +715,10 @@ fn spawn_background_workers(
     spawn_named_worker("healthcheck_worker", bg_set, async move {
         healthcheck::healthcheck_worker(&dbx9, config1).await;
     });
+    let health_env = env.clone();
+    spawn_named_worker("ai_engine_health_worker", bg_set, async move {
+        crate::ai_engine::health::health_worker(health_env).await;
+    });
     if let (Some(analytics), Some(analytics_config)) =
         (env.analytics.clone(), config.analytics.as_ref())
     {
@@ -821,14 +831,13 @@ fn spawn_background_workers(
         crate::operator::worker::run_operator_inbox_worker_nofail(operator_env)
             .await;
     });
-    let rer_duty_env = env.clone();
-    spawn_named_worker(
-        "rer_duty_historical_interceptions_worker",
-        bg_set,
-        async move {
-            crate::system_settings::worker::run_rer_duty_historical_interceptions_worker_nofail(rer_duty_env).await;
-        },
-    );
+    let message_replay_env = env.clone();
+    spawn_named_worker("message_replay_worker", bg_set, async move {
+        crate::message_replay::worker::run_message_replay_worker_nofail(
+            message_replay_env,
+        )
+        .await;
+    });
     let cleanup_db = env.dbx.clone();
     spawn_named_worker("echo_im_cleanup", bg_set, async move {
         crate::messenger::worker::cleanup::run_cleanup_worker(cleanup_db).await;
@@ -922,6 +931,16 @@ fn spawn_background_workers(
         crate::ai_callsign::worker::run_nofail(
             ai_callsign_env,
             ai_callsign_cancellation_token,
+        )
+        .await;
+    });
+
+    let ai_network_match_env = env.clone();
+    let ai_network_match_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ai_network_match_worker", bg_set, async move {
+        crate::ai_network_match::worker::run_nofail(
+            ai_network_match_env,
+            ai_network_match_cancellation_token,
         )
         .await;
     });
@@ -1229,7 +1248,8 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
 }
 
 fn configure_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(self::monitoring::ping)
+    cfg.service(crate::doc_media::serve)
+            .service(self::monitoring::ping)
             .service(self::monitoring::public_ping)
             .service(self::monitoring::server_info)
             .service(self::monitoring::monitoring)
@@ -1295,6 +1315,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::group::handlers::signal_group_archive)
             .service(crate::messenger::group::native::create)
             .service(crate::messenger::group::creation::get)
+            .service(crate::messenger::group::sending::get)
             .service(crate::messenger::group::native::get)
             .service(crate::messenger::group::native::update)
             .service(crate::messenger::group::handlers::signal_group_unarchive)
@@ -1425,7 +1446,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::set_rer_report_enabled)
             .service(crate::system_settings::activate_system_settings)
-            .service(crate::system_settings::rer_duty_test_replay_status)
+            .service(crate::message_replay::activity)
+            .service(crate::message_replay::extent)
+            .service(crate::message_replay::preview)
+            .service(crate::message_replay::start)
+            .service(crate::message_replay::pause)
+            .service(crate::message_replay::resume)
+            .service(crate::message_replay::speed)
+            .service(crate::message_replay::stop)
+            .service(crate::message_replay::status)
             .service(crate::ai_engine::gov::get_settings)
             .service(crate::ai_engine::gov::save_settings)
             .service(crate::ai_engine::gov::list_models)
@@ -1434,6 +1463,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_engine::get_ai_engine)
             .service(crate::ai_engine::create_ai_engine)
             .service(crate::ai_engine::update_ai_engine)
+            .service(crate::ai_engine::update_ai_engine_health)
             .service(crate::ai_engine::delete_ai_engine)
             .service(crate::ai_engine::list_ai_chats)
             .service(crate::ai_engine::get_ai_chat)
@@ -1449,6 +1479,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::update_conversation)
             .service(crate::ai_agent::delete_conversation)
             .service(crate::ai_agent::create_request)
+            .service(crate::ai_agent::prewarm::prewarm)
             .service(crate::ai_agent::cancel_request)
             .service(crate::ai_agent::uploads::api::create_upload)
             .service(crate::ai_agent::uploads::api::list_uploads)
@@ -1665,6 +1696,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::devices::unarchive)
             .service(crate::devices::settings::update)
             .service(crate::devices::files::roots)
+            .service(crate::devices::files::filter_options)
+            .service(crate::devices::files::markers::favorite)
+            .service(crate::devices::files::markers::viewed)
+            .service(crate::devices::files::markers::unviewed)
             .service(crate::devices::files::locate::locate)
             .service(crate::devices::files::sessions::list)
             .service(crate::devices::files::sessions::get)

@@ -340,6 +340,7 @@ async fn load_recovery_maps(
     } else {
         echo_attachment::Entity::find()
             .filter(echo_attachment::Column::MessageId.is_in(inbox_ids_i32))
+            .order_by_asc(echo_attachment::Column::Id)
             .all(dbx)
             .await
             .c(h!())?
@@ -3082,6 +3083,7 @@ mod tests {
         autofix_echoim_missing_messages: bool,
     ) -> system_settings::Model {
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(true),
             created_at: Set(Utc::now().naive_utc()),
@@ -3090,12 +3092,13 @@ mod tests {
             echo_im_sync_since_inbox_message_id: Set(0),
             updated_by_login_id: Set(None),
             deleted: Set(deleted),
-            rer_duty_test_enabled: Set(false),
-            rer_duty_test_since_ms: Set(0),
-            rer_duty_test_limit: Set(1),
+            rer_duty_test_enabled: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_since_ms: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_limit: sea_orm::ActiveValue::NotSet,
             rer_duty_poll_interval_sec: Set(1),
-            rer_duty_test_replay_interval_sec: Set(1),
-            rer_duty_insert_historical_interceptions: Set(false),
+            rer_duty_test_replay_interval_sec: sea_orm::ActiveValue::NotSet,
+            rer_duty_insert_historical_interceptions:
+                sea_orm::ActiveValue::NotSet,
             short_url_enabled: Set(false),
             rer_report_enabled: Set(None),
             support_non_rer_interceptions: Set(false),
@@ -3132,7 +3135,9 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            enable_duty_search: Set(None),
             duty_selected_groups_enabled: Set(None),
+            ai_network_match_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),

@@ -97,6 +97,8 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     SelfRef1,
+    #[sea_orm(has_one = "super::file_favorite::Entity")]
+    FileFavorite,
     #[sea_orm(
         belongs_to = "super::file_revision::Entity",
         from = "(Column::Id, Column::AnalysisInputRevision)",
@@ -140,6 +142,12 @@ impl Related<super::file_analysis_run_item::Entity> for Entity {
 impl Related<super::file_content::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileContent.def()
+    }
+}
+
+impl Related<super::file_favorite::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileFavorite.def()
     }
 }
 

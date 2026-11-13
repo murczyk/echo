@@ -57,6 +57,8 @@ export type InboxMessagesRspRaw = {
     [key: string]: unknown;
   }>;
   freq_pelengs_summary: InboxMessagesRsp['freqPelengsSummary'];
+  history_since_ms?: number | null;
+  history_period_ms?: number | null;
   page_limit?: number | null;
   around_message_messages_before?: number | null;
   around_message_messages_after?: number | null;
@@ -96,6 +98,7 @@ export type InboxMessageMetadataRaw = Partial<InboxMessageMetadata> & {
 
 export type MessageMediaInfoRaw = Partial<MessageMediaInfo> & {
   content_type?: string;
+  order_f64?: MessageMediaInfo['orderF64'];
   file_name?: string | null;
   size_bytes?: number;
   kmz_conversion_status?: string | null;
@@ -106,6 +109,7 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
   const raw = m as Record<string, unknown>;
   return {
     id: String(m.id ?? raw.id ?? ''),
+    orderF64: m.orderF64 ?? m.order_f64 ?? null,
     contentType: String(m.contentType ?? raw.content_type ?? ''),
     fileName: (m.fileName ?? raw.file_name ?? null) as string | null,
     sizeBytes: Number(m.sizeBytes ?? raw.size_bytes ?? 0),
@@ -321,6 +325,7 @@ function normalizeInboxMessage(
     groupMasterKey,
     groupMasterKeys,
     networkIds,
+    networkMatch: m.networkMatch ?? null,
     networkName,
     deviceName,
     location,
@@ -405,6 +410,8 @@ function mapRsp(raw: InboxMessagesRspRaw): InboxMessagesRsp {
     signalGroups,
     freqPelengsSummary: raw.freq_pelengs_summary,
     pageLimit: raw.page_limit ?? null,
+    historySinceMs: raw.history_since_ms ?? null,
+    historyPeriodMs: raw.history_period_ms ?? null,
   };
 }
 

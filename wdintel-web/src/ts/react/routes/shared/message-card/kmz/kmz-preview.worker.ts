@@ -1,6 +1,7 @@
 import { parseKmzPreview } from './kmz-preview-parser';
+import type { NativeMapFormat } from './kmz-preview-utils';
 
-type Request = { buffer: ArrayBuffer; format: 'kml' | 'kmz'; maxBytes?: number };
+type Request = { buffer: ArrayBuffer; format: NativeMapFormat; maxBytes?: number };
 
 self.addEventListener('message', (event: MessageEvent<{ requestId: string; request: Request }>) => {
   const { requestId, request } = event.data;

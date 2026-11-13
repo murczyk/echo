@@ -1093,7 +1093,38 @@ function MetaLine({
   );
 }
 
-function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNetwork) {
+/**
+ * The network icon's tooltip; it carries the message's callsigns this network
+ * lists and the AI certainty when there are any.
+ */
+function networkIconTitle(
+  certainty?: number | null,
+  reason?: string | null,
+  matchedCallsigns?: string[],
+): string {
+  const lines = ["Еталонна прив'язка"];
+  if (matchedCallsigns?.length) {
+    lines.push(
+      `Позивні з повідомлення в цій мережі: ${matchedCallsigns
+        .map((callsign) => callsign.toLocaleUpperCase('uk'))
+        .join(', ')}`,
+    );
+  }
+  if (certainty != null) {
+    lines.push(`Впевненість ШІ, що повідомлення належить саме цій мережі: ${certainty}%`);
+    if (reason) lines.push(`Пояснення ШІ: ${reason}`);
+  }
+  return lines.join('\n');
+}
+
+function NetworkMetadataItem({
+  networkId,
+  label,
+  badge,
+  certainty,
+  certaintyReason,
+  matchedCallsigns,
+}: MessageCardRenderedNetwork) {
   return (
     <div
       className="message-card-header-meta w-fit max-w-full"
@@ -1104,7 +1135,7 @@ function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNet
       <span
         className="message-card-header-meta__icon message-card-header-meta__icon--network"
         data-message-card-metadata-icon-kind="network"
-        title="Еталонна прив'язка"
+        title={networkIconTitle(certainty, certaintyReason, matchedCallsigns)}
       >
         <PeopleOutlineOutlinedIcon />
       </span>
@@ -1117,6 +1148,41 @@ function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNet
         ) : null}
       </span>
     </div>
+  );
+}
+
+/** With a confident AI match, shows that network and folds the rest. */
+function NetworkMetadataList({
+  networks,
+  confidentNetworkId,
+}: {
+  networks: MessageCardRenderedNetwork[];
+  confidentNetworkId?: number | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const folds = confidentNetworkId != null && networks.length > 1;
+  const visible =
+    folds && !expanded
+      ? networks.filter((network) => network.networkId === confidentNetworkId)
+      : networks;
+  return (
+    <>
+      {visible.map((network) => (
+        <NetworkMetadataItem key={network.networkId} {...network} />
+      ))}
+      {folds ? (
+        <button
+          type="button"
+          className="message-card-network-expand"
+          data-message-card-network-expand="true"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Згорнути інші мережі' : 'Показати інші мережі'}
+        >
+          {expanded ? 'згорнути' : `і ще ${networks.length - 1}`}
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -1149,9 +1215,12 @@ function NetworkEtalonSection({
     ) : null;
 
   if (primaryKind === 'network') {
-    return renderedNetworks.map((network) => (
-      <NetworkMetadataItem key={network.networkId} {...network} />
-    ));
+    return (
+      <NetworkMetadataList
+        networks={renderedNetworks}
+        confidentNetworkId={etalonDisplayModel.confidentNetworkId}
+      />
+    );
   }
 
   const primaryIcon =
@@ -1250,11 +1319,12 @@ export function MessageCardMetadata({
         className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0"
         style={{ flexWrap: 'wrap' }}
       >
-        {placement === MessageCardMetadataPlacement.Header
-          ? etalonDisplayModel.renderedNetworks.map((network) => (
-              <NetworkMetadataItem key={network.networkId} {...network} />
-            ))
-          : null}
+        {placement === MessageCardMetadataPlacement.Header ? (
+          <NetworkMetadataList
+            networks={etalonDisplayModel.renderedNetworks}
+            confidentNetworkId={etalonDisplayModel.confidentNetworkId}
+          />
+        ) : null}
         {showPrimaryMetadata && isPresent(groupName) ? (
           <MetaLine
             icon={<GraphicEqOutlinedIcon />}
@@ -1443,7 +1513,7 @@ function MessageCardHeaderComponent({
         </div>
       </div>
       {msg.important || !readOnly || isPresent(attachmentArchiveDownload) ? (
-        <div className="message-card-header-actions flex items-center justify-end gap-2">
+        <div className="message-card-header-actions flex items-center justify-end gap-2 self-start">
           {msg.important ? (
             <span
               className="message-card-important-status"

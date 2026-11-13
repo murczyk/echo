@@ -1232,7 +1232,8 @@ html[data-bs-theme='dark'] .message-reply-chain-popover {
 }
 
 .message-card-tag-expand,
-.message-card-chain-expand {
+.message-card-chain-expand,
+.message-card-network-expand {
   box-sizing: border-box;
   display: inline-flex;
   flex-shrink: 0;
@@ -1253,7 +1254,8 @@ html[data-bs-theme='dark'] .message-reply-chain-popover {
   cursor: pointer;
 }
 
-.message-card-tag-expand {
+.message-card-tag-expand,
+.message-card-network-expand {
   border-radius: var(--echo-radius-md);
 }
 
@@ -1264,7 +1266,8 @@ html[data-bs-theme='dark'] .message-reply-chain-popover {
 }
 
 .message-card-tag-expand:hover,
-.message-card-chain-expand:hover {
+.message-card-chain-expand:hover,
+.message-card-network-expand:hover {
   background-color: color-mix(in srgb, var(--color-action) 8%, transparent);
 }
 

@@ -7,12 +7,7 @@ import { postJson } from './client';
 type SystemSettingsItemRaw = {
   id: number;
   rer_analysis_units_exact_match_only_default: boolean;
-  rer_duty_test_enabled: boolean;
-  rer_duty_insert_historical_interceptions: boolean;
-  rer_duty_test_since_ms: number;
-  rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
-  rer_duty_test_replay_interval_sec?: number;
   created_at: number;
   updated_at: number;
   updated_by?: string | null;
@@ -26,10 +21,13 @@ type SystemSettingsItemRaw = {
   show_peleng_distance_to_battleline?: boolean;
   disable_bot_tags?: boolean | null;
   hide_networks?: boolean | null;
+  doc_media_serve_from_b2?: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search?: SystemSettingsCurrentRsp['enableDutySearch'] | null;
+  ai_network_match_enabled?: SystemSettingsCurrentRsp['aiNetworkMatchEnabled'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -63,12 +61,7 @@ type SystemSettingsItemRaw = {
 type SystemSettingsCurrentRspRaw = {
   id: number | null;
   rer_analysis_units_exact_match_only_default: boolean;
-  rer_duty_test_enabled: boolean;
-  rer_duty_insert_historical_interceptions: boolean;
-  rer_duty_test_since_ms: number;
-  rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
-  rer_duty_test_replay_interval_sec?: number;
   short_url_enabled: boolean;
   rer_report_enabled?: boolean;
   support_non_rer_interceptions?: boolean;
@@ -79,10 +72,13 @@ type SystemSettingsCurrentRspRaw = {
   hide_orbit_data?: boolean;
   disable_bot_tags?: boolean | null;
   hide_networks?: boolean | null;
+  doc_media_serve_from_b2?: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   duty_selected_groups_enabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search?: SystemSettingsCurrentRsp['enableDutySearch'] | null;
+  ai_network_match_enabled?: SystemSettingsCurrentRsp['aiNetworkMatchEnabled'] | null;
   important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -109,12 +105,7 @@ type SystemSettingsListRspRaw = {
 
 type CreateSystemSettingsReqRaw = {
   rer_analysis_units_exact_match_only_default: boolean;
-  rer_duty_test_enabled: boolean;
-  rer_duty_insert_historical_interceptions: boolean;
-  rer_duty_test_since_ms: number;
-  rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
-  rer_duty_test_replay_interval_sec: number;
   short_url_enabled: boolean;
   rer_report_enabled: boolean;
   support_non_rer_interceptions: boolean;
@@ -124,10 +115,13 @@ type CreateSystemSettingsReqRaw = {
   show_peleng_distance_to_battleline: boolean;
   disable_bot_tags: boolean;
   hide_networks: boolean;
+  doc_media_serve_from_b2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   duty_selected_groups_enabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'] | null;
+  enable_duty_search: SystemSettingsCurrentRsp['enableDutySearch'] | null;
+  ai_network_match_enabled: SystemSettingsCurrentRsp['aiNetworkMatchEnabled'] | null;
   important_notify_all_enabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -165,12 +159,7 @@ type ActivateSystemSettingsReqRaw = {
 export type SystemSettingsItem = {
   id: number;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -184,10 +173,13 @@ export type SystemSettingsItem = {
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch: SystemSettingsCurrentRsp['enableDutySearch'];
+  aiNetworkMatchEnabled: SystemSettingsCurrentRsp['aiNetworkMatchEnabled'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -221,12 +213,7 @@ export type SystemSettingsItem = {
 export type SystemSettingsCurrent = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   rerShortUrlEnabled: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -237,10 +224,13 @@ export type SystemSettingsCurrent = {
   hideOrbitData: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch: SystemSettingsCurrentRsp['enableDutySearch'];
+  aiNetworkMatchEnabled: SystemSettingsCurrentRsp['aiNetworkMatchEnabled'];
   importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -263,12 +253,7 @@ export type SystemSettingsCurrent = {
 
 export type CreateSystemSettingsInput = {
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   rerDutyShortUrl: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -278,10 +263,13 @@ export type CreateSystemSettingsInput = {
   showPelengDistanceToBattleline?: boolean;
   disableBotTags: boolean;
   hideNetworks: boolean;
+  docMediaServeFromB2: SystemSettingsCurrentRsp['docMediaServeFromB2'];
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   dutySelectedGroupsEnabled?: SystemSettingsCurrentRsp['dutySelectedGroupsEnabled'];
+  enableDutySearch?: SystemSettingsCurrentRsp['enableDutySearch'];
+  aiNetworkMatchEnabled?: SystemSettingsCurrentRsp['aiNetworkMatchEnabled'];
   importantNotifyAllEnabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
@@ -316,12 +304,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
   return {
     id: raw.id,
     rerAnalysisUnitsExactMatchOnlyDefault: raw.rer_analysis_units_exact_match_only_default,
-    rerDutyTestEnabled: raw.rer_duty_test_enabled,
-    rerDutyInsertHistoricalInterceptions: raw.rer_duty_insert_historical_interceptions,
-    rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
-    rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
-    rerDutyTestReplayIntervalSec: raw.rer_duty_test_replay_interval_sec ?? 1,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
     updatedBy: raw.updated_by ?? null,
@@ -335,10 +318,13 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     showPelengDistanceToBattleline: raw.show_peleng_distance_to_battleline ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
     hideNetworks: raw.hide_networks ?? false,
+    docMediaServeFromB2: raw.doc_media_serve_from_b2 ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
+    enableDutySearch: raw.enable_duty_search ?? false,
+    aiNetworkMatchEnabled: raw.ai_network_match_enabled ?? false,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -374,12 +360,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
   return {
     id: raw.id ?? null,
     rerAnalysisUnitsExactMatchOnlyDefault: raw.rer_analysis_units_exact_match_only_default,
-    rerDutyTestEnabled: raw.rer_duty_test_enabled,
-    rerDutyInsertHistoricalInterceptions: raw.rer_duty_insert_historical_interceptions,
-    rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
-    rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
-    rerDutyTestReplayIntervalSec: raw.rer_duty_test_replay_interval_sec ?? 1,
     rerShortUrlEnabled: raw.short_url_enabled,
     rerReportEnabled: raw.rer_report_enabled ?? false,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
@@ -390,10 +371,13 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     hideOrbitData: raw.hide_orbit_data ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
     hideNetworks: raw.hide_networks ?? false,
+    docMediaServeFromB2: raw.doc_media_serve_from_b2 ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     dutySelectedGroupsEnabled: raw.duty_selected_groups_enabled ?? true,
+    enableDutySearch: raw.enable_duty_search ?? false,
+    aiNetworkMatchEnabled: raw.ai_network_match_enabled ?? false,
     importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
@@ -425,12 +409,7 @@ export async function createSystemSettings(
 ): Promise<SystemSettingsItem> {
   const req: CreateSystemSettingsReqRaw = {
     rer_analysis_units_exact_match_only_default: input.rerAnalysisUnitsExactMatchOnlyDefault,
-    rer_duty_test_enabled: input.rerDutyTestEnabled,
-    rer_duty_insert_historical_interceptions: input.rerDutyInsertHistoricalInterceptions,
-    rer_duty_test_since_ms: input.rerDutyTestSinceMs,
-    rer_duty_test_limit: input.rerDutyTestLimit,
     rer_duty_poll_interval_sec: input.rerDutyPollIntervalSec,
-    rer_duty_test_replay_interval_sec: input.rerDutyTestReplayIntervalSec,
     short_url_enabled: input.rerDutyShortUrl,
     rer_report_enabled: input.rerReportEnabled,
     support_non_rer_interceptions: input.supportNonRerInterceptions,
@@ -440,10 +419,13 @@ export async function createSystemSettings(
     show_peleng_distance_to_battleline: input.showPelengDistanceToBattleline ?? false,
     disable_bot_tags: input.disableBotTags,
     hide_networks: input.hideNetworks,
+    doc_media_serve_from_b2: input.docMediaServeFromB2 ?? false,
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
     duty_selected_groups_enabled: input.dutySelectedGroupsEnabled ?? null,
+    enable_duty_search: input.enableDutySearch ?? null,
+    ai_network_match_enabled: input.aiNetworkMatchEnabled ?? null,
     important_notify_all_enabled: input.importantNotifyAllEnabled ?? null,
     api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs,
     api_rate_limit_burst_size: input.apiRateLimitBurstSize,
@@ -516,34 +498,5 @@ export async function cleanupOrbitOtherUnits(
   return {
     deletedCount: response.deleted_count,
     activeUnits: response.active_units,
-  };
-}
-
-type RerDutyTestReplayStatusRaw = {
-  status: string;
-  source_count: number;
-  next_source_position: number | null;
-  generated_count: number;
-  next_emit_at_ms: number | null;
-};
-
-export type RerDutyTestReplayStatus = {
-  status: string;
-  sourceCount: number;
-  nextSourcePosition: number | null;
-  generatedCount: number;
-  nextEmitAtMs: number | null;
-};
-
-export async function getRerDutyTestReplayStatus(): Promise<RerDutyTestReplayStatus> {
-  const raw = await postJson<RerDutyTestReplayStatusRaw>(
-    '/api/admin/system-settings/rer-duty-test-replay/status',
-  );
-  return {
-    status: raw.status,
-    sourceCount: raw.source_count,
-    nextSourcePosition: raw.next_source_position,
-    generatedCount: raw.generated_count,
-    nextEmitAtMs: raw.next_emit_at_ms,
   };
 }

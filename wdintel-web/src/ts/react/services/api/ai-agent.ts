@@ -54,6 +54,7 @@ import type {
   AiAgentProviderItem,
   AiAgentProviderRuntimeProfileItem,
   AiAgentRequestCancelRsp,
+  AiAgentPrewarmReq,
   AiAgentRequestCreateReq,
   AiAgentRequestCreateRsp,
   AiAgentRequestEventItem,
@@ -93,11 +94,18 @@ export type AiAgentMessage = Omit<
   | 'maxRuntimeSeconds'
   | 'startedAt'
   | 'completionMetadata'
+  | 'aiEngineId'
+  | 'aiEngineName'
 > &
   Partial<
     Pick<
       AiAgentMessageItem,
-      'reasoningPreset' | 'maxRuntimeSeconds' | 'startedAt' | 'completionMetadata'
+      | 'reasoningPreset'
+      | 'maxRuntimeSeconds'
+      | 'startedAt'
+      | 'completionMetadata'
+      | 'aiEngineId'
+      | 'aiEngineName'
     >
   > & {
     id: string;
@@ -393,6 +401,8 @@ function normalizeProvider(
 ): AiAgentProvider {
   return {
     ...value,
+    unhealthy: value.unhealthy ?? false,
+    healthMessage: value.healthMessage ?? null,
     enabled: true,
     isDefault: value.id === defaultProviderId,
   };
@@ -442,9 +452,9 @@ export function normalizeAiAgentEvent(
     type: value.eventType as AiAgentEventType,
     completionMetadata:
       value.eventType === 'completion_metadata' &&
-      payload.coverageLimited === true &&
+      typeof payload.coverageLimited === 'boolean' &&
       typeof payload.reason === 'string'
-        ? { coverageLimited: true, reason: payload.reason }
+        ? { coverageLimited: payload.coverageLimited, reason: payload.reason }
         : null,
     createdAt: value.createdAt,
     text: payloadString(
@@ -662,6 +672,12 @@ export async function updateAiAgentConversation(
 export async function deleteAiAgentConversation(id: string): Promise<void> {
   const req: AiAgentConversationIdReq = { id };
   await postVoid('/api/ai-agent/conversations/delete', req);
+}
+
+/** Asks Echo to start the user's agent container while they type (#4139). */
+export async function prewarmAiAgent(providerId: string): Promise<void> {
+  const req: AiAgentPrewarmReq = { aiEngineId: providerId };
+  await postVoid('/api/ai-agent/prewarm', req);
 }
 
 export async function submitAiAgentRequest(input: {
@@ -951,8 +967,9 @@ function normalizeUserStatus(value: AiAgentAdminUserItem): AiAgentUserStatus {
 
 export async function listAiAgentAuditRequests(
   pageStartId: string | null = null,
+  searchId: string | null = null,
 ): Promise<Omit<AiAgentAdminRequestListRsp, 'items'> & { items: AiAgentAuditRequest[] }> {
-  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId };
+  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId, searchId };
   const response = await postJson<AiAgentAdminRequestListRsp>(
     '/api/admin/ai-agent/requests/list',
     req,

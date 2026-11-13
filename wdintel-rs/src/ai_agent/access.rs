@@ -10,6 +10,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
 use actix_identity::Identity;
+use anyhow::Context;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
@@ -158,23 +159,42 @@ fn has_rer_or_cyber_role(roles: &serde_json::Value) -> bool {
 pub async fn allowed_engines(
     dbx: &DatabaseConnection,
 ) -> Result<Vec<ai_engine::Model>, AppError> {
-    let ids = ai_agent_allowed_engine::Entity::find()
+    Ok(ordered_allowed_engines(dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .filter(|ai_engine| ai_engine.enabled)
+        .filter(is_agent_engine)
+        .collect())
+}
+
+/// Allowlisted engines in chat order: the admin's position, then engine name.
+pub async fn ordered_allowed_engines<C>(
+    dbx: &C,
+) -> Result<Vec<ai_engine::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut allowed = ai_agent_allowed_engine::Entity::find()
+        .find_also_related(ai_engine::Entity)
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .map(|allowed| allowed.ai_engine_id)
+        .filter_map(|(allowed, ai_engine)| {
+            ai_engine.map(|ai_engine| (allowed.position, ai_engine))
+        })
         .collect::<Vec<_>>();
-    if ids.is_empty() {
-        return Ok(vec![]);
-    }
-    let ai_engines = ai_engine::Entity::find()
-        .filter(ai_engine::Column::Id.is_in(ids))
-        .filter(ai_engine::Column::Enabled.eq(true))
-        .all(dbx)
-        .await
-        .c(h!())?;
-    Ok(ai_engines.into_iter().filter(is_agent_engine).collect())
+    // Engines the admin has not ordered yet follow the ordered ones.
+    allowed.sort_by(|(left_position, left), (right_position, right)| {
+        (left_position.is_none(), left_position)
+            .cmp(&(right_position.is_none(), right_position))
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    Ok(allowed
+        .into_iter()
+        .map(|(_, ai_engine)| ai_engine)
+        .collect())
 }
 
 pub async fn allowed_engine(
@@ -396,6 +416,10 @@ mod tests {
             callsign_enabled: true,
             ocr_enabled: false,
             ocr_request_profile: "openai_vision".to_string(),
+            unhealthy: None,
+            health_message: None,
+            health_updated_at: None,
+            health_updated_by_login_id: None,
         }
     }
 

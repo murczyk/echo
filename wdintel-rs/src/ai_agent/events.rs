@@ -391,6 +391,8 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             | "tool_limit"
             | "continued"
             | "draft_refresh"
+            | "research_text"
+            | "partial"
     ) {
         return None;
     }
@@ -562,6 +564,7 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
             | "timeout"
             | "echo_redirect"
             | "invalid_response"
+            | "ignored_arguments"
     ) {
         return None;
     }
@@ -884,6 +887,38 @@ mod tests {
     }
 
     #[test]
+    fn issue_4115_logged_answers_research_wrote_without_tools() {
+        assert_eq!(
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "answer",
+                "outcome": "research_text", "textCharacters": 12234,
+                "remainingMs": 120_000, "text": "private answer"
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "stage": "answer", "outcome": "research_text",
+                "textCharacters": 12234, "remainingMs": 120_000
+            })
+        );
+    }
+
+    #[test]
+    fn logged_answers_cut_off_by_the_deadline() {
+        assert_eq!(
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "answer",
+                "outcome": "partial", "textCharacters": 7120,
+                "remainingMs": 0, "text": "private answer"
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "stage": "answer", "outcome": "partial",
+                "textCharacters": 7120, "remainingMs": 0
+            })
+        );
+    }
+
+    #[test]
     fn issue_4053_kept_failure_kind_and_status_but_never_other_text() {
         let diagnostic = |kind: &str| {
             completion_diagnostic(&serde_json::json!({
@@ -948,6 +983,25 @@ mod tests {
             }))
             .is_some());
         }
+    }
+
+    #[test]
+    fn issue_4125_kept_ignored_argument_names() {
+        let event = serde_json::json!({
+            "type": "tool_diagnostic", "tool": "echo_inbox_messages",
+            "reason": "ignored_arguments", "handledPrivately": false,
+            "fields": "period.timezone:ignored, period.other:ignored",
+            "arguments": {"period": {"timezone": "secret"}}
+        });
+        assert_eq!(
+            tool_diagnostic(&event).unwrap(),
+            serde_json::json!({
+                "tool": "echo_inbox_messages", "reason": "ignored_arguments",
+                "handledPrivately": false,
+                "fields": "period.timezone:ignored, period.other:ignored"
+            })
+        );
+        assert!(normalize_runner_event(event).is_none());
     }
 
     #[test]
@@ -1088,7 +1142,11 @@ mod tests {
             level(serde_json::json!({"reason": "invalid_arguments"})),
             log::Level::Warn
         );
-        for reason in ["cancelled", "research_checkpoint_required"] {
+        for reason in [
+            "cancelled",
+            "research_checkpoint_required",
+            "ignored_arguments",
+        ] {
             assert_eq!(
                 level(serde_json::json!({"reason": reason})),
                 log::Level::Info

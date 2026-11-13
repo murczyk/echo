@@ -91,6 +91,8 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     FileSyncSession,
+    #[sea_orm(has_many = "super::file_view::Entity")]
+    FileView,
 }
 
 impl Related<super::file_analysis_run_item::Entity> for Entity {
@@ -138,6 +140,12 @@ impl Related<super::file_sync_item::Entity> for Entity {
 impl Related<super::file_sync_session::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileSyncSession.def()
+    }
+}
+
+impl Related<super::file_view::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileView.def()
     }
 }
 

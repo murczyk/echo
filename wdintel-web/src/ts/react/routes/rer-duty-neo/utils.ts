@@ -196,6 +196,8 @@ export function buildVisibleExcludeMenuOptions(
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
+    search: null,
+    searchMode: null,
     groupsSelected: null,
     groupsDenied: null,
     sendersSelected: null,
@@ -240,7 +242,9 @@ export function hasActiveFeedFilter(filter: RerDutyFeedFilterState): boolean {
       filter.deniedDeviceNames,
       filter.locationsSelected,
       filter.locationsDenied,
-    ].some((values) => (values?.length ?? 0) > 0) || filter.unitsExactMatchOnly === true
+    ].some((values) => (values?.length ?? 0) > 0) ||
+    filter.unitsExactMatchOnly === true ||
+    Boolean(filter.search?.trim())
   );
 }
 
@@ -329,6 +333,8 @@ function optArrEqual(a: string[] | null | undefined, b: string[] | null | undefi
 /** True when both filters are equivalent for request purposes (no need to refetch). */
 export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterState): boolean {
   return (
+    (a.search ?? '') === (b.search ?? '') &&
+    (a.searchMode ?? 'Fuzzy') === (b.searchMode ?? 'Fuzzy') &&
     optArrEqual(a.groupsSelected, b.groupsSelected) &&
     optArrEqual(a.groupsDenied, b.groupsDenied) &&
     optArrEqual(a.sendersSelected, b.sendersSelected) &&
@@ -448,8 +454,8 @@ export function buildInboxReq(opts: {
     orWithCoords: null,
     orWithoutCoords: null,
     newestFirst: null,
-    search: null,
-    searchMode: null,
+    search: f.search?.trim() || null,
+    searchMode: f.searchMode ?? null,
     highlightCallsigns: true,
     highlightKeywords: f.highlightKeywordSetId != null,
     highlightKeywordSetId: f.highlightKeywordSetId ?? null,
@@ -1008,6 +1014,8 @@ export type MessageFeedState = {
   loadingOlder: boolean;
   /** True after "load older" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
+  historySinceMs?: number | null;
+  historyPeriodMs?: number | null;
   /** Last known newer edge evicted while prepending older pages. */
   evictedNewerTailId?: number | null;
   /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
@@ -1296,6 +1304,8 @@ export function feedListRenderStateEqual(prev: MessageFeedState, next: MessageFe
       prev.loading === next.loading &&
       prev.loadingOlder === next.loadingOlder &&
       prev.hasReachedStart === next.hasReachedStart &&
+      prev.historySinceMs === next.historySinceMs &&
+      prev.historyPeriodMs === next.historyPeriodMs &&
       prev.referenceTimeMs === next.referenceTimeMs &&
       prev.filter === next.filter &&
       prev.onlyMyUnitTagsEnabled === next.onlyMyUnitTagsEnabled)

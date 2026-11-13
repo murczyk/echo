@@ -10,6 +10,7 @@ import type { MessageMediaInfo } from '../../../../../../Bindings';
 
 const authRedirectMocks = vi.hoisted(() => ({
   emitUnauthorizedEvent: vi.fn(),
+  AUTH_UNAUTHORIZED_EVENT: 'echo:api-unauthorized',
 }));
 
 vi.mock('../../../../auth-redirect', () => authRedirectMocks);
@@ -150,10 +151,13 @@ describe('Message card media thumbnails', () => {
     authRedirectMocks.emitUnauthorizedEvent.mockReset();
     vi.stubGlobal('fetch', vi.fn());
     vi.stubGlobal('IntersectionObserver', undefined);
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn(() => 'blob:thumbnail'),
-      revokeObjectURL: vi.fn(),
-    });
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = vi.fn(() => 'blob:thumbnail');
+        static revokeObjectURL = vi.fn();
+      },
+    );
   });
 
   afterEach(() => {
@@ -191,6 +195,20 @@ describe('Message card media thumbnails', () => {
       '/api/messenger/media/image-1',
     );
     root.unmount();
+  });
+  it('#3930 preserves a loaded message thumbnail on unrelated global auth events without starting its original fallback', async () => {
+    vi.mocked(fetch).mockResolvedValue(thumbnailResponse(200));
+    const { container, root } = await renderImageThumb();
+    await act(async () => {
+      container.querySelector('img')?.dispatchEvent(new Event('load'));
+      window.dispatchEvent(new Event(authRedirectMocks.AUTH_UNAUTHORIZED_EVENT));
+      window.dispatchEvent(new Event('echo:forced-navigation'));
+    });
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:thumbnail');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    root.unmount();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:thumbnail');
   });
   it('uses the original image when thumbnail generation fails', async () => {
     vi.mocked(fetch).mockResolvedValue(thumbnailResponse(422));

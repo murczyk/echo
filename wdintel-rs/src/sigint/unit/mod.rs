@@ -1656,6 +1656,7 @@ where
         unit_mask: Set(serde_json::to_value(unit_mask).context(h!())?),
         sigint_origin_id: NotSet,
         original_id: NotSet,
+        ai_instructions: NotSet,
     }
     .insert(txn)
     .await
@@ -4117,18 +4118,20 @@ mod tests {
     ) {
         let now = Utc::now().naive_utc();
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(false),
             created_at: Set(now),
             updated_at: Set(now),
             updated_by_login_id: Set(None),
             deleted: Set(false),
-            rer_duty_test_enabled: Set(false),
-            rer_duty_test_since_ms: Set(0),
-            rer_duty_test_limit: Set(0),
+            rer_duty_test_enabled: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_since_ms: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_limit: sea_orm::ActiveValue::NotSet,
             rer_duty_poll_interval_sec: Set(0),
-            rer_duty_test_replay_interval_sec: Set(1),
-            rer_duty_insert_historical_interceptions: Set(false),
+            rer_duty_test_replay_interval_sec: sea_orm::ActiveValue::NotSet,
+            rer_duty_insert_historical_interceptions:
+                sea_orm::ActiveValue::NotSet,
             short_url_enabled: Set(false),
             rer_report_enabled: Set(None),
             support_non_rer_interceptions: Set(false),
@@ -4165,7 +4168,9 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            enable_duty_search: Set(None),
             duty_selected_groups_enabled: Set(None),
+            ai_network_match_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),

@@ -48,6 +48,7 @@ export function createDefaultNetworkUpsertForm(): NetworkUpsertForm {
     operationPeriod: 'цілодобово',
     doNotArchive: false,
     unitMask: [],
+    aiInstructions: '',
     status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
@@ -112,6 +113,7 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
     operationPeriod: network.operationPeriod ?? '',
     doNotArchive: network.doNotArchive,
     unitMask: [...network.unitMask],
+    aiInstructions: network.aiInstructions ?? '',
     status: network.status,
     aorIds: [...network.aorIds],
     unitIds: [...(network.unitIds ?? [])],
@@ -121,7 +123,7 @@ export function toNetworkEditForm(network: Network): NetworkEditForm {
 
 export function toCreateNetworkReq(
   form: NetworkUpsertForm,
-  options: { includeFrequency?: boolean } = {},
+  options: { includeFrequency?: boolean; aiInstructionsVisible?: boolean } = {},
 ): CreateNetworkReq {
   const includeFrequency = options.includeFrequency ?? true;
   return {
@@ -151,7 +153,19 @@ export function toCreateNetworkReq(
     unitMask: normalizeNetworkUnitMask(form.unitMask),
     postIds: [...form.postIds],
     descriptions: [],
+    aiInstructions: toNetworkAiInstructionsReq(form, options.aiInstructionsVisible ?? false),
   };
+}
+
+/**
+ * The field is shown only with the AI network match setting on; `null` keeps
+ * the stored text, and a blank string clears it.
+ */
+export function toNetworkAiInstructionsReq(
+  form: Pick<NetworkUpsertForm, 'aiInstructions'>,
+  visible: boolean,
+): string | null {
+  return visible ? form.aiInstructions : null;
 }
 
 export function normalizeNetworkUnitMask(unitMask: string[]): string[] {

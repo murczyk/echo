@@ -4,6 +4,7 @@ import { ListItemButton } from '@mui/material';
 import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 
 import { PowerIconButton } from '../../../components/PowerIconButton';
+import { deviceSidebarRowClassName } from '../../device-details/components/DeviceSidebar';
 
 export function DeviceFileTreeRow({
   name,
@@ -18,7 +19,6 @@ export function DeviceFileTreeRow({
   expanded,
   childrenId,
   toggleLabel,
-  trailing,
 }: {
   name: string;
   depth: number;
@@ -32,7 +32,6 @@ export function DeviceFileTreeRow({
   expanded?: boolean;
   childrenId?: string;
   toggleLabel?: string;
-  trailing?: ReactNode;
 }) {
   const row = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -52,28 +51,27 @@ export function DeviceFileTreeRow({
         aria-expanded={expanded}
         aria-controls={childrenId}
         onClick={onClick}
-        className={`min-h-echo-xl! w-full! min-w-0! gap-echo-xs! rounded-echo-sm! py-0! pr-echo-xs! max-echo-lg:min-h-echo-control-lg! focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-echo-focus ${selected ? 'bg-echo-primary/15!' : ''} ${hasContent ? '' : 'opacity-55'}`}
+        className={`${deviceSidebarRowClassName} w-full! min-w-0! gap-echo-xs! rounded-echo-sm! py-echo-xs! pr-echo-xs! echo-lg:min-h-echo-control-sm! focus-visible:outline focus-visible:-outline-offset-1 focus-visible:outline-echo-focus ${selected ? 'bg-echo-primary/15!' : ''} ${hasContent ? '' : 'opacity-55'}`}
         style={{
           paddingLeft:
-            'calc(var(--echo-spacing-xs) + var(--device-tree-depth) * var(--echo-spacing-md))',
+            'calc(var(--echo-spacing-xs) + var(--device-tree-depth) * var(--echo-spacing-sm))',
         }}
       >
         <span aria-hidden="true" className="w-echo-lg shrink-0 max-echo-lg:w-echo-2xl" />
         <span className="inline-flex shrink-0 [&_svg]:size-echo-icon-sm!">{icon}</span>
-        <span className="min-w-0 flex-1 truncate text-echo-sm" title={name}>
+        <span className="flex-1 whitespace-nowrap" title={name}>
           {name}
         </span>
-        {trailing}
       </ListItemButton>
       {depth > 0 ? (
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 left-echo-md opacity-45 max-echo-lg:left-echo-icon-md"
           style={{
-            width: 'calc(var(--device-tree-depth) * var(--echo-spacing-md))',
+            width: 'calc(var(--device-tree-depth) * var(--echo-spacing-sm))',
             backgroundImage:
               'linear-gradient(to right, var(--echo-color-border) 1px, transparent 1px)',
-            backgroundSize: 'var(--echo-spacing-md) 100%',
+            backgroundSize: 'var(--echo-spacing-sm) 100%',
           }}
         />
       ) : null}
@@ -86,7 +84,7 @@ export function DeviceFileTreeRow({
           onClick={onToggle}
           className="absolute! inset-y-0! z-10! w-echo-lg! rounded-none! p-0! max-echo-lg:w-echo-2xl! [&_svg]:size-echo-icon-sm!"
           style={{
-            left: 'calc(var(--echo-spacing-xs) + var(--device-tree-depth) * var(--echo-spacing-md))',
+            left: 'calc(var(--echo-spacing-xs) + var(--device-tree-depth) * var(--echo-spacing-sm))',
           }}
         >
           {expanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}

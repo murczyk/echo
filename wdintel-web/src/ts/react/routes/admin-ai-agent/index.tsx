@@ -1,4 +1,6 @@
 import AddIcon from '@mui/icons-material/Add';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -19,6 +21,7 @@ import {
   DialogTitle,
   FormControl,
   FormControlLabel,
+  IconButton,
   InputLabel,
   MenuItem,
   Pagination,
@@ -97,9 +100,16 @@ import {
   getAiReviewerEngineCompatibility,
 } from './engine-eligibility';
 import { MattermostWebhookField } from './MattermostWebhookField';
+import { ProviderHealthEditor } from './ProviderHealthEditor';
 import { errorMessage, formatDateTime, statusColor } from './format';
 import { RequestDetailsDialog } from './request-details/RequestDetailsDialog';
-import { readAiAgentRequestDeepLink, writeAiAgentRequestDeepLink } from './url-state';
+import { RequestIdSearchField } from './RequestIdSearchField';
+import {
+  readAiAgentRequestDeepLink,
+  readAiAgentRequestSearch,
+  writeAiAgentRequestDeepLink,
+  writeAiAgentRequestSearch,
+} from './url-state';
 
 export type AiAgentAdminSection =
   | 'providers'
@@ -625,6 +635,8 @@ function RequestsPage() {
   const [firstPage, setFirstPage] = useState(1);
   const loadVersion = useRef(0);
   const openVersion = useRef(0);
+  const [searchId, setSearchId] = useState(() => readAiAgentRequestSearch());
+  const searchRef = useRef(searchId);
   const [selected, setSelected] = useState<AiAgentAuditRequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -636,14 +648,25 @@ function RequestsPage() {
       if (requestId) void openRequest(requestId);
       else closeRequest();
     };
+    const onPopState = () => {
+      const nextSearch = readAiAgentRequestSearch();
+      if (nextSearch !== searchRef.current) search(nextSearch);
+      openDeepLink();
+    };
     void load().then(openDeepLink);
-    window.addEventListener('popstate', openDeepLink);
+    window.addEventListener('popstate', onPopState);
     return () => {
       loadVersion.current += 1;
       openVersion.current += 1;
-      window.removeEventListener('popstate', openDeepLink);
+      window.removeEventListener('popstate', onPopState);
     };
   }, []);
+
+  function search(nextSearch: string | null) {
+    searchRef.current = nextSearch;
+    setSearchId(nextSearch);
+    void load();
+  }
 
   async function load(nextPage = 1, append = false) {
     const version = ++loadVersion.current;
@@ -652,6 +675,7 @@ function RequestsPage() {
     try {
       const response = await listAiAgentAuditRequests(
         nextPage === 1 ? null : pageStartIds[nextPage - 1],
+        searchRef.current,
       );
       if (version !== loadVersion.current) return;
       setRequests((current) => (append ? [...current, ...response.items] : response.items));
@@ -715,6 +739,15 @@ function RequestsPage() {
         <TablePageToolbar
           title="Запити ШІ агентів"
           withGlobalTextFilter
+          filter={
+            <RequestIdSearchField
+              value={searchId}
+              onSearch={(nextSearch) => {
+                writeAiAgentRequestSearch(nextSearch);
+                search(nextSearch);
+              }}
+            />
+          }
           internalActionsDisabled={loading && requests.length === 0}
           actions={
             <PowerButton
@@ -1420,11 +1453,22 @@ function ProviderRuntimeProfilesEditor({
   settings,
   engines,
   onChange,
+  onEngineSaved,
 }: {
   settings: AiAgentSettings;
   engines: AiEngineItem[];
   onChange: (settings: AiAgentSettings) => void;
+  onEngineSaved: (engine: AiEngineItem) => void;
 }) {
+  function move(aiEngineId: string, offset: -1 | 1) {
+    const ids = [...settings.allowedProviderIds];
+    const index = ids.indexOf(aiEngineId);
+    const target = index + offset;
+    if (index < 0 || target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    onChange({ ...settings, allowedProviderIds: ids });
+  }
+
   function updateProfile<K extends keyof Omit<ProviderRuntimeProfile, 'aiEngineId'>>(
     aiEngineId: string,
     field: K,
@@ -1441,7 +1485,11 @@ function ProviderRuntimeProfilesEditor({
   return (
     <Stack spacing={1.5}>
       <Typography variant="subtitle2">Runtime-профілі провайдерів</Typography>
-      {settings.allowedProviderIds.map((aiEngineId) => {
+      <Typography variant="caption" color="text.secondary">
+        Порядок визначає список у ШІ-чаті та модель, яку чат пропонує після збою провайдера чи
+        відмови моделі.
+      </Typography>
+      {settings.allowedProviderIds.map((aiEngineId, index) => {
         const engine = engines.find((candidate) => candidate.id === aiEngineId);
         const profile = settings.providerRuntimeProfiles.find(
           (candidate) => candidate.aiEngineId === aiEngineId,
@@ -1451,12 +1499,41 @@ function ProviderRuntimeProfilesEditor({
           <Card key={aiEngineId} variant="outlined" sx={{ borderRadius: 0 }}>
             <CardContent>
               <Stack spacing={1.5}>
-                <Box>
-                  <Typography variant="subtitle2">{engine.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {engine.modelName}
-                  </Typography>
-                </Box>
+                <Stack direction="row" spacing={1} alignItems="flex-start">
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="subtitle2">
+                      {index + 1}. {engine.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {engine.modelName}
+                    </Typography>
+                  </Box>
+                  <Tooltip title="Вище">
+                    <span>
+                      <IconButton
+                        size="small"
+                        aria-label={`Перемістити ${engine.name} вище`}
+                        disabled={index === 0}
+                        onClick={() => move(aiEngineId, -1)}
+                      >
+                        <ArrowUpwardIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Нижче">
+                    <span>
+                      <IconButton
+                        size="small"
+                        aria-label={`Перемістити ${engine.name} нижче`}
+                        disabled={index === settings.allowedProviderIds.length - 1}
+                        onClick={() => move(aiEngineId, 1)}
+                      >
+                        <ArrowDownwardIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
+                <ProviderHealthEditor engine={engine} onSaved={onEngineSaved} />
                 <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5}>
                   <TextField
                     fullWidth
@@ -1679,6 +1756,11 @@ function SettingsPage() {
               settings={settings}
               engines={engines}
               onChange={setSettings}
+              onEngineSaved={(saved) =>
+                setEngines((current) =>
+                  current.map((engine) => (engine.id === saved.id ? saved : engine)),
+                )
+              }
             />
             <FormControl fullWidth>
               <InputLabel id="ai-agent-default-provider-label">

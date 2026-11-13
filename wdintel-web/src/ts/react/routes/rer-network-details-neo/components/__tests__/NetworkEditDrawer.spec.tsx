@@ -135,6 +135,7 @@ type Rendered = {
   root: Root;
   setForm: (next: NetworkUpsertForm | null) => void;
   saveSpy: ReturnType<typeof vi.fn>;
+  renderSpy: ReturnType<typeof vi.fn>;
 };
 
 const rendered: Rendered[] = [];
@@ -150,6 +151,8 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
     operationType: 'ведення службового радіообміну',
     operationPeriod: 'цілодобово',
     doNotArchive: false,
+    unitMask: [],
+    aiInstructions: '',
     status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
@@ -167,15 +170,21 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
 function renderDrawer(
   form: NetworkUpsertForm | null,
   mode: 'create' | 'edit' = 'create',
-  options: { frequencyOptional?: boolean; radioFeaturesAllowed?: boolean } = {},
+  options: {
+    frequencyOptional?: boolean;
+    radioFeaturesAllowed?: boolean;
+    aiInstructionsVisible?: boolean;
+  } = {},
 ): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   const saveSpy = vi.fn();
+  const renderSpy = vi.fn();
   let setForm = (_next: NetworkUpsertForm | null) => {};
 
   function Harness() {
+    renderSpy();
     const [currentForm, nextSetForm] = useState<NetworkUpsertForm | null>(form);
     setForm = nextSetForm;
     return (
@@ -198,9 +207,9 @@ function renderDrawer(
         postOptions={[{ id: 1, label: '_stihl_XN Пост' } as NetworkEditLookupOption]}
         encryptionOptions={[{ id: 11, label: 'FM' } as NetworkEditLookupOption]}
         onClose={() => {}}
-        onChange={nextSetForm}
         onSave={saveSpy}
         frequencyOptional={options.frequencyOptional}
+        aiInstructionsVisible={options.aiInstructionsVisible}
       />
     );
   }
@@ -213,7 +222,7 @@ function renderDrawer(
     );
   });
 
-  return { container, root, setForm, saveSpy };
+  return { container, root, setForm, saveSpy, renderSpy };
 }
 
 afterEach(() => {
@@ -225,6 +234,27 @@ afterEach(() => {
   }
 });
 describe('NetworkEditDrawer', () => {
+  it('#4108 keeps typing inside the drawer and submits the latest draft without rendering its parent', () => {
+    const view = renderDrawer(buildForm({ id: 42, location: 'район', aorIds: [1] }), 'edit');
+    rendered.push(view);
+    const parentRenders = view.renderSpy.mock.calls.length;
+    const name = view.container.querySelector('input[aria-label="Назва"]') as HTMLInputElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        name,
+        'Нова назва',
+      );
+      name.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(name.value).toBe('Нова назва');
+    expect(view.renderSpy).toHaveBeenCalledTimes(parentRenders);
+    const save = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    );
+    act(() => save?.click());
+    expect(view.saveSpy).toHaveBeenCalledWith(expect.objectContaining({ name: 'Нова назва' }));
+  });
+
   it('#3568 hides radio fields and permits creation without a frequency', () => {
     const view = renderDrawer(
       buildForm({ freq: '', radioStation: 'Existing station', location: 'Київ', aorIds: [1] }),
@@ -314,6 +344,23 @@ describe('NetworkEditDrawer', () => {
     expect(saveButton?.disabled).toBe(false);
     expect(view.container.textContent).toContain('Перша частота');
     expect(view.container.textContent).not.toContain('Перша частота *');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/4095
+  it('#4095 shows «Опис для ШІ» with its helper text only when the setting is on', () => {
+    const hidden = renderDrawer(buildForm({ aiInstructions: 'CC 3' }), 'edit');
+    rendered.push(hidden);
+    expect(hidden.container.querySelector('input[aria-label="Опис для ШІ"]')).toBeNull();
+
+    const view = renderDrawer(buildForm({ aiInstructions: 'CC 3' }), 'edit', {
+      aiInstructionsVisible: true,
+    });
+    rendered.push(view);
+    const input = view.container.querySelector<HTMLInputElement>('input[aria-label="Опис для ШІ"]');
+    expect(input?.value).toBe('CC 3');
+    expect(view.container.textContent).toContain(
+      'Буде використовуватись при визначенні чи саме під цю мережу попадає певне повідомлення, та при відображенні головного співпадіння мережі',
+    );
   });
 
   it('toggles auto-archive protection', () => {

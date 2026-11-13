@@ -654,6 +654,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
                 analyticsOpen={rightPanelVisible}
                 editor={
                   <ReplyMessageEditor
+                    rememberReportGroup={page.rememberReportGroup}
                     replyTarget={replyTarget}
                     timeBasis={page.queryState.messageTimeBasis ?? 'interception'}
                     ref={editorRef}

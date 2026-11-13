@@ -1,3 +1,5 @@
+import type { DeviceFilesState } from '../../device-files/use-device-files';
+import { deviceFileLocationHref } from '../../device-files/use-device-file-link';
 import { Skeleton } from '@mui/material';
 
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
@@ -11,30 +13,34 @@ const sectionLabels = {
 } satisfies Record<DeviceDetailsSection, string>;
 
 const linkClassName =
-  'text-inherit! no-underline! [overflow-wrap:anywhere] hover:underline! focus-visible:outline-2 focus-visible:outline-echo-focus';
+  'text-inherit! no-underline! hover:underline! focus-visible:outline-2 focus-visible:outline-echo-focus';
 
 export function DeviceBreadcrumbs({
   deviceId,
   deviceName,
   section,
+  files,
 }: {
   deviceId: string;
   deviceName: string | null;
   section: DeviceDetailsSection;
+  files?: DeviceFilesState;
 }) {
   const homeHref = deviceSectionHref(
     deviceId,
     DeviceDetailsSection.Overview,
     window.location.search,
   );
-  const sectionHref = deviceSectionHref(deviceId, section, window.location.search);
+  const sectionHref = files
+    ? deviceFileLocationHref(null, null, null)
+    : deviceSectionHref(deviceId, section, window.location.search);
   const isOverview = section === DeviceDetailsSection.Overview;
 
   return (
-    <nav aria-label="Навігаційний шлях пристрою" className="min-w-0">
-      <ol className="m-0! flex min-w-0 list-none! flex-wrap items-baseline gap-x-echo-sm gap-y-echo-xs p-0!">
-        <li className="min-w-0">
-          <h1 className="m-0! [font:inherit]!">
+    <nav aria-label="Навігаційний шлях пристрою" className="min-w-0 flex-1">
+      <ol className="m-0! min-w-0 list-none! truncate p-0!">
+        <li className="inline">
+          <h1 className="m-0! inline [font:inherit]!">
             {deviceName === null ? (
               <Skeleton width={240} className="max-w-full" />
             ) : (
@@ -43,6 +49,7 @@ export function DeviceBreadcrumbs({
                 aria-current={isOverview ? 'page' : undefined}
                 onClick={(event) => handleNavigateWithinSpaClick(event, homeHref)}
                 className={linkClassName}
+                title={deviceName}
               >
                 {deviceName}
               </a>
@@ -50,11 +57,13 @@ export function DeviceBreadcrumbs({
           </h1>
         </li>
         {!isOverview ? (
-          <li className="flex min-w-0 items-baseline gap-echo-sm">
-            <span aria-hidden="true">/</span>
+          <li className="inline">
+            <span aria-hidden="true" className="mx-echo-sm">
+              /
+            </span>
             <a
               href={sectionHref}
-              aria-current="page"
+              aria-current={files?.selectedDirectory || files?.selectedFile ? undefined : 'page'}
               onClick={(event) => handleNavigateWithinSpaClick(event, sectionHref)}
               className={linkClassName}
             >

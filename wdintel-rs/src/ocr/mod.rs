@@ -1211,6 +1211,7 @@ mod tests {
         file_name: Option<&str>,
     ) -> signal_message_media::Model {
         signal_message_media::Model {
+            order_f64: None,
             id: Uuid::nil(),
             signal_message_id: 1,
             signal_message_uuid: Some(Uuid::now_v7()),
@@ -1270,6 +1271,7 @@ mod tests {
         let mut media_ids = Vec::new();
         for index in 0..3 {
             let media = signal_message_media::ActiveModel {
+                order_f64: Set(None),
                 id: Set(Uuid::now_v7()),
                 signal_message_id: Set(message.id),
                 signal_message_uuid: Set(message.id_uuid),
@@ -1332,6 +1334,7 @@ mod tests {
         .await
         .unwrap();
         let media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -1398,6 +1401,10 @@ mod tests {
             callsign_enabled: Set(true),
             ocr_enabled: Set(true),
             ocr_request_profile: Set("openai_vision".to_string()),
+            unhealthy: Set(None),
+            health_message: Set(None),
+            health_updated_at: Set(None),
+            health_updated_by_login_id: Set(None),
         }
         .insert(&env.dbx)
         .await

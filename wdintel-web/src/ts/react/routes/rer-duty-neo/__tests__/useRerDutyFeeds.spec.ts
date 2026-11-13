@@ -215,6 +215,8 @@ vi.mock('../useRerDutyFeedState', () => ({
         ) => ({
           feedId: feed.id,
           filter: feed.filter,
+          search: feed.filter.search,
+          searchMode: feed.filter.searchMode,
           selectedGroups: feed.filter.selectedGroups,
           deniedGroups: feed.filter.deniedGroups,
           selectedUnitIds: feed.filter.selectedUnitIds,
@@ -360,9 +362,6 @@ describe('useRerDutyFeeds', () => {
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
     hoisted.fetchOrganismKeywordSets.mockResolvedValue([]);
     hoisted.currentSystemSettings.mockResolvedValue({
-      rerDutyTestEnabled: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
     });
     hoisted.fetchAnalysisCallsignInfos
@@ -654,6 +653,9 @@ describe('useRerDutyFeeds inbox refreshes', () => {
     ['#3527', { selectedUnitIds: [21, 22] }],
     ['#3955', { selectedGroups: ['group-1'] }],
     ['#3955', { deniedGroups: ['group-2'] }],
+    ['#3571', { search: 'needle', searchMode: 'Fuzzy' }],
+    ['#3571', { search: 'needle', searchMode: 'Exact' }],
+    ['#3571', { search: 'needle', searchMode: 'Substring' }],
   ])('%s removes edited messages that no longer match %j', async (_issue, filter) => {
     const localContainer = document.createElement('div');
     const localRoot = createRoot(localContainer);
@@ -687,7 +689,10 @@ describe('useRerDutyFeeds inbox refreshes', () => {
     }
   });
 
-  it('#3955 reconciles moved buffered and off-window unread messages', async () => {
+  it.each([
+    ['#3955', { selectedGroups: ['group-1'] }],
+    ['#3571', { search: 'needle', searchMode: 'Exact' }],
+  ])('%s reconciles filtered buffered and off-window unread messages', async (_issue, filter) => {
     const localContainer = document.createElement('div');
     const localRoot = createRoot(localContainer);
     const displayedItems = [[1, { text: 'displayed', textMarked: [], inboxTags: [] }]];
@@ -698,7 +703,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
         pendingNewerItems: [[2, { textMarked: [], inboxTags: [] }]],
         windowedUnreadItems: new Map([[3, 300]]),
         unresolvedUnreadIds: new Set([4]),
-        filter: { selectedGroups: ['group-1'] },
+        filter,
         unreadCount: 3,
         readIds: new Set([1]),
       },
@@ -712,7 +717,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       });
       expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledWith(
         [2, 3, 4],
-        expect.objectContaining({ selectedGroups: ['group-1'] }),
+        expect.objectContaining(filter),
       );
       expect(latest?.messageFeeds[0].items).toBe(displayedItems);
       expect(latest?.messageFeeds[0].pendingNewerItems).toEqual([]);

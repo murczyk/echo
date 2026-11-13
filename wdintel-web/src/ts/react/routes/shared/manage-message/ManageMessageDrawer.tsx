@@ -114,6 +114,7 @@ export type Props = {
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   intentKey?: string;
   initialGroupMasterKey?: string | null;
+  rememberReportGroup?: boolean;
   presentation?: ManageMessageEditorPresentation;
   minimalReport?: MinimalReportPresentation | null;
   interactionActive?: boolean;
@@ -644,8 +645,6 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
 
     // The panel has no attachment list, so a pasted file or its rejection must not stay invisible.
     const attachmentsNeedPanel = uppyFiles.length > 0 || Boolean(drawerState.attachmentErrorMsg);
-    // A report needs an explicit destination, and the minimal panel has no group field. Never
-    // guess a group here: only a deliberate choice in the full panel may send the report.
     const applyMinimalReportDestination = useCallback(() => {
       if (methods.getValues('signalGroupMasterKey')?.trim()) return;
       methods.setValue('signalGroupMasterKey', DO_NOT_SEND_GROUP_VALUE, { shouldValidate: true });
@@ -797,7 +796,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
               destinationNote={
                 !reportGroupKey || reportGroupKey === DO_NOT_SEND_GROUP_VALUE
                   ? 'Без надсилання в групу.'
-                  : null
+                  : `Надсилання в групу «${signalGroups.find((group) => group.masterKey === reportGroupKey)?.name || reportGroupKey}».`
               }
               detailsMissing={reportDetailsMissing}
               loading={reportEditLoading}
@@ -1096,6 +1095,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             busy={busy}
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
+                            rememberReportGroup={props.rememberReportGroup}
                             groupEditable={
                               isReportMode || hasRole(props.currentUser?.roles, 'DeleteMsg')
                             }

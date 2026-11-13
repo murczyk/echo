@@ -1,0 +1,6 @@
+interface:
+  display_name: "Verification Before Completion (Echo)"
+  short_description: "Evidence-based completion for Echo dev and QA"
+  default_prompt: "Use $verification-before-completion to check the evidence for this Echo task before reporting its result."
+policy:
+  allow_implicit_invocation: false

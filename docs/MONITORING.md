@@ -517,7 +517,9 @@ Attribute values:
   by `model_name`.
 - `process`: `echo-web`, `echo-bgworker`, `echo-report-worker` or `echo-oneoff`.
   All processes share one metric identity, so always keep this attribute: their
-  cumulative counters would otherwise collide.
+  cumulative counters would otherwise collide. AI chat calls go through the
+  agent gateway in `echo-web`; `echo-bgworker` makes background calls such as
+  OCR and callsign parsing. The dashboard's `process` filter separates them.
 - `streaming`: for a non-streamed call, headers usually arrive when generation
   finishes, so `response_start` is close to the full response time. For a
   streamed call it is only the wait before output begins.
@@ -525,7 +527,8 @@ Attribute values:
   `connect_error`, `transport_error`, `cancelled`, `cooldown_expired` or
   `local_error`. The last two never reached the provider, so they are counted
   but add no duration sample.
-- Stream `outcome`: `completed`, `failed` or `cancelled`.
+- Stream `outcome`: `completed`, `failed` or `cancelled`. `failed` includes a
+  stream that carried a provider error event, or closed without finishing.
 
 When reading the numbers:
 
@@ -534,6 +537,11 @@ When reading the numbers:
 - A hung provider mostly appears as `cancelled`, not `timeout`, because the
   outer timeout fires first. `cancelled` also covers runner aborts and the
   worker time limit, so it is not always the provider's fault.
+- To see which model is failing, read **Failed calls per interval by model**
+  (counts by model and outcome) and **Failed share by model, %**. An outage of
+  one model shows there as that model's bars and a share near 100%, for example
+  `glm-5.3-flash-uncensored` on 2026-11-13 from 04:06 UTC. **Failed calls per
+  minute by outcome** sums every selected model into one line per outcome.
 - `response_start` excludes Echo's local 429 cooldown wait, but includes the
   settings load, the Azure token fetch and any 401 retry. Caller latency can
   therefore be much longer than the provider time shown.
@@ -554,6 +562,49 @@ Percentile panels must use ClickHouse SQL. The ClickHouse on `signoz-echo` has
 no `histogramQuantile` function, so a percentile on a histogram in the SigNoz
 query builder fails with an HTTP 500. The dashboard uses ClickHouse's built-in
 `quantilePrometheusHistogram` instead.
+
+### Automatic engine health
+
+The same call outcomes drive the engine health flag that the AI chat uses to
+steer users to a working model (`wdintel-rs/src/ai_engine/health.rs`, #4157).
+Every call through `AiEngineClient`, from every process, is counted in
+per-minute Redis counters under `ai-engine:health:<engine id>:<minute>` when it
+starts, and its outcome when it ends. A stream counts by how it ended, not by
+its headers. The gateway reads its SSE events. A stream fails if an event
+carries `error`, has a `network_error` finish reason, or is
+`response.failed`/`error`, and that counts at once, even if the client then
+leaves. It also fails if it closes without finishing: a chat choice with
+another `finish_reason` (`[DONE]` alone is not enough), or
+`response.completed`/`incomplete`. A non-streamed call counts when its headers
+arrive, because the provider sends them only once the answer is ready. Calls and
+streams still running are listed in `ai-engine:health:<engine id>:in-flight`;
+entries older than 2 hours were left by a dead process and are ignored. Once a
+minute one instance, whichever claims
+`ai-engine:health:round`, checks every enabled engine:
+
+- A healthy engine is marked unhealthy when more than 90% of at least 5 calls
+  in the last 30 minutes failed at the provider (`rate_limited`,
+  `server_error`, `timeout`, `connect_error`, `transport_error`, or a stream
+  that broke off). Other outcomes show traffic but say nothing about the
+  provider.
+- An engine the worker marked recovers when at most half of at least 2 calls
+  in the last 10 minutes failed.
+- If nobody called it for 10 minutes, it is probed at most once every 5
+  minutes with a one-word chat completion, and any 2xx answer clears the mark.
+  Probes are not counted as calls, and an engine someone still calls, or has a
+  call running on however long, is never probed. This is checked again just
+  before the probe is sent; users take no lock, so a call can still start in
+  the milliseconds between that check and the probe.
+
+Only outcomes after the latest health change count; every writer stamps
+`health_updated_at`. The worker's unhealthy marks have no
+`health_updated_by_login_id` and a message starting with «Автоматично:». A mark
+set by an administrator (with a login) or by a profile import with its own
+message is never changed back automatically. A profile import that copies the
+worker's «Автоматично:» mark from another host stays automatic, and recovers on
+this host's own evidence. The flag does not block calls:
+background jobs keep using the engine, and their outcomes count too. Look for
+`ai_engine_health` lines in the bgworker journal to see each decision.
 
 ### Other application metrics
 

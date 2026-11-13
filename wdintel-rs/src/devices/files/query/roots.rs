@@ -11,10 +11,11 @@ pub(in crate::devices::files) async fn list_roots(
     db: &impl ConnectionTrait,
     device_id: Uuid,
 ) -> Result<Vec<RootEntry>, FilesystemError> {
-    let roots = roots_query(device_id).all(db).await.map_err(|error| {
+    let mut roots = roots_query(device_id).all(db).await.map_err(|error| {
         map_database_error(anyhow::Error::new(error).context(h!()))
     })?;
 
+    super::dates::hydrate(db, &mut roots).await?;
     roots.into_iter().map(model::map_root_model).collect()
 }
 

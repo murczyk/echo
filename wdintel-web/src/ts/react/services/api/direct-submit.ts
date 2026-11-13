@@ -9,6 +9,7 @@ import type {
   InboxMessage,
   Unit,
   DirectSubmitPayload,
+  DirectSubmitAttachmentOrder,
 } from '../../../../Bindings';
 import { normalizeInboxMessageFromWire } from './inbox-messages';
 import { transformSnakeToCamel } from '../../../snake-to-camel';
@@ -238,12 +239,14 @@ export type DirectSubmitRequest = {
   network?: SubmitNetwork;
   dmr?: SubmitDmrMetadata[];
   signal_group_master_key: string | null;
+  additional_signal_group_master_keys?: DirectSubmitPayload['additionalSignalGroupMasterKeys'];
   source_signal_group_master_key?: DirectSubmitPayload['sourceSignalGroupMasterKey'];
   device_name_id?: number | null;
   upload_urls?: string[] | null;
   attachment_updates?: {
     replacements: { media_id: string; upload_url: string }[];
     renames: { media_id: string; file_name: string }[];
+    orders?: Array<SnakeCaseFields<DirectSubmitAttachmentOrder>>;
   };
   deleted_media_ids?: string[];
   retained_media_ids?: string[];

@@ -1,18 +1,6 @@
 import { AuthorLabel } from '../../../components/AuthorLabel';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Box,
-  Chip,
-  Divider,
-  Link,
-  Skeleton,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Box, Chip, Divider, Link, Skeleton, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import type { DeviceDetails } from '../../../../../Bindings';
@@ -67,13 +55,15 @@ function FieldList({
     <dl
       className={
         horizontal
-          ? `m-0 grid grid-cols-1 gap-echo-lg echo-sm:grid-cols-2 ${fields.length === 3 ? 'echo-xl:grid-cols-3' : 'echo-xl:grid-cols-5'}`
+          ? 'm-0 grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-echo-lg'
           : 'm-0 flex flex-col gap-echo-lg'
       }
     >
       {fields.map((field) => (
         <div key={field.key} className="min-w-0">
-          <dt className="mb-echo-sm font-medium">{field.label}</dt>
+          <Typography component="dt" variant="body2" color="text.secondary" className="mb-echo-xs!">
+            {field.label}
+          </Typography>
           <dd className="m-0 min-w-0">{field.value}</dd>
         </div>
       ))}
@@ -83,7 +73,7 @@ function FieldList({
 
 function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <Typography component="h3" variant="overline" fontWeight={400}>
+    <Typography component="h3" variant="subtitle2">
       {children}
     </Typography>
   );
@@ -285,8 +275,12 @@ function DeviceLeftPanelContent({
         fields={buildMainFields(device)}
         horizontal={horizontal}
       />
-      <Divider />
-      <DeviceCustomFieldsSection device={device} horizontal={horizontal} />
+      {!horizontal || Object.keys(device.customFields).length > 0 ? (
+        <>
+          <Divider />
+          <DeviceCustomFieldsSection device={device} horizontal={horizontal} />
+        </>
+      ) : null}
       <Divider />
       <DeviceSection
         title="Додатково"
@@ -307,29 +301,21 @@ export function DeviceDetailsLeftPanel({ device, loading, embedded = false }: Pr
 
   if (embedded) {
     return (
-      <Accordion
-        disableGutters
-        variant="outlined"
+      <section
+        aria-labelledby="device-overview-header"
         data-testid="device-details-overview"
-        className="!m-0 !rounded-echo-xl !bg-echo-background before:!hidden"
+        className="shrink-0 rounded-echo-lg border border-echo-divider-subtle bg-echo-surface"
       >
-        <AccordionSummary
-          expandIcon={<ChevronRightIcon />}
+        <Typography
+          component="h2"
+          variant="h6"
           id="device-overview-header"
-          aria-controls="device-overview-content"
-          className="!min-h-[64px]"
-          sx={{
-            '& .MuiAccordionSummary-expandIconWrapper.Mui-expanded': { transform: 'rotate(90deg)' },
-          }}
+          className="px-echo-lg pt-echo-lg"
         >
-          <Typography component="h2" variant="h5" fontWeight={400}>
-            Основне
-          </Typography>
-        </AccordionSummary>
-        <AccordionDetails id="device-overview-content" className="!p-0">
-          {content}
-        </AccordionDetails>
-      </Accordion>
+          Основне
+        </Typography>
+        {content}
+      </section>
     );
   }
 

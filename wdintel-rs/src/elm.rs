@@ -15,14 +15,11 @@ const FILTER_TAGS_OPTION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x ->
 const FILTER_TAGS_OPTION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder), Json.Decode.succeed Nothing ]))"#;
 const FILTER_TAGS_OPTION_STRICT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder))))"#;
 const FILTER_TAGS_OPTION_COMPAT_DECODER_RAW: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder)), Json.Decode.succeed Nothing ]))"#;
-const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT: &str =
-    r#"Json.Decode.field "rer_duty_test_since_ms" Json.Decode.int"#;
-const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str =
-    r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.int)"#;
-const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)"#;
 const RER_DUTY_GROUP_SCOPES_STRICT_DECODER: &str = r#"Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string)))))"#;
 const RER_DUTY_GROUP_SCOPES_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))), Json.Decode.succeed Nothing ]"#;
 const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
+    ("search", "Json.Decode.string"),
+    ("search_mode", "analysisSearchModeDecoder"),
     ("units_selected", "Json.Decode.list (Json.Decode.string)"),
     ("units_denied", "Json.Decode.list (Json.Decode.string)"),
     ("units_include_children", "Json.Decode.bool"),
@@ -56,6 +53,8 @@ const EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER: &str = r#"|> Json.Decode.and
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "intelligence_report" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder))))"#;
 const LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))"#;
+const LONG_POLL_UNIT_CATALOG_REVISION_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_catalog_revision" (Json.Decode.nullable (Json.Decode.string))))"#;
+const LONG_POLL_UNIT_CATALOG_REVISION_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "unit_catalog_revision" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))"#;
 
 const MESSAGE_IS_TIME_NULL_STRICT_DECODER: &str = r#"Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool))"#;
 const MESSAGE_IS_TIME_NULL_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]"#;
@@ -101,6 +100,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::AreaOfResponsibilityEntry,
             crate::rer_importer::types::AreaOfResponsibilityStatsRsp,
             crate::rer_importer::types::GeoCoordinates,
+            crate::ai_network_match::types::NetworkMatchCandidate,
+            crate::ai_network_match::types::InboxNetworkMatch,
             crate::rer_importer::types::InboxMessage,
             crate::notifications::NotificationListReq,
             crate::notifications::NotificationQuote,
@@ -155,6 +156,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::SignalProfilesRsp,
             crate::messenger::group::types::SignalGroupEntry,
             crate::messenger::group::types::GroupCreationInfo,
+            crate::messenger::group::sending::GroupSendingSettings,
             crate::messenger::group::types::OrphanSignalGroupEntry,
             crate::rer_importer::types::SignalProfileEntry,
             crate::rer_importer::types::BatchSignalGroupReq,
@@ -414,6 +416,14 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::devices::files::types::CountDeviceFileSubtreesRsp,
             crate::devices::files::types::RebuildDeviceStatsReq,
             crate::devices::files::types::RebuildDeviceStatsRsp,
+            crate::devices::files::markers::SetDeviceFileFavoriteReq,
+            crate::devices::files::markers::MarkDeviceFileViewedReq,
+            crate::devices::files::markers::DeviceFileMarkers,
+            crate::devices::files::types::DeviceFileSortBy,
+            crate::devices::files::types::DeviceFileSortDirection,
+            crate::devices::files::listing_filters::DeviceFileFilters,
+            crate::devices::files::listing_filters::DeviceFileType,
+            crate::devices::files::listing_filters::DeviceFileFilterOptions,
             crate::devices::files::types::BrowseDeviceFilesReq,
             crate::devices::files::types::BrowseDeviceFilesRsp,
             crate::devices::files::types::SearchDeviceFilesReq,
@@ -601,6 +611,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::Unit,
             crate::sigint::unit::types::UnitHierarchyGroup,
             crate::sigint::unit::types::UnitHierarchyUnit,
+            crate::sigint::unit::types::UnitHierarchySelection,
             crate::sigint::unit::types::UnitHierarchyRsp,
             crate::sigint::unit::types::UnitHierarchyReq,
             crate::sigint::unit::types::UnitCombatType,
@@ -683,6 +694,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::direct_submit::types::DirectSubmitAttachmentUpdates,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentRename,
+            crate::sigint::direct_submit::types::DirectSubmitAttachmentOrder,
             crate::sigint::direct_submit::types::DirectSubmitParsePayload,
             crate::sigint::direct_submit::types::DirectSubmitParseRsp,
             crate::sigint::device_name::types::DeviceNameResolveReq,
@@ -862,7 +874,19 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::system_settings::types::SystemSettingsListRsp,
             crate::system_settings::types::CreateSystemSettingsReq,
             crate::system_settings::types::ActivateSystemSettingsReq,
-            crate::system_settings::types::RerDutyTestReplayStatusRsp,
+            crate::message_replay::types::MessageReplayShiftMode,
+            crate::message_replay::types::MessageReplayOnEnd,
+            crate::message_replay::types::MessageReplaySpeed,
+            crate::message_replay::types::MessageReplaySpeedReq,
+            crate::message_replay::types::MessageReplayActivityBucket,
+            crate::message_replay::types::MessageReplayExtentRsp,
+            crate::message_replay::types::MessageReplayActivityReq,
+            crate::message_replay::types::MessageReplayActivityPoint,
+            crate::message_replay::types::MessageReplayActivityRsp,
+            crate::message_replay::types::MessageReplayPlanReq,
+            crate::message_replay::types::MessageReplayPreviewRsp,
+            crate::message_replay::types::MessageReplaySessionRsp,
+            crate::message_replay::types::MessageReplayStatusRsp,
             crate::rer_report_admin::RerReportAccessListRsp,
             crate::rer_report_admin::ReplaceRerReportAccessListReq,
             crate::rer_report_admin::RerReportMetadataItem,
@@ -878,6 +902,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_engine::types::AiEngineIdReq,
             crate::ai_engine::types::CreateAiEngineReq,
             crate::ai_engine::types::UpdateAiEngineReq,
+            crate::ai_engine::types::UpdateAiEngineHealthReq,
             crate::ai_engine::types::AiChatSummary,
             crate::ai_engine::types::AiChatListReq,
             crate::ai_engine::types::AiChatListRsp,
@@ -943,6 +968,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_agent::documents::types::AiAgentDocumentHeadReq,
             crate::ai_agent::types::AiAgentMessageItem,
             crate::ai_agent::types::AiAgentConversationDetail,
+            crate::ai_agent::types::AiAgentPrewarmReq,
             crate::ai_agent::types::AiAgentRequestCreateReq,
             crate::ai_agent::types::AiAgentRequestCreateRsp,
             crate::ai_agent::types::AiAgentRequestIdReq,
@@ -1188,6 +1214,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::AreaOfResponsibilityEntry,
             crate::rer_importer::types::AreaOfResponsibilityStatsRsp,
             crate::rer_importer::types::GeoCoordinates,
+            crate::ai_network_match::types::NetworkMatchCandidate,
+            crate::ai_network_match::types::InboxNetworkMatch,
             crate::rer_importer::types::InboxMessage,
             crate::rer_importer::types::InboxMessageSummary,
             crate::rer_importer::types::InboxMessageMetadata,
@@ -1469,6 +1497,14 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::devices::files::preview::types::DeviceFileGeodataPreviewRsp,
             crate::devices::files::preview::types::DeviceFileGeodataPreviewStatus,
             crate::devices::files::preview::types::RetryDeviceFileGeodataPreviewReq,
+            crate::devices::files::markers::SetDeviceFileFavoriteReq,
+            crate::devices::files::markers::MarkDeviceFileViewedReq,
+            crate::devices::files::markers::DeviceFileMarkers,
+            crate::devices::files::types::DeviceFileSortBy,
+            crate::devices::files::types::DeviceFileSortDirection,
+            crate::devices::files::listing_filters::DeviceFileFilters,
+            crate::devices::files::listing_filters::DeviceFileType,
+            crate::devices::files::listing_filters::DeviceFileFilterOptions,
             crate::devices::files::types::BrowseDeviceFilesReq,
             crate::devices::files::types::BrowseDeviceFilesRsp,
             crate::devices::files::types::SearchDeviceFilesReq,
@@ -1651,6 +1687,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::Unit,
             crate::sigint::unit::types::UnitHierarchyGroup,
             crate::sigint::unit::types::UnitHierarchyUnit,
+            crate::sigint::unit::types::UnitHierarchySelection,
             crate::sigint::unit::types::UnitHierarchyRsp,
             crate::sigint::unit::types::UnitHierarchyReq,
             crate::sigint::unit::types::UnitCombatType,
@@ -1732,6 +1769,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::direct_submit::types::DirectSubmitAttachmentUpdates,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement,
             crate::sigint::direct_submit::types::DirectSubmitAttachmentRename,
+            crate::sigint::direct_submit::types::DirectSubmitAttachmentOrder,
             crate::sigint::direct_submit::types::DirectSubmitParsePayload,
             crate::sigint::direct_submit::types::DirectSubmitParseRsp,
             crate::sigint::device_name::types::DeviceNameResolveReq,
@@ -1898,7 +1936,19 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::system_settings::types::SystemSettingsListRsp,
             crate::system_settings::types::CreateSystemSettingsReq,
             crate::system_settings::types::ActivateSystemSettingsReq,
-            crate::system_settings::types::RerDutyTestReplayStatusRsp,
+            crate::message_replay::types::MessageReplayShiftMode,
+            crate::message_replay::types::MessageReplayOnEnd,
+            crate::message_replay::types::MessageReplaySpeed,
+            crate::message_replay::types::MessageReplaySpeedReq,
+            crate::message_replay::types::MessageReplayActivityBucket,
+            crate::message_replay::types::MessageReplayExtentRsp,
+            crate::message_replay::types::MessageReplayActivityReq,
+            crate::message_replay::types::MessageReplayActivityPoint,
+            crate::message_replay::types::MessageReplayActivityRsp,
+            crate::message_replay::types::MessageReplayPlanReq,
+            crate::message_replay::types::MessageReplayPreviewRsp,
+            crate::message_replay::types::MessageReplaySessionRsp,
+            crate::message_replay::types::MessageReplayStatusRsp,
             crate::rer_report_admin::RerReportAccessListRsp,
             crate::rer_report_admin::ReplaceRerReportAccessListReq,
             crate::rer_report_admin::RerReportMetadataItem,
@@ -1914,6 +1964,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_engine::types::AiEngineIdReq,
             crate::ai_engine::types::CreateAiEngineReq,
             crate::ai_engine::types::UpdateAiEngineReq,
+            crate::ai_engine::types::UpdateAiEngineHealthReq,
             crate::ai_engine::types::AiChatSummary,
             crate::ai_engine::types::AiChatListReq,
             crate::ai_engine::types::AiChatListRsp,
@@ -1979,6 +2030,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_agent::documents::types::AiAgentDocumentHeadReq,
             crate::ai_agent::types::AiAgentMessageItem,
             crate::ai_agent::types::AiAgentConversationDetail,
+            crate::ai_agent::types::AiAgentPrewarmReq,
             crate::ai_agent::types::AiAgentRequestCreateReq,
             crate::ai_agent::types::AiAgentRequestCreateRsp,
             crate::ai_agent::types::AiAgentRequestIdReq,
@@ -2375,6 +2427,18 @@ fn patch_backward_compatible_decoders(
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
         .replace(
+            r#"Json.Decode.field "enable_duty_search" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "enable_duty_search" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "history_since_ms" (Json.Decode.nullable (Json.Decode.int))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "history_since_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "history_period_ms" (Json.Decode.nullable (Json.Decode.int))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "history_period_ms" (Json.Decode.nullable (Json.Decode.int)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionCreateReport ]"#,
         )
@@ -2391,6 +2455,14 @@ fn patch_backward_compatible_decoders(
             r#"Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
         .replace(
+            r#"Json.Decode.field "dutyRememberReportGroup" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "dutyRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "analysisRememberReportGroup" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "analysisRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
@@ -2401,6 +2473,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             r#"Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "order_f64" (Json.Decode.nullable (Json.Decode.float))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "order_f64" (Json.Decode.nullable (Json.Decode.float)), Json.Decode.succeed Nothing ]"#,
         )
         .replace(
             r#"Json.Decode.field "unit_display" (Json.Decode.nullable (Json.Decode.string))"#,
@@ -2440,14 +2516,6 @@ fn patch_backward_compatible_decoders(
             FILTER_TAGS_OPTION_COMPAT_DECODER,
         )
         .replace(
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT,
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
-        )
-        .replace(
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW,
-            RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
-        )
-        .replace(
             RER_DUTY_GROUP_SCOPES_STRICT_DECODER,
             RER_DUTY_GROUP_SCOPES_COMPAT_DECODER,
         )
@@ -2470,6 +2538,10 @@ fn patch_backward_compatible_decoders(
         .replace(
             LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
             LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER,
+        )
+        .replace(
+            LONG_POLL_UNIT_CATALOG_REVISION_STRICT_DECODER,
+            LONG_POLL_UNIT_CATALOG_REVISION_COMPAT_DECODER,
         ))
 }
 

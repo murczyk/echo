@@ -1,4 +1,4 @@
-import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { Box, CircularProgress, Typography } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -19,12 +19,9 @@ import {
   useAppMaterialReactTable,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
-import { DeviceAnalyticsTagFilterControls } from './DeviceAnalyticsTagFilterControls';
 import { DeviceFileContentMarker } from './DeviceFileContentMarker';
 import { DeviceMobileJournal } from './DeviceMobileJournal';
 import { useDeviceMobileLayout } from '../../devices/use-device-mobile-layout';
-import type { DeviceAnalyticsTagFilter } from '../types';
-import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
 import type { DeviceFileJournalState } from '../use-device-file-journal';
 
 const defaultMrtOptions = getDefaultMRTOptions<DeviceFileJournalEntry>();
@@ -105,17 +102,7 @@ function useJournalColumns(): AppMrtColumnDef<DeviceFileJournalEntry>[] {
   );
 }
 
-export function DeviceFileJournal({
-  journal,
-  tagsState,
-  tagFilter,
-  onTagFilterChange,
-}: {
-  journal: DeviceFileJournalState;
-  tagsState: DeviceAnalyticsTagsState;
-  tagFilter: DeviceAnalyticsTagFilter;
-  onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
-}) {
+export function DeviceFileJournal({ journal }: { journal: DeviceFileJournalState }) {
   const mobile = useDeviceMobileLayout();
   const columns = useJournalColumns();
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
@@ -205,25 +192,18 @@ export function DeviceFileJournal({
   if (journal.error !== null && journal.entries.length === 0 && !journal.loading) {
     return (
       <Box sx={{ p: 2 }}>
-        <Stack spacing={2}>
-          <DeviceAnalyticsTagFilterControls
-            tagsState={tagsState}
-            filter={tagFilter}
-            onChange={onTagFilterChange}
-          />
-          <PowerAlert
-            severity="error"
-            autoHideDuration={null}
-            dismissible={false}
-            action={
-              <PowerButton color="inherit" size="small" onClick={() => void journal.reload()}>
-                Спробувати ще раз
-              </PowerButton>
-            }
-          >
-            {journal.error.message}
-          </PowerAlert>
-        </Stack>
+        <PowerAlert
+          severity="error"
+          autoHideDuration={null}
+          dismissible={false}
+          action={
+            <PowerButton color="inherit" size="small" onClick={() => void journal.reload()}>
+              Спробувати ще раз
+            </PowerButton>
+          }
+        >
+          {journal.error.message}
+        </PowerAlert>
       </Box>
     );
   }
@@ -239,13 +219,6 @@ export function DeviceFileJournal({
         overflow: 'hidden',
       }}
     >
-      <Box sx={{ flexShrink: 0, p: 2, borderBottom: 1, borderColor: 'divider' }}>
-        <DeviceAnalyticsTagFilterControls
-          tagsState={tagsState}
-          filter={tagFilter}
-          onChange={onTagFilterChange}
-        />
-      </Box>
       {countLabel !== null ? (
         <Box
           role="status"

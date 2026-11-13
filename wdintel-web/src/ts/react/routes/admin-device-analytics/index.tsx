@@ -1,4 +1,5 @@
-import { Box, Stack, Tab, Tabs, Typography } from '@mui/material';
+import { Box, Stack, Tab, Tabs } from '@mui/material';
+import { PageHeader } from '../../components/PageHeader';
 import { useEffect, useState } from 'react';
 
 import { DeviceGeneralSettingsPanel } from './DeviceGeneralSettingsPanel';
@@ -45,9 +46,7 @@ export function AdminDeviceAnalyticsPage() {
   return (
     <Box sx={{ width: '100%', minWidth: 0 }}>
       <Stack spacing={3}>
-        <Typography variant="h4" component="h1">
-          Аналіз пристроїв
-        </Typography>
+        <PageHeader title="Аналіз пристроїв" />
 
         <Box>
           <Tabs

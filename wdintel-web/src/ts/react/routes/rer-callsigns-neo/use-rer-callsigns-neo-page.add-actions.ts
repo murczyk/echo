@@ -13,7 +13,7 @@ import {
 } from './helpers-form';
 import { hasAnyDuplicateHintInput } from './use-rer-callsigns-neo-page.shared';
 import { normalizeCallsign } from './use-rer-callsigns-neo-page.shared';
-import type { CallsignDraftRow, ExportPermission, UiStatus } from './types';
+import type { CallsignCreateDraft, CallsignDraftRow, ExportPermission, UiStatus } from './types';
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
 
@@ -175,100 +175,109 @@ export function useRerCallsignsNeoPageAddActions({
     [setAddDuplicateHintsEnabled, setAddDuplicateHintsImmediate, setAddRows, setAddValidationError],
   );
 
-  const onSubmitAdd = useCallback(async () => {
-    if (!permissions.canEdit) return;
+  const onSubmitAdd = useCallback(
+    async (draft?: CallsignCreateDraft) => {
+      const { rows, unitId, sourceId, callsignAdditionalSourceIds } = draft ?? {
+        rows: addRows,
+        unitId: addUnitId,
+        sourceId: addSourceId,
+        callsignAdditionalSourceIds: addCallsignAdditionalSourceIds,
+      };
+      if (!permissions.canEdit) return;
 
-    setStatus(null);
-    setAddValidationError(null);
+      setStatus(null);
+      setAddValidationError(null);
 
-    if (addUnitId === null) {
-      setAddValidationError(UNIT_SELECTION_REQUIRED_ERROR);
-      return;
-    }
-    if (addSourceId === null) {
-      setAddValidationError('Оберіть джерело');
-      return;
-    }
-    if (!addRows.some((row) => hasAnyDraftValue(row))) {
-      return;
-    }
-
-    const validation = validateDraftRows(addRows, addSourceId, radioFeaturesAllowed);
-    if (!validation.valid) {
-      if (validation.error === 'Заповніть хоча б один рядок') return;
-      setAddValidationError(validation.error);
-      return;
-    }
-
-    setAddSubmitting(true);
-    setAddDuplicateHintsEnabled(false);
-    setAddDuplicateHintsImmediate(false);
-
-    try {
-      const nonEmptyRows = addRows.filter((row) => hasAnyDraftValue(row));
-      const created: Callsign[] = [];
-      const failed: Array<{ row: CallsignDraftRow; error: string }> = [];
-
-      for (const row of nonEmptyRows) {
-        try {
-          const item = await createCallsign(
-            makeCreatePayload(row, addUnitId, addSourceId, addCallsignAdditionalSourceIds),
-          );
-          created.push(normalizeCallsign(item));
-        } catch (error) {
-          failed.push({ row, error: formatErrorMessage(error) });
-        }
+      if (unitId === null) {
+        setAddValidationError(UNIT_SELECTION_REQUIRED_ERROR);
+        return;
       }
-
-      if (created.length > 0) {
-        setCallsigns((prev) => [...created, ...prev]);
-        await refreshLookupsAndStats();
+      if (sourceId === null) {
+        setAddValidationError('Оберіть джерело');
+        return;
       }
-
-      if (failed.length === 0) {
-        setAddRows([createEmptyDraftRow()]);
-        setAddDrawerOpen(false);
-        resetAddDrawerState();
-        setStatus({ kind: 'success', text: `Додано позивних: ${created.length}` });
+      if (!rows.some((row) => hasAnyDraftValue(row))) {
         return;
       }
 
-      const failedRows = failed.map((item) => item.row);
-      setAddRows(failedRows);
-      setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(failedRows));
-      setAddDuplicateHintsImmediate(false);
-      setAddValidationError(
-        failed.length === 1
-          ? `Не вдалося додати 1 позивний: ${failed[0]?.error ?? 'Невідома помилка'}`
-          : `Не вдалося додати ${failed.length} позивних. Перша помилка: ${failed[0]?.error ?? 'Невідома помилка'}`,
-      );
-      if (created.length > 0) {
-        setStatus({
-          kind: 'error',
-          text: `Додано: ${created.length}, не вдалося: ${failed.length}`,
-        });
+      const validation = validateDraftRows(rows, sourceId, radioFeaturesAllowed);
+      if (!validation.valid) {
+        if (validation.error === 'Заповніть хоча б один рядок') return;
+        setAddValidationError(validation.error);
+        return;
       }
-    } finally {
-      setAddSubmitting(false);
-    }
-  }, [
-    addCallsignAdditionalSourceIds,
-    addRows,
-    addSourceId,
-    addUnitId,
-    permissions.canEdit,
-    radioFeaturesAllowed,
-    refreshLookupsAndStats,
-    resetAddDrawerState,
-    setAddDuplicateHintsEnabled,
-    setAddDuplicateHintsImmediate,
-    setAddDrawerOpen,
-    setAddRows,
-    setAddSubmitting,
-    setAddValidationError,
-    setCallsigns,
-    setStatus,
-  ]);
+
+      setAddSubmitting(true);
+      setAddDuplicateHintsEnabled(false);
+      setAddDuplicateHintsImmediate(false);
+
+      try {
+        const nonEmptyRows = rows.filter((row) => hasAnyDraftValue(row));
+        const created: Callsign[] = [];
+        const failed: Array<{ row: CallsignDraftRow; error: string }> = [];
+
+        for (const row of nonEmptyRows) {
+          try {
+            const item = await createCallsign(
+              makeCreatePayload(row, unitId, sourceId, callsignAdditionalSourceIds),
+            );
+            created.push(normalizeCallsign(item));
+          } catch (error) {
+            failed.push({ row, error: formatErrorMessage(error) });
+          }
+        }
+
+        if (created.length > 0) {
+          setCallsigns((prev) => [...created, ...prev]);
+          await refreshLookupsAndStats();
+        }
+
+        if (failed.length === 0) {
+          setAddRows([createEmptyDraftRow()]);
+          setAddDrawerOpen(false);
+          resetAddDrawerState();
+          setStatus({ kind: 'success', text: `Додано позивних: ${created.length}` });
+          return;
+        }
+
+        const failedRows = failed.map((item) => item.row);
+        setAddRows(failedRows);
+        setAddDuplicateHintsEnabled(hasAnyDuplicateHintInput(failedRows));
+        setAddDuplicateHintsImmediate(false);
+        setAddValidationError(
+          failed.length === 1
+            ? `Не вдалося додати 1 позивний: ${failed[0]?.error ?? 'Невідома помилка'}`
+            : `Не вдалося додати ${failed.length} позивних. Перша помилка: ${failed[0]?.error ?? 'Невідома помилка'}`,
+        );
+        if (created.length > 0) {
+          setStatus({
+            kind: 'error',
+            text: `Додано: ${created.length}, не вдалося: ${failed.length}`,
+          });
+        }
+      } finally {
+        setAddSubmitting(false);
+      }
+    },
+    [
+      addCallsignAdditionalSourceIds,
+      addRows,
+      addSourceId,
+      addUnitId,
+      permissions.canEdit,
+      radioFeaturesAllowed,
+      refreshLookupsAndStats,
+      resetAddDrawerState,
+      setAddDuplicateHintsEnabled,
+      setAddDuplicateHintsImmediate,
+      setAddDrawerOpen,
+      setAddRows,
+      setAddSubmitting,
+      setAddValidationError,
+      setCallsigns,
+      setStatus,
+    ],
+  );
 
   return {
     onAppendRow,

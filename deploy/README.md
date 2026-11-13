@@ -343,6 +343,14 @@ Make sure your nginx (`brew install nginx`) has the following configuration (`/o
         location /@vite/ { include /etc/nginx/echo-dev-front-proxy.inc; }
         location /@id/ { include /etc/nginx/echo-dev-front-proxy.inc; }
         location /node_modules/.vite/ { include /etc/nginx/echo-dev-front-proxy.inc; }
+        location ^~ /doc-media/ {
+            proxy_pass http://127.0.0.1:8081;
+            proxy_set_header Host $host;
+            proxy_buffering off;
+        }
+        location ^~ /docs/docs/ {
+            return 404;
+        }
         location /api {
             proxy_pass http://localhost:8081;
             proxy_set_header Host $host;

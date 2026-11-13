@@ -49,7 +49,14 @@ export function collectMessageImages(
     add(mapMessageMediaImage(attachment));
   }
 
-  return Array.from(imagesByHref.values());
+  if (!(msg.media ?? []).some((media) => media.orderF64 != null))
+    return Array.from(imagesByHref.values());
+  const positions = new Map((msg.media ?? []).map((media, index) => [media.id, index]));
+  return Array.from(imagesByHref.values()).sort(
+    (a, b) =>
+      (positions.get(a.id ?? '') ?? Number.MAX_SAFE_INTEGER) -
+      (positions.get(b.id ?? '') ?? Number.MAX_SAFE_INTEGER),
+  );
 }
 
 function mapMessageMediaImage(attachment: MessageMediaInfo): MessageCardImage {

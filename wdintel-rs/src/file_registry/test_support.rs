@@ -14,6 +14,7 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     IntoActiveModel, QueryFilter, TransactionTrait,
 };
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub(crate) const ARCHIVE_SOURCE_SQL: &str = r#"do $fixture$
@@ -189,14 +190,49 @@ pub(crate) async fn publish_content<C>(
 where
     C: ConnectionTrait,
 {
+    publish_content_with_size(db, file, created_by_login_id, 1).await
+}
+
+pub(crate) async fn publish_content_with_size<C>(
+    db: &C,
+    file: &file_entry::Model,
+    created_by_login_id: Uuid,
+    size_bytes: i64,
+) -> String
+where
+    C: ConnectionTrait,
+{
+    publish_content_at(
+        db,
+        file,
+        created_by_login_id,
+        size_bytes,
+        Utc::now().fixed_offset(),
+    )
+    .await
+}
+
+pub(crate) async fn publish_content_at<C>(
+    db: &C,
+    file: &file_entry::Model,
+    created_by_login_id: Uuid,
+    size_bytes: i64,
+    now: chrono::DateTime<chrono::FixedOffset>,
+) -> String
+where
+    C: ConnectionTrait,
+{
     let revision = file.revision.unwrap();
     let upload_id = Uuid::now_v7();
     let object_key = format!(
         "device-file-content/{}/{}/{revision}/{upload_id}",
         file.device_id, file.id
     );
-    let source_sha256 = vec![1_u8; 32];
-    let now = Utc::now().fixed_offset();
+    let source_sha256 = if size_bytes == 0 {
+        Sha256::digest([]).to_vec()
+    } else {
+        vec![1_u8; 32]
+    };
     let expires_at = now + Duration::hours(1);
     let hard_expires_at = now + Duration::days(1);
 
@@ -208,7 +244,7 @@ where
         file_id: Set(file.id),
         revision: Set(revision),
         created_by_login_id: Set(created_by_login_id),
-        upload_length: Set(1),
+        upload_length: Set(size_bytes),
         expected_sha256: Set(source_sha256.clone()),
         object_key: Set(object_key.clone()),
         status: Set(FileContentUploadStatus::Open),
@@ -243,7 +279,7 @@ where
         revision: Set(revision),
         upload_id: Set(Some(upload_id)),
         object_key: Set(object_key.clone()),
-        source_size_bytes: Set(1),
+        source_size_bytes: Set(size_bytes),
         source_sha256: Set(source_sha256),
         is_encrypted: Set(true),
         created_at: Set(now),

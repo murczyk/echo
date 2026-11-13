@@ -10,7 +10,11 @@ const SOURCE_TEXT = 'E2E source for the minimal report window';
 const OTHER_SOURCE_TEXT = 'E2E second source message';
 const COPIED_TEXT = 'E2E copied original body';
 
-async function openThreeColumnDuty(page: Page, minimalReportWindowEnabled: boolean) {
+async function openThreeColumnDuty(
+  page: Page,
+  minimalReportWindowEnabled: boolean,
+  dutyRememberReportGroup = true,
+) {
   await page.setViewportSize({ width: 1920, height: 1000 });
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({ messageText: SOURCE_TEXT });
   const [sourceId, sourceMessage] = inboxResponse.inbox_items[0]! as [number, object];
@@ -33,6 +37,7 @@ async function openThreeColumnDuty(page: Page, minimalReportWindowEnabled: boole
         ...settings,
         messageCardQuickAction: 'createReport',
         minimalReportWindowEnabled,
+        dutyRememberReportGroup,
       }),
     });
   });
@@ -80,6 +85,41 @@ function columnBoxes(page: Page) {
 }
 
 test.describe('#4008 minimal report window', () => {
+  test('ignores the remembered destination when Duty group memory is disabled', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
+    await openThreeColumnDuty(page, true, false);
+    await openReportFromColumn(page, 1);
+    const panel = page.locator('[data-manage-message-presentation="minimal"]');
+    await expect(panel.getByText('Без надсилання в групу.')).toBeVisible();
+    const body = panel.getByRole('textbox', { name: 'Текст розвіддонесення' });
+    await body.fill('Report without a remembered group');
+    const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+    await body.press('Control+Enter');
+    expect((await submitted).postDataJSON().signal_group_master_key).toBeNull();
+    await expect(panel).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('echo_lastReportDestination'))).toBe(
+      'e2e-group',
+    );
+  });
+
+  test('@regression #4103 uses and displays the remembered report destination', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => localStorage.setItem('echo_lastReportDestination', 'e2e-group'));
+    await openThreeColumnDuty(page, true);
+    await openReportFromColumn(page, 1);
+    const panel = page.locator('[data-manage-message-presentation="minimal"]');
+    await expect(panel.getByText('Надсилання в групу «e2e-group».')).toBeVisible();
+    const body = panel.getByRole('textbox', { name: 'Текст розвіддонесення' });
+    await body.fill('Report for remembered group');
+    const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+    await body.press('Control+Enter');
+    expect((await submitted).postDataJSON().signal_group_master_key).toBe('e2e-group');
+    await expect(panel).toHaveCount(0);
+  });
+
   test('writes a report over the source column without moving the feeds', async ({ page }) => {
     await openThreeColumnDuty(page, true);
     const columnsBefore = await columnBoxes(page);

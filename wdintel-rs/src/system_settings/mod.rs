@@ -1,6 +1,6 @@
 use crate::config::{
-    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT, DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
-    IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
+    AI_NETWORK_MATCH_ENABLED_DEFAULT, ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+    DUTY_SELECTED_GROUPS_ENABLED_DEFAULT, IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
     REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT,
@@ -8,14 +8,12 @@ use crate::config::{
 use crate::users::{ensure_admin, login_id_from_identity};
 pub mod signoz_metrics;
 pub mod types;
-pub mod worker;
 
 use crate::entities::system_settings;
 use crate::error::AppError;
 use crate::h;
 use crate::system_settings::types::{
-    ActivateSystemSettingsReq, CreateSystemSettingsReq,
-    RerDutyTestReplayStatusRsp, SetRerReportEnabledReq,
+    ActivateSystemSettingsReq, CreateSystemSettingsReq, SetRerReportEnabledReq,
     SystemSettingsCurrentRsp, SystemSettingsItem, SystemSettingsListRsp,
 };
 use crate::types::Env;
@@ -25,9 +23,9 @@ use actix_web::{post, web::Json};
 use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseBackend, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    QueryFilter, QueryOrder, Statement, TransactionTrait,
+    sea_query::Expr, ActiveModelTrait, ActiveValue::Set, ColumnTrait,
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,16 +122,9 @@ fn map_system_settings_item(
         id: settings.id,
         rer_analysis_units_exact_match_only_default: settings
             .rer_analysis_units_exact_match_only_default,
-        rer_duty_test_enabled: settings.rer_duty_test_enabled,
-        rer_duty_insert_historical_interceptions: settings
-            .rer_duty_insert_historical_interceptions,
-        rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
-        rer_duty_test_limit: settings.rer_duty_test_limit,
         rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
             settings.rer_duty_poll_interval_sec,
         ),
-        rer_duty_test_replay_interval_sec: settings
-            .rer_duty_test_replay_interval_sec,
         created_at: settings.created_at.and_utc().timestamp_millis(),
         updated_at: settings.updated_at.and_utc().timestamp_millis(),
         updated_by_login_id: settings
@@ -152,6 +143,9 @@ fn map_system_settings_item(
         peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
         peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
         devices_section_enabled: settings.devices_section_enabled,
+        doc_media_serve_from_b2: settings
+            .doc_media_serve_from_b2
+            .unwrap_or(false),
         echo_restapi_error_discord_webhook_url: settings
             .echo_restapi_error_discord_webhook_url,
         sigint_comment_parsing_enabled: settings.sigint_comment_parsing_enabled,
@@ -211,9 +205,13 @@ fn map_system_settings_item(
         ai_position_highlights_enabled: settings
             .ai_position_highlights_enabled
             .unwrap_or(false),
+        enable_duty_search: settings.enable_duty_search.unwrap_or(false),
         duty_selected_groups_enabled: settings
             .duty_selected_groups_enabled
             .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
+        ai_network_match_enabled: settings
+            .ai_network_match_enabled
+            .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT),
         important_notify_all_enabled: settings
             .important_notify_all_enabled
             .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
@@ -246,6 +244,43 @@ where
         .one(dbx)
         .await
         .c(h!())?)
+}
+
+pub async fn duty_search_enabled<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.enable_duty_search)
+        .unwrap_or(false))
+}
+
+pub async fn import_legacy_duty_search_config<C>(
+    dbx: &C,
+    config: &crate::config::Config,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let Some(enabled) = config.enable_duty_search else {
+        return Ok(());
+    };
+    system_settings::Entity::update_many()
+        .col_expr(
+            system_settings::Column::EnableDutySearch,
+            Expr::value(enabled),
+        )
+        .filter(system_settings::Column::Deleted.eq(false))
+        .filter(system_settings::Column::EnableDutySearch.is_null())
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    log::info!(
+        "Duty search is controlled by system settings; imported enable_duty_search from config.toml if unset; remove the legacy key from config.toml"
+    );
+    Ok(())
 }
 
 pub async fn two_factor_auth_enabled<C>(dbx: &C) -> anyhow::Result<bool>
@@ -438,6 +473,17 @@ where
         .c(h!())?
         .and_then(|settings| settings.important_notify_all_enabled)
         .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT))
+}
+
+pub async fn ai_network_match_enabled<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.ai_network_match_enabled)
+        .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT))
 }
 
 pub async fn bot_tags_disabled<C>(dbx: &C) -> Result<bool, AppError>
@@ -711,38 +757,6 @@ fn reconcile_report_concurrency_settings(
     Ok(())
 }
 
-fn validate_rer_duty_test_replay_settings(
-    req: &CreateSystemSettingsReq,
-) -> Result<(), AppError> {
-    if !req.rer_duty_test_enabled {
-        return Ok(());
-    }
-    if req.rer_duty_test_since_ms <= 0 {
-        return Err(AppError::BL {
-            msg: "Вкажіть дату старту тестових повідомлень".to_string(),
-        });
-    }
-    if !(1..=crate::config::RER_DUTY_TEST_REPLAY_SOURCE_MAX)
-        .contains(&req.rer_duty_test_limit)
-    {
-        return Err(AppError::BL {
-            msg: format!(
-                "Кількість тестових повідомлень має бути від 1 до {}",
-                crate::config::RER_DUTY_TEST_REPLAY_SOURCE_MAX
-            ),
-        });
-    }
-    if !(1..=crate::config::RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX)
-        .contains(&req.rer_duty_test_replay_interval_sec)
-    {
-        return Err(AppError::BL {
-            msg: "Інтервал тестових повідомлень має бути від однієї секунди до одного року"
-                .to_string(),
-        });
-    }
-    Ok(())
-}
-
 fn system_settings_active_model(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
@@ -754,16 +768,14 @@ fn system_settings_active_model(
         rer_analysis_units_exact_match_only_default: Set(
             req.rer_analysis_units_exact_match_only_default
         ),
-        rer_duty_test_enabled: Set(req.rer_duty_test_enabled),
-        rer_duty_insert_historical_interceptions: Set(req.rer_duty_test_enabled),
-        rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
-        rer_duty_test_limit: Set(req.rer_duty_test_limit),
+        rer_duty_test_enabled: sea_orm::ActiveValue::NotSet,
+        rer_duty_insert_historical_interceptions: sea_orm::ActiveValue::NotSet,
+        rer_duty_test_since_ms: sea_orm::ActiveValue::NotSet,
+        rer_duty_test_limit: sea_orm::ActiveValue::NotSet,
         rer_duty_poll_interval_sec: Set(effective_rer_duty_poll_interval_sec(
             req.rer_duty_poll_interval_sec,
         )),
-        rer_duty_test_replay_interval_sec: Set(
-            req.rer_duty_test_replay_interval_sec
-        ),
+        rer_duty_test_replay_interval_sec: sea_orm::ActiveValue::NotSet,
         created_at: sea_orm::ActiveValue::NotSet,
         updated_at: Set(now_utc()),
         echo_im_sync_since: Set(echo_im_sync_cursor.created_at),
@@ -790,6 +802,7 @@ fn system_settings_active_model(
         peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
         peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
         devices_section_enabled: Set(req.devices_section_enabled),
+        doc_media_serve_from_b2: Set(Some(req.doc_media_serve_from_b2)),
         echo_restapi_error_discord_webhook_url: Set(
             normalize_optional_setting(
                 req.echo_restapi_error_discord_webhook_url.as_deref(),
@@ -829,7 +842,9 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
+        enable_duty_search: Set(req.enable_duty_search),
         duty_selected_groups_enabled: Set(req.duty_selected_groups_enabled),
+        ai_network_match_enabled: Set(req.ai_network_match_enabled),
         important_notify_all_enabled: Set(req.important_notify_all_enabled),
         api_rate_limit_replenish_interval_ms: Set(Some(
             req.api_rate_limit_replenish_interval_ms
@@ -914,7 +929,6 @@ async fn create_system_settings_for_login(
     validate_media_cache_settings(req).context(h!())?;
     validate_peleng_bounds(req)?;
     validate_report_generation_settings(req)?;
-    validate_rer_duty_test_replay_settings(req)?;
     let txn = begin_system_settings_update(dbx).await.context(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     let settings = get_active_system_settings(&txn).await.c(h!())?;
@@ -937,6 +951,15 @@ async fn create_system_settings_for_login(
             })
             .unwrap_or(false),
     );
+    req.enable_duty_search = Some(
+        req.enable_duty_search
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .and_then(|settings| settings.enable_duty_search)
+            })
+            .unwrap_or(false),
+    );
     req.duty_selected_groups_enabled = Some(
         req.duty_selected_groups_enabled
             .or_else(|| {
@@ -945,6 +968,15 @@ async fn create_system_settings_for_login(
                     .and_then(|settings| settings.duty_selected_groups_enabled)
             })
             .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
+    );
+    req.ai_network_match_enabled = Some(
+        req.ai_network_match_enabled
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .and_then(|settings| settings.ai_network_match_enabled)
+            })
+            .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT),
     );
     req.important_notify_all_enabled = Some(
         req.important_notify_all_enabled
@@ -1002,6 +1034,14 @@ async fn activate_system_settings_for_login(
         &mut settings,
         active.as_ref(),
     );
+    if target.enable_duty_search.is_none() {
+        settings.enable_duty_search = Set(Some(
+            active
+                .as_ref()
+                .and_then(|settings| settings.enable_duty_search)
+                .unwrap_or(false),
+        ));
+    }
     settings.deleted = Set(false);
     settings.updated_by_login_id = Set(Some(*login));
     settings.updated_at = Set(now_utc());
@@ -1060,16 +1100,9 @@ pub async fn current_system_settings(
             id: Some(settings.id),
             rer_analysis_units_exact_match_only_default: settings
                 .rer_analysis_units_exact_match_only_default,
-            rer_duty_test_enabled: settings.rer_duty_test_enabled,
-            rer_duty_insert_historical_interceptions: settings
-                .rer_duty_insert_historical_interceptions,
-            rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
-            rer_duty_test_limit: settings.rer_duty_test_limit,
             rer_duty_poll_interval_sec: effective_rer_duty_poll_interval_sec(
                 settings.rer_duty_poll_interval_sec,
             ),
-            rer_duty_test_replay_interval_sec: settings
-                .rer_duty_test_replay_interval_sec,
             short_url_enabled: settings.short_url_enabled,
             rer_report_enabled: settings.rer_report_enabled.unwrap_or(false),
             support_non_rer_interceptions: settings
@@ -1085,6 +1118,9 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
             devices_section_enabled: settings.devices_section_enabled,
+            doc_media_serve_from_b2: settings
+                .doc_media_serve_from_b2
+                .unwrap_or(false),
             sigint_comment_parsing_enabled: settings
                 .sigint_comment_parsing_enabled,
             do_not_store_duplicate_echoim_failures: settings
@@ -1123,9 +1159,13 @@ pub async fn current_system_settings(
             ai_position_highlights_enabled: settings
                 .ai_position_highlights_enabled
                 .unwrap_or(false),
+            enable_duty_search: settings.enable_duty_search.unwrap_or(false),
             duty_selected_groups_enabled: settings
                 .duty_selected_groups_enabled
                 .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
+            ai_network_match_enabled: settings
+                .ai_network_match_enabled
+                .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT),
             important_notify_all_enabled: settings
                 .important_notify_all_enabled
                 .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
@@ -1136,13 +1176,8 @@ pub async fn current_system_settings(
         None => SystemSettingsCurrentRsp {
             id: None,
             rer_analysis_units_exact_match_only_default: true,
-            rer_duty_test_enabled: false,
-            rer_duty_insert_historical_interceptions: false,
-            rer_duty_test_since_ms: 0,
-            rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec:
                 crate::config::RER_DUTY_POLL_INTERVAL_MIN_SEC,
-            rer_duty_test_replay_interval_sec: 1,
             short_url_enabled: false,
             rer_report_enabled: false,
             support_non_rer_interceptions: false,
@@ -1154,6 +1189,7 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
             devices_section_enabled: false,
+            doc_media_serve_from_b2: false,
             sigint_comment_parsing_enabled: false,
             do_not_store_duplicate_echoim_failures: false,
             goi_association_message_uid_worker_enabled: false,
@@ -1170,7 +1206,9 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
+            enable_duty_search: false,
             duty_selected_groups_enabled: DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
+            ai_network_match_enabled: AI_NETWORK_MATCH_ENABLED_DEFAULT,
             important_notify_all_enabled: IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
             api_rate_limit_replenish_interval_ms:
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -1180,15 +1218,6 @@ pub async fn current_system_settings(
             exclude_orbit_other_units: true,
         },
     }))
-}
-
-#[post("/api/admin/system-settings/rer-duty-test-replay/status")]
-pub async fn rer_duty_test_replay_status(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-) -> Result<Json<RerDutyTestReplayStatusRsp>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(worker::rer_duty_test_replay_status(&env.dbx).await?))
 }
 
 #[post("/api/admin/system-settings/list")]
@@ -1350,6 +1379,53 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3571_duty_search_import_preserves_admin_settings() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let historical =
+            insert_settings(&env.dbx, Utc::now().naive_utc(), true).await;
+        insert_settings(&env.dbx, Utc::now().naive_utc(), false).await;
+        assert!(!duty_search_enabled(&env.dbx).await.unwrap());
+
+        let mut config = env.config.clone();
+        config.enable_duty_search = Some(true);
+        import_legacy_duty_search_config(&env.dbx, &config)
+            .await
+            .unwrap();
+        assert!(duty_search_enabled(&env.dbx).await.unwrap());
+
+        let mut req = settings_req(false);
+        let saved = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(map_system_settings_item(saved).unwrap().enable_duty_search);
+        activate_system_settings_for_login(&env.dbx, &login, historical.id)
+            .await
+            .unwrap();
+        assert!(duty_search_enabled(&env.dbx).await.unwrap());
+
+        req.enable_duty_search = Some(false);
+        let disabled = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        import_legacy_duty_search_config(&env.dbx, &config)
+            .await
+            .unwrap();
+        assert!(!duty_search_enabled(&env.dbx).await.unwrap());
+
+        req.enable_duty_search = Some(true);
+        create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        activate_system_settings_for_login(&env.dbx, &login, disabled.id)
+            .await
+            .unwrap();
+        assert!(!duty_search_enabled(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]
@@ -1735,6 +1811,58 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(saved.duty_selected_groups_enabled, Some(expected));
+        }
+    }
+
+    // Regression: the AI network match flag defaults off, and legacy admin
+    // clients that omit it must not switch it off after it was enabled.
+    #[tokio::test]
+    #[serial]
+    async fn issue_4095_ai_network_match_defaults_off_and_survives_legacy_saves(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let legacy_settings = insert_settings(&env.dbx, old_ts(), false).await;
+        assert!(
+            !map_system_settings_item(legacy_settings)
+                .unwrap()
+                .ai_network_match_enabled
+        );
+        assert!(!ai_network_match_enabled(&env.dbx).await.unwrap());
+
+        let mut legacy_body =
+            serde_json::to_value(settings_req(false)).unwrap();
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("ai_network_match_enabled");
+        let legacy_req: CreateSystemSettingsReq =
+            serde_json::from_value(legacy_body).unwrap();
+        assert_eq!(legacy_req.ai_network_match_enabled, None);
+
+        let mut req = settings_req(false);
+        for (incoming, expected) in [
+            (Some(true), true),
+            (None, true),
+            (Some(false), false),
+            (None, false),
+        ] {
+            req.ai_network_match_enabled = incoming;
+            let req = if incoming.is_none() {
+                &legacy_req
+            } else {
+                &req
+            };
+            let saved = create_system_settings_for_login(&env.dbx, &login, req)
+                .await
+                .unwrap();
+            assert_eq!(saved.ai_network_match_enabled, Some(expected));
+            assert_eq!(
+                ai_network_match_enabled(&env.dbx).await.unwrap(),
+                expected
+            );
         }
     }
 
@@ -2343,21 +2471,6 @@ mod tests {
         assert!(validate_report_generation_settings(&req).is_err());
     }
 
-    #[test]
-    fn rer_duty_test_replay_settings_require_a_valid_source_and_interval() {
-        let mut req = settings_req(false);
-        req.rer_duty_test_enabled = true;
-
-        assert!(validate_rer_duty_test_replay_settings(&req).is_err());
-
-        req.rer_duty_test_since_ms = 1;
-        req.rer_duty_test_replay_interval_sec = 0;
-        assert!(validate_rer_duty_test_replay_settings(&req).is_err());
-
-        req.rer_duty_test_replay_interval_sec = 1;
-        assert!(validate_rer_duty_test_replay_settings(&req).is_ok());
-    }
-
     fn old_ts() -> chrono::NaiveDateTime {
         chrono::DateTime::<chrono::Utc>::from_timestamp_micros(
             Utc::now().timestamp_micros(),
@@ -2367,21 +2480,61 @@ mod tests {
             - chrono::TimeDelta::hours(2)
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn issue_3938_doc_media_setting_preserves_defaults_and_historical_activation(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut req = settings_req(false);
+        let initial = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(
+            !map_system_settings_item(initial.clone())
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        let mut legacy: system_settings::ActiveModel = initial.clone().into();
+        legacy.doc_media_serve_from_b2 = Set(None);
+        let legacy = legacy.update(&env.dbx).await.unwrap();
+        assert!(
+            !map_system_settings_item(legacy)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        req.doc_media_serve_from_b2 = true;
+        let enabled = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert!(
+            map_system_settings_item(enabled)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+        let restored =
+            activate_system_settings_for_login(&env.dbx, &login, initial.id)
+                .await
+                .unwrap();
+        assert!(
+            !map_system_settings_item(restored)
+                .unwrap()
+                .doc_media_serve_from_b2
+        );
+    }
+
     fn settings_req(short_url_enabled: bool) -> CreateSystemSettingsReq {
         CreateSystemSettingsReq {
             rer_analysis_units_exact_match_only_default: true,
-            rer_duty_test_enabled: false,
-            rer_duty_insert_historical_interceptions: false,
-            rer_duty_test_since_ms: 0,
-            rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec: 1,
-            rer_duty_test_replay_interval_sec: 1,
             short_url_enabled,
             rer_report_enabled: false,
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
             devices_section_enabled: false,
+            doc_media_serve_from_b2: false,
             peleng_bounds_enabled: false,
             peleng_bounds_top_left_lat: None,
             peleng_bounds_top_left_lng: None,
@@ -2406,7 +2559,9 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
+            enable_duty_search: None,
             duty_selected_groups_enabled: Some(true),
+            ai_network_match_enabled: Some(false),
             important_notify_all_enabled: Some(true),
             api_rate_limit_replenish_interval_ms: Some(
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -2450,6 +2605,7 @@ mod tests {
         deleted: bool,
     ) -> system_settings::Model {
         system_settings::ActiveModel {
+            doc_media_serve_from_b2: Set(None),
             id: NotSet,
             rer_analysis_units_exact_match_only_default: Set(true),
             created_at: Set(Utc::now().naive_utc()),
@@ -2460,12 +2616,13 @@ mod tests {
             ),
             updated_by_login_id: Set(None),
             deleted: Set(deleted),
-            rer_duty_test_enabled: Set(false),
-            rer_duty_test_since_ms: Set(0),
-            rer_duty_test_limit: Set(1),
+            rer_duty_test_enabled: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_since_ms: sea_orm::ActiveValue::NotSet,
+            rer_duty_test_limit: sea_orm::ActiveValue::NotSet,
             rer_duty_poll_interval_sec: Set(1),
-            rer_duty_test_replay_interval_sec: Set(1),
-            rer_duty_insert_historical_interceptions: Set(false),
+            rer_duty_test_replay_interval_sec: sea_orm::ActiveValue::NotSet,
+            rer_duty_insert_historical_interceptions:
+                sea_orm::ActiveValue::NotSet,
             short_url_enabled: Set(false),
             rer_report_enabled: Set(None),
             support_non_rer_interceptions: Set(false),
@@ -2498,7 +2655,9 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            enable_duty_search: Set(None),
             duty_selected_groups_enabled: Set(None),
+            ai_network_match_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             api_rate_limit_replenish_interval_ms: Set(None),
             api_rate_limit_burst_size: Set(None),

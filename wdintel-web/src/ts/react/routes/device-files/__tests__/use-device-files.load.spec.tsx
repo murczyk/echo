@@ -32,6 +32,9 @@ function buildRoot(entryId: string, name: string): DeviceFileRoot {
     parentEntryId: null,
     kind: 'directory',
     name,
+    fileMetadataCreatedAt: null,
+    fileMetadataModifiedAt: null,
+    contentUploadedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -49,6 +52,7 @@ function buildEntry(entryId: string, parentEntryId: string): DeviceFileTreeEntry
     hasContent: false,
     mimeType: 'text/plain',
     extension: 'log',
+    contentUploadedAt: null,
     fileMetadataCreatedAt: null,
     fileMetadataModifiedAt: null,
     createdAt: NOW,
@@ -67,11 +71,13 @@ let latest: ReturnType<typeof useDeviceFilesLoad> | null = null;
 
 let selectedSyncId: string | null = null;
 let enabled = true;
+let favoritesOnly = false;
 
 function Harness() {
   latest = useDeviceFilesLoad({
     deviceId: DEVICE_ID,
     enabled,
+    favoritesOnly,
     syncId: selectedSyncId,
     tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
   });
@@ -88,6 +94,7 @@ async function flush() {
 beforeEach(() => {
   selectedSyncId = null;
   enabled = true;
+  favoritesOnly = false;
   apiMock.listDeviceFileRoots.mockResolvedValue({
     roots: [buildRoot(ROOT_TWO_ID, 'D:\\'), buildRoot(ROOT_ONE_ID, 'C:\\')],
   });
@@ -250,4 +257,23 @@ describe('useDeviceFilesLoad', () => {
     expect(apiMock.listDeviceFileRoots).toHaveBeenCalledTimes(2);
     expect(latest?.scopeNotice).toContain('Область пошуку більше не існує');
   });
+});
+
+it('#3930 restarts filtered search and discards an earlier unfiltered page', async () => {
+  const previous = deferred<SearchDeviceFilesRsp>();
+  apiMock.searchDeviceFiles
+    .mockReturnValueOnce(previous.promise)
+    .mockResolvedValue({ entries: [], nextCursor: null });
+  await mountHook();
+  act(() => latest?.submitSearch());
+  favoritesOnly = true;
+  await mountHook();
+  expect(apiMock.searchDeviceFiles.mock.calls.at(-1)?.[0]).toMatchObject({
+    favoritesOnly: true,
+    cursor: null,
+  });
+  previous.resolve({ entries: [buildEntry('stale', ROOT_TWO_ID)], nextCursor: 'stale-cursor' });
+  await flush();
+  expect(latest?.searchEntries).toEqual([]);
+  expect(latest?.searchNextCursor).toBeNull();
 });

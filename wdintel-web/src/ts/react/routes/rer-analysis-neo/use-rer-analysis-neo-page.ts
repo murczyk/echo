@@ -1,3 +1,4 @@
+import { invalidateUnitCatalog } from '../../services/unit-catalog-events';
 import type { ReplyNavigation } from '../shared/message-replies/MessageRepliesProvider';
 import {
   readThreadMessageId,
@@ -409,6 +410,7 @@ export function useRerAnalysisNeoPage(
   const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
     leftPanelTab !== LeftPanelTab.Messenger,
     setPageError,
+    { unitIds: [], selectionValues: queryState.unitsSelected },
   );
   const effectiveQueryState = useMemo(
     () =>
@@ -964,6 +966,7 @@ export function useRerAnalysisNeoPage(
   dataMessagesRef.current = data.messages;
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
+      invalidateUnitCatalog({ refreshMessages: false });
       const requestId = messageViewportPreservationRequestRef.current + 1;
       messageViewportPreservationRequestRef.current = requestId;
       setShowMessagesLoading(options.showMessagesLoading !== false);
@@ -1848,6 +1851,7 @@ export function useRerAnalysisNeoPage(
     largeMediaPreviews: dutySettings.largeMediaPreviews,
     largeMessageCardText: dutySettings.largeMessageCardText,
     messageCardQuickAction: dutySettings.messageCardQuickAction,
+    rememberReportGroup: dutySettings.analysisRememberReportGroup,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
     audioTranscriptionEnabled,

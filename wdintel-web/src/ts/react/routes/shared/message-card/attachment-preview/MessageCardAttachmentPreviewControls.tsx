@@ -42,6 +42,7 @@ export function AttachmentPreviewMobileCarouselNav({
         aria-label="Попереднє"
         size="small"
         onClick={navigation.onPrevious}
+        disabled={navigation.disabled || navigation.previousDisabled}
         sx={{
           color: themed ? 'inherit' : 'rgba(255, 255, 255, 0.9)',
           '&:hover': { backgroundColor: themed ? 'action.hover' : 'rgba(255, 255, 255, 0.15)' },
@@ -71,6 +72,7 @@ export function AttachmentPreviewMobileCarouselNav({
         aria-label="Наступне"
         size="small"
         onClick={navigation.onNext}
+        disabled={navigation.disabled || navigation.nextDisabled}
         sx={{
           color: themed ? 'inherit' : 'rgba(255, 255, 255, 0.9)',
           '&:hover': { backgroundColor: themed ? 'action.hover' : 'rgba(255, 255, 255, 0.15)' },

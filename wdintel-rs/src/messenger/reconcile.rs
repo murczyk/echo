@@ -1405,12 +1405,20 @@ pub async fn effective_snapshot_attachments(
         .await
         .c(h!())? as usize;
     if !snapshot.attachments.is_empty() {
-        return Ok(trim_echo_attachment_batch_for_edit(
+        let attachments = trim_echo_attachment_batch_for_edit(
             snapshot.attachments.clone(),
             previous_attachment_count,
             datasource_id,
             snapshot.internal_id,
-        ));
+        );
+        return crate::messenger::attachments::order_echo_snapshot(
+            txn,
+            datasource_id,
+            snapshot.internal_id,
+            attachments,
+        )
+        .await
+        .c(h!());
     }
     if let Some(attachments) =
         crate::messenger::attachments::load_latest_echo_attachment_batch(
@@ -3173,6 +3181,7 @@ mod tests {
         .await;
         let media_id = Uuid::now_v7();
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(original.id),
             signal_message_uuid: Set(original.id_uuid),
@@ -4472,6 +4481,7 @@ mod tests {
         .unwrap();
         let media_id = Uuid::now_v7();
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
             signal_message_uuid: Set(source_message.id_uuid),
@@ -4591,6 +4601,7 @@ mod tests {
         .await
         .unwrap();
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(source_message.id),
             signal_message_uuid: Set(source_message.id_uuid),
@@ -5346,6 +5357,7 @@ mod tests {
         .unwrap();
         let media_id = Uuid::now_v7();
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
             signal_message_uuid: Set(source_message.id_uuid),
@@ -5562,6 +5574,7 @@ mod tests {
         .unwrap();
         let media_id = Uuid::now_v7();
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
             signal_message_uuid: Set(source_message.id_uuid),
@@ -5695,6 +5708,7 @@ mod tests {
         .unwrap();
         let media_id = Uuid::now_v7();
         signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
             signal_message_uuid: Set(source_message.id_uuid),

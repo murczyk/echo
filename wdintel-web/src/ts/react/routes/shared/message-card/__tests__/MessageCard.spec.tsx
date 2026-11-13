@@ -1259,3 +1259,121 @@ describe('MessageCard', () => {
     ).not.toBeNull();
   });
 });
+
+// Regression coverage for https://github.com/echoua/echo/issues/4095.
+describe('MessageCard AI network match', () => {
+  const networkMap = {
+    7: { id: 7, name: 'Alpha', unitIds: [], location: null } as Network,
+    8: { id: 8, name: 'Bravo', unitIds: [], location: null } as Network,
+    9: { id: 9, name: 'Charlie', unitIds: [], location: null } as Network,
+  };
+  const networkDisplayMap = { 7: 'р/м Alpha', 8: 'р/м Bravo', 9: 'р/м Charlie' };
+  const networkMatch = {
+    confidentNetworkId: 8,
+    candidates: [
+      { networkId: 8, certainty: 92, reason: 'CC 3 як в описі', matchedCallsigns: [] },
+      { networkId: 7, certainty: 30, reason: '', matchedCallsigns: [] },
+      { networkId: 9, certainty: 10, reason: '', matchedCallsigns: [] },
+    ],
+  };
+
+  function networkLabels(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('[data-message-card-network-item="true"]')).map(
+      (item) => item.getAttribute('data-network-id') ?? '',
+    );
+  }
+
+  it('shows only the confident network and folds the others under a toggle', async () => {
+    const view = await renderCard({
+      networkMap,
+      networkDisplayMap,
+      msg: buildMessage({ networkIds: [7, 8, 9], networkMatch }),
+    });
+    expect(networkLabels(view.container)).toEqual(['8']);
+    const icon = view.container.querySelector('[data-message-card-metadata-icon-kind="network"]');
+    expect(icon?.getAttribute('title')).toBe(
+      [
+        "Еталонна прив'язка",
+        'Впевненість ШІ, що повідомлення належить саме цій мережі: 92%',
+        'Пояснення ШІ: CC 3 як в описі',
+      ].join('\n'),
+    );
+    const networkItem = view.container.querySelector('[data-message-card-network-item="true"]');
+    expect(networkItem?.textContent).not.toContain('%');
+    const toggle = view.container.querySelector<HTMLButtonElement>(
+      '[data-message-card-network-expand="true"]',
+    );
+    expect(toggle?.textContent).toBe('і ще 2');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+
+    await act(async () => toggle?.click());
+    expect(networkLabels(view.container)).toEqual(['8', '7', '9']);
+    expect(toggle?.textContent).toBe('згорнути');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+
+    await act(async () => toggle?.click());
+    expect(networkLabels(view.container)).toEqual(['8']);
+  });
+
+  it('folds to the callsign network the server ranked first and names its callsigns', async () => {
+    const view = await renderCard({
+      networkMap,
+      networkDisplayMap,
+      msg: buildMessage({
+        networkIds: [7, 8, 9],
+        networkMatch: {
+          confidentNetworkId: 7,
+          candidates: [
+            { networkId: 7, certainty: 78, reason: 'Кутеп', matchedCallsigns: ['кутеп'] },
+            { networkId: 8, certainty: 83, reason: 'частота', matchedCallsigns: [] },
+            { networkId: 9, certainty: 25, reason: '', matchedCallsigns: [] },
+          ],
+        },
+      }),
+    });
+    expect(networkLabels(view.container)).toEqual(['7']);
+    const icon = view.container.querySelector('[data-message-card-metadata-icon-kind="network"]');
+    expect(icon?.getAttribute('title')).toBe(
+      [
+        "Еталонна прив'язка",
+        'Позивні з повідомлення в цій мережі: КУТЕП',
+        'Впевненість ШІ, що повідомлення належить саме цій мережі: 78%',
+        'Пояснення ШІ: Кутеп',
+      ].join('\n'),
+    );
+    const toggle = view.container.querySelector<HTMLButtonElement>(
+      '[data-message-card-network-expand="true"]',
+    );
+    await act(async () => toggle?.click());
+    expect(networkLabels(view.container)).toEqual(['7', '8', '9']);
+  });
+
+  it.each([
+    { label: 'no AI match', networkMatch: null },
+    {
+      label: 'no confident network',
+      networkMatch: { ...networkMatch, confidentNetworkId: null },
+    },
+  ])('keeps every network without a toggle with $label', async ({ networkMatch }) => {
+    const view = await renderCard({
+      networkMap,
+      networkDisplayMap,
+      msg: buildMessage({ networkIds: [7, 8, 9], networkMatch }),
+    });
+    expect(networkLabels(view.container)).toHaveLength(3);
+    expect(view.container.querySelector('[data-message-card-network-expand="true"]')).toBeNull();
+  });
+
+  it('drops the fold when networks are hidden', () => {
+    const displayModel = resolveMessageCardEtalonDisplayModel(
+      buildMessage({ networkIds: [7, 8, 9], networkMatch, unit: 'Підрозділ' }),
+      { networkMap, networkDisplayMap },
+    );
+    expect(displayModel.confidentNetworkId).toBe(8);
+    expect(displayModel.renderedNetworks.map((network) => network.networkId)).toEqual([8, 7, 9]);
+    expect(displayModel.copyEtalonValue).toBe('р/м Bravo\nр/м Alpha\nр/м Charlie');
+    const hidden = hideMessageCardNetworks(displayModel, 'Підрозділ');
+    expect(hidden.confidentNetworkId).toBeNull();
+    expect(hidden.renderedNetworks).toEqual([]);
+  });
+});

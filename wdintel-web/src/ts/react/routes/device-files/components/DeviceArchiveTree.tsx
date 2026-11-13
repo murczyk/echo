@@ -1,7 +1,6 @@
-import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { CircularProgress, Collapse } from '@mui/material';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { CircularProgress, Collapse, IconButton } from '@mui/material';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { BrowseDeviceFilesReq, DeviceFileTreeEntry } from '../../../../../Bindings';
 import { AUTH_UNAUTHORIZED_EVENT } from '../../../auth-redirect';
@@ -25,8 +24,16 @@ import {
 import { useDeviceArchive } from '../use-device-archive';
 import { DeviceFileTreePage } from './DeviceFileTreePage';
 import { DeviceFileTreeRow } from './DeviceFileTreeRow';
+import { DeviceFileIcon } from './DeviceFileIcon';
+import {
+  ArchivePreviewList,
+  ArchivePreviewRow,
+} from '../../shared/message-card/renderers/ArchivePreviewList';
 
-type Filters = Pick<BrowseDeviceFilesReq, 'tagIds' | 'tagMatch' | 'untagged' | 'hasContent'>;
+type Filters = Pick<
+  BrowseDeviceFilesReq,
+  'tagIds' | 'tagMatch' | 'untagged' | 'hasContent' | 'filters'
+>;
 type ArchiveTreeProps = {
   deviceId: string;
   file: DeviceFileSelection;
@@ -35,6 +42,7 @@ type ArchiveTreeProps = {
   expandedEntryIds?: Set<string>;
   revealedBranches?: Record<string, DeviceFileTreeBranch>;
   onSelectFile: (file: DeviceFileSelection) => void;
+  onOpenDirectory?: (entryId: string, revision: number | null) => void;
   onAccessDenied?: () => void;
   initialExpanded?: boolean;
   showStatus?: boolean;
@@ -52,6 +60,10 @@ function ArchiveFolder({
   children,
   failed = false,
   hasContent,
+  showStatus = false,
+  sizeBytes,
+  directory = true,
+  archive,
 }: {
   name: string;
   depth: number;
@@ -63,34 +75,73 @@ function ArchiveFolder({
   children: ReactNode;
   failed?: boolean;
   hasContent?: boolean;
+  showStatus?: boolean;
+  sizeBytes?: number | null;
+  directory?: boolean;
+  archive?: DeviceFileSelection['archive'];
 }) {
   const childrenId = useId();
+  const toggleLabel = `${expanded ? 'Згорнути' : 'Розгорнути'} ${failed || hasContent === false ? 'файл' : 'каталог'} ${name}`;
   return (
     <li className="min-w-0">
-      <DeviceFileTreeRow
-        name={name}
-        label={name}
-        depth={depth}
-        entryId={entryId}
-        selected={selected}
-        hasContent={hasContent}
-        expanded={expanded}
-        childrenId={childrenId}
-        toggleLabel={`${expanded ? 'Згорнути' : 'Розгорнути'} ${failed || hasContent === false ? 'файл' : 'каталог'} ${name}`}
-        onToggle={onToggle}
-        onClick={onSelect ?? onToggle}
-        icon={
-          failed || hasContent === false ? (
-            <InsertDriveFileOutlinedIcon />
-          ) : expanded ? (
-            <FolderOpenOutlinedIcon />
-          ) : (
-            <FolderOutlinedIcon />
-          )
-        }
-      />
+      {showStatus ? (
+        <ArchivePreviewRow
+          name={name}
+          directory={directory}
+          sizeBytes={sizeBytes}
+          hasContent={hasContent}
+          selected={selected}
+          expanded={expanded}
+          childrenId={childrenId}
+          onOpen={onSelect ?? onToggle}
+          toggle={
+            <IconButton
+              size="small"
+              aria-label={toggleLabel}
+              aria-expanded={expanded}
+              aria-controls={childrenId}
+              onClick={onToggle}
+            >
+              {expanded ? (
+                <ExpandMoreIcon fontSize="small" />
+              ) : (
+                <ChevronRightIcon fontSize="small" />
+              )}
+            </IconButton>
+          }
+        />
+      ) : (
+        <DeviceFileTreeRow
+          name={name}
+          label={name}
+          depth={depth}
+          entryId={entryId}
+          selected={selected}
+          hasContent={hasContent}
+          expanded={expanded}
+          childrenId={childrenId}
+          toggleLabel={toggleLabel}
+          onToggle={onToggle}
+          onClick={onSelect ?? onToggle}
+          icon={
+            <DeviceFileIcon
+              entry={{
+                kind: directory ? 'directory' : 'file',
+                name,
+                isArchive: !directory,
+                archive,
+              }}
+              expanded={expanded}
+            />
+          }
+        />
+      )}
       <Collapse in={expanded} unmountOnExit id={childrenId}>
-        <ul className="m-0 list-none p-0">{children}</ul>
+        {showStatus ? (
+          <ArchivePreviewList>{children}</ArchivePreviewList>
+        ) : (
+          <ul className="m-0 list-none p-0">{children}</ul>
+        )}
       </Collapse>
     </li>
   );
@@ -109,6 +160,20 @@ function ArchiveDirectory(
       name={props.directory.name}
       depth={props.depth}
       expanded={expanded}
+      entryId={props.directory.entryId}
+      selected={props.selectedEntryId === props.directory.entryId}
+      showStatus={props.showStatus}
+      onSelect={
+        props.onOpenDirectory
+          ? () => {
+              setExpanded(true);
+              props.onOpenDirectory?.(
+                props.directory.entryId,
+                props.directory.revision ?? props.file.revision,
+              );
+            }
+          : undefined
+      }
       onToggle={() => setExpanded((value) => !value)}
     >
       <ArchiveChildren {...props} depth={props.depth + 1} directoryId={props.directory.entryId} />
@@ -168,6 +233,7 @@ function ArchiveChildren(
             archiveRevision: props.file.revision!,
             cursor: after,
             hasContent: props.filters?.hasContent,
+            filters: props.filters?.filters,
             tagFilter: {
               tagIds: props.filters?.tagIds ?? [],
               tagMatch: props.filters?.tagMatch ?? 'any',
@@ -241,16 +307,26 @@ function ArchiveChildren(
           );
         return (
           <li key={entry.entryId} className="min-w-0">
-            <DeviceFileTreeRow
-              name={entry.name}
-              label={entry.name}
-              depth={props.depth}
-              entryId={entry.entryId}
-              hasContent={entry.hasContent}
-              selected={props.selectedEntryId === entry.entryId}
-              onClick={() => props.onSelectFile(file)}
-              icon={<InsertDriveFileOutlinedIcon />}
-            />
+            {props.showStatus ? (
+              <ArchivePreviewRow
+                name={entry.name}
+                sizeBytes={entry.sizeBytes}
+                hasContent={entry.hasContent}
+                selected={props.selectedEntryId === entry.entryId}
+                onOpen={() => props.onSelectFile(file)}
+              />
+            ) : (
+              <DeviceFileTreeRow
+                name={entry.name}
+                label={entry.name}
+                depth={props.depth}
+                entryId={entry.entryId}
+                hasContent={entry.hasContent}
+                selected={props.selectedEntryId === entry.entryId}
+                onClick={() => props.onSelectFile(file)}
+                icon={<DeviceFileIcon entry={entry} />}
+              />
+            )}
           </li>
         );
       })}
@@ -337,7 +413,16 @@ export function DeviceArchiveTree(props: ArchiveTreeProps) {
       hasContent={hasContent}
       entryId={props.file.entryId}
       selected={props.selectedEntryId === props.file.entryId}
+      showStatus={props.showStatus}
+      sizeBytes={props.file.sizeBytes}
+      directory={false}
+      archive={archive.summary}
       onSelect={() => {
+        if (ready && props.onOpenDirectory && props.file.revision != null) {
+          props.onOpenDirectory(props.file.entryId, props.file.revision);
+          setExpanded(true);
+          return;
+        }
         props.onSelectFile(props.file);
         setExpanded((value) => !value);
       }}

@@ -623,6 +623,7 @@ pub(crate) fn message_media_info(
 ) -> MessageMediaInfo {
     MessageMediaInfo {
         id: media.id.to_string(),
+        order_f64: media.order_f64,
         content_type: media.content_type.clone(),
         file_name: media.file_name.clone(),
         size_bytes: media.size_bytes,
@@ -975,6 +976,13 @@ pub async fn aggregate_to_inbox_messages(
     let messages_networks = load_messages_networks(&messages, &env.dbx)
         .await
         .context(h!())?;
+    let mut messages_network_match =
+        crate::ai_network_match::load_for_messages(
+            &env.dbx,
+            &messages_networks,
+        )
+        .await
+        .c(h!())?;
     let mut message_units =
         load_message_units(&message_ids, &env.dbx).await.c(h!())?;
     let media_entries =
@@ -1206,6 +1214,7 @@ pub async fn aggregate_to_inbox_messages(
             message.location_v2,
         );
         let network_ids = messages_networks.get(&message.id).cloned();
+        let network_match = messages_network_match.remove(&message.id);
 
         res.push((
             message.id,
@@ -1278,6 +1287,7 @@ pub async fn aggregate_to_inbox_messages(
                 tags: inbox_tag_ids,
                 callsigns_alg2,
                 network_ids,
+                network_match,
                 network_name: message.network,
                 device_name: can_use_message_devices
                     .then_some(message.device_name)
@@ -2378,6 +2388,9 @@ pub async fn submit_upsert_inbox_item(
     )
     .await
     .c(h!())?;
+    crate::ai_network_match::forget_result(txn, inbox_id)
+        .await
+        .c(h!())?;
     crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![new_item],
         txn,

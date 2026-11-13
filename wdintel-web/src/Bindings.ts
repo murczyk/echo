@@ -298,6 +298,7 @@ export type ServerInfo = {
   grafanaAddress: string;
   featureDelta: boolean;
   featureAnalysisMap: boolean;
+  enableDutySearch: boolean;
   featureStrictNetworks: boolean;
   featureMyAdminGroupsEdit: boolean;
   version: string;
@@ -479,6 +480,18 @@ export type GeoCoordinates = {
   lon: number;
 };
 
+export type NetworkMatchCandidate = {
+  networkId: number;
+  certainty: number;
+  reason: string;
+  matchedCallsigns: Array<string>;
+};
+
+export type InboxNetworkMatch = {
+  confidentNetworkId: number | null;
+  candidates: Array<NetworkMatchCandidate>;
+};
+
 export type InboxMessage = {
   messageUuid: string | null;
   messageUid: string | null;
@@ -524,6 +537,7 @@ export type InboxMessage = {
   location: string | null;
   tags: Array<number> | null;
   networkIds: Array<number> | null;
+  networkMatch: InboxNetworkMatch | null;
   networkName: string | null;
   deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
@@ -941,6 +955,12 @@ export type SignalGroupEntry = {
 export type GroupCreationInfo = {
   createdAt: number;
   createdBy: string | null;
+};
+
+export type GroupSendingSettings = {
+  canSendMessages: boolean;
+  sendMessages: boolean;
+  senderOrganismIds: Array<number>;
 };
 
 export type OrphanSignalGroupEntry = {
@@ -1598,6 +1618,8 @@ export type RerDutyQueryState = {
 };
 
 export type RerDutyQueryStateWf = {
+  search: string | null;
+  searchMode: AnalysisSearchMode | null;
   groupsSelected: Array<string> | null;
   groupsDenied: Array<string> | null;
   sendersSelected: Array<string> | null;
@@ -1698,6 +1720,8 @@ export type BatchSignalProfileReq = {
 };
 
 export type InboxMessagesRsp = {
+  historySinceMs: number | null;
+  historyPeriodMs: number | null;
   inboxItems: Array<[number, InboxMessage]>;
   pollCursorId: number | null;
   callsigns: Array<CallsignInfoRes>;
@@ -2680,22 +2704,31 @@ export type RemoveDeviceAudioForwardingReq = {
 };
 
 export type DeviceFileRoot = {
+  isFavorite: boolean;
   entryId: string;
   deviceId: string;
   parentEntryId: string | null;
   kind: FileEntryKind;
   name: string;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  contentUploadedAt: string | null;
   createdAt: string;
   updatedAt: string;
   tags: Array<AnalyticsTag>;
 };
 
 export type FileBreadcrumb = {
+  archiveRevision: number | null;
   entryId: string;
   name: string;
 };
 
 export type DeviceFileTreeEntry = {
+  isFavorite: boolean;
+  isViewed: boolean;
+  sizeBytes: number | null;
+  contentUploadedAt: string | null;
   archive: DeviceArchiveSummary | null;
   isArchive: boolean;
   archiveOrigin: DeviceArchiveOrigin | null;
@@ -2759,6 +2792,7 @@ export type LocateDeviceFileRsp = {
 };
 
 export type ListDeviceFileRootsReq = {
+  filters: DeviceFileFilters | null;
   syncId: string | null;
   deviceId: string;
 };
@@ -2821,7 +2855,77 @@ export type RebuildDeviceStatsRsp = {
   batchCount: number;
 };
 
+export type SetDeviceFileFavoriteReq = {
+  deviceId: string;
+  entryId: string;
+  favorite: boolean;
+};
+
+export type MarkDeviceFileViewedReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+};
+
+export type DeviceFileMarkers = {
+  isFavorite: boolean;
+  isViewed: boolean;
+};
+
+export type DeviceFileSortBy =
+  | 'name'
+  | 'size'
+  | 'uploaded_at'
+  | 'created_at'
+  | 'modified_at'
+;
+
+export type DeviceFileSortDirection =
+  | 'ascending'
+  | 'descending'
+;
+
+export type DeviceFileFilters = {
+  fileTypes: Array<DeviceFileType>;
+  extensions: Array<string>;
+  modifiedFrom: string | null;
+  modifiedTo: string | null;
+  hasContent: boolean | null;
+  favoritesOnly: boolean;
+  unviewedOnly: boolean;
+  archiveFailed: boolean;
+  archiveEncrypted: boolean;
+  tagIds: Array<string>;
+  tagMatch: TagMatch | null;
+  untagged: boolean;
+};
+
+export type DeviceFileType =
+  | 'folder'
+  | 'archive'
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'document'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'map'
+  | 'code'
+  | 'other'
+;
+
+export type DeviceFileFilterOptions = {
+  extensions: Array<string>;
+};
+
 export type BrowseDeviceFilesReq = {
+  filters: DeviceFileFilters | null;
+  sortBy: DeviceFileSortBy | null;
+  sortDirection: DeviceFileSortDirection | null;
+  favoritesOnly: boolean | null;
+  unviewedOnly: boolean | null;
+  archiveFailed: boolean | null;
+  archiveEncrypted: boolean | null;
   archiveRevision: number | null;
   syncId: string | null;
   deviceId: string;
@@ -2836,12 +2940,24 @@ export type BrowseDeviceFilesReq = {
 };
 
 export type BrowseDeviceFilesRsp = {
+  archiveSource: DeviceFileContentRef | null;
   breadcrumbs: Array<FileBreadcrumb>;
   entries: Array<DeviceFileTreeEntry>;
   nextCursor: string | null;
 };
 
 export type SearchDeviceFilesReq = {
+  archiveRevision: number | null;
+  globalSearch: boolean | null;
+  rankByRelevance: boolean | null;
+  filters: DeviceFileFilters | null;
+  sortBy: DeviceFileSortBy | null;
+  sortDirection: DeviceFileSortDirection | null;
+  hasContent: boolean | null;
+  favoritesOnly: boolean | null;
+  unviewedOnly: boolean | null;
+  archiveFailed: boolean | null;
+  archiveEncrypted: boolean | null;
   syncId: string | null;
   deviceId: string;
   scopeEntryId: string;
@@ -3774,6 +3890,7 @@ export type Datasource = {
 
 export type MessageMediaInfo = {
   id: string;
+  orderF64: number | null;
   contentType: string;
   fileName: string | null;
   sizeBytes: number;
@@ -3868,6 +3985,8 @@ export type ZoneDatasourceGroupUpdateReq = {
   fetchNewMessages: boolean | null;
   isSigintUnitMandatory: boolean | null;
   isDeviceMandatory: boolean | null;
+  sendMessages: boolean | null;
+  senderOrganismIds: Array<number> | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -4198,14 +4317,24 @@ export type UnitHierarchyUnit = {
   groupIndex: number | null;
 };
 
+export type UnitHierarchySelection = {
+  value: string;
+  label: string;
+  unitIds: Array<number>;
+  exactUnitIds: Array<number>;
+};
+
 export type UnitHierarchyRsp = {
   revision: string;
   groups: Array<UnitHierarchyGroup>;
   units: Array<UnitHierarchyUnit>;
+  selections: Array<UnitHierarchySelection>;
 };
 
 export type UnitHierarchyReq = {
   knownRevision: string | null;
+  unitIds: Array<number> | null;
+  selectionValues: Array<string> | null;
 };
 
 export type UnitCombatType = {
@@ -4715,6 +4844,7 @@ export type DirectSubmitPayload = {
   network: SubmitNetwork | null;
   dmr: Array<SubmitDmrMetadata>;
   signalGroupMasterKey: string | null;
+  additionalSignalGroupMasterKeys: Array<string>;
   sourceSignalGroupMasterKey: string | null;
   deviceNameId: number | null | null;
   uploadUrls: Array<string> | null;
@@ -4729,6 +4859,7 @@ export type DirectSubmitPayload = {
 export type DirectSubmitAttachmentUpdates = {
   replacements: Array<DirectSubmitAttachmentReplacement>;
   renames: Array<DirectSubmitAttachmentRename>;
+  orders: Array<DirectSubmitAttachmentOrder>;
 };
 
 export type DirectSubmitAttachmentReplacement = {
@@ -4739,6 +4870,12 @@ export type DirectSubmitAttachmentReplacement = {
 export type DirectSubmitAttachmentRename = {
   mediaId: string;
   fileName: string;
+};
+
+export type DirectSubmitAttachmentOrder = {
+  mediaId: string | null;
+  uploadUrl: string | null;
+  orderF64: number;
 };
 
 export type DirectSubmitParsePayload = {
@@ -4759,6 +4896,7 @@ export type DirectSubmitParseRsp = {
   post: string | null;
   unit: string | null;
   unitV2: string | null;
+  unitId: number | null;
   locations: Array<string>;
 };
 
@@ -5265,6 +5403,7 @@ export type Network = {
   doNotArchive: boolean;
   unitMask: Array<string>;
   status: NetworkStatus;
+  aiInstructions: string | null;
 };
 
 export type NetworkStatus =
@@ -5318,6 +5457,7 @@ export type CreateNetworkReq = {
   descriptions: Array<AddNetworkDescription>;
   doNotArchive: boolean;
   unitMask: Array<string>;
+  aiInstructions: string | null;
 };
 
 export type DeleteNetworkReq = {
@@ -5339,6 +5479,7 @@ export type UpdateNetworkReq = {
   doNotArchive: boolean;
   unitMask: Array<string> | null;
   status: NetworkStatus;
+  aiInstructions: string | null;
 };
 
 export type NetworkCallsignsReq = {
@@ -5974,12 +6115,7 @@ export type DeleteApiSenderReq = {
 export type SystemSettingsCurrentRsp = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -5991,6 +6127,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
@@ -6007,6 +6144,8 @@ export type SystemSettingsCurrentRsp = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
+  aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -6017,12 +6156,7 @@ export type SystemSettingsCurrentRsp = {
 export type SystemSettingsItem = {
   id: number;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedByLoginId: string | null;
@@ -6038,6 +6172,7 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -6057,6 +6192,8 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  enableDutySearch: boolean;
+  aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -6076,12 +6213,7 @@ export type SystemSettingsListRsp = {
 
 export type CreateSystemSettingsReq = {
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -6093,6 +6225,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   devicesSectionEnabled: boolean;
+  docMediaServeFromB2: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -6112,6 +6245,8 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   dutySelectedGroupsEnabled: boolean | null;
+  enableDutySearch: boolean | null;
+  aiNetworkMatchEnabled: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number | null;
@@ -6129,12 +6264,102 @@ export type ActivateSystemSettingsReq = {
   id: number;
 };
 
-export type RerDutyTestReplayStatusRsp = {
-  status: string;
-  sourceCount: number;
-  nextSourcePosition: number | null;
-  generatedCount: number;
-  nextEmitAtMs: number | null;
+export type MessageReplayShiftMode =
+  | 'WindowStart'
+  | 'SameTimeOfDay'
+  | 'Manual'
+;
+
+export type MessageReplayOnEnd =
+  | 'Loop'
+  | 'Pause'
+;
+
+export type MessageReplaySpeed =
+  | 'Speed100'
+  | 'Speed200'
+  | 'Speed300'
+  | 'Speed500'
+  | 'Speed1000'
+;
+
+export type MessageReplaySpeedReq = {
+  speed: MessageReplaySpeed;
+};
+
+export type MessageReplayActivityBucket =
+  | 'Minutes15'
+  | 'Hour1'
+  | 'Day1'
+;
+
+export type MessageReplayExtentRsp = {
+  firstMs: number | null;
+  lastMs: number | null;
+};
+
+export type MessageReplayActivityReq = {
+  fromMs: number;
+  toMs: number;
+  bucket: MessageReplayActivityBucket;
+};
+
+export type MessageReplayActivityPoint = {
+  tsMs: number;
+  count: number;
+};
+
+export type MessageReplayActivityRsp = {
+  bucketSec: number;
+  points: Array<MessageReplayActivityPoint>;
+};
+
+export type MessageReplayPlanReq = {
+  fromMs: number;
+  toMs: number;
+  shiftMode: MessageReplayShiftMode;
+  manualShiftMs: number | null;
+  speed: MessageReplaySpeed;
+  onEnd: MessageReplayOnEnd;
+};
+
+export type MessageReplayPreviewRsp = {
+  windowCount: number;
+  skippedCount: number;
+  replayCount: number;
+  offsetMs: number;
+  startPositionMs: number;
+  firstMessageMs: number | null;
+  firstMessageEtaMs: number | null;
+  firstMessageShownMs: number | null;
+  cycleEndEtaMs: number;
+};
+
+export type MessageReplaySessionRsp = {
+  id: number;
+  state: string;
+  onEnd: MessageReplayOnEnd;
+  speed: MessageReplaySpeed;
+  completedCycles: number;
+  windowFromMs: number;
+  windowToMs: number;
+  anchorTsMs: number;
+  anchorAtMs: number;
+  pausedAtMs: number | null;
+  replayPositionMs: number;
+  offsetMs: number;
+  cursorMs: number;
+  replayedCount: number;
+  remainingCount: number;
+  nextMessageMs: number | null;
+  nextMessageEtaMs: number | null;
+  cycleEndEtaMs: number;
+  createdAtMs: number;
+};
+
+export type MessageReplayStatusRsp = {
+  session: MessageReplaySessionRsp | null;
+  storedReplayCount: number | null;
 };
 
 export type RerReportAccessListRsp = {
@@ -6210,6 +6435,9 @@ export type AiEngineItem = {
   hasToken: boolean;
   createdAt: number;
   updatedAt: number;
+  unhealthy: boolean;
+  healthMessage: string | null;
+  healthUpdatedAt: number | null;
 };
 
 export type AiEngineListRsp = {
@@ -6240,6 +6468,12 @@ export type UpdateAiEngineReq = {
   enabled: boolean;
   callsignEnabled: boolean;
   ocrEnabled: boolean;
+};
+
+export type UpdateAiEngineHealthReq = {
+  id: string;
+  unhealthy: boolean;
+  message: string | null;
 };
 
 export type AiChatSummary = {
@@ -6358,6 +6592,8 @@ export type AiAgentProviderItem = {
   id: string;
   name: string;
   modelName: string;
+  unhealthy: boolean;
+  healthMessage: string | null;
 };
 
 export type AiAgentReasoningPreset =
@@ -6706,6 +6942,8 @@ export type AiAgentMessageItem = {
   maxRuntimeSeconds: number | null;
   startedAt: number | null;
   completionMetadata: AiAgentCompletionMetadata | null;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
   requestId: string;
   requestState: string;
   role: string;
@@ -6725,6 +6963,10 @@ export type AiAgentConversationDetail = {
   createdAt: number;
   updatedAt: number;
   messages: Array<AiAgentMessageItem>;
+};
+
+export type AiAgentPrewarmReq = {
+  aiEngineId: string | null;
 };
 
 export type AiAgentRequestCreateReq = {
@@ -6858,6 +7100,7 @@ export type AiAgentAdminRequestListReq = {
   state: string | null;
   suspicious: boolean | null;
   pageStartId: string | null;
+  searchId: string | null;
 };
 
 export type AiAgentSecurityReviewItem = {
@@ -8075,6 +8318,7 @@ export type LongPollRsp = {
   events: Array<EventMsg>;
   lastEventId: string | null;
   deploymentMaintenance: DeploymentMaintenance | null;
+  unitCatalogRevision: string | null;
 };
 
 export type EchoAccountF1 = {
@@ -8198,6 +8442,8 @@ export type GroupUpdateReq = {
   fetchNewMessages: boolean | null;
   isSigintUnitMandatory: boolean | null;
   isDeviceMandatory: boolean | null;
+  sendMessages: boolean | null;
+  senderOrganismIds: Array<number> | null;
 };
 
 export type NativeGroupSettings = {
@@ -8374,5 +8620,7 @@ export type UserDutySettingsDto = {
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   minimalReportWindowEnabled: boolean;
+  dutyRememberReportGroup: boolean;
+  analysisRememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
 };

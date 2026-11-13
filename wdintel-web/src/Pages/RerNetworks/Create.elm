@@ -149,6 +149,7 @@ init _ shared () =
             , postIds = []
             , descriptions = []
             , unitMask = []
+            , aiInstructions = Nothing
             }
       , kindSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-kind-state")

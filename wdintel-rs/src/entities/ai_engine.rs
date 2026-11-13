@@ -25,6 +25,11 @@ pub struct Model {
     pub ocr_enabled: bool,
     #[sea_orm(column_type = "Text")]
     pub ocr_request_profile: String,
+    pub unhealthy: Option<bool>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub health_message: Option<String>,
+    pub health_updated_at: Option<DateTime>,
+    pub health_updated_by_login_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -47,6 +52,8 @@ pub enum Relation {
     AiIntelReportAttempt,
     #[sea_orm(has_one = "super::ai_intel_report_engine_budget::Entity")]
     AiIntelReportEngineBudget,
+    #[sea_orm(has_many = "super::ai_network_match_result::Entity")]
+    AiNetworkMatchResult,
     #[sea_orm(has_many = "super::ai_position_mention::Entity")]
     AiPositionMention,
     #[sea_orm(has_many = "super::ai_settlement_parse_result::Entity")]
@@ -55,6 +62,14 @@ pub enum Relation {
     AiTranscriptAnalysisSettings,
     #[sea_orm(has_many = "super::ai_transcript_analysis_test_result::Entity")]
     AiTranscriptAnalysisTestResult,
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::HealthUpdatedByLoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    Login,
     #[sea_orm(has_many = "super::media_summary::Entity")]
     MediaSummary,
     #[sea_orm(has_many = "super::media_summary_settings::Entity")]
@@ -121,6 +136,12 @@ impl Related<super::ai_intel_report_engine_budget::Entity> for Entity {
     }
 }
 
+impl Related<super::ai_network_match_result::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiNetworkMatchResult.def()
+    }
+}
+
 impl Related<super::ai_position_mention::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiPositionMention.def()
@@ -142,6 +163,12 @@ impl Related<super::ai_transcript_analysis_settings::Entity> for Entity {
 impl Related<super::ai_transcript_analysis_test_result::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiTranscriptAnalysisTestResult.def()
+    }
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
     }
 }
 

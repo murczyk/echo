@@ -11,6 +11,7 @@ import { type LiveRequest, REASONING_LABELS } from '../../ai-agent-chat';
 import { RequestDuration } from '../../ai-agent-chat/RequestActivity';
 import { formatDateTime, statusColor } from '../format';
 import { isTerminalRequestState } from './live-request';
+import { modelFailureNote } from '../../ai-agent-chat/provider-fallback';
 
 function formatSeconds(seconds: number | null | undefined): string | null {
   if (isNullOrUndefined(seconds)) return null;
@@ -131,6 +132,7 @@ function ExecutionSection({ request }: { request: AiAgentAuditRequestDetail }) {
               ? `Неповне: ${metadata.completionMetadata.reason}`
               : null,
           ],
+          ['Збій моделі', modelFailureNote(metadata.completionMetadata)],
         ]}
       />
     </Section>

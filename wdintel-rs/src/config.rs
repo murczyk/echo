@@ -109,6 +109,51 @@ pub const API_RATE_LIMIT_CACHE_TTL: Duration = Duration::from_secs(1);
 pub const API_RATE_LIMIT_ROLE_CACHE_SIZE: usize = 4096;
 pub const SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY: i64 = 0x4543_484f_5345_5454;
 
+/// Every fixed single-key Postgres advisory lock. They share one key space, so
+/// two features with the same key silently wait on each other: reparse's
+/// `AI_CALLSIGN_WORKER_LOCK + 1` was the network-match lease (#4137). Add new
+/// keys here; the build fails if two are equal.
+const ADVISORY_LOCK_KEYS: &[i64] = &[
+    SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY,
+    AI_CALLSIGN_WORKER_LOCK,
+    AI_CALLSIGN_REPARSE_LOCK,
+    AI_NETWORK_MATCH_WORKER_LOCK,
+    AI_AGENT_WORKER_LEASE_ADVISORY_LOCK_KEY,
+    AI_CONTROL_PANEL_LOCK_KEY,
+    SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY,
+    BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY,
+    SIGINT_UNIT_AUTO_ACTIVATION_ADVISORY_LOCK_KEY,
+    DEVICE_UPLOAD_FINALIZATION_METRICS_LOCK,
+    SIGINT_MEDIA_CONVERSION_ADVISORY_LOCK_KEY,
+    ORBIT_IMPORT_ADVISORY_LOCK_KEY,
+    crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_WORKER_LOCK,
+    crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_ADMISSION_LOCK,
+    crate::devices::analytics::DEFINITION_PUBLICATION_ADVISORY_LOCK_KEY,
+    crate::sigint::comments::SIGINT_COMMENT_MIGRATION_LOCK_KEY,
+    crate::transcription::executor::ECHO_AUDIO_TRANSCRIPTION_EXECUTOR_LOCK,
+    crate::transcription::executor::ECHO_AUDIO_TRANSCRIPTION_EXECUTOR_DRAIN_LOCK,
+];
+
+const fn all_distinct(keys: &[i64]) -> bool {
+    let mut i = 0;
+    while i < keys.len() {
+        let mut j = i + 1;
+        while j < keys.len() {
+            if keys[i] == keys[j] {
+                return false;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    true
+}
+
+const _: () = assert!(
+    all_distinct(ADVISORY_LOCK_KEYS),
+    "two advisory lock keys are equal; give each lock its own key"
+);
+
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
@@ -169,6 +214,24 @@ pub const AI_ENGINE_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
+pub const AI_ENGINE_HEALTH_MESSAGE_MAX_CHARS: usize = 500;
+// Automatic engine health (#4157), see `ai_engine::health`.
+pub const AI_ENGINE_HEALTH_REDIS_PREFIX: &str = "ai-engine:health:";
+pub const AI_ENGINE_HEALTH_INTERVAL_SECS: u64 = 60;
+/// Calls an engine must fail, of at least `AI_ENGINE_HEALTH_MIN_CALLS`, within
+/// `AI_ENGINE_HEALTH_WINDOW_MINUTES`, before it is marked unhealthy.
+pub const AI_ENGINE_HEALTH_FAILURE_PERCENT: u64 = 90;
+pub const AI_ENGINE_HEALTH_MIN_CALLS: u64 = 5;
+pub const AI_ENGINE_HEALTH_WINDOW_MINUTES: i64 = 30;
+/// An automatically unhealthy engine recovers when at most half of at least
+/// this many calls in the recovery window failed.
+pub const AI_ENGINE_HEALTH_RECOVERY_MIN_CALLS: u64 = 2;
+pub const AI_ENGINE_HEALTH_RECOVERY_WINDOW_MINUTES: i64 = 10;
+/// Without a single call for this long, an unhealthy engine is probed instead.
+pub const AI_ENGINE_HEALTH_PROBE_IDLE_MINUTES: i64 = 10;
+pub const AI_ENGINE_HEALTH_PROBE_INTERVAL_SECS: u64 = 300;
+pub const AI_ENGINE_HEALTH_PROBE_TIMEOUT_SECS: u64 = 60;
+pub const AI_ENGINE_HEALTH_PROBE_MAX_TOKENS: u32 = 16;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
 pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
     &["gpt-5", "gpt-6", "o1", "o3", "o4"];
@@ -200,6 +263,8 @@ pub const AI_CALLSIGN_REPARSE_DAYS: i64 = 14;
 pub const AI_CALLSIGN_REPARSE_INTERVAL_SECS: i64 = 3_600;
 pub const AI_CALLSIGN_REPARSE_BATCH_SIZE: i64 = 1_000;
 pub const AI_CALLSIGN_WORKER_LOCK: i64 = 316_700_001;
+/// Serializes starting and retrying callsign reparse runs.
+pub const AI_CALLSIGN_REPARSE_LOCK: i64 = 316_700_003;
 pub const AI_CALLSIGN_FEEDBACK_PROMPT: &str =
     include_str!("ai_callsign/feedback_prompt.txt");
 pub const AI_CALLSIGN_SETTINGS_ID: i16 = 1;
@@ -210,12 +275,42 @@ pub const AI_CALLSIGN_MAX_CHARS: usize = 255;
 pub const AI_CALLSIGN_MAX_CONCURRENT_REQUESTS: usize = 4;
 pub const DIRECT_SUBMIT_AI_CALLSIGN_TIMEOUT_SECS: u64 = 10;
 pub const AI_CALLSIGN_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+/// Messages the callsign worker parses at once (#4123): one at a time could
+/// not keep up with ~120k messages a day.
+pub const AI_CALLSIGN_WORKER_CONCURRENCY: usize = 4;
 pub const AI_CALLSIGN_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_CALLSIGN_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
+pub const AI_NETWORK_MATCH_ENABLED_DEFAULT: bool = false;
+pub const AI_NETWORK_MATCH_WORKER_NAME: &str = "network_match";
+pub const AI_NETWORK_MATCH_WORKER_LOCK: i64 = 316_700_002;
+pub const AI_NETWORK_MATCH_WORKER_LEASE_SECS: u64 = 5;
+pub const AI_NETWORK_MATCH_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_NETWORK_MATCH_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_NETWORK_MATCH_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_NETWORK_MATCH_WORKER_MAX_ATTEMPTS: i32 = 8;
+/// Only messages received and intercepted this recently are scored, so
+/// network edits that recalculate old messages do not flood the AI engine.
+pub const AI_NETWORK_MATCH_ENQUEUE_MAX_AGE_HOURS: i64 = 48;
+/// Messages with more candidate networks are not scored.
+pub const AI_NETWORK_MATCH_MAX_CANDIDATES: usize = 12;
+pub const AI_NETWORK_MATCH_MAX_CALLSIGNS_PER_NETWORK: usize = 150;
+pub const AI_NETWORK_MATCH_MAX_LIST_ITEMS_PER_NETWORK: usize = 20;
+pub const AI_NETWORK_MATCH_MESSAGE_MAX_CHARS: usize = 8_000;
+pub const AI_NETWORK_MATCH_INSTRUCTIONS_MAX_CHARS: usize = 2_000;
+pub const AI_NETWORK_MATCH_REASON_MAX_CHARS: usize = 300;
+pub const AI_NETWORK_MATCH_OUTPUT_MAX_TOKENS: u32 = 2_048;
+/// The card folds the other networks only when the best one reaches this
+/// certainty and leads the runner-up by at least the lead below.
+pub const AI_NETWORK_MATCH_CONFIDENT_MIN_CERTAINTY: i32 = 80;
+pub const AI_NETWORK_MATCH_CONFIDENT_MIN_LEAD: i32 = 20;
+/// Sent once when the model's reply is not valid JSON.
+pub const AI_NETWORK_MATCH_REPAIR_PROMPT: &str = "Попередня відповідь не є валідним JSON за схемою. Поверни ту саму оцінку як валідний JSON-об'єкт за схемою запиту.";
+pub const AI_NETWORK_MATCH_PROMPT: &str =
+    include_str!("../../ai-eval/2026-11-09-network-match-prompt/prompt.txt");
 pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
 pub const LOCATION_REGION_MAX_DISTANCE: usize = 2;
 pub const LOCATION_MESSAGE_FUZZY_MAX_LINES: usize = 5;
@@ -561,6 +656,18 @@ pub const AI_AGENT_WORKER_LEASE_TAKEOVER_GRACE_SEC: u64 =
         + AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC
         + 1;
 pub const AI_AGENT_IDLE_STOP_MINUTES: i64 = 5;
+/// A container prewarmed while the user types stops this long after start if
+/// no request uses it (#4139).
+pub const AI_AGENT_PREWARM_UNUSED_MINUTES: i64 = 3;
+/// Running-container slots a prewarm must leave free for real requests,
+/// which fail instead of waiting when capacity runs out.
+pub const AI_AGENT_PREWARM_RESERVED_SLOTS: u64 = 2;
+/// Below the composer's one-minute interval, so its keep-alives get through.
+pub const AI_AGENT_PREWARM_THROTTLE_SEC: u64 = 45;
+pub const AI_AGENT_PREWARM_REDIS_PREFIX: &str = "ai-agent:prewarm:";
+/// How long a lifecycle operation waits for the same user's container start
+/// (a request or a prewarm) instead of failing at the server `lock_timeout`.
+pub const AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS: u64 = 30_000;
 pub const AI_AGENT_DESTROY_STOPPED_DAYS: i64 = 7;
 pub const AI_AGENT_REVIEW_MAX_ATTEMPTS: i32 = 8;
 pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
@@ -602,6 +709,10 @@ pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
     "Input exceeds the context window";
 pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
     "Provider output token limit reached";
+/// Kept recognizable to the runner (`content_filter`) so the chat records a
+/// model refusal rather than an outage (#4112).
+pub const AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE: &str =
+    "Provider content_filter rejected the request";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
     AI_AGENT_DISPATCHER_TIMEOUT_SEC;
@@ -636,7 +747,7 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.08.1";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.13.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -649,6 +760,21 @@ pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS: usize = 200;
 pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
+/// Completion reasons that tell the chat to offer another model.
+pub const AI_AGENT_REASON_PROVIDER_ERROR: &str = "provider_error";
+pub const AI_AGENT_REASON_MODEL_REFUSAL: &str = "model_refusal";
+/// Policy-refusal detection for finished answers, tuned on 60 days of
+/// production turns (#4112): about 14% of GPT-6.1 Sol answers and 0.5% of
+/// GLM-5.3 answers match. Only the opening of an answer is checked.
+pub const AI_AGENT_REFUSAL_OPENING_MAX_CHARS: usize = 700;
+pub const AI_AGENT_REFUSAL_OPENING_MAX_SENTENCES: usize = 4;
+pub const AI_AGENT_REFUSAL_PHRASE_PATTERN: &str = r"(не можу|не буду|не допомагатиму|не надаватиму|не надам|не складатиму|відмовля\w*|can'?t help|cannot help|can'?t assist|cannot assist|can'?t provide|cannot provide|won'?t help|unable to (help|assist|provide))";
+pub const AI_AGENT_REFUSAL_TOPIC_PATTERN: &str = r"(актуальн|поточн|сьогодн|свіж|недавн|оперативн|бойов|противник|збройн|чинн|діюч|дислокац|місцеперебуван|місцезнаходжен|розташуванн|координат|радіомереж|розвідувальн|втрат|удар|цілей|військ|military|combat|troop|target)";
+/// Statements about missing evidence or tool limits, not policy refusals.
+pub const AI_AGENT_REFUSAL_LIMITATION_PATTERN: &str = r"(достовірно|впевнено|не знайш|не вдалося|немає|відсутн|не бачу|інтерфейс|відкрити|прочитати|розпізна|обробляється|шрифт|згенерувати|інтернет|налаштувати|не маю доступу|підтвердити|зв'язатися|не викону|не було викон|не виконано)";
+/// A justification such as "це допомогло б визначити …" marks a refusal even
+/// when the refusing sentence itself names no operational topic.
+pub const AI_AGENT_REFUSAL_JUSTIFICATION_PATTERN: &str = r"(може|могло б|могли б|допомогло б|допоможе|сприяло б|сприяти)\s+(б\s+)?(допомогти\s+|сприяти\s+)?(визнач|ідентифік|встанов|розкри|відстеж|виявити|наведенн|ураженн|планув)";
 pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;
 pub const AI_AGENT_MATTERMOST_CHAT_MAX_ATTEMPTS: i32 = 8;
 pub const AI_AGENT_MATTERMOST_CHAT_RETRY_BASE_SEC: i64 = 10;
@@ -845,6 +971,9 @@ pub const MESSENGER_TYPE_TELEGRAM: &str = "Telegram";
 pub const MESSENGER_TYPE_MAX: &str = "Max";
 pub const MESSENGER_INGEST_MESSENGER_TYPES: &[&str] =
     &[MESSENGER_TYPE_TELEGRAM, MESSENGER_TYPE_MAX];
+pub const MESSENGER_GROUP_SEND_ATTACHMENT_MAX_BYTES: u64 = 25 * 1024 * 1024;
+pub const MESSENGER_GROUP_SEND_ATTACHMENTS_TOTAL_MAX_BYTES: u64 =
+    100 * 1024 * 1024;
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend
@@ -970,18 +1099,30 @@ pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
 pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
 pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
-pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const ANALYTICS_VERIFY_TIMEOUT_MS: u64 = 15_000;
 pub const ANALYTICS_HTTP_READ_TIMEOUT_MS: u64 = 60_000;
 pub const ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS: i64 = 10;
 pub const ANALYTICS_VERIFY_PGOPTIONS: &str = "-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify";
-pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
-pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
-pub const RER_DUTY_TEST_REPLAY_CLEANUP_BATCH_SIZE: u64 = 500;
-pub const RER_DUTY_TEST_REPLAY_ADVISORY_LOCK_KEY: i64 = 7_312_025_041;
-pub const RER_DUTY_TEST_REPLAY_IDLE_SLEEP_SEC: u64 = 1;
-pub const RER_DUTY_TEST_REPLAY_DISABLED_SLEEP_SEC: u64 = 5;
-pub const RER_DUTY_TEST_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
+pub const MESSAGE_REPLAY_TICK_SEC: u64 = 1;
+pub const MESSAGE_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
+pub const MESSAGE_REPLAY_EMIT_BATCH_SIZE: usize = 50;
+pub const MESSAGE_REPLAY_PURGE_BATCH_SIZE: u64 = 200;
+/// The comment the replay before #4110 put on its copies, as the system login.
+/// Comment parsing can write the same comment on a real message, so
+/// `message_replay::purge` checks more than this before deleting.
+pub const MESSAGE_REPLAY_LEGACY_MARKER: &str = "[duplicate]";
+/// The migration that installed #4110's replay; the old one wrote no marker
+/// after it.
+pub const MESSAGE_REPLAY_INSTALL_MIGRATION: &str =
+    "m20261111_090000_message_replay_session";
+/// Interval of the worker's progress summary while a session exists; state
+/// changes are logged immediately.
+pub const MESSAGE_REPLAY_PROGRESS_LOG_SEC: u64 = 30;
+/// Caps the replay window and the fine (15 min / 1 h) activity range, which
+/// bounds that histogram (31 days of hourly bars: 744).
+pub const MESSAGE_REPLAY_MAX_RANGE_DAYS: i64 = 31;
+/// Caps the daily overview histogram used to browse for a window.
+pub const MESSAGE_REPLAY_MAX_BROWSE_DAYS: i64 = 366;
 // for xlsx import
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const SIGINT_SOURCE_RO_ID: i32 = 2;
@@ -1008,6 +1149,8 @@ pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_TREE_REDIS_KEY: &str = "sigint:unit-tree:v1";
 pub const SIGINT_UNIT_TREE_DIRTY_REDIS_KEY: &str = "sigint:unit-tree:v1:dirty";
+pub const SIGINT_UNIT_CATALOG_REVISION_REDIS_KEY: &str =
+    "sigint:unit-catalog:revision";
 pub const SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY: i64 = 3527_1104;
 pub const SIGINT_UNIT_TREE_RECONCILE_SECS: u64 = 300;
 pub const SIGINT_UNIT_SEARCH_DEFAULT_LIMIT: u64 = 50;
@@ -1041,6 +1184,7 @@ pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
     "Нижчий ешелон ORBIT";
 pub const SIGINT_UNIT_DYNAMIC_REGEX_SIZE_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 pub const SIGINT_UNIT_DYNAMIC_REGEX_CHUNK_SIZE: usize = 2_000;
+pub const SIGINT_UNIT_HEADER_SYNONYMS_REFRESH_SECS: u64 = 15 * 60;
 /// Ukraine boundaries WGS84
 pub const LAT_MIN: f64 = 40.0;
 pub const LAT_MAX: f64 = 60.0;
@@ -1062,6 +1206,7 @@ pub const ANALYSIS_STATS_UNDEFINED_UNIT_ID: i64 = 0;
 pub const ANALYSIS_STATS_UNDEFINED_UNIT_NAME: &str = "Не визначено";
 pub const CLEANUP_NETWORKS_WORKER_SLEEP_DURATION: u64 = 600;
 pub const CLEANUP_NETWORKS_CUTOFF_TIME_DAYS: i64 = 10;
+pub const CLEANUP_NETWORKS_FREQUENCY_GRACE_PERIOD_HOURS: i64 = 2;
 pub const CLEANUP_NETWORKS_OTHER_BATCH_SIZE: i64 = 100;
 pub const CLEANUP_NETWORKS_OTHER_MAX_PER_PASS: usize = 500;
 pub const CLEANUP_NETWORKS_SYNTHETIC_REPAIR_BATCH_SIZE: i64 = 100;
@@ -1285,6 +1430,8 @@ pub const MESSENGER_MEDIA_PREVIEW_VIDEO_THREADS: &str = "2";
 pub const MESSENGER_MEDIA_PREVIEW_SOURCE_TIMEOUT_MICROS: &str = "10000000";
 
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
+pub const THUMBNAIL_LOCAL_FORMAT_WHITELIST: &str =
+    "image2,jpeg_pipe,png_pipe,webp_pipe,bmp_pipe,tiff_pipe,gif,apng,ico,mov,matroska,webm,avi,asf,flv,mpeg,mpegvideo,mpegts,ogg,hevc,h264";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
     ".source-budget.lock";
@@ -1390,6 +1537,10 @@ pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_LOOKBACK_HOURS: i64 = 72;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_THRESHOLD: i64 = 100_000;
 pub const RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS: i64 = 14;
 pub const RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES: i64 = 5;
+/// Messages a fresh-tail candidate query reads by id before it falls back to
+/// scanning the search window (#4153). A 5-minute tail held about 900 messages
+/// on echo-skhid and an hour about 10,500.
+pub const INBOX_FRESH_TAIL_MESSAGE_ID_LIMIT: u64 = 20_000;
 pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
 pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
 pub const GROUP_STATS_RECALCULATION_TASK_COMPACT_LIMIT: i64 = 5_000;
@@ -1437,6 +1588,17 @@ pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
 pub const S3_MEDIA_ROOT_PREFIX: &str = "message-media";
+
+pub const DOC_MEDIA_STORAGE_PREFIX: &str = "doc-media";
+pub const DOC_MEDIA_DEFAULT_DIR: &str = "/usr/share/echo-docs";
+pub const DOC_MEDIA_CACHE_CONTROL: &str = "private, no-cache";
+pub const DOC_MEDIA_DOWNLOAD_TIMEOUT_SECS: u64 = 300;
+pub const DOC_MEDIA_RETRY_AFTER_SECS: u64 = 5;
+pub const DOC_MEDIA_LOCK_SLOTS: usize = 64;
+pub const DOC_MEDIA_MAX_CONCURRENT_DOWNLOADS: usize = 8;
+pub const DOC_MEDIA_EXTENSIONS: &[&str] = &[
+    "mp4", "webm", "jpg", "jpeg", "png", "mp3", "gif", "svg", "ico",
+];
 pub const SIGINT_UNIT_ATTACHMENT_MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const SIGINT_UNIT_ATTACHMENT_MAX_ENCRYPTED_BYTES: u64 = 51 * 1024 * 1024;
 pub const SIGINT_UNIT_ATTACHMENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
@@ -2167,6 +2329,7 @@ pub struct Config {
     #[serde(default)]
     pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
+    pub doc_media_dir: Option<String>,
     #[serde(skip)]
     pub(crate) messenger_media_cache: Option<MessengerMediaCacheConfig>,
     pub signal_api_phone: String,
@@ -2186,6 +2349,8 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
+    /// Imported into system settings at startup for backwards compatibility.
+    pub enable_duty_search: Option<bool>,
     pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,
     secret_config: Option<SecretConfig>,

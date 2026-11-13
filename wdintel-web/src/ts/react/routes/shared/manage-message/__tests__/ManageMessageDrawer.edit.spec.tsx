@@ -360,11 +360,13 @@ type DrawerCloseReason = 'escapeKeyDown' | 'backdropClick';
 let drawerOnClose: ((event: unknown, reason: DrawerCloseReason) => void) | undefined;
 
 function setRecentValues(values: Record<string, unknown>) {
+  const stored = new Map([['cyberEcho_recentMessageFields', JSON.stringify(values)]]);
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
-      getItem: vi.fn().mockReturnValue(JSON.stringify(values)),
-      setItem: vi.fn(),
+      getItem: vi.fn((key: string) => stored.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => stored.set(key, value)),
+      removeItem: vi.fn((key: string) => stored.delete(key)),
     },
   });
 }
@@ -3197,7 +3199,7 @@ describe('ManageMessageDrawer edit mode', () => {
 
     expect(pickerValuesByLabel.get('Дата перехоплення')).toBeTruthy();
     expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
     expect(autocompleteValuesByLabel.get('Підрозділ')).toEqual({ id: 1, name: 'u-1' });
     expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('device-1');
     expect(textFieldPropsByLabel.get('Частота')?.value ?? '').toBe('');
@@ -3231,7 +3233,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-2' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-2' }]);
     root.unmount();
   });
 
@@ -3258,7 +3260,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
     root.unmount();
   });
 
@@ -3286,10 +3288,68 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect(autocompleteValuesByLabel.get('Група')).toEqual([]);
     expect(container.textContent).toContain('Обрана група більше недоступна.');
     root.unmount();
   });
+
+  it.each(['g-1', 'g-2'])(
+    '#4103 reconciles a removed destination %s after reference-data retry',
+    async (removedKey) => {
+      setRecentValues({});
+      const groups = [
+        { masterKey: 'g-1', name: 'Group 1' },
+        { masterKey: 'g-2', name: 'Group 2' },
+      ];
+      const survivingGroups = groups.filter((group) => group.masterKey !== removedKey);
+      referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1', 'g-2']);
+      referenceDataMocks.getGroupInfosBatch
+        .mockResolvedValueOnce(groups)
+        .mockResolvedValue(survivingGroups);
+      directSubmitMocks.searchPostNames.mockRejectedValueOnce(new Error('Reference data failed'));
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+          />,
+        );
+      });
+      await act(async () => {
+        autocompleteOnChangeByLabel.get('Група')?.(null, groups);
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'For surviving groups' } });
+      });
+      const retry = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Повторити завантаження',
+      );
+      expect(retry).toBeDefined();
+      await act(async () => retry!.click());
+      expect(autocompleteValuesByLabel.get('Група')).toEqual(survivingGroups);
+      expect(container.textContent).toContain('Обрана група більше недоступна.');
+      expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+      await act(async () => {
+        container
+          .querySelector('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+      expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signal_group_master_key: survivingGroups[0]!.masterKey,
+          additional_signal_group_master_keys: [],
+        }),
+      );
+      root.unmount();
+    },
+  );
 
   it('does not overwrite edit or report group state', async () => {
     referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1', 'g-2']);
@@ -3385,7 +3445,7 @@ describe('ManageMessageDrawer edit mode', () => {
       });
     });
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
 
     const discard = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Відхилити зміни',
@@ -3396,7 +3456,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-2' });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-2' }]);
     expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('');
     root.unmount();
   });
@@ -3474,7 +3534,7 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
 
-    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect(autocompleteValuesByLabel.get('Група')).toEqual([]);
     expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
       true,
     );
@@ -4519,6 +4579,223 @@ describe('ManageMessageDrawer edit mode', () => {
           renames: [],
         },
         deleted_media_ids: [],
+      }),
+    );
+    root.unmount();
+  });
+
+  it.each([false, true])(
+    '#3931 reorders attachments with legacy null positions=%s',
+    async (legacy) => {
+      directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 42 });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+            editTarget={{
+              id: 42,
+              message: buildMessage({
+                media: [1, 2, 3].map((position) => ({
+                  id: `file-${position}`,
+                  orderF64: legacy ? null : position,
+                  contentType: 'image/png',
+                  fileName: `${position}.png`,
+                  sizeBytes: 11,
+                  href: `/media/file-${position}`,
+                  transcription: null,
+                })),
+              }),
+            }}
+          />,
+        );
+      });
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="Перемістити 3.png вище"]')!
+          .click();
+      });
+      const labels = Array.from(
+        container.querySelectorAll('button[aria-label^="Більше дій для"]'),
+      ).map((button) => button.getAttribute('aria-label'));
+      expect(labels).toEqual([
+        'Більше дій для 1.png',
+        'Більше дій для 3.png',
+        'Більше дій для 2.png',
+      ]);
+      await act(async () => {
+        container
+          .querySelector('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+      const orders = legacy
+        ? [
+            { media_id: 'file-1', upload_url: null, order_f64: 1 },
+            { media_id: 'file-2', upload_url: null, order_f64: 2 },
+            { media_id: 'file-3', upload_url: null, order_f64: 1.5 },
+          ]
+        : [{ media_id: 'file-3', upload_url: null, order_f64: 1.5 }];
+      expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+        42,
+        expect.objectContaining({ attachment_updates: { replacements: [], renames: [], orders } }),
+      );
+      root.unmount();
+    },
+  );
+
+  it.each([2, 3])(
+    '#3931 preserves a report replacement position after moving source attachment %i',
+    async (moved) => {
+      directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+        payloads: [
+          {
+            full_body: 'original body',
+            retained_media_ids: ['source-1', 'source-2', 'source-3'],
+            parent_signal_message_ids: [42],
+          },
+        ],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+            reportSource={{
+              id: 42,
+              message: buildMessage({
+                media: [1, 2, 3].map((position) => ({
+                  id: `source-${position}`,
+                  orderF64: position,
+                  contentType: 'image/png',
+                  fileName: `${position}.png`,
+                  sizeBytes: 11,
+                  href: `/media/source-${position}`,
+                  transcription: null,
+                })),
+              }),
+            }}
+          />,
+        );
+      });
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(`button[aria-label="Перемістити ${moved}.png вище"]`)!
+          .click();
+      });
+      await act(async () => {
+        uppyMocks.latest!.addFile({
+          name: 'edited.png',
+          type: 'image/png',
+          size: 11,
+          data: new File(['replacement'], 'edited.png', { type: 'image/png' }),
+          meta: { replaces_media_id: 'source-2' },
+          uploadURL: '/upload/report-image',
+        });
+        textFieldPropsByLabel
+          .get('Текст розвіддонесення')
+          ?.onChange?.({ target: { value: 'report body' } });
+        const noSendOption = autocompleteOptionsByLabel
+          .get('Відправити в групу')
+          ?.find((option) => (option as { name?: string }).name === 'Не відправляти');
+        autocompleteOnChangeByLabel.get('Відправити в групу')?.(null, noSendOption);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        container
+          .querySelector('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+
+      expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          upload_urls: ['/upload/report-image'],
+          retained_media_ids: ['source-1', 'source-3'],
+          attachment_updates: {
+            replacements: [],
+            renames: [],
+            orders: [
+              { media_id: 'source-1', upload_url: null, order_f64: 1 },
+              { media_id: 'source-3', upload_url: null, order_f64: moved === 3 ? 1.5 : 3 },
+              {
+                media_id: null,
+                upload_url: '/upload/report-image',
+                order_f64: moved === 2 ? 0 : 2,
+              },
+            ],
+          },
+        }),
+      );
+      root.unmount();
+    },
+  );
+
+  it('#3931 interleaves a pending upload with existing attachments', async () => {
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 42 });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 42,
+            message: buildMessage({
+              media: [1, 2].map((position) => ({
+                id: `existing-${position}`,
+                orderF64: position,
+                contentType: 'image/png',
+                fileName: `${position}.png`,
+                sizeBytes: 11,
+                href: `/media/${position}`,
+                transcription: null,
+              })),
+            }),
+          }}
+        />,
+      );
+    });
+    await act(async () => {
+      uppyMocks.latest!.addFile({
+        name: 'new.png',
+        type: 'image/png',
+        size: 11,
+        data: new File(['new'], 'new.png', { type: 'image/png' }),
+        uploadURL: '/upload/new',
+      });
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Перемістити new.png вище"]')!
+        .click();
+    });
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        upload_urls: ['/upload/new'],
+        attachment_updates: {
+          replacements: [],
+          renames: [],
+          orders: [{ media_id: null, upload_url: '/upload/new', order_f64: 1.5 }],
+        },
       }),
     );
     root.unmount();
@@ -6666,7 +6943,7 @@ describe('ManageMessageDrawer edit mode', () => {
       });
 
       expect(autocompleteValuesByLabel.get('Частота (МГц)') ?? '').toBe('');
-      expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+      expect(autocompleteValuesByLabel.get('Група')).toMatchObject([{ masterKey: 'g-1' }]);
       root.unmount();
       vi.useRealTimers();
     });
@@ -6701,7 +6978,7 @@ describe('ManageMessageDrawer edit mode', () => {
         );
         await Promise.resolve();
       });
-      expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+      expect(autocompleteValuesByLabel.get('Група')).toEqual([]);
 
       await act(async () => {
         textFieldPropsByLabel

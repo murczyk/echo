@@ -188,9 +188,15 @@ public.ai_transcript_analysis_test_message
 public.ai_transcript_analysis_test_result
 public.ai_transcript_analysis_job
 public.ai_worker_progress
+public.ai_network_match_worker_job
+public.ai_network_match_result
 
 # Role policy for interactive message creation.
 public.role_message_settings
 
 # API sender attribution is resolved before messages enter analytics.
 public.api_sender
+public.sigint_group_sender_organism
+
+# Training replay control state; replayed messages themselves are replicated.
+public.message_replay_session

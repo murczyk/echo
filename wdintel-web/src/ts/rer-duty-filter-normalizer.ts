@@ -34,6 +34,8 @@ function mergeUnitFilterValues(
 
 export function normalizeRerDutyQueryStateWf(raw: Record<string, unknown>): RerDutyQueryStateWf {
   return {
+    search: typeof raw.search === 'string' ? raw.search : null,
+    searchMode: (raw.searchMode ?? raw.search_mode ?? null) as RerDutyQueryStateWf['searchMode'],
     groupsSelected: readFilterValues(raw, ['groupsSelected', 'groups_selected']),
     groupsDenied: readFilterValues(raw, ['groupsDenied', 'groups_denied']),
     sendersSelected: readFilterValues(raw, ['sendersSelected', 'senders_selected']),

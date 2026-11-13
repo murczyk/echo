@@ -53,6 +53,7 @@ pub enum MessageTextPreviewLines {
     Clone,
     Copy,
     Default,
+    schemars::JsonSchema,
 )]
 pub enum MessageTimeBasis {
     #[default]
@@ -143,8 +144,16 @@ pub struct UserDutySettingsDto {
     pub ai_position_highlights_enabled: bool,
     #[serde(default)]
     pub minimal_report_window_enabled: bool,
+    #[serde(default = "default_remember_report_group")]
+    pub duty_remember_report_group: bool,
+    #[serde(default = "default_remember_report_group")]
+    pub analysis_remember_report_group: bool,
     #[serde(default)]
     pub important_only_my_organism: bool,
+}
+
+fn default_remember_report_group() -> bool {
+    true
 }
 
 fn default_duty_collapse_media_previews() -> bool {
@@ -180,6 +189,8 @@ impl Default for UserDutySettingsDto {
             message_sort_by: MessageTimeBasis::MessageInterception,
             message_auto_parse_enabled: default_message_auto_parse_enabled(),
             minimal_report_window_enabled: false,
+            duty_remember_report_group: default_remember_report_group(),
+            analysis_remember_report_group: default_remember_report_group(),
             important_only_my_organism: false,
         }
     }

@@ -115,6 +115,16 @@ async fn archive_history_survives_next_sync_without_changing_source_facts_3778()
     )
     .await;
     assert_eq!(nested.id, new_nested.id);
+    assert_pinned_archive_search_3930(
+        &env,
+        &actor,
+        device_id,
+        file_id,
+        nested.id,
+        &first.sync.sync_id,
+    )
+    .await;
+
     for (sync, revision, archive) in [
         (&first.sync.sync_id, 1, old_archive),
         (&second.sync.sync_id, 2, new_archive),
@@ -196,7 +206,17 @@ async fn archive_history_survives_next_sync_without_changing_source_facts_3778()
         .await;
         let details = response.as_ref().err().map(|error| format!("{error:?}"));
         let status = match response {
-            Ok(Some(_)) => 200,
+            Ok(Some(page)) => {
+                assert_eq!(
+                    page.archive_source,
+                    Some(crate::devices::files::archive::types::DeviceFileContentRef {
+                        device_id,
+                        file_id: nested.id,
+                        revision: 1,
+                    })
+                );
+                200
+            }
             Ok(None) => panic!("archive browse unexpectedly fell through"),
             Err(error) => actix_web::ResponseError::error_response(&error)
                 .status()
@@ -798,4 +818,80 @@ async fn issue_3390_session_history_indexes_can_roll_back_and_reapply() {
     let rows = db.query_all_raw(Statement::from_string(DbBackend::Postgres,
         "select indexname from pg_indexes where indexname in ('file_sync_session_history_idx', 'file_revision_session_journal_idx')".to_owned())).await.unwrap();
     assert_eq!(rows.len(), 2);
+}
+
+async fn assert_pinned_archive_search_3930(
+    env: &Env,
+    actor: &login::Model,
+    device: Uuid,
+    archive: Uuid,
+    nested: Uuid,
+    first_sync: &str,
+) {
+    for sync in [None, Some(first_sync)] {
+        for ranked in [false, true] {
+            let base = json!({
+                "device_id":device,"scope_entry_id":archive,"archive_revision":1,
+                "sync_id":sync,"name_query":"report","rank_by_relevance":ranked,
+                "filters":{"has_content":true},"limit":1
+            });
+            let first = crate::devices::files::search_marked(
+                env,
+                actor,
+                serde_json::from_value(base.clone()).unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(first.entries[0].name, "Report.txt");
+            assert_eq!(first.entries[0].revision, Some(1));
+            let cursor =
+                first.next_cursor.clone().expect("historical second page");
+            let mut next = base.clone();
+            next["cursor"] = json!(cursor);
+            let second = crate::devices::files::search_marked(
+                env,
+                actor,
+                serde_json::from_value(next.clone()).unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(second.entries[0].name, "report.txt");
+            assert_eq!(second.entries[0].revision, Some(1));
+            assert!(second.next_cursor.is_none());
+            next["archive_revision"] = json!(2);
+            next["sync_id"] = serde_json::Value::Null;
+            assert!(crate::devices::files::search_marked(
+                env,
+                actor,
+                serde_json::from_value(next).unwrap()
+            )
+            .await
+            .is_err());
+            let request = json!({"device_id":device,"scope_entry_id":nested,"archive_revision":1,"sync_id":sync,"name_query":"old","filters":{"has_content":true}});
+            let old = crate::devices::files::search_marked(
+                env,
+                actor,
+                serde_json::from_value(request).unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                old.entries
+                    .iter()
+                    .map(|entry| entry.name.as_str())
+                    .collect::<Vec<_>>(),
+                ["old.txt"]
+            );
+        }
+    }
+    let request = json!({"device_id":device,"scope_entry_id":archive,"archive_revision":2,"name_query":"report","filters":{"has_content":true}});
+    let current = crate::devices::files::search_marked(
+        env,
+        actor,
+        serde_json::from_value(request).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(current.entries.len(), 1);
+    assert_eq!(current.entries[0].revision, Some(2));
 }
