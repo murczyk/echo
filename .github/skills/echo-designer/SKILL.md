@@ -23,6 +23,13 @@ Require [UX analysis and a best-practice check](../../../docs/frontend/echo-work
 
 The assigned designer reads repository [brainstorming](../brainstorming/SKILL.md) directly for UX discovery from approved requirements. It does not author a replacement specification or start implementation/planning; no personal Superpowers plugin is needed.
 
+Read the actual supplied references and existing component behavior. Apply
+[DESIGN.md](../../../DESIGN.md) for continuity, stable loading geometry and motion;
+evaluate relevant panel/drawer/resize and mobile focus combinations. Do not
+reinstate cancelled proposals or invent behavior absent from the approved scope.
+Main passes the approved manual or role-produced brief as a readable Markdown
+`spec_path`, with its revision and approval, under the shared handoff contract.
+
 The assigned designer reads [.agents/skills/impeccable/SKILL.md](../../../.agents/skills/impeccable/SKILL.md) and its relevant Markdown guidance (`shape`, `critique`, `audit`) for UX structure, hierarchy, accessibility and responsive design. This Echo adaptation contains no runtime, hooks or additional agents. Use source/authorized browser evidence within the [workflow safety boundaries](../../../docs/frontend/echo-workflows.md#skill-and-tool-boundaries).
 
 Apply helpers to UX realization of the approved criteria. Shared role boundaries override helper suggestions to author requirements, implementation plans or additional stages.

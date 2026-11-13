@@ -116,20 +116,23 @@ transport, including updates to buffered messages. Browser regressions are in
 
 ## Search and older periods
 
-The «Пошук в оперативному» toggle in admin system settings enables the Analysis
-search control below saved filters in every Duty Neo column without a server
-restart. The default is false; both search and the older-period button are
+The «Пошук в оперативному» toggle in admin system settings controls Duty search
+features without a server restart. The default is false; search and the older-period button are
 hidden when disabled. Reload Duty after changing the setting. Existing
 `enable_duty_search` values in `config.toml` are imported at startup only when
 the database setting is unset; the legacy key can then be removed.
-Search text and mode belong to the column filter and saved/linked filters.
+The [Duty search contract](../frontend/react-behavior-contracts/duty.md#independent-duty-search)
+records the approved independent-panel requirements, which are separate from
+legacy keyword-filter search. The preserved «Фільтр по ключовому слову» changes
+feed membership and belongs to saved/linked column filters. A panel query must
+change only search results, not feed membership.
 Search, counts, and all pages use the column filters and creation time.
 Inbox events recheck search membership for displayed, buffered, and off-window
 unread messages. Messages that stop matching are removed from all three.
 If server settings fail to load, a toast reports the error and restored searches
 remain blocked until the page is successfully reloaded.
 
-The initial request keeps the adaptive limit: traffic above 100,000 messages
+For the feed/keyword filter, the initial request keeps the adaptive limit: traffic above 100,000 messages
 in the preceding three days, unit filters, or unavailable statistics restrict
 history to 14 days. The effective boundary is applied before choosing the
 PostgreSQL/analytics search route and returned with the response. Subsequent

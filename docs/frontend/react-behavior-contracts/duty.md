@@ -1,5 +1,104 @@
 # Duty
 
+## Independent Duty search
+
+- **Status:** owner-confirmed target behavior; preserve these decisions when
+  changing search. Some checkouts still have only legacy keyword-filter search.
+  This contract records requirements, not implementation completion or a claim
+  of browser verification.
+- **Behavior ID:** `react-duty-independent-search-continuity`
+- **Affected route/component:** `rer-duty-neo` search, source feed and adjacent panels.
+
+### Search, filters and live reading
+
+Search is scoped to its source column and filters, and searches history without
+the feed's adaptive date cutoff unless an explicit search period is selected.
+Do not invent a fixed 30-day limit; inspect endpoint constraints. Search text
+changes only the result list. Keep «Фільтр по ключовому слову» in the feed filter;
+it changes feed membership. Disable independent search while that keyword filter
+is applied, because the combined backend operation is unsupported. Analysis
+search and its shared consumers retain their existing behavior.
+
+Keep only one search open across columns, with per-column query, mode, period
+and result-reading state retained until intentional clearing. Switching/closing
+search preserves the source feed's last reading position. Hidden searches do
+not refresh in the background; reopening restores their state and reconciles
+data. Active search refreshes on inbox-change events, not periodic search polling
+or browser focus. Avoid a second full message-card/media tree for results.
+
+The feed continues normal live updates while search is open. Selecting a result
+uses the existing link/reply navigation to land at that message with surrounding
+context, without a long animated journey through intervening messages. New
+arrivals must not move a deliberately chosen reading position; normal newest
+arrow/scroll behavior remains available. Going to newest clears result selection.
+A visible search result alone does not mark the message read.
+
+At result-list top with no selection, new matches appear visibly at top and
+stale anchors are cleared. While reading historical/selected results, retain
+the visible row/offset and selection; buffer arrivals behind the new-results
+indicator until explicitly shown. Retain older-page cursors and deduplication.
+Merge sender profiles from initial, older and refresh/bridge responses into the
+existing cache; display available names rather than identifiers. Cancelled/stale
+responses cannot publish results or metadata. Search cancellation is scoped to
+search-origin navigation, including loaded targets; opening/editing/closing it
+must not abort an ordinary link/reply lookup or surrounding-context load.
+
+### Panels and responsive layout
+
+Search and groups are mutually exclusive within their column; groups in another
+column are independent. Disable search while its filter, notification or highlight
+settings are open. Desktop search sits left of its own feed; expansion adds
+width to the right without shifting earlier columns. Header and body resize
+together. Desktop horizontal workspace scrolling may accommodate extra columns,
+but viewport resize or an editor drawer must not clip the owning column or panel.
+Use the existing responsive editor/active-feed layout rather than forcing fixed
+expanded widths. Preserve data/selection/position across layout changes and
+temporary editor hiding; hiding must not cancel a pending result landing.
+
+On mobile, search overlays the source feed at available full width without
+expanding the column or introducing horizontal scroll. Put the search action on
+the right. Selecting a result closes the overlay and lands in the feed; reopening
+restores results. An empty query opens focused with the keyboard; existing results
+reopen without input focus/keyboard. Enter submits/settles input and dismisses
+the keyboard. Explicit closure and automatic post-selection closure have distinct
+navigation-cancellation semantics.
+
+### Presentation and feedback
+
+- Result rows: group plus non-wrapping date/time on row one, sender on row two,
+  at most two message-text lines with ellipsis. Use group-list selection styles
+  and visible separators. Preserve available search-term highlighting in both
+  results and the source message.
+- Panel background matches the filter/header surface in both themes. Input has
+  outer spacing; empty-state text reads as a placeholder. The desktop search
+  action includes «Пошук» and matches other header buttons, without a separate
+  rounded shape.
+- Result count and previous/next controls live above the results, not as an
+  obstructing bottom toolbar. No extra close X after those arrows, and no
+  «Вся доступна історія» footer. Input X clears the query; the panel trigger closes it.
+- Search modes use the Analysis-style dropdown; explanation is behind a link at
+  the bottom of that menu, not permanently displayed. Do not change Analysis.
+- Search refresh failures use the page snackbar/retry pattern and retain previous
+  useful results. The progress bar represents result-list loading only, occupies
+  stable geometry and does not run for source-message navigation. Feed skeletons
+  represent context loading and reuse card insets. Give immediate action feedback.
+- Opening, closing, reversal, viewport resize and drawer combinations must not
+  flash, leave panel content over a narrowed card or detach the header. Preserve
+  stacking beneath owning settings surfaces and support reduced motion. Cancelled
+  motion proposals and reference-app experiments are not approved behavior.
+
+**Existing source entry points:**
+`wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx`,
+`wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts`.
+Inspect the independent panel implementation and its regression coverage in
+the owning checkout; the legacy feed tests below do not establish these panel
+criteria. No direct default-suite test; behavior is preserved by this contract.
+**Existing baseline tests (legacy feed behavior):**
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.search.spec.tsx`,
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`,
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx`,
+`wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
+
 ## Feed filter payload compatibility
 
 - **Status:** operational compatibility

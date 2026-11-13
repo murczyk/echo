@@ -59,6 +59,20 @@ and blockers. Keep long sanitized logs in designated ignored artifacts, not the
 chat. Prepared files, metadata discovery and source review do not establish
 runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
 
+Read docs/frontend/echo-workflows.md#context-and-handoff and
+#handoff-document-lifecycle for Markdown spec_path, applicable plan_path and
+exact task-created cleanup_paths. Main materializes approved chat/manual inputs
+before downstream dispatch and saves the spec stage's returned specification.
+Keep documents through repairs; return their exact paths to main. Only main
+cleans them after implementation plus successful same-source QA VERIFY, never
+following PREPARE/dev alone or failed/required not-run verification.
+
+Follow docs/frontend/echo-workflows.md#test-selection-policy and
+#design-and-functionality-verification. Run changed/related feature files only;
+full suite before PR or when explicitly requested. Independently inspect supplied
+references and rendered behavior; reuse matching build/type evidence rather than
+automatically repeating all dev commands. Missing required checks stay unverified.
+
 Role skill profile: echo-dev-skills-2026-11-09-v3.
 Allowed repository guidance (read applicable files directly, without discovery aliases):
 .github/skills/frontend-elm-implementation/SKILL.md,
@@ -125,8 +139,8 @@ main/negative paths, permission/recovery, Back/context, focus/keyboard, relevant
 widths/themes and shared consumers. Fix scoped mismatches and repeat affected
 checks. Record API mode and unavailable checks; mocks do not prove persistence
 or server authorization. Task-scoped local E2E follows the default local
-verification authorization; real-environment approval and human acceptance
-remain separate. Main schedules QA verification.
+verification authorization and test selection policy; real-environment approval
+and human acceptance remain separate. Main schedules QA verification.
 After three unsuccessful repair cycles for the same defect, return diagnosis
 and options. Self-check is not independent QA or owner acceptance.
 """

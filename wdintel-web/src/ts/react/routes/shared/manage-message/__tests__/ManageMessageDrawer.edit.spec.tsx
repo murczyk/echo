@@ -3,7 +3,7 @@
  */
 import type { User } from '../../../../../Bindings';
 import type { ComponentProps, ReactNode, Ref } from 'react';
-import { act, createRef, forwardRef, useState } from 'react';
+import { act, createElement, createRef, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../../Bindings';
@@ -24,6 +24,10 @@ const directSubmitMocks = vi.hoisted(() => ({
   searchFreqs: vi.fn().mockResolvedValue([]),
   searchPostNames: vi.fn().mockResolvedValue([]),
   searchUnitNames: vi.fn().mockResolvedValue([]),
+}));
+const attachmentDndMocks = vi.hoisted(() => ({
+  onDragEnd: null as
+    ((event: { active: { id: string }; over: { id: string } | null }) => void) | null,
 }));
 const networkMocks = vi.hoisted(() => ({
   getNetworksByIds: vi.fn().mockResolvedValue([]),
@@ -229,6 +233,16 @@ vi.mock('@uppy/core', () => {
   return { default: FakeUppy };
 });
 vi.mock('@uppy/tus', () => ({ default: class {} }));
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/core')>();
+  return {
+    ...actual,
+    DndContext: (props: any) => {
+      attachmentDndMocks.onDragEnd = props.onDragEnd;
+      return createElement(actual.DndContext, props);
+    },
+  };
+});
 vi.mock('@mui/icons-material/Add', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/CheckCircle', () => ({
@@ -511,6 +525,7 @@ vi.mock('@mui/material', () => ({
     },
   ),
   useMediaQuery: () => false,
+  useTheme: () => ({ zIndex: { modal: 1300 } }),
   Button: ({
     children,
     type = 'button',
@@ -946,6 +961,7 @@ describe('ManageMessageDrawer edit mode', () => {
   });
 
   afterEach(() => {
+    attachmentDndMocks.onDragEnd = null;
     textFieldPropsByLabel.clear();
     autocompleteOnChangeByLabel.clear();
     autocompleteOnInputChangeByLabel.clear();
@@ -4616,10 +4632,14 @@ describe('ManageMessageDrawer edit mode', () => {
         );
       });
       await act(async () => {
-        container
-          .querySelector<HTMLButtonElement>('button[aria-label="Перемістити 3.png вище"]')!
-          .click();
+        const handle = container.querySelector<HTMLButtonElement>(
+          'button[aria-label="Змінити порядок 3.png"]',
+        );
+        expect(handle).not.toBeNull();
+        expect(attachmentDndMocks.onDragEnd).not.toBeNull();
+        attachmentDndMocks.onDragEnd?.({ active: { id: 'file-3' }, over: { id: 'file-2' } });
       });
+      expect(container.querySelector('button[aria-label^="Перемістити "]')).toBeNull();
       const labels = Array.from(
         container.querySelectorAll('button[aria-label^="Більше дій для"]'),
       ).map((button) => button.getAttribute('aria-label'));
@@ -4688,9 +4708,15 @@ describe('ManageMessageDrawer edit mode', () => {
         );
       });
       await act(async () => {
-        container
-          .querySelector<HTMLButtonElement>(`button[aria-label="Перемістити ${moved}.png вище"]`)!
-          .click();
+        const handle = container.querySelector<HTMLButtonElement>(
+          `button[aria-label="Змінити порядок ${moved}.png"]`,
+        );
+        expect(handle).not.toBeNull();
+        expect(attachmentDndMocks.onDragEnd).not.toBeNull();
+        attachmentDndMocks.onDragEnd?.({
+          active: { id: `source-${moved}` },
+          over: { id: `source-${moved - 1}` },
+        });
       });
       await act(async () => {
         uppyMocks.latest!.addFile({
@@ -4778,9 +4804,12 @@ describe('ManageMessageDrawer edit mode', () => {
       });
     });
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('button[aria-label="Перемістити new.png вище"]')!
-        .click();
+      const handle = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Змінити порядок new.png"]',
+      );
+      expect(handle).not.toBeNull();
+      expect(attachmentDndMocks.onDragEnd).not.toBeNull();
+      attachmentDndMocks.onDragEnd?.({ active: { id: 'file-1' }, over: { id: 'existing-2' } });
     });
     await act(async () => {
       container

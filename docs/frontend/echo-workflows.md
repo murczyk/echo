@@ -4,6 +4,11 @@ These workflows run only when the user explicitly invokes the matching
 `echo-spec`, `echo-designer`, `echo-dev` or `echo-qa` skill for the current task. Ordinary work
 follows the existing repository rules; reading this guide, mentioning a role,
 quoting a command or asking an ordinary UI/coding/review question does not activate one.
+For small local fixes without an explicit role invocation, use the direct
+[process and verification scope](design-workflow.md#process-and-verification-scope).
+Do not turn skill/configuration maintenance into a product-role run.
+Load shared rules and only the assigned stage's relevant sections/references;
+do not reread every role/helper or run product checks for documentation maintenance.
 
 | Entrypoint (Codex / Claude Code) | Native role | Codex model / reasoning | Assigned output |
 | --- | --- | --- | --- |
@@ -122,12 +127,136 @@ Main may return defects to dev and repeat affected QA checks within an authorize
 dev+QA chain. After three unsuccessful repair cycles for the same defect, stop
 with diagnosis/options. A standalone QA request never starts a repair loop.
 Task-scoped local E2E and browser verification follow the default authorization
-below; do not request a separate testing-permission sentence. Real-environment
+and [test selection policy](#test-selection-policy); do not request a separate testing-permission sentence. Real-environment
 mutations retain the operation/target approval gate in `AGENTS.md`. Human
 acceptance, QA verification and dev self-checks are distinct. Children never
 commit, push, manage PRs, merge or deploy; main follows existing Git permissions,
 and push/PR/publication is not implied by a workflow request. Real-environment
 mutations retain the explicit `AGENTS.md` approval gate.
+
+## Test selection policy
+
+During development, QA preparation, verification and repairs, run tests only for
+changed features and features affected by shared-code changes. Main identifies
+those consumers and records explicit suite/file selections in the handoff;
+unrelated application areas stay out of the run. For example, use
+`npm run test:ts -- src/ts/react/routes/rer-duty-neo` for Duty Vitest coverage
+and select affected Playwright spec files instead of running every browser test.
+Build/type/lint checks remain applicable under the owning contracts.
+
+Run the full test suite as the pre-PR check coordinated by main or when explicitly requested. A local
+edit, dev completion, QA handoff or verification pass is not a full-suite trigger.
+Reuse a successful full run if the tested code has not changed; a subsequent
+code change requires fresh applicable validation before creating the PR.
+
+Follow the proportional [verification scope](design-workflow.md#process-and-verification-scope).
+Independent QA exercises affected outcomes itself, without automatically repeating
+every successful dev command. Reuse build/type evidence only for matching source
+and environment; rerun affected checks after changes or unresolved failures.
+
+## Default local verification authorization
+
+An actual invocation of `echo-dev` for approved implementation or `echo-qa` for
+task preparation/verification includes the necessary local verification. Main
+derives and records the affected baseline/regression tests, task-scoped E2E,
+browser checks and applicable build/type/lint commands and local API mode in the
+handoff. Use synthetic or isolated test-owned data; browser scenarios use CPU
+slowdown **4x**. QA prepare may run relevant baseline/RED checks as part of test
+preparation; it still cannot implement product behavior. The user need not repeat
+an additional sentence permitting these checks or reconfirm each transition.
+
+Use existing installed runners and browsers, reusing an appropriate local preview
+or starting the repository's task-local test/preview process when needed. Stop
+only processes started for this task; do not replace another running environment.
+Test data mutations stay within isolated test-owned resources. This permission
+does not include package/browser installation, unrelated test campaigns, external
+accounts/uploads or changes to shared databases and real environments. Staging,
+including `echo-staging`, production and all their mutations retain the explicit
+operation/target approval gate in `AGENTS.md`. Human acceptance is not implied.
+
+Explicit read-only, prepare-without-execution, command or environment restrictions
+take precedence and must be passed to the child. Missing tools/CPU controls or
+safe test resources remain reported gaps, not reasons to weaken checks or bypass
+sandbox approvals. Skill/configuration maintenance, quoted invocations and
+read-only role smokes do not invoke dev/QA or authorize product verification.
+This is task authorization, not a tool ACL or permission-mode change, and never
+invokes another stage or a real environment implicitly.
+
+## CPU throttling baseline
+
+Functionality is always developed with **CPU throttling: 4x slowdown** in mind.
+This is the default browser baseline for dev and QA, even when the approved spec
+does not repeat it. Dev accounts for it during implementation and self-checks;
+QA prepare includes it in affected browser scenarios and QA verify checks them.
+
+Use available browser CPU controls to set 4x before navigation/interactions and
+keep it enabled for affected flows, including relevant loading, input/filtering,
+scrolling and recovery, with representative data volumes. Check correctness and
+responsiveness against approved criteria; report freezes, delayed feedback and
+timing/race defects. Do not invent numerical performance budgets or hide failures
+with extra sleeps, retries or increased timeouts.
+
+Record browser, CPU setting/method, data volume, scenario IDs and observed results
+in dev/QA evidence. Unthrottled runs are supplementary. If authorized execution
+or CPU controls are unavailable, report the 4x scenarios as not-run/unverified
+with the reason; do not claim the baseline passed. Execution follows the default
+local verification authorization and any explicit owner restrictions. Browser
+CPU slowdown does not emulate network latency
+or backend load, and does not replace other required checks or environment gates.
+
+## Design and functionality verification
+
+This check is mandatory for dev self-verification and QA verify; each role
+performs it itself. Main supplies the actual references and latest approved
+specification, including owner-approved amendments. A prior role's report,
+passing tests or a successful build does not replace direct inspection.
+
+- If Figma is supplied, open and inspect the relevant linked nodes and their
+  screenshots through the official read-only connection under [Figma access](figma-access.md).
+  If screenshots are supplied, view the actual images. Inspect both when both
+  are supplied; record which source/version and approved overrides apply.
+  Unapproved design proposals do not override approved requirements. Resolve
+  conflicting or ambiguous references through main before dependent changes.
+- Compare the rendered implementation with those references at corresponding
+  widths, themes and states. Check placement and side of panels, component
+  hierarchy, dimensions, spacing, typography, content and visible interaction
+  states. Record concrete expected/actual differences; do not infer visual
+  fidelity from source code or screenshots that were never opened.
+- Exercise the specification's user journeys and state transitions, including
+  relevant negative cases and preserved behavior. Map each new or changed
+  user-visible control, action and behavior to an approved requirement. Check
+  both that required functionality exists and that unspecified functionality
+  has not been added. Designs, backend capabilities, helpful ideas and tests
+  do not independently authorize new behavior. Missing requirements return
+  through main for an owner decision and specification update before dependent
+  implementation. Silence in a task spec is not permission to remove existing
+  behavior covered by the owning contracts; routine implementation details
+  within approved behavior do not need separate feature approval.
+- Dev fixes scoped discrepancies and repeats affected checks; QA reports
+  discrepancies to main without editing product code. Each returns concise
+  requirement/reference → observed outcome → pass/fail/not-run evidence,
+  including any unexpected functionality. QA must perform its own reference
+  comparison and behavioral checks, not adopt dev's verdict. QA prepare uses
+  these sources for coverage and expected outcomes, not an implementation pass.
+
+If reference access or required execution is unavailable, state the missing
+source/scenario and reason, continue independent permitted work, and mark the
+check unverified/not-run. Do not claim visual fidelity, functional completion
+or an overall QA pass while a required check is missing. An explicitly approved
+deviation must be recorded in the specification/approved reference; do not
+silently treat an observed mismatch as acceptable. This check grants no Figma
+writes, external uploads or real-environment mutations.
+
+Review-text screenshots are feedback to validate against actual source, not UI
+design references.
+
+For changed interactions, enforce the [motion acceptance gate](../../DESIGN.md#motion-and-state-continuity).
+Dev implements and self-checks it; QA independently observes the affected enter/exit
+and interruption states at CPU slowdown 4x, with relevant reduced-motion/focus
+checks. Report known flashing, jumps, blocked actions or lost reading context as
+defects that prevent completion of that flow, not follow-up cosmetic suggestions.
+Do not turn this gate into an unrelated animation redesign or an exhaustive
+browser campaign for a small fix.
 
 ## Context and handoff
 
@@ -170,6 +299,10 @@ Pass `spec_path` and applicable `plan_path`, verify they are readable from the
 destination checkout/host, and return their links to the user. Saving documents
 does not grant approval or invoke another stage. Do not pass the exploratory
 conversation or reconstruct it from session history.
+For a new spec stage, main assigns the output path before dispatch; the role
+creates the Markdown document from the task brief. An input specification need
+not already exist for that authoring stage. Main saves approved manual inputs
+before downstream design/dev/QA dispatch.
 
 ```text
 role / stage / requested sequence:
@@ -347,114 +480,6 @@ HTML/interactive prototypes require an explicit format request. Image alternativ
 and external editable canvases are optional requested outputs, not prerequisites;
 external data/publication permissions still apply.
 
-## Default local verification authorization
-
-An actual invocation of `echo-dev` for approved implementation or `echo-qa` for
-task preparation/verification includes the necessary local verification. Main
-derives and records the affected baseline/regression tests, task-scoped E2E,
-browser checks and applicable build/type/lint commands and local API mode in the
-handoff. Use synthetic or isolated test-owned data; browser scenarios use CPU
-slowdown **4x**. QA prepare may run relevant baseline/RED checks as part of test
-preparation; it still cannot implement product behavior. The user need not repeat
-an additional sentence permitting these checks or reconfirm each transition.
-
-Use existing installed runners and browsers, reusing an appropriate local preview
-or starting the repository's task-local test/preview process when needed. Stop
-only processes started for this task; do not replace another running environment.
-Test data mutations stay within isolated test-owned resources. This permission
-does not include package/browser installation, unrelated test campaigns, external
-accounts/uploads or changes to shared databases and real environments. Staging,
-including `echo-staging`, production and all their mutations retain the explicit
-operation/target approval gate in `AGENTS.md`. Human acceptance is not implied.
-
-Explicit read-only, prepare-without-execution, command or environment restrictions
-take precedence and must be passed to the child. Missing tools/CPU controls or
-safe test resources remain reported gaps, not reasons to weaken checks or bypass
-sandbox approvals. Skill/configuration maintenance, quoted invocations and
-read-only role smokes do not invoke dev/QA or authorize product verification.
-This is task authorization, not a tool ACL or permission-mode change, and never
-invokes another stage or a real environment implicitly.
-
-## Test selection policy
-
-During development, QA preparation, verification and repairs, run tests only for
-changed features and features affected by shared-code changes. Main identifies
-those consumers and records explicit suite/file selections in the handoff;
-unrelated application areas stay out of the run. For example, use
-`npm run test:ts -- src/ts/react/routes/rer-duty-neo` for Duty Vitest coverage
-and select affected Playwright spec files instead of running every browser test.
-Build/type/lint checks remain applicable under the owning contracts.
-
-Run the full test suite only as the pre-PR check coordinated by main. A local
-edit, dev completion, QA handoff or verification pass is not a full-suite trigger.
-Reuse a successful full run if the tested code has not changed; a subsequent
-code change requires fresh applicable validation before creating the PR.
-
-## CPU throttling baseline
-
-Functionality is always developed with **CPU throttling: 4x slowdown** in mind.
-This is the default browser baseline for dev and QA, even when the approved spec
-does not repeat it. Dev accounts for it during implementation and self-checks;
-QA prepare includes it in affected browser scenarios and QA verify checks them.
-
-Use available browser CPU controls to set 4x before navigation/interactions and
-keep it enabled for affected flows, including relevant loading, input/filtering,
-scrolling and recovery, with representative data volumes. Check correctness and
-responsiveness against approved criteria; report freezes, delayed feedback and
-timing/race defects. Do not invent numerical performance budgets or hide failures
-with extra sleeps, retries or increased timeouts.
-
-Record browser, CPU setting/method, data volume, scenario IDs and observed results
-in dev/QA evidence. Unthrottled runs are supplementary. If authorized execution
-or CPU controls are unavailable, report the 4x scenarios as not-run/unverified
-with the reason; do not claim the baseline passed. Execution follows the default
-local verification authorization and any explicit owner restrictions. Browser
-CPU slowdown does not emulate network latency
-or backend load, and does not replace other required checks or environment gates.
-
-## Design and functionality verification
-
-This check is mandatory for dev self-verification and QA verify; each role
-performs it itself. Main supplies the actual references and latest approved
-specification, including owner-approved amendments. A prior role's report,
-passing tests or a successful build does not replace direct inspection.
-
-- If Figma is supplied, open and inspect the relevant linked nodes and their
-  screenshots through the official read-only connection under [Figma access](figma-access.md).
-  If screenshots are supplied, view the actual images. Inspect both when both
-  are supplied; record which source/version and approved overrides apply.
-  Unapproved design proposals do not override approved requirements. Resolve
-  conflicting or ambiguous references through main before dependent changes.
-- Compare the rendered implementation with those references at corresponding
-  widths, themes and states. Check placement and side of panels, component
-  hierarchy, dimensions, spacing, typography, content and visible interaction
-  states. Record concrete expected/actual differences; do not infer visual
-  fidelity from source code or screenshots that were never opened.
-- Exercise the specification's user journeys and state transitions, including
-  relevant negative cases and preserved behavior. Map each new or changed
-  user-visible control, action and behavior to an approved requirement. Check
-  both that required functionality exists and that unspecified functionality
-  has not been added. Designs, backend capabilities, helpful ideas and tests
-  do not independently authorize new behavior. Missing requirements return
-  through main for an owner decision and specification update before dependent
-  implementation. Silence in a task spec is not permission to remove existing
-  behavior covered by the owning contracts; routine implementation details
-  within approved behavior do not need separate feature approval.
-- Dev fixes scoped discrepancies and repeats affected checks; QA reports
-  discrepancies to main without editing product code. Each returns concise
-  requirement/reference → observed outcome → pass/fail/not-run evidence,
-  including any unexpected functionality. QA must perform its own reference
-  comparison and behavioral checks, not adopt dev's verdict. QA prepare uses
-  these sources for coverage and expected outcomes, not an implementation pass.
-
-If reference access or required execution is unavailable, state the missing
-source/scenario and reason, continue independent permitted work, and mark the
-check unverified/not-run. Do not claim visual fidelity, functional completion
-or an overall QA pass while a required check is missing. An explicitly approved
-deviation must be recorded in the specification/approved reference; do not
-silently treat an observed mismatch as acceptable. This check grants no Figma
-writes, external uploads or real-environment mutations.
-
 ## Dev
 
 Require the approved spec, implementation authorization and QA-prepared or
@@ -468,7 +493,7 @@ before returning dev results.
 2. Implement the whole approved scope in small coherent blocks. Use existing components/tokens and stack skills. Inspect cumulative staged/unstaged/untracked changes after each block. Explain every new area; update the impact map and checks before shared-component/API expansion. Resolve material product changes through main.
 3. Never weaken tests, add skips/retries or replace stronger integration evidence to get green. Return needed test corrections to main/QA with rationale. New regressions require meaningful cases, not implementation-mirroring tests.
 4. Run affected suites and applicable build/type/lint checks. In `wdintel-web`, `npm run e2e` is smoke only; select affected existing specs with the installed Playwright runner. `--list` is not execution. Preserve `@regression` title tags and stronger Vitest/backend tests. Use actual Echo commands, not copied pytest/Compose commands from another project.
-5. Inspect the implemented UI with available Playwright browser control: main/negative paths, permissions, Back/context, focus/keyboard, relevant widths/themes and shared consumers. Correct scoped mismatches and repeat affected checks. Automated runs and interactive observations are distinct; unavailable checks remain unverified.
+5. Perform your own [design and functionality verification](#design-and-functionality-verification): inspect the references and rendered main/negative paths, permissions, Back/context, focus/keyboard, relevant widths/themes and shared consumers. Correct scoped mismatches and repeat affected checks. Automated runs and interactive observations are distinct; unavailable checks remain unverified.
 
 Use repository `make-interfaces-feel-better` for approved details with Echo tokens
 and reduced-motion/accessibility rules. No new styling system or global visual
