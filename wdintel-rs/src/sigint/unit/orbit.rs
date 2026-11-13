@@ -1385,7 +1385,11 @@ where
     if !req.active {
         return Ok(Vec::new());
     }
-    let sigint_unit = sigint_unit_for_orbit_matching(req);
+    let mut req = req.clone();
+    super::creation_hierarchy::fill_missing_upper_echelons(dbx, &mut req)
+        .await
+        .c(h!())?;
+    let sigint_unit = sigint_unit_for_orbit_matching(&req);
     let orbit_unit_ids = crate::orbit::matching_orbit_unit_ids_for_sigint_unit(
         dbx,
         &sigint_unit,
