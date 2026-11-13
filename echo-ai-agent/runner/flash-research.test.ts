@@ -2015,6 +2015,22 @@ test("incident 01a1d35e: a model without a ready deployment gets no second start
   assert.deepEqual(snapshots(), []);
 });
 
+test("incident 01a1d35e: restored findings still reach synthesis when research fails", async (t) => {
+  // A follow-up carries the previous request's saved findings: synthesis can answer
+  // from them, so the request is not failed as a provider outage.
+  const { synthesisBodies } = await researchWithProviderScript(
+    t,
+    [
+      () => providerRejection(400, "unexpected model state"),
+      () => providerRejection(400, "unexpected model state"),
+    ],
+    policy,
+    { workMemory: { version: 1, recap: `Saved botanical survey: ${draft}`, ...sources } },
+  );
+  assert.equal(synthesisBodies.length > 0, true);
+  assert.ok(synthesisBodies[0].includes("Saved botanical survey"));
+});
+
 test("incident 01a1d35e: a provider that answers after a cooldown gets the usual re-prompt", () => {
   const research = new FlashResearch(() => sources);
   const attempt = (message: unknown) => {
