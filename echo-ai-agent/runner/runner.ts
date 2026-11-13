@@ -117,7 +117,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.13.1";
+const HARNESS_RELEASE = "2026.11.13.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -1203,6 +1203,36 @@ function unsupportedPeriodField(period: JsonObject, kindName: string): Error | u
   );
 }
 
+const PERIOD_WINDOWS_SHOWN = 4;
+// Longer requests are not a period anyone means; they get the plain limit.
+const PERIOD_WINDOWS_MAX_DAYS = 3660;
+
+function calendarDateText(date: CalendarDate): string {
+  return `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+}
+
+/** What to do instead of a period longer than one call may read: the exact
+ * `date_range` windows of at most `maxDays` Kyiv days that cover it, newest first
+ * (#4179). Models otherwise retry the whole period in other shapes until the
+ * consecutive tool error limit ends the research. */
+export function periodWindowsHint(sinceDate: CalendarDate, tillDate: CalendarDate, maxDays: number): string {
+  const totalDays = (Date.UTC(tillDate.year, tillDate.month - 1, tillDate.day) -
+    Date.UTC(sinceDate.year, sinceDate.month - 1, sinceDate.day)) / 86_400_000;
+  const windows: string[] = [];
+  let end = tillDate;
+  while (windows.length < PERIOD_WINDOWS_SHOWN && kyivMidnightEpochMs(end) > kyivMidnightEpochMs(sinceDate)) {
+    const back = shiftCalendarDate(end, -maxDays);
+    const start = kyivMidnightEpochMs(back) < kyivMidnightEpochMs(sinceDate) ? sinceDate : back;
+    windows.push(JSON.stringify({ kind: "date_range", sinceDate: calendarDateText(start), tillDateInclusive: calendarDateText(shiftCalendarDate(end, -1)) }));
+    end = start;
+  }
+  const more = kyivMidnightEpochMs(end) > kyivMidnightEpochMs(sinceDate)
+    ? `, then continue the same way back to ${calendarDateText(sinceDate)}`
+    : "";
+  return ` One call reads at most ${maxDays} Kyiv days and this period covers ${totalDays}. ` +
+    `Call the tool again once per window, newest first, keeping the other arguments: ${windows.join(", ")}${more}.`;
+}
+
 function kyivPeriodBoundaries(
   periodValue: unknown,
   timeContext: TimeContext,
@@ -1226,6 +1256,7 @@ function kyivPeriodBoundaries(
       (period.hours as number) < 1 ||
       (period.hours as number) > maxHours
     ) {
+      // No windows: calendar dates would widen a rolling period.
       throw new Error(`recent hours must be between 1 and ${maxHours}`);
     }
     return {
@@ -1244,7 +1275,11 @@ function kyivPeriodBoundaries(
       (period.days as number) < 1 ||
       (period.days as number) > maxDays
     ) {
-      throw new Error(`recent Kyiv days must be between 1 and ${maxDays}`);
+      const today = calendarDateAt(timeContext.requestStartedAtMs);
+      const hint = Number.isInteger(period.days) && (period.days as number) > maxDays && (period.days as number) <= PERIOD_WINDOWS_MAX_DAYS
+        ? periodWindowsHint(shiftCalendarDate(today, 1 - (period.days as number)), shiftCalendarDate(today, 1), maxDays)
+        : "";
+      throw new Error(`recent Kyiv days must be between 1 and ${maxDays}${hint && "." + hint}`);
     }
     const today = calendarDateAt(timeContext.requestStartedAtMs);
     sinceDate = shiftCalendarDate(today, 1 - (period.days as number));
@@ -1280,7 +1315,7 @@ function kyivPeriodBoundaries(
         Date.UTC(sinceDate.year, sinceDate.month - 1, sinceDate.day)) /
       86_400_000;
     if (calendarDays > maxDays) {
-      throw new Error(`${label} date range cannot exceed ${maxDays} days`);
+      throw new Error(`${label} date range cannot exceed ${maxDays} days.${periodWindowsHint(sinceDate, tillDate, maxDays)}`);
     }
   }
   return {
@@ -1617,6 +1652,11 @@ const FREQUENCY_SUMMARY_PARAMETERS = analysisPeriodParameters(366, {
 });
 const CALLSIGN_RELATIONS_PARAMETERS = analysisPeriodParameters(31);
 
+// The limits are in the descriptions, not `maximum`: a schema rejection lists every
+// union branch, while the runner's own check names the windows to call (#4179).
+const INBOX_DAYS_DESCRIPTION = `At most ${INBOX_MAX_DAYS} Kyiv calendar days per call, including today. Cover a longer period with one date_range call per window of at most ${INBOX_MAX_DAYS} days.`;
+const INBOX_HOURS_DESCRIPTION = `At most ${INBOX_MAX_DAYS * 24} hours per call.`;
+
 const INBOX_MESSAGES_PARAMETERS = Type.Object(
   {
     period: Type.Union([
@@ -1625,11 +1665,11 @@ const INBOX_MESSAGES_PARAMETERS = Type.Object(
           description:
             "Use this exact value for rolling requests such as the last 24 hours.",
         }),
-        hours: Type.Integer({ minimum: 1, maximum: INBOX_MAX_DAYS * 24 }),
+        hours: Type.Integer({ minimum: 1, description: INBOX_HOURS_DESCRIPTION }),
       }),
       Type.Object({
         kind: Type.Literal("relative_days"),
-        days: Type.Integer({ minimum: 1, maximum: INBOX_MAX_DAYS }),
+        days: Type.Integer({ minimum: 1, description: INBOX_DAYS_DESCRIPTION }),
       }),
       Type.Object({
         kind: Type.Literal("date_range"),
@@ -1640,7 +1680,7 @@ const INBOX_MESSAGES_PARAMETERS = Type.Object(
       }),
       Type.Object({
         kind: Type.Literal("days"),
-        days: Type.Integer({ minimum: 1, maximum: INBOX_MAX_DAYS }),
+        days: Type.Integer({ minimum: 1, description: INBOX_DAYS_DESCRIPTION }),
       }),
       Type.Object({
         kind: Type.Literal("sinceDate"),
@@ -4703,7 +4743,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (error instanceof ContextCompactionLimitError)
         budget?.limit("context_limit");
       if (research) emit({ type: "completion_diagnostic", stage: "research", outcome: budget?.reason ?? (toolLimitError ? "tool_error" : "provider_error"), remainingMs: budget?.remainingTotalMs() });
-      if (research && !budget?.reason) budget?.limit("provider_error");
+      // The consecutive tool error guard stopped research; the provider answered (#4179).
+      if (research && !budget?.reason) budget?.limit(toolLimitError ? "tool_limit" : "provider_error");
       if (!budget?.reason) throw error;
       // Research whose every call failed at the provider, with no restored, retrieved or
       // attached evidence, leaves synthesis nothing to work from but the same failing
