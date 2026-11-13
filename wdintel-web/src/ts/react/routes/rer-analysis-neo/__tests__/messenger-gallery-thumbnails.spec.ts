@@ -5,6 +5,7 @@ import {
   cachedGalleryThumbnail,
   clearGalleryThumbnailCache,
   GALLERY_THUMBNAIL_CACHE_BYTES,
+  holdGalleryThumbnail,
   requestGalleryThumbnail,
 } from '../messenger-gallery-thumbnails';
 
@@ -124,6 +125,27 @@ describe('gallery thumbnail cache', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:t1');
     expect(cachedGalleryThumbnail('/t/1')).not.toBeNull();
     expect(cachedGalleryThumbnail(`/t/${fit}`)).not.toBeNull();
+  });
+
+  it('does not evict a route that a tile holds, and evicts it after the release', async () => {
+    const megabyte = new Uint8Array(1024 * 1024);
+    fetchMock.mockImplementation(async () => ({
+      ...answer(200),
+      blob: async () => new Blob([megabyte]),
+    }));
+    const fit = GALLERY_THUMBNAIL_CACHE_BYTES / megabyte.length;
+    await requestGalleryThumbnail('/t/held').promise;
+    const release = holdGalleryThumbnail('/t/held');
+    for (let index = 0; index <= fit; index += 1) {
+      await requestGalleryThumbnail(`/t/${index}`).promise;
+    }
+    // Not read through the cache here: that would refresh it and hide the eviction order.
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:t1');
+    // Its turn comes with the next thumbnail once nothing holds it.
+    release();
+    await requestGalleryThumbnail('/t/next').promise;
+    expect(cachedGalleryThumbnail('/t/held')).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:t1');
   });
 
   it('keeps a single entry that is over the cap by itself', async () => {

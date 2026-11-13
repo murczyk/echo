@@ -19,6 +19,8 @@ const PENDING_STATUS = 202;
 
 const cache = new Map<string, { objectUrl: string; bytes: number }>();
 let cachedBytes = 0;
+// The routes that mounted tiles show or wait for. Eviction skips them: revoking a URL that a tile holds breaks its image.
+const holds = new Map<string, number>();
 const failedAt = new Map<string, number>();
 type Inflight = { promise: Promise<string>; controller: AbortController; refs: number };
 const inflight = new Map<string, Inflight>();
@@ -70,16 +72,27 @@ async function download(
 function remember(url: string, entry: { objectUrl: string; bytes: number }) {
   cache.set(url, entry);
   cachedBytes += entry.bytes;
-  // The newest entry stays even when it alone is over the cap.
-  while (cachedBytes > GALLERY_THUMBNAIL_CACHE_BYTES && cache.size > 1) {
-    const [oldest, evicted] = cache.entries().next().value as [
-      string,
-      { objectUrl: string; bytes: number },
-    ];
-    cache.delete(oldest);
+  // Oldest first; the newest entry stays even when it alone is over the cap.
+  for (const [key, evicted] of cache) {
+    if (cachedBytes <= GALLERY_THUMBNAIL_CACHE_BYTES) break;
+    if (key === url || holds.has(key)) continue;
+    cache.delete(key);
     cachedBytes -= evicted.bytes;
     URL.revokeObjectURL(evicted.objectUrl);
   }
+}
+
+// Marks a route as in use by a mounted tile until the returned function is called.
+export function holdGalleryThumbnail(url: string): () => void {
+  holds.set(url, (holds.get(url) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const left = (holds.get(url) ?? 1) - 1;
+    if (left > 0) holds.set(url, left);
+    else holds.delete(url);
+  };
 }
 
 // The cached thumbnail of a route, or null. Reading it marks it as the most recently used.
@@ -158,12 +171,13 @@ export function useGalleryThumbnail(url: string): ThumbnailState {
     failed: false,
   }));
   useEffect(() => {
+    const release = holdGalleryThumbnail(url);
     const hit = cachedGalleryThumbnail(url);
     if (hit != null) {
       setState((previous) =>
         previous.url === url && previous.src === hit ? previous : { url, src: hit, failed: false },
       );
-      return undefined;
+      return release;
     }
     setState({ url, src: null, failed: false });
     const request = requestGalleryThumbnail(url);
@@ -179,6 +193,7 @@ export function useGalleryThumbnail(url: string): ThumbnailState {
     return () => {
       stopped = true;
       request.release();
+      release();
     };
   }, [url]);
   return state.url === url ? state : { url, src: cachedGalleryThumbnail(url), failed: false };
