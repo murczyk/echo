@@ -291,6 +291,21 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     expect(new Set(column().state.items.map(([id]) => id)).size).toBe(11);
   });
 
+  it('#3571 replaces stale row anchors when new matches arrive at the top of the list', async () => {
+    await open();
+    await act(async () => {
+      column().onScroll(0, [{ id: 4, offset: -24 }]);
+    });
+    messages.push(item(6));
+
+    await refresh();
+
+    expect(column().state.scrollTop).toBe(0);
+    expect(column().state.items.map(([id]) => id)).toEqual([6, 5, 4]);
+    expect(column().state.anchors).toEqual([]);
+    expect(column().state.pendingItems).toEqual([]);
+  });
+
   it('discovers an edited new match inside loaded history without skipping it at the next older cursor', async () => {
     messages = [item(1), item(2), item(3, 'other text'), item(4), item(5)];
     await open();

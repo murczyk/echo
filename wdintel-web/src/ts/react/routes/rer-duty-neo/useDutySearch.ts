@@ -191,6 +191,8 @@ function reconcileSearchResults(
     pendingItems,
     total: count.quantity,
     selectedId,
+    scrollTop: preserve ? current.scrollTop : 0,
+    anchors: preserve ? current.anchors : [],
     loading: false,
     error: null,
     tillMs,

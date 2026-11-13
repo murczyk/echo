@@ -474,6 +474,53 @@ test('#3571 keeps the same visible search row fixed when pending counts change @
   await expect.poll(() => list.evaluate((n) => n.scrollTop)).toBe(0);
 });
 
+test('#3571 shows a live match at the top when the search list is at scroll position zero @regression', async ({
+  page,
+}) => {
+  let added = false;
+  const currentIds = () =>
+    Array.from({ length: added ? 21 : 20 }, (_, index) => (added ? 21 : 20) - index);
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    disableAutoScroll: true,
+    inboxCountResponseForRequest: () => ({ quantity: added ? 21 : 20, first_element_ts: null }),
+    inboxResponseForRequest: (body) => {
+      const request = body as Record<string, unknown>;
+      const ids = request.search
+        ? currentIds()
+        : Array.from({ length: 20 }, (_, index) => index + 1);
+      return response(ids);
+    },
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/rer-duty-neo');
+  const column = page.locator('[data-duty-feed-column]').first();
+  const query = await openDutySearch(column);
+  await query.fill('needle');
+  await query.press('Escape');
+  const list = column.locator('[data-duty-search-list]');
+  await expect(list.locator('[data-duty-search-result]')).toHaveCount(20);
+  await list.evaluate((element) => {
+    element.scrollTop = 180;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0);
+
+  added = true;
+  await page.evaluate(() =>
+    window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [21] } })),
+  );
+  const newest = list.locator('[data-duty-search-result="21"]');
+  await expect(newest).toBeVisible();
+  await expect(newest).toBeInViewport();
+  await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect(list.locator('[data-duty-search-result]')).toHaveCount(21);
+  await cpu.detach();
+});
+
 test('#3571 makes pending search loading static with reduced motion @regression', async ({
   page,
 }) => {
@@ -876,6 +923,190 @@ test('#3571 searches independently and lands in the source feed with context @re
   await expect(searchA).toHaveValue('needle');
   await cpu.detach();
 });
+
+test('#3571 search in another column preserves an ordinary deep-link lookup @regression', async ({
+  page,
+}) => {
+  let releaseContext!: () => void;
+  const contextReady = new Promise<void>((resolve) => {
+    releaseContext = resolve;
+  });
+  let contextLookups = 0;
+  const groups = ['group-1', 'group-2'];
+  const target = responseWithMessages([{ id: 41, text: 'ordinary linked target' }]);
+  target.inbox_items[0][1].messageUuid = 'ordinary-target';
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    signalGroups: groups,
+    inboxResponseForRequest: (body) => {
+      const request = body as Record<string, unknown>;
+      return request.search
+        ? responseWithMessages([{ id: 90, text: 'needle search result' }])
+        : responseWithMessages([{ id: 41, text: 'ordinary linked target' }]);
+    },
+  });
+  await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
+    contextLookups += 1;
+    await contextReady;
+    await route.fulfill({
+      json: {
+        message: [41, target.inbox_items[0][1]],
+        group_master_keys: ['group-1'],
+        sigint_inbox_item_ids: [41],
+        since_ts: null,
+        till_ts: null,
+      },
+    });
+  });
+  const failedContextRequests: string[] = [];
+  page.on('requestfailed', (request) => {
+    if (request.url().endsWith('/inbox-item-context')) failedContextRequests.push(request.url());
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto(`/rer-duty-neo?m=ordinary-target&state=${stateForGroups(groups)}`);
+  const columns = page.locator('[data-duty-feed-column]');
+  await expect(columns).toHaveCount(2);
+  await expect.poll(() => contextLookups).toBeGreaterThan(0);
+  const lookupsBeforeSearch = contextLookups;
+  const failedRequestsBeforeSearch = failedContextRequests.length;
+
+  const search = await openDutySearch(columns.nth(1));
+  await search.fill('needle');
+  await expect(columns.nth(1).getByRole('button', { name: 'needle search result' })).toBeVisible();
+  await columns.nth(1).getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+
+  expect(contextLookups).toBe(lookupsBeforeSearch);
+  expect(failedContextRequests).toHaveLength(failedRequestsBeforeSearch);
+  releaseContext();
+  await expect(
+    columns.nth(0).locator('[data-duty-message-id="41"][data-message-feed-highlighted]'),
+  ).toHaveCount(1);
+  expect(failedContextRequests).toHaveLength(failedRequestsBeforeSearch);
+  await cpu.detach();
+});
+
+for (const phase of ['lookup', 'surrounding'] as const) {
+  test(`#3571 independent search preserves an ordinary reply during ${phase} loading @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const current = responseWithMessages([{ id: 90, text: 'ordinary reply source' }]);
+    const target = responseWithMessages([{ id: 41, text: 'ordinary reply target' }]);
+    const groups = ['group-1', 'group-2'];
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let lookups = 0;
+    const aroundRequests: Array<Record<string, unknown>> = [];
+    const failures: string[] = [];
+    page.on('requestfailed', (request) => {
+      if (
+        request.url().endsWith('/inbox-item-context') ||
+        (request.url().endsWith('/get-inbox') &&
+          (request.postDataJSON().before_id_noninclusive === 41 ||
+            request.postDataJSON().since_id_noninclusive === 41))
+      )
+        failures.push(request.url());
+    });
+    await installRerDutyShortStateMocks(page, {
+      enableDutySearch: true,
+      signalGroups: groups,
+      inboxResponseForRequest: async (body) => {
+        const request = body as Record<string, unknown>;
+        if (request.search) return response([91]);
+        if (request.before_id_noninclusive === 41 || request.since_id_noninclusive === 41) {
+          aroundRequests.push(request);
+          if (phase === 'surrounding') await pending;
+          return request.before_id_noninclusive === 41 ? response([40]) : current;
+        }
+        return current;
+      },
+    });
+    await page.route('**/api/rer-importer/message-replies', (route) =>
+      route.fulfill({
+        json: {
+          replies: [
+            {
+              id: 1,
+              thread_id: 41,
+              original_signal_message_id: 41,
+              reply_signal_message_id: 90,
+              created_at: since,
+              deleted: false,
+              original_deleted: false,
+              reply_deleted: false,
+            },
+          ],
+          reply_messages: [
+            {
+              id: 41,
+              timestamp: since,
+              created_at: since,
+              preview: 'ordinary reply target',
+              href: '/rer-duty-neo?m=41',
+            },
+          ],
+        },
+      }),
+    );
+    await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
+      lookups += 1;
+      if (phase === 'lookup') await pending;
+      await route.fulfill({
+        json: {
+          message: target.inbox_items[0],
+          group_master_keys: ['group-1'],
+          sigint_inbox_item_ids: [41],
+          since_ts: null,
+          till_ts: null,
+        },
+      });
+    });
+    await page.route('**/api/rer-importer/messages-by-id-matching-filters', (route) =>
+      route.fulfill({ json: { messages: target.inbox_items } }),
+    );
+    await page.route('**/api/rer-importer/messages-by-id-with-metadata', async (route) => {
+      if (phase === 'surrounding') await pending;
+      await route.fulfill({ json: target });
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.goto(`/rer-duty-neo?state=${stateForGroups(groups)}`);
+    const columns = page.locator('[data-duty-feed-column]');
+    const source = columns.first();
+    await source.getByRole('link', { name: /ordinary reply target/ }).click();
+    await expect
+      .poll(() => (phase === 'lookup' ? lookups : aroundRequests.length))
+      .toBe(phase === 'lookup' ? 1 : 2);
+    try {
+      const independent = columns.nth(phase === 'lookup' ? 0 : 1);
+      const query = await openDutySearch(independent);
+      await query.fill('needle');
+      await expect(independent.locator('[data-duty-search-result="91"]')).toBeVisible();
+      await independent.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+      expect(failures).toEqual([]);
+      release();
+      await expect(
+        source.locator('[data-duty-message-id="41"][data-message-feed-highlighted]'),
+      ).toBeInViewport();
+      expect(lookups).toBe(1);
+      expect(aroundRequests).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ before_id_noninclusive: 41, since_id_noninclusive: null }),
+          expect.objectContaining({ before_id_noninclusive: null, since_id_noninclusive: 41 }),
+        ]),
+      );
+      for (const request of aroundRequests)
+        expect(request).toMatchObject({ selected_groups: ['group-1'], search: null });
+      expect(failures).toEqual([]);
+      await expect(page.getByRole('alert')).toHaveCount(0);
+    } finally {
+      release();
+    }
+  });
+}
 
 for (const width of [1600, 390]) {
   test(`#3571 lands an unloaded 40-day result beyond adaptive history with filtered context at ${width}px @regression`, async ({

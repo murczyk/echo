@@ -518,6 +518,7 @@ export function RerDutyNeoPage({
     [],
   );
   const cancelSearchNavigation = useCallback(() => {
+    if (!replyNavigationRef.current?.searchTarget) return;
     linkedMessageControllerRef.current?.cancel();
     setSearchNavigationFeedId(null);
   }, []);

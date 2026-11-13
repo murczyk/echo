@@ -1,6 +1,6 @@
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import { Box, IconButton, LinearProgress, linearProgressClasses } from '@mui/material';
+import { IconButton, LinearProgress, linearProgressClasses, useTheme } from '@mui/material';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import dayjs from 'dayjs';
 import { PowerButton } from '../../components/PowerButton';
@@ -8,7 +8,6 @@ import { APP_TIME_ZONE } from '../../utils/misc';
 import { DutySearchControls } from './DutySearchControls';
 import { useDutyResultAppearance } from './duty-panel-motion';
 import { DUTY_SEARCH_PANEL_WIDTH_PX } from './duty-layout';
-import { dutyFeedPanelSurfaceSx } from './feed-panel-styles';
 import type { DutySearchColumn } from './useDutySearch';
 import type { FeedColumnModel } from './types';
 import type { InboxMessage } from '../../../../Bindings';
@@ -119,6 +118,7 @@ export function DutySearchPanel({
   profiles,
   fullWidth = false,
 }: { search: DutySearchColumn; fullWidth?: boolean } & ResultLabels) {
+  const theme = useTheme();
   const { state } = search;
   const autoFocus = !fullWidth || state.search.trim() === '';
   const listRef = useRef<HTMLDivElement>(null);
@@ -206,13 +206,15 @@ export function DutySearchPanel({
     }
   };
   return (
-    <Box
-      component="section"
+    <section
       aria-label="Пошук у стрічці"
       data-duty-search-panel
-      className="flex h-full w-full min-h-0 min-w-0 flex-col text-echo-text"
-      style={{ width: fullWidth ? '100%' : DUTY_SEARCH_PANEL_WIDTH_PX, flexShrink: 0 }}
-      sx={dutyFeedPanelSurfaceSx}
+      className="flex h-full w-full min-h-0 min-w-0 flex-col bg-none text-echo-text"
+      style={{
+        width: fullWidth ? '100%' : DUTY_SEARCH_PANEL_WIDTH_PX,
+        flexShrink: 0,
+        backgroundColor: theme.palette.background.paper,
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.defaultPrevented) {
           event.preventDefault();
@@ -336,6 +338,6 @@ export function DutySearchPanel({
           </PowerButton>
         ) : null}
       </div>
-    </Box>
+    </section>
   );
 }
