@@ -53,10 +53,10 @@ fn enrich_options(
         } else {
             format!("unit-parent:{}", group.id)
         };
-        let label = options
-            .get(&value)
-            .map(|option| option.label.clone())
-            .unwrap_or_else(|| group.label.clone());
+        let label = match options.get(&value) {
+            Some(option) => option.label.clone(),
+            None => group_label(hierarchy, index).c(h!())?,
+        };
         options.insert(
             value.clone(),
             UnitStatsOption {
@@ -69,6 +69,25 @@ fn enrich_options(
     let mut options = options.into_values().collect::<Vec<_>>();
     options.sort_by(|left, right| left.label.cmp(&right.label));
     Ok(options)
+}
+
+fn group_label(
+    hierarchy: &UnitHierarchyRsp,
+    mut index: usize,
+) -> anyhow::Result<String> {
+    let mut labels = Vec::new();
+    loop {
+        let group = hierarchy.groups.get(index).c(h!())?;
+        if group.level < 2 {
+            break;
+        }
+        labels.push(group.label.as_str());
+        let Some(parent) = group.parent_index else {
+            break;
+        };
+        index = parent as usize;
+    }
+    Ok(labels.join(" "))
 }
 
 #[derive(Clone, Default)]
