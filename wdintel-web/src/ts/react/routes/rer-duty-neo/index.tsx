@@ -525,6 +525,7 @@ export function RerDutyNeoPage({
   }, []);
   const dutySearch = useDutySearch({
     messageFeeds,
+    setProfiles: feeds.setProfiles,
     enabled: feeds.enableDutySearch,
     closeOnSelect: narrowScreen,
     buildReqForFeed: feeds.buildReqForFeed,

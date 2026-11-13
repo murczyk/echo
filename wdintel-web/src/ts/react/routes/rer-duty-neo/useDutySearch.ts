@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import dayjs from 'dayjs';
-import type { AnalysisSearchMode, InboxMessagesReq } from '../../../../Bindings';
+import type { AnalysisSearchMode, InboxMessagesReq, InboxMessagesRsp } from '../../../../Bindings';
 import type { DateTimeRangeValue } from '../../components/DateTimeRangeControl';
 import { APP_TIME_ZONE } from '../../utils/misc';
 import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox-messages';
@@ -66,6 +67,7 @@ type Dependencies = {
   navigate: (feedId: string, reference: string, item: MessageItem) => void;
   navigatingFeedId?: string | null;
   cancelNavigation: () => void;
+  setProfiles: Dispatch<SetStateAction<InboxMessagesRsp['signalProfiles']>>;
   onError: (message: string, retry: () => void) => void;
 };
 
@@ -117,6 +119,7 @@ async function fetchSearchResults(
   ]);
   if (!currentRequest()) throw new DOMException('Aborted', 'AbortError');
   let page = descending(response.inboxItems);
+  const profiles = { ...response.signalProfiles };
   // Reconcile the loaded range, including historical edits with no local change event.
   const pageLimit = response.pageLimit ?? 20;
   if (
@@ -133,6 +136,7 @@ async function fetchSearchResults(
         options,
       );
       if (!currentRequest()) throw new DOMException('Aborted', 'AbortError');
+      Object.assign(profiles, bridge.signalProfiles);
       const next = descending(bridge.inboxItems);
       const unseen = next.filter(([id]) => !page.some(([known]) => known === id));
       page = descending([...page, ...unseen]);
@@ -148,7 +152,7 @@ async function fetchSearchResults(
       compareMessageTuple(messageOrderCursor(id, message), messageOrderCursor(...loadedBoundary)) >=
         0,
   );
-  return { page, count, matching: inLoadedRange, cachedIds };
+  return { page, count, matching: inLoadedRange, cachedIds, profiles };
 }
 
 function reconcileSearchResults(
@@ -300,6 +304,8 @@ export function useDutySearch(dependencies: Dependencies) {
           currentRequest,
         );
         if (!currentRequest()) return;
+        if (Object.keys(result.profiles).length > 0)
+          dependenciesRef.current.setProfiles((previous) => ({ ...previous, ...result.profiles }));
         startTransition(() =>
           update(id, (current) => reconcileSearchResults(current, result, older, tillMs)),
         );

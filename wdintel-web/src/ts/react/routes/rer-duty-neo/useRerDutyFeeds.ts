@@ -589,6 +589,7 @@ export function useRerDutyFeeds(
     deleteConfirmFeedId: actions.deleteConfirmFeedId,
     profiles: filterOpts.profiles,
     senderOptions: actions.senderOptions,
+    setProfiles: filterOpts.setProfiles,
     freqs,
     postsList,
     // Shared persistent group catalog for every Duty column.

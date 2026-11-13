@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { InboxMessagesReq } from '../../../../../Bindings';
+import type { InboxMessagesReq, InboxMessagesRsp } from '../../../../../Bindings';
 import { useDutySearch } from '../useDutySearch';
 import { buildInboxReq, emptyFilter, type MessageFeedState, type MessageItem } from '../utils';
 import { minimalInboxMessage } from '../inbox-message-mocks';
@@ -86,6 +86,7 @@ describe('#3571 independent Duty search concurrency and membership', () => {
       navigate: vi.fn(),
       cancelNavigation: vi.fn(),
       onError: vi.fn(),
+      setProfiles: vi.fn(),
     };
     messages = [item(1), item(2), item(3), item(4), item(5)];
     const matches = (req: InboxMessagesReq) =>
@@ -139,6 +140,38 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 3, 2, 1]);
     expect(column().state.hasMore).toBe(false);
     expect(dependencies.messageFeeds[0].filter.search).toBeFalsy();
+  });
+
+  it('#3571 merges sender profiles from search pages and refresh bridges into the existing cache', async () => {
+    let profiles: InboxMessagesRsp['signalProfiles'] = {
+      existing: { givenName: 'Existing', familyName: null },
+    };
+    vi.mocked(dependencies.setProfiles).mockImplementation((update) => {
+      profiles = typeof update === 'function' ? update(profiles) : update;
+    });
+    const list = api.list.getMockImplementation()!;
+    api.list.mockImplementation(async (req: InboxMessagesReq) => {
+      const result = await list(req);
+      return {
+        ...result,
+        signalProfiles: Object.fromEntries(
+          result.inboxItems.map(([id]: MessageItem) => [
+            `sender-${id}`,
+            { givenName: `Sender ${id}`, familyName: null },
+          ]),
+        ),
+      };
+    });
+
+    await open();
+    expect(profiles['sender-5']?.givenName).toBe('Sender 5');
+    await act(async () => column().onLoadOlder());
+    expect(profiles['sender-2']?.givenName).toBe('Sender 2');
+    messages = Array.from({ length: 12 }, (_, index) => item(index + 1));
+    await refresh();
+    expect(profiles['sender-12']?.givenName).toBe('Sender 12');
+    expect(profiles['sender-7']?.givenName).toBe('Sender 7');
+    expect(profiles.existing?.givenName).toBe('Existing');
   });
 
   it('closes mobile search after selection without canceling landing and retains its list state', async () => {
@@ -240,9 +273,14 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     });
     expect(oldSignal.aborted).toBe(true);
     await tick();
+    vi.mocked(dependencies.setProfiles).mockClear();
     await act(async () => {
-      release(response([item(99, 'old')]));
+      release({
+        ...response([item(99, 'old')]),
+        signalProfiles: { stale: { givenName: 'Stale', familyName: null } },
+      });
     });
+    expect(dependencies.setProfiles).not.toHaveBeenCalled();
     expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
     await act(async () => {
       column().onClose();
