@@ -9,10 +9,11 @@ import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { Collapse, IconButton, Switch, Tooltip } from '@mui/material';
-import { Fragment, useState, type ElementType, type ReactNode } from 'react';
+import { Fragment, useRef, useState, type ElementType, type ReactNode } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 
 import { SidePanelToggleButton } from '../../../components/SidePanelToggleButton';
+import '../../../components/selectable-list.css';
 import { useLocalStorage } from '../../../hooks/use-local-storage';
 import { formatDate } from '../../../utils/misc';
 import {
@@ -46,7 +47,7 @@ const CHAT_SECTIONS: ReadonlyArray<{
 const DIVIDER = 'border-black/12 dark:border-white/12';
 const UNREAD_ONLY_LABEL = 'Лише непрочитані';
 const READ_ALL_LABEL = 'Прочитати всі';
-// The look of an open chat row (`.group-navigation-list-item[data-selected]`), for the other items that can be open.
+// The look of an open chat row (`.echo-selectable-list-item[data-selected]`), for the other items that can be open.
 const SELECTED_LOOK =
   'hover:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_6%,transparent)] data-[selected=true]:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_8%,transparent)] data-[selected=true]:hover:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_10%,transparent)]';
 
@@ -59,6 +60,9 @@ const RAIL_ICON_LOOK =
   'hover:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_8%,transparent)] data-[selected=true]:bg-[color-mix(in_srgb,var(--echo-color-primary,var(--color-action,#3b82f6))_16%,transparent)] data-[selected=true]:text-[var(--echo-color-primary,var(--color-action,#3b82f6))]';
 const ACCOUNT_OPEN_LOOK =
   'data-[selected=true]:bg-[color-mix(in_srgb,var(--echo-color-primary,var(--color-action,#3b82f6))_16%,transparent)]';
+// The account (its header, and its button on the rail) hovers like the rows of the lists, over its whole area; once it is open the lit look is enough.
+const ACCOUNT_HEADER_HOVER =
+  'hover:data-[selected=false]:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_6%,transparent)]';
 // On a phone the rail is narrower (so its line meets the right edge of the page's panel button), and its things shrink:
 // the buttons to 2 rem, the avatars to 2 rem (`!`: the avatar size is set in a plain stylesheet, outside the layers).
 const RAIL_AVATAR_SIZE =
@@ -197,7 +201,7 @@ function ChatSection({
             render={(chat) => (
               <button
                 type="button"
-                className="group-navigation-list-item !px-2"
+                className="group-navigation-list-item echo-selectable-list-item !px-2"
                 data-messenger-chat
                 data-selected={chat.id === selectedChatId ? 'true' : 'false'}
                 aria-current={chat.id === selectedChatId ? 'true' : undefined}
@@ -277,7 +281,7 @@ function ExpandedSidebar({
     >
       {/* Lit like the open items of the rail while the account cards are open; it reaches up to the top edge of the box and down to the line below (negative margins cancel the gaps of the column). */}
       <div
-        className={`-mt-2 -mb-2 flex cursor-pointer items-center gap-3 px-4 pt-4 pb-3 ${ACCOUNT_OPEN_LOOK}`}
+        className={`-mt-2 -mb-2 flex cursor-pointer items-center gap-3 px-4 pt-4 pb-3 ${ACCOUNT_OPEN_LOOK} ${ACCOUNT_HEADER_HOVER}`}
         data-selected={accountOpen ? 'true' : 'false'}
         onClick={onOpenAccount}
       >
@@ -498,6 +502,9 @@ function CollapsedSidebar({
       if (!next.delete(key)) next.add(key);
       return next;
     });
+  // The tooltip of the account is anchored to its avatar, like the tooltips of the other rail buttons to their squares: the
+  // button itself is as wide as the rail, which would push the tooltip out to the edge of the rail.
+  const avatarRef = useRef<HTMLSpanElement>(null);
   const details = [
     account.name,
     account.phone,
@@ -516,6 +523,7 @@ function CollapsedSidebar({
       {/* Lit like the account info of the full sidebar, from the top of the layer (below the toggle) to the line. The `!` on the margins is needed for the same reason as on the radius above: the global reset gives buttons margin 0. */}
       <Tooltip
         placement="right"
+        slotProps={{ popper: { anchorEl: () => avatarRef.current as HTMLElement } }}
         title={
           <span className="flex flex-col">
             {details.map((line) => (
@@ -526,14 +534,16 @@ function CollapsedSidebar({
       >
         <button
           type="button"
-          className={`!-mt-2 !-mb-2 flex w-full cursor-pointer justify-center pt-4 pb-3 ${ACCOUNT_OPEN_LOOK}`}
+          className={`!-mt-2 !-mb-2 flex w-full cursor-pointer justify-center pt-4 pb-3 ${ACCOUNT_OPEN_LOOK} ${ACCOUNT_HEADER_HOVER}`}
           aria-label={`${account.name}: деталі акаунту`}
           aria-current={accountOpen ? 'true' : undefined}
           data-selected={accountOpen ? 'true' : 'false'}
           data-messenger-rail-account
           onClick={onOpenAccount}
         >
-          <MessengerAccountAvatar account={account} className={RAIL_AVATAR_SIZE} />
+          <span ref={avatarRef} className="inline-flex">
+            <MessengerAccountAvatar account={account} className={RAIL_AVATAR_SIZE} />
+          </span>
         </button>
       </Tooltip>
       <Separator name="account-pages" />

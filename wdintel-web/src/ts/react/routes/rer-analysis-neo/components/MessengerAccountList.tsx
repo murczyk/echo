@@ -1,3 +1,5 @@
+import '../../../components/selectable-list.css';
+
 export type MessengerAccountItem = {
   id: string;
   name: string;
@@ -105,7 +107,7 @@ export function MessengerAccountList({
               <li key={account.id}>
                 <button
                   type="button"
-                  className="group-navigation-list-item"
+                  className="group-navigation-list-item echo-selectable-list-item"
                   data-messenger-account-item
                   data-selected={selected ? 'true' : 'false'}
                   aria-current={selected ? 'true' : undefined}
