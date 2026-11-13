@@ -3,6 +3,7 @@ import type { User } from '../../../../Bindings';
 import {
   DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   DEFAULT_MEDIA_SUMMARY_ENABLED,
+  DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
 } from '../../hooks/duty-settings-defaults';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchCurrentUser } from '../../services/api/user';
@@ -34,6 +35,7 @@ export type RerDutyPageSettings = {
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   minimalReportWindowEnabled: boolean;
+  rememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
 };
 
@@ -72,6 +74,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
   const [minimalReportWindowEnabled, setMinimalReportWindowEnabled] = useState(false);
+  const [rememberReportGroup, setRememberReportGroup] = useState(
+    DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
+  );
   const [importantOnlyMyOrganism, setImportantOnlyMyOrganism] = useState(false);
 
   useEffect(() => {
@@ -91,6 +96,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
         setMinimalReportWindowEnabled(prefs.minimalReportWindowEnabled ?? false);
+        setRememberReportGroup(prefs.dutyRememberReportGroup ?? DEFAULT_DUTY_REMEMBER_REPORT_GROUP);
         setImportantOnlyMyOrganism(prefs.importantOnlyMyOrganism ?? false);
       } catch {
         if (cancelled) return;
@@ -103,6 +109,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
         setMinimalReportWindowEnabled(false);
+        setRememberReportGroup(DEFAULT_DUTY_REMEMBER_REPORT_GROUP);
         setImportantOnlyMyOrganism(false);
       }
     };
@@ -125,6 +132,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
           minimalReportWindowEnabled?: boolean;
+          dutyRememberReportGroup?: boolean;
           importantOnlyMyOrganism?: boolean;
         }>
       ).detail;
@@ -158,6 +166,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       }
       if (typeof detail?.minimalReportWindowEnabled === 'boolean') {
         setMinimalReportWindowEnabled(detail.minimalReportWindowEnabled);
+      }
+      if (typeof detail?.dutyRememberReportGroup === 'boolean') {
+        setRememberReportGroup(detail.dutyRememberReportGroup);
       }
       if (typeof detail?.importantOnlyMyOrganism === 'boolean') {
         setImportantOnlyMyOrganism(detail.importantOnlyMyOrganism);
@@ -251,6 +262,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     mediaSummaryEnabled,
     messageTextPreviewLines,
     minimalReportWindowEnabled,
+    rememberReportGroup,
     importantOnlyMyOrganism,
   };
 }
