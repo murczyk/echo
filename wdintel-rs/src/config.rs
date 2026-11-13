@@ -1072,18 +1072,22 @@ pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
 pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
 pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
-pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const ANALYTICS_VERIFY_TIMEOUT_MS: u64 = 15_000;
 pub const ANALYTICS_HTTP_READ_TIMEOUT_MS: u64 = 60_000;
 pub const ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS: i64 = 10;
 pub const ANALYTICS_VERIFY_PGOPTIONS: &str = "-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify";
-pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
-pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
-pub const RER_DUTY_TEST_REPLAY_CLEANUP_BATCH_SIZE: u64 = 500;
-pub const RER_DUTY_TEST_REPLAY_ADVISORY_LOCK_KEY: i64 = 7_312_025_041;
-pub const RER_DUTY_TEST_REPLAY_IDLE_SLEEP_SEC: u64 = 1;
-pub const RER_DUTY_TEST_REPLAY_DISABLED_SLEEP_SEC: u64 = 5;
-pub const RER_DUTY_TEST_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
+pub const MESSAGE_REPLAY_TICK_SEC: u64 = 1;
+pub const MESSAGE_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
+pub const MESSAGE_REPLAY_EMIT_BATCH_SIZE: usize = 50;
+pub const MESSAGE_REPLAY_PURGE_BATCH_SIZE: u64 = 200;
+/// Interval of the worker's progress summary while a session exists; state
+/// changes are logged immediately.
+pub const MESSAGE_REPLAY_PROGRESS_LOG_SEC: u64 = 30;
+/// Caps the replay window and the fine (15 min / 1 h) activity range, which
+/// bounds that histogram (31 days of hourly bars: 744).
+pub const MESSAGE_REPLAY_MAX_RANGE_DAYS: i64 = 31;
+/// Caps the daily overview histogram used to browse for a window.
+pub const MESSAGE_REPLAY_MAX_BROWSE_DAYS: i64 = 366;
 // for xlsx import
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const SIGINT_SOURCE_RO_ID: i32 = 2;

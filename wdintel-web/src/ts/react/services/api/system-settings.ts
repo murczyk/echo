@@ -7,12 +7,7 @@ import { postJson } from './client';
 type SystemSettingsItemRaw = {
   id: number;
   rer_analysis_units_exact_match_only_default: boolean;
-  rer_duty_test_enabled: boolean;
-  rer_duty_insert_historical_interceptions: boolean;
-  rer_duty_test_since_ms: number;
-  rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
-  rer_duty_test_replay_interval_sec?: number;
   created_at: number;
   updated_at: number;
   updated_by?: string | null;
@@ -66,12 +61,7 @@ type SystemSettingsItemRaw = {
 type SystemSettingsCurrentRspRaw = {
   id: number | null;
   rer_analysis_units_exact_match_only_default: boolean;
-  rer_duty_test_enabled: boolean;
-  rer_duty_insert_historical_interceptions: boolean;
-  rer_duty_test_since_ms: number;
-  rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
-  rer_duty_test_replay_interval_sec?: number;
   short_url_enabled: boolean;
   rer_report_enabled?: boolean;
   support_non_rer_interceptions?: boolean;
@@ -115,12 +105,7 @@ type SystemSettingsListRspRaw = {
 
 type CreateSystemSettingsReqRaw = {
   rer_analysis_units_exact_match_only_default: boolean;
-  rer_duty_test_enabled: boolean;
-  rer_duty_insert_historical_interceptions: boolean;
-  rer_duty_test_since_ms: number;
-  rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
-  rer_duty_test_replay_interval_sec: number;
   short_url_enabled: boolean;
   rer_report_enabled: boolean;
   support_non_rer_interceptions: boolean;
@@ -174,12 +159,7 @@ type ActivateSystemSettingsReqRaw = {
 export type SystemSettingsItem = {
   id: number;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -233,12 +213,7 @@ export type SystemSettingsItem = {
 export type SystemSettingsCurrent = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   rerShortUrlEnabled: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -278,12 +253,7 @@ export type SystemSettingsCurrent = {
 
 export type CreateSystemSettingsInput = {
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
-  rerDutyTestEnabled: boolean;
-  rerDutyInsertHistoricalInterceptions: boolean;
-  rerDutyTestSinceMs: number;
-  rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
-  rerDutyTestReplayIntervalSec: number;
   rerDutyShortUrl: boolean;
   rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
@@ -334,12 +304,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
   return {
     id: raw.id,
     rerAnalysisUnitsExactMatchOnlyDefault: raw.rer_analysis_units_exact_match_only_default,
-    rerDutyTestEnabled: raw.rer_duty_test_enabled,
-    rerDutyInsertHistoricalInterceptions: raw.rer_duty_insert_historical_interceptions,
-    rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
-    rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
-    rerDutyTestReplayIntervalSec: raw.rer_duty_test_replay_interval_sec ?? 1,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
     updatedBy: raw.updated_by ?? null,
@@ -395,12 +360,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
   return {
     id: raw.id ?? null,
     rerAnalysisUnitsExactMatchOnlyDefault: raw.rer_analysis_units_exact_match_only_default,
-    rerDutyTestEnabled: raw.rer_duty_test_enabled,
-    rerDutyInsertHistoricalInterceptions: raw.rer_duty_insert_historical_interceptions,
-    rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
-    rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
-    rerDutyTestReplayIntervalSec: raw.rer_duty_test_replay_interval_sec ?? 1,
     rerShortUrlEnabled: raw.short_url_enabled,
     rerReportEnabled: raw.rer_report_enabled ?? false,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
@@ -449,12 +409,7 @@ export async function createSystemSettings(
 ): Promise<SystemSettingsItem> {
   const req: CreateSystemSettingsReqRaw = {
     rer_analysis_units_exact_match_only_default: input.rerAnalysisUnitsExactMatchOnlyDefault,
-    rer_duty_test_enabled: input.rerDutyTestEnabled,
-    rer_duty_insert_historical_interceptions: input.rerDutyInsertHistoricalInterceptions,
-    rer_duty_test_since_ms: input.rerDutyTestSinceMs,
-    rer_duty_test_limit: input.rerDutyTestLimit,
     rer_duty_poll_interval_sec: input.rerDutyPollIntervalSec,
-    rer_duty_test_replay_interval_sec: input.rerDutyTestReplayIntervalSec,
     short_url_enabled: input.rerDutyShortUrl,
     rer_report_enabled: input.rerReportEnabled,
     support_non_rer_interceptions: input.supportNonRerInterceptions,
@@ -543,34 +498,5 @@ export async function cleanupOrbitOtherUnits(
   return {
     deletedCount: response.deleted_count,
     activeUnits: response.active_units,
-  };
-}
-
-type RerDutyTestReplayStatusRaw = {
-  status: string;
-  source_count: number;
-  next_source_position: number | null;
-  generated_count: number;
-  next_emit_at_ms: number | null;
-};
-
-export type RerDutyTestReplayStatus = {
-  status: string;
-  sourceCount: number;
-  nextSourcePosition: number | null;
-  generatedCount: number;
-  nextEmitAtMs: number | null;
-};
-
-export async function getRerDutyTestReplayStatus(): Promise<RerDutyTestReplayStatus> {
-  const raw = await postJson<RerDutyTestReplayStatusRaw>(
-    '/api/admin/system-settings/rer-duty-test-replay/status',
-  );
-  return {
-    status: raw.status,
-    sourceCount: raw.source_count,
-    nextSourcePosition: raw.next_source_position,
-    generatedCount: raw.generated_count,
-    nextEmitAtMs: raw.next_emit_at_ms,
   };
 }

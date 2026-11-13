@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
-  replayStatus: vi.fn(),
   cleanup: vi.fn(),
   notify: vi.fn(),
 }));
@@ -16,7 +15,6 @@ vi.mock('../RerReportSettings', () => ({ RerReportSettings: () => <div>Звіт 
 vi.mock('../../../services/api/system-settings', () => ({
   listSystemSettings: mocks.list,
   createSystemSettings: mocks.save,
-  getRerDutyTestReplayStatus: mocks.replayStatus,
   cleanupOrbitOtherUnits: mocks.cleanup,
 }));
 vi.mock('../../../components/PowerSnackbar', () => ({
@@ -86,14 +84,6 @@ function botTagsSwitch(container: HTMLElement): HTMLInputElement | null {
   );
 }
 
-function dutyTestSwitch(container: HTMLElement): HTMLInputElement | null {
-  return (
-    Array.from(container.querySelectorAll('label'))
-      .find((label) => label.textContent?.includes('Увімкнути тестове надходження повідомлень'))
-      ?.querySelector('input') ?? null
-  );
-}
-
 function signozMetricsControls(container: HTMLElement) {
   return {
     enabled: Array.from(container.querySelectorAll('label'))
@@ -121,13 +111,6 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.save.mockReset();
     mocks.list.mockResolvedValue([]);
     mocks.save.mockResolvedValue(undefined);
-    mocks.replayStatus.mockResolvedValue({
-      status: 'disabled',
-      sourceCount: 0,
-      nextSourcePosition: null,
-      generatedCount: 0,
-      nextEmitAtMs: null,
-    });
     mocks.cleanup.mockReset();
     mocks.cleanup.mockResolvedValue({ deletedCount: 0, activeUnits: [] });
     mocks.notify.mockReset();
@@ -318,19 +301,6 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     const reloaded = await renderPage();
     expect(networkMatchToggle(reloaded.container)?.checked).toBe(true);
     await act(async () => reloaded.root.unmount());
-  });
-  it('persists disabling test message replay immediately', async () => {
-    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
-    mocks.list.mockResolvedValue([{ id: 1, deleted: false, rerDutyTestEnabled: true }]);
-    const { container, root } = await renderPage();
-    const checkbox = dutyTestSwitch(container);
-    expect(checkbox?.checked).toBe(true);
-
-    await act(async () => checkbox?.click());
-    await act(async () => Promise.resolve());
-
-    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ rerDutyTestEnabled: false }));
-    await act(async () => root.unmount());
   });
   it('saves the Orbit exclusion setting', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#integrations');

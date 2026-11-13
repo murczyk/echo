@@ -256,10 +256,6 @@ export function createDutyFeedStateFixture() {
     dutyApiMocks.systemSettingsCurrent.mockResolvedValue({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,
-      rerDutyTestEnabled: false,
-      rerDutyInsertHistoricalInterceptions: false,
-      rerDutyTestSinceMs: 0,
-      rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
     });
