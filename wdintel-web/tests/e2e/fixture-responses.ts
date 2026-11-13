@@ -45,12 +45,7 @@ export function systemSettingsCurrentResponse({
   const settings: SystemSettingsCurrentRsp = {
     id: null,
     rerAnalysisUnitsExactMatchOnlyDefault: false,
-    rerDutyTestEnabled: false,
-    rerDutyInsertHistoricalInterceptions: false,
-    rerDutyTestSinceMs: 0,
-    rerDutyTestLimit: 1,
     rerDutyPollIntervalSec: 1,
-    rerDutyTestReplayIntervalSec: 1,
     shortUrlEnabled,
     rerReportEnabled,
     supportNonRerInterceptions: false,

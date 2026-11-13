@@ -72,7 +72,16 @@ earlier text, and tasks answerable from what the user supplied, may still finish
 without tools.
 A provider failure before the first tool call also gets one re-prompt, in every
 preset, because nothing is lost by trying again. Authorization and content-filter
-failures are not retried, and a repeated failure ends research as before.
+failures are not retried. Nor is a start where the gateway answered with a
+cooldown (HTTP 429, such as LiteLLM's "No deployments available"): pi's retries
+already waited it out, and another attempt would only wait out another one.
+When every research call failed at the provider and there is no evidence
+(nothing retrieved or saved, no findings restored from earlier work, no uploads
+or images), the request fails as a provider failure instead of running
+synthesis, which would ask the same model to answer without evidence. A reply the provider did give, such as
+Deep's answer before its search reminder, still completes as usual.
+The chat then says the provider did not answer and offers a retry or another
+model (incident 01a1d35e: a 194-second wait ended in the inability text).
 Research may also end without any text, as GLM-5.3 does: synthesis writes the
 answer, so an empty final turn is not a provider failure. When research called no
 tool at all, not even a rejected or private one, its reply already answers from the
@@ -169,7 +178,7 @@ checks after validation report the same way, for example `period:size` for a
 date range longer than allowed or `selectedGroups:unknown` for a group that was
 not found. A draft rejected by
 `update_research` logs `citation_rejected` with `draftIssue` (`no_citation`,
-`unknown_link` or `bare_link`). The worker logs
+`unknown_link` or `bare_link`), and so does a rejected synthesis. The worker logs
 these against the request ID without arguments, source content or raw errors.
 Deferred pagination prerequisites stay out of public tool activity; genuine
 failures retain public error events with a safe `errorReason` code.

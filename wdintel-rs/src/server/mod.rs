@@ -831,14 +831,13 @@ fn spawn_background_workers(
         crate::operator::worker::run_operator_inbox_worker_nofail(operator_env)
             .await;
     });
-    let rer_duty_env = env.clone();
-    spawn_named_worker(
-        "rer_duty_historical_interceptions_worker",
-        bg_set,
-        async move {
-            crate::system_settings::worker::run_rer_duty_historical_interceptions_worker_nofail(rer_duty_env).await;
-        },
-    );
+    let message_replay_env = env.clone();
+    spawn_named_worker("message_replay_worker", bg_set, async move {
+        crate::message_replay::worker::run_message_replay_worker_nofail(
+            message_replay_env,
+        )
+        .await;
+    });
     let cleanup_db = env.dbx.clone();
     spawn_named_worker("echo_im_cleanup", bg_set, async move {
         crate::messenger::worker::cleanup::run_cleanup_worker(cleanup_db).await;
@@ -1447,7 +1446,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::set_rer_report_enabled)
             .service(crate::system_settings::activate_system_settings)
-            .service(crate::system_settings::rer_duty_test_replay_status)
+            .service(crate::message_replay::activity)
+            .service(crate::message_replay::extent)
+            .service(crate::message_replay::preview)
+            .service(crate::message_replay::start)
+            .service(crate::message_replay::pause)
+            .service(crate::message_replay::resume)
+            .service(crate::message_replay::speed)
+            .service(crate::message_replay::stop)
+            .service(crate::message_replay::status)
             .service(crate::ai_engine::gov::get_settings)
             .service(crate::ai_engine::gov::save_settings)
             .service(crate::ai_engine::gov::list_models)

@@ -117,7 +117,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.12.3";
+const HARNESS_RELEASE = "2026.11.13.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -4705,6 +4705,14 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (research) emit({ type: "completion_diagnostic", stage: "research", outcome: budget?.reason ?? (toolLimitError ? "tool_error" : "provider_error"), remainingMs: budget?.remainingTotalMs() });
       if (research && !budget?.reason) budget?.limit("provider_error");
       if (!budget?.reason) throw error;
+      // Research whose every call failed at the provider, with no restored, retrieved or
+      // attached evidence, leaves synthesis nothing to work from but the same failing
+      // model. Failing the request lets the chat say the provider did not answer and
+      // offer a retry or another model (incident 01a1d35e).
+      const noEvidence = !savedEvidence.length && !deliveredMessages.size && !deliveredFileSections.size &&
+        !deliveredAggregates.size && !images.length && !payload.uploads?.length;
+      if (research && budget.reason === "provider_error" && research.providerNeverAnswered && noEvidence && terminalProviderFailure(error))
+        throw error;
       emitAssistant.current = false;
       void session.abort().catch(() => undefined);
       await completeLimitedResearch({

@@ -340,10 +340,6 @@ mod tests {
     fn settings_request() -> serde_json::Value {
         serde_json::json!({
             "rer_analysis_units_exact_match_only_default": true,
-            "rer_duty_test_enabled": false,
-            "rer_duty_insert_historical_interceptions": false,
-            "rer_duty_test_since_ms": 0,
-            "rer_duty_test_limit": 1,
             "rer_duty_poll_interval_sec": 5,
             "short_url_enabled": false,
             "api_rate_limit_replenish_interval_ms": 60000,
