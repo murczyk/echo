@@ -392,6 +392,7 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             | "continued"
             | "draft_refresh"
             | "research_text"
+            | "partial"
     ) {
         return None;
     }
@@ -897,6 +898,22 @@ mod tests {
             serde_json::json!({
                 "stage": "answer", "outcome": "research_text",
                 "textCharacters": 12234, "remainingMs": 120_000
+            })
+        );
+    }
+
+    #[test]
+    fn logged_answers_cut_off_by_the_deadline() {
+        assert_eq!(
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "answer",
+                "outcome": "partial", "textCharacters": 7120,
+                "remainingMs": 0, "text": "private answer"
+            }))
+            .unwrap(),
+            serde_json::json!({
+                "stage": "answer", "outcome": "partial",
+                "textCharacters": 7120, "remainingMs": 0
             })
         );
     }

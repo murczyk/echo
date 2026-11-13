@@ -524,6 +524,7 @@ mod tests {
 
     fn media_with_extension(extension: &str) -> signal_message_media::Model {
         signal_message_media::Model {
+            order_f64: None,
             id: Uuid::nil(),
             signal_message_id: 1,
             signal_message_uuid: None,
@@ -562,6 +563,7 @@ mod tests {
         file_name: &str,
     ) -> signal_message_media_conversion_job::Model {
         let media = signal_message_media::ActiveModel {
+            order_f64: Set(None),
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(signal_message_id),
             signal_message_uuid: Set(signal_message_uuid),

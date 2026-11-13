@@ -140,6 +140,7 @@ mod tests {
 
     fn audio(size_bytes: i64) -> signal_message_media::Model {
         signal_message_media::Model {
+            order_f64: None,
             id: Uuid::now_v7(),
             signal_message_id: 1,
             signal_message_uuid: Some(Uuid::now_v7()),

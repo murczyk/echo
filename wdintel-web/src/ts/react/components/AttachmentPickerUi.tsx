@@ -1,3 +1,5 @@
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -266,6 +268,8 @@ type FileRowProps = {
   onDownload?: () => void;
   onEdit?: () => void;
   onRename?: (fileName: string) => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   previewUrl?: string;
   onPreviewError?: () => void;
   onPreviewClick?: () => void;
@@ -279,6 +283,8 @@ export function AttachmentFileRow({
   onDownload,
   onEdit,
   onRename,
+  onMoveUp,
+  onMoveDown,
   previewUrl,
   onPreviewError,
   onPreviewClick,
@@ -401,6 +407,26 @@ export function AttachmentFileRow({
           >
             {meta}
           </Typography>
+        ) : null}
+        {onMoveUp || onMoveDown ? (
+          <span className="flex shrink-0 items-center">
+            <IconButton
+              size="small"
+              aria-label={`Перемістити ${file.name} вище`}
+              onClick={onMoveUp}
+              disabled={busy || !onMoveUp}
+            >
+              <ArrowUpwardIcon fontSize="small" />
+            </IconButton>
+            <IconButton
+              size="small"
+              aria-label={`Перемістити ${file.name} нижче`}
+              onClick={onMoveDown}
+              disabled={busy || !onMoveDown}
+            >
+              <ArrowDownwardIcon fontSize="small" />
+            </IconButton>
+          </span>
         ) : null}
         {onDownload || onEdit || onRename ? (
           <span className="flex shrink-0 items-center gap-0">

@@ -456,3 +456,83 @@ async fn completion_rejects_stale_body_and_cancelled_run_and_counts_once() {
     let count: i64 = env.dbx.query_one_raw(sql("select changed + unchanged as n from ai_callsign_reparse_run where id = $1", vec![run_id.into()])).await.unwrap().unwrap().try_get("", "n").unwrap();
     assert_eq!(count, 1);
 }
+
+// Regression coverage for https://github.com/echoua/echo/issues/4137: reparse
+// shared its advisory lock key with the network-match lease, so it never
+// started while that worker ran.
+#[tokio::test]
+#[serial]
+async fn issue_4137_reparse_starts_while_network_match_lease_is_held() {
+    use crate::config::{
+        AI_CALLSIGN_REPARSE_LOCK, AI_NETWORK_MATCH_WORKER_LOCK,
+    };
+    use std::time::{Duration, Instant};
+    const WAIT: Duration = Duration::from_secs(10);
+
+    let env = cleanup().await.unwrap();
+    let (actor, id) = seed(&env.dbx, &["фипка", "харитон"]).await;
+    let transaction = env.dbx.begin().await.unwrap();
+    record_edit(
+        &transaction,
+        actor,
+        &edit(id, &["фипка"], &[]),
+        &[id],
+        "fixture",
+    )
+    .await
+    .unwrap();
+    transaction.commit().await.unwrap();
+
+    let mut lease = env
+        .dbx
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .unwrap();
+    lease.close_on_drop();
+    let held: bool = sqlx::query_scalar("select pg_try_advisory_lock($1)")
+        .bind(AI_NETWORK_MATCH_WORKER_LOCK)
+        .fetch_one(&mut *lease)
+        .await
+        .unwrap();
+    assert!(held);
+
+    // A start or retry that is still committing makes the scheduled tick
+    // return at once and try again later.
+    let blocker = env.dbx.begin().await.unwrap();
+    blocker
+        .execute_raw(sql(
+            "select pg_advisory_xact_lock($1)",
+            vec![AI_CALLSIGN_REPARSE_LOCK.into()],
+        ))
+        .await
+        .unwrap();
+    let started = Instant::now();
+    assert!(!super::reparse::schedule_for_test(&env.dbx).await.unwrap());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    blocker.rollback().await.unwrap();
+
+    let scheduled =
+        tokio::time::timeout(WAIT, super::reparse::schedule_for_test(&env.dbx))
+            .await
+            .expect("scheduling waited for the network-match lease")
+            .unwrap();
+    assert!(scheduled);
+    let run = env.dbx.query_one_raw(sql("select id, automatic from ai_callsign_reparse_run where state = 'enumerating'", vec![])).await.unwrap().unwrap();
+    assert!(run.try_get::<bool>("", "automatic").unwrap());
+    let run_id: Uuid = run.try_get("", "id").unwrap();
+    let manual = tokio::time::timeout(
+        WAIT,
+        super::reparse::start(&env.dbx, Some(actor), 14),
+    )
+    .await
+    .expect("a manual start waited for the network-match lease")
+    .unwrap();
+    assert_eq!(manual, run_id);
+
+    sqlx::query("select pg_advisory_unlock($1)")
+        .bind(AI_NETWORK_MATCH_WORKER_LOCK)
+        .execute(&mut *lease)
+        .await
+        .unwrap();
+}

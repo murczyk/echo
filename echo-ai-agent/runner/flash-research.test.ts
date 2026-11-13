@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
-import { outputRetrySystemPrompt, runAgent, toolParameterNames, validatePayload, validationFields } from "./runner.ts";
+import { boundedResearchNotice, outputRetrySystemPrompt, runAgent, toolParameterNames, validatePayload, validationFields } from "./runner.ts";
 import {
   DEEP_RESEARCH_CONTINUATIONS,
   FlashResearch,
@@ -12,6 +12,7 @@ import {
   FLASH_RESEARCH_PAGINATION_REQUIRED,
   RESEARCH_CONTINUATIONS,
   RESEARCH_TUNING,
+  completedLines,
   continuationLimit,
   finalizationMultipliers,
   normalizedResearchUpdate,
@@ -55,6 +56,11 @@ const STOP = { name: "", args: {} };
 const EMPTY = { name: "", args: {} };
 // A model turn that answers the request with text and no tool call.
 const ANSWER = { name: "", args: {} };
+// A model turn that writes the cited report itself after its tools, with no tool call.
+const REPORT = { name: "", args: {} };
+const historyCitation = "/rer-analysis-neo?m=archive-history";
+// Longer than any saved draft can be.
+const longFindings = "Botanical findings. ".repeat(420);
 // Models that end the request without any evidence to cite.
 const NO_EVIDENCE = ["deep-stalled", "deep-promise-only"];
 const initial = {
@@ -168,6 +174,9 @@ const scenarios = [
   "user-text-history",
   "history-aggregate",
   "user-map",
+  "research-report",
+  "research-report-history",
+  "research-report-note",
 ];
 
 // Every non-OpenAI engine with a budget runs the same harness as Flash.
@@ -337,6 +346,7 @@ for (const [scenario, modelName] of [
     if (scenario === "refresh-final")
       for (const search of ["late survey", "later survey", "latest survey"])
         read({ period, search });
+    if (scenario.startsWith("research-report")) calls.push(REPORT);
     if (scenario === "empty-refresh")
       calls.push({ name: "update_research", args: initial });
     if (scenario === "tool-limit") {
@@ -650,6 +660,16 @@ for (const [scenario, modelName] of [
         const call = calls.shift();
         if (call === EMPTY) return stream("");
         if (call === ANSWER) return stream("The botanical survey is ready.");
+        // Incident 01a1d04a: research wrote the whole report itself after its tools.
+        if (call === REPORT)
+          return stream(
+            {
+              "research-report": `## Archive\n\n- ${longFindings}${draft}`,
+              "research-report-history": `## Archive\n\n- ${longFindings}[джерело](${historyCitation})`,
+              // A cited completion note must not replace the answer.
+              "research-report-note": `Findings saved. [джерело](${citation})`,
+            }[scenario]!,
+          );
         return stream(
           "PRIVATE_RESEARCH_NARRATION",
           call === STOP ? undefined : call,
@@ -687,7 +707,17 @@ for (const [scenario, modelName] of [
                   },
                 ],
               }
-            : {}),
+            : scenario === "research-report-history"
+              ? {
+                  history: [
+                    {
+                      role: "assistant",
+                      content: `An earlier finding. [джерело](${historyCitation})`,
+                      citations: [{ messageId: 9, messageIdentifier: "archive-history" }],
+                    },
+                  ],
+                }
+              : {}),
           contextWindow: 65_536,
           maxTokens: 8192,
           checkpointMaxTokens: 8192,
@@ -876,6 +906,21 @@ for (const [scenario, modelName] of [
       assert.equal(synthesisCalls, 0);
       assert.equal(diagnostics.at(-1).outcome, "research_text");
       assert.ok(!events.some((event) => event.summary === "Підсумовую зібрані джерела"));
+    }
+    // Incident 01a1d04a: a cited report research wrote after its tools is delivered, not
+    // rewritten by a synthesis that ran out of time; one citing only history is not new.
+    if (scenario === "research-report") {
+      assert.equal(synthesisCalls, 0);
+      assert.equal(forcedUpdates, 0);
+      assert.ok(answer.startsWith(`## Archive\n\n- ${longFindings}${draft}`));
+      assert.equal(diagnostics.at(-1).outcome, "research_text");
+      assert.ok(!events.some((event) => event.summary === "Підсумовую зібрані джерела"));
+    }
+    if (["research-report-history", "research-report-note"].includes(scenario)) {
+      assert.equal(synthesisCalls, 1);
+      assert.ok(!answer.includes(historyCitation));
+      assert.ok(!answer.includes("Findings saved"));
+      assert.ok(!diagnostics.some((event) => event.outcome === "research_text"));
     }
     if (
       [
@@ -1093,6 +1138,142 @@ for (const [scenario, modelName] of [
     }
   });
 }
+
+const synthesisEngine = {
+  id: "glm-5.3",
+  name: "GLM-5.3",
+  provider: "echo-fixture",
+  api: "openai-completions" as const,
+  reasoning: false,
+  baseUrl: "http://127.0.0.1:9/v1",
+  input: ["text" as const],
+  contextWindow: 65_536,
+  maxTokens: 8192,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+};
+
+/**
+ * Runs the real provider stream: it writes `written`, then the finalization deadline
+ * passes while the provider is still writing, as in incident 01a1d054.
+ */
+async function cutOffSynthesis(
+  t: any,
+  research: FlashResearch,
+  written: string,
+): Promise<string> {
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init: any) => {
+    const chunk = {
+      id: "fixture",
+      object: "chat.completion.chunk",
+      choices: [{ index: 0, delta: { role: "assistant", content: written }, finish_reason: null }],
+    };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          init.signal?.addEventListener("abort", () =>
+            controller.error(new DOMException("Aborted", "AbortError")),
+          );
+          setTimeout(() => budget.finalization.abort(), 50);
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  try {
+    return await research.complete(
+      {
+        engine: synthesisEngine,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Summarize today's archive records.",
+        evidence: {
+          messages: [
+            {
+              messageId: 1,
+              messageIdentifier: "archive-1",
+              text: "The archive received a botanical survey.",
+              datetime: "2026-11-12T10:00:00Z",
+              author: "",
+              group: "",
+            },
+          ],
+          files: [],
+        },
+        maxTokens: 8192,
+        signal: budget.finalization.signal,
+      },
+      budget,
+    );
+  } finally {
+    budget.dispose();
+  }
+}
+
+test("incident 01a1d054: a synthesis cut off at the deadline delivers its finished cited lines", async (t) => {
+  const diagnostics: any[] = [];
+  const research = new FlashResearch(() => sources, undefined, (event) => diagnostics.push(event));
+  const written = `## Archive\n\n- ${draft}\n\n## Greenhouse\n\n- Reopened [джерело](/rer-analysis-neo?m=arch`;
+  const answer = await cutOffSynthesis(t, research, written);
+  assert.equal(answer, `## Archive\n\n- ${draft}`);
+  assert.equal(research.usedPartial, true);
+  assert.equal(research.usedFallback, true);
+  const synthesis = diagnostics.find((event) => event.stage === "synthesis");
+  assert.equal(synthesis.outcome, "aborted");
+  assert.equal(synthesis.textCharacters, written.length);
+  assert.equal(diagnostics.at(-1).outcome, "partial");
+  assert.equal(diagnostics.at(-1).textCharacters, answer.length);
+  t.mock.restoreAll();
+  // A final newline shows that the last line was finished.
+  const finished = new FlashResearch(() => sources);
+  assert.equal(await cutOffSynthesis(t, finished, `## Archive\n\n- ${draft}\n`), `## Archive\n\n- ${draft}`);
+  assert.equal(finished.usedPartial, true);
+});
+
+test("incident 01a1d054: a cut-off synthesis loses to a longer saved draft and never passes uncited", async (t) => {
+  const withDraft = new FlashResearch(() => sources);
+  await (withDraft.tool(() => {}) as any).execute("save", updated);
+  assert.equal(
+    await cutOffSynthesis(t, withDraft, `## A\n\n- Short [джерело](${citation})\n- unfinished`),
+    draft,
+  );
+  assert.equal(withDraft.usedPartial, false);
+  t.mock.restoreAll();
+  const diagnostics: any[] = [];
+  const uncited = new FlashResearch(() => sources, undefined, (event) => diagnostics.push(event));
+  assert.equal(
+    await cutOffSynthesis(t, uncited, "## A\n\n- An uncited finding\n- unfinished"),
+    FLASH_INABILITY,
+  );
+  assert.equal(uncited.usedPartial, false);
+  assert.equal(diagnostics.at(-1).outcome, "inability");
+});
+
+test("incident 01a1d04a: research's own report counts only when long and cited from this request's tools", () => {
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  // Restored work memory and history make a link citable, not freshly retrieved.
+  const research = new FlashResearch(() => sources);
+  const report = `## Archive\n\n- ${longFindings}${draft}`;
+  assert.equal(research.researchReport(report, budget, new Set()), undefined);
+  assert.equal(research.researchReport(report, budget, new Set([citation])), report);
+  assert.equal(research.researchReport(draft, budget, new Set([citation])), undefined);
+  budget.dispose();
+});
+
+test("incident 01a1d054: a cut-off answer says the time limit cut it", () => {
+  const notice = (deep: boolean) =>
+    boundedResearchNotice({ reason: "time_limit", deep, coverageLimited: true, unfinished: false, fallbackText: "x", partial: true });
+  assert.equal(notice(false), "Відповідь обірвано через ліміт часу; охоплення джерел неповне. Оберіть глибокий аналіз, щоб отримати повний звіт.");
+  assert.equal(notice(true), "Відповідь обірвано через ліміт часу; охоплення джерел неповне.");
+});
+
+test("incident 01a1d054: only finished lines of a cut-off answer remain", () => {
+  assert.equal(completedLines("# Report\n\n## A\n- one\n\n## B\n- tw"), "# Report\n\n## A\n- one");
+  assert.equal(completedLines("- unfinished [джерело](/rer"), "");
+  assert.equal(completedLines("## Only a heading\n- half"), "");
+});
 
 test("#3572 duration guard stops checkpoints before consuming the research reserve", (t) => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
