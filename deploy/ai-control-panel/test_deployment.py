@@ -362,7 +362,7 @@ class Sync(DeploymentFixture):
 
 class PanelRun(unittest.TestCase):
     """run_panel against a stand-in control.py that speaks the same protocol."""
-    def run_panel(self, body, dry_run=False):
+    def run_panel(self, body, dry_run=False, lost_terminal=False):
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary)
             panel = repo / 'deploy/ai-control-panel'
@@ -376,13 +376,19 @@ class PanelRun(unittest.TestCase):
                 def emit(value): print(json.dumps(value), flush=True)
             ''') + textwrap.dedent(body))
             seen = repo / 'seen.json'
+            logs = repo / 'logs'
+            logs.mkdir()
+            output, errors = io.StringIO(), io.StringIO()
+            capture = contextlib.ExitStack()
+            if not lost_terminal:
+                capture.enter_context(contextlib.redirect_stdout(output))
+                capture.enter_context(contextlib.redirect_stderr(errors))
             with mock.patch.dict(os.environ, {'PANEL_SEEN': str(seen)}), \
-                    contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()) as errors:
+                    mock.patch.object(NOTICE.tempfile, 'tempdir', str(logs)), capture:
                 ok = NOTICE.run_panel(repo, 'echo-cbr', NEW, dry_run)
-            log = output.getvalue().split('AI control panel log: ', 1)[1].split('\n', 1)[0]
-            self.addCleanup(Path(log).unlink)
+            [log] = logs.glob('echo-ai-control-panel-*.log')
             leftover = list((repo / '.dev-runtime/ai-control-panel').iterdir())
-            return ok, output.getvalue() + errors.getvalue(), json.loads(seen.read_text()), Path(log).read_text(), leftover
+            return ok, output.getvalue() + errors.getvalue(), json.loads(seen.read_text()), log.read_text(), leftover
 
     def test_success_prints_messages_and_the_target_row(self):
         ok, text, seen, log, leftover = self.run_panel('''
@@ -411,21 +417,45 @@ class PanelRun(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertFalse(self.run_panel(body)[0])
 
-    def test_ctrl_c_asks_the_panel_to_stop_and_waits_for_it(self):
-        ok, text, seen, log, leftover = self.run_panel('''
-            os.kill(os.getppid(), signal.SIGINT)
-            os.kill(os.getppid(), signal.SIGINT)
-            cancel = Path(request['cancel_file'])
-            deadline = time.monotonic() + 5
-            while not cancel.exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
-            emit({'message': 'Cancelled at a safe boundary' if cancel.exists() else 'never cancelled'})
-        ''')
+    def test_termination_signals_ask_the_panel_to_stop_and_wait_for_it(self):
+        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signal=number.name):
+                ok, text, seen, log, leftover = self.run_panel(f'''
+                    os.kill(os.getppid(), {int(number)})
+                    os.kill(os.getppid(), {int(number)})
+                    cancel = Path(request['cancel_file'])
+                    deadline = time.monotonic() + 5
+                    while not cancel.exists() and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                    emit({{'message': 'Cancelled at a safe boundary' if cancel.exists() else 'never cancelled'}})
+                ''')
+                self.assertFalse(ok)
+                self.assertIn('Cancelled at a safe boundary', text)
+                self.assertEqual(text.count('Cancellation requested'), 1)
+                self.assertEqual(leftover, [])
+        for number, handler in [(signal.SIGINT, signal.default_int_handler), (signal.SIGTERM, signal.SIG_DFL),
+                                (signal.SIGHUP, signal.SIG_DFL)]:
+            self.assertIs(signal.getsignal(number), handler)
+
+    def test_lost_terminal_keeps_draining_the_panel_until_it_stops(self):
+        class Gone(io.StringIO):
+            def write(self, text):
+                raise OSError(5, 'Input/output error')
+        with contextlib.redirect_stdout(Gone()), contextlib.redirect_stderr(Gone()):
+            ok, text, seen, log, leftover = self.run_panel('''
+                os.kill(os.getppid(), signal.SIGHUP)
+                cancel = Path(request['cancel_file'])
+                deadline = time.monotonic() + 5
+                while not cancel.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                for index in range(200):
+                    emit({'message': f'step {index}'})
+                emit({'message': 'Cancelled at a safe boundary' if cancel.exists() else 'never cancelled'})
+            ''', lost_terminal=True)
         self.assertFalse(ok)
-        self.assertIn('Cancelled at a safe boundary', text)
-        self.assertEqual(text.count('Cancellation requested'), 1)
-        self.assertEqual(leftover, [])
-        self.assertIs(signal.getsignal(signal.SIGINT), signal.default_int_handler)
+        self.assertEqual(text, '')
+        self.assertIn('step 199', log)
+        self.assertIn('Cancelled at a safe boundary', log)
 
 
 class RecipeAdvisory(unittest.TestCase):
