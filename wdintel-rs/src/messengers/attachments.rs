@@ -217,8 +217,9 @@ async fn load_older_page(
     before: Option<AttachmentPosition>,
     limit: u64,
 ) -> Result<AttachmentPage, AppError> {
-    let (rows, older) =
-        load_older_rows(dbx, attachments, before, limit).await.c(h!())?;
+    let (rows, older) = load_older_rows(dbx, attachments, before, limit)
+        .await
+        .c(h!())?;
     let newer = rows.first().map(AttachmentRow::position).or(before);
     Ok(AttachmentPage { rows, older, newer })
 }
