@@ -712,10 +712,11 @@ UUID and rebuilds its derived table plus ingestion view after a mirror resync
 or resnapshot replaces that UUID; normal deploys need no manual step. A rebuild
 creates the ingestion view, waits until every insert into the raw table that
 started before the view has finished, and only then copies the raw table, so
-each row is either in that copy or goes through the view. If such an insert
-is still running after ten minutes, the rebuild fails unrecorded and the next
-reconciliation starts it again. It runs under the reconcile lock, so analytics
-reads fall back to PostgreSQL until it finishes.
+each row is either in that copy or goes through the view. A rebuild first
+supersedes its recorded state, so one that fails or is interrupted (for
+example, an insert still running after ten minutes) is not mistaken for a
+finished one and the next reconciliation starts it again. It runs under the
+reconcile lock, so analytics reads fall back to PostgreSQL until it finishes.
 
 The gateway exposes them as `echo_clickhouse_derived.message_callsign`,
 `message_network_link`, `message_unit_link` and `message_aor_link`. Analytics

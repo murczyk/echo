@@ -187,7 +187,7 @@ reconcile_network_link_table() {
   fi
 
   log "Rebuilding message-ordered network links for raw table UUID $raw_uuid"
-  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
+  forget_derived_table_reconciliation "$raw_table" "$network_link_table"
   clickhouse_admin \
     --receive_timeout 600 \
     --multiquery \
@@ -230,6 +230,7 @@ reconcile_network_link_table() {
         _peerdb_version
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
+  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
   backfill_derived_rows \
     "$network_link_table" \
     "$raw_table" \
@@ -257,11 +258,43 @@ reconcile_network_link_table() {
   "
 }
 
+# A rebuild drops the derived table before copying it again. Supersede the
+# recorded state first, so an interrupted rebuild is not mistaken for a
+# finished one: the next reconciliation then rebuilds instead of accepting an
+# empty or partial copy. The record written after a successful rebuild has a
+# later reconciled_at and replaces this one.
+forget_derived_table_reconciliation() {
+  local raw_table=$1
+  local derived_table=$2
+
+  clickhouse_admin_http "
+    INSERT INTO \`$metadata_database\`.\`derived_table_reconciliation\`
+    (
+      raw_database,
+      raw_table,
+      raw_table_uuid,
+      derived_database,
+      derived_table,
+      reconciled_at
+    )
+    VALUES
+    (
+      '$CLICKHOUSE_RAW_DB',
+      '$raw_table',
+      toUUID('00000000-0000-0000-0000-000000000000'),
+      '$derived_database',
+      '$derived_table',
+      now64(9)
+    )
+  "
+}
+
 # Copies the raw table into a derived table after its ingestion view exists.
-# An INSERT that was already running when the view was created does not feed
-# it, so wait until every such INSERT has finished first: the backfill
-# snapshot then contains their rows, and every later INSERT goes through the
-# view. Rows in both are harmless, ReplacingMergeTree keeps one per key and
+# An INSERT that was already running when the view was created may not feed
+# it, so wait until every INSERT that started before $4 has finished first.
+# $4 must be sampled after the view was created: the backfill snapshot then
+# contains the rows of every INSERT that started without the view, and every
+# later INSERT goes through it. Rows in both are harmless, ReplacingMergeTree keeps one per key and
 # version. On timeout the rebuild fails before it is recorded, so the next
 # reconciliation starts it again.
 backfill_derived_rows() {
@@ -344,7 +377,7 @@ reconcile_unit_link_table() {
   fi
 
   log "Rebuilding message-ordered unit links for raw table UUID $raw_uuid"
-  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
+  forget_derived_table_reconciliation "$raw_table" "$unit_link_table"
   clickhouse_admin \
     --receive_timeout 600 \
     --multiquery \
@@ -379,6 +412,7 @@ reconcile_unit_link_table() {
       SELECT $columns
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
+  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
   backfill_derived_rows \
     "$unit_link_table" \
     "$raw_table" \
@@ -449,7 +483,7 @@ reconcile_callsign_table() {
   fi
 
   log "Rebuilding message-ordered callsigns for raw table UUID $raw_uuid"
-  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
+  forget_derived_table_reconciliation "$raw_table" "$callsign_table"
   clickhouse_admin \
     --receive_timeout 600 \
     --multiquery \
@@ -490,6 +524,7 @@ reconcile_callsign_table() {
         _peerdb_version
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
+  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
   backfill_derived_rows \
     "$callsign_table" \
     "$raw_table" \
