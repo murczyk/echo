@@ -117,7 +117,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.13.2";
+const HARNESS_RELEASE = "2026.11.14.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3902,6 +3902,19 @@ function requestedTools(messages: unknown[]): boolean {
   });
 }
 
+/**
+ * The provider answered, but the output limit cut the turn off: hidden reasoning can use
+ * all of it before any text or tool call (incident 01a1d9d0).
+ */
+function cutOff(message: JsonObject | undefined): boolean {
+  return message?.stopReason === "length";
+}
+
+/** A reply's text, unless the output limit cut it off mid-answer. */
+function uncutText(message: JsonObject | undefined): string {
+  return cutOff(message) ? "" : assistantMessageText(message);
+}
+
 function isOutputTokenLimit(message: JsonObject | undefined): boolean {
   return message?.stopReason === "length" || (message?.stopReason === "error" &&
     /output token limit|max_tokens|model output limit/i.test(String(message.errorMessage ?? "")));
@@ -3985,12 +3998,13 @@ function providerFailureDetail(value: unknown): string {
 
 export function validateFinalAssistantMessage(
   messages: unknown[],
-  { allowEmpty = false }: { allowEmpty?: boolean } = {},
+  { allowEmpty = false, allowCutOff = false }: { allowEmpty?: boolean; allowCutOff?: boolean } = {},
 ): void {
   const assistantMessage = lastAssistantMessage(messages);
   if (!assistantMessage) {
     throw new Error("provider response is missing");
   }
+  if (allowCutOff && cutOff(assistantMessage)) return;
   if (isOutputTokenLimit(assistantMessage)) {
     throw new Error("provider output token limit reached");
   }
@@ -4069,6 +4083,7 @@ const DEEP_STOP_NOTICES: Record<ResearchLimitReason, string> = {
 const DEEP_UNFINISHED_NOTICE = "Агент завершив роботу, не виконавши всі заплановані кроки.";
 const DEEP_DRAFT_NOTICE = "Не вдалося завершити підсумок. Наведено останню збережену чернетку.";
 const PARTIAL_NOTICE = "Відповідь обірвано через ліміт часу; охоплення джерел неповне.";
+const PARTIAL_LENGTH_NOTICE = "Відповідь обірвано через ліміт обсягу; охоплення джерел неповне.";
 const PARTIAL_DEEP_HINT = " Оберіть глибокий аналіз, щоб отримати повний звіт.";
 
 export function boundedResearchNotice({ reason, deep, coverageLimited, unfinished, fallbackText, partial }: {
@@ -4078,11 +4093,14 @@ export function boundedResearchNotice({ reason, deep, coverageLimited, unfinishe
   unfinished: boolean;
   /** The fallback answer, when synthesis failed. */
   fallbackText?: string;
-  /** The answer is the finished part of a synthesis the deadline cut off. */
-  partial?: boolean;
+  /** The answer is the finished part of a synthesis the deadline or output limit cut off. */
+  partial?: "deadline" | "output_limit";
 }): string {
   if (!coverageLimited) return "";
-  if (partial) return deep ? PARTIAL_NOTICE : PARTIAL_NOTICE + PARTIAL_DEEP_HINT;
+  if (partial) {
+    const cut = partial === "output_limit" ? PARTIAL_LENGTH_NOTICE : PARTIAL_NOTICE;
+    return deep ? cut : cut + PARTIAL_DEEP_HINT;
+  }
   if (!deep) return "Охоплення джерел неповне; відповідь містить лише підтверджені зібрані дані.";
   if (reason) return DEEP_STOP_NOTICES[reason];
   if (unfinished) return DEEP_UNFINISHED_NOTICE;
@@ -4176,7 +4194,7 @@ async function completeLimitedResearch(options: {
   // synthesis qualifies it.
   const coverageLimited = Boolean(budget.reason) || (deep ? unfinished || usedFallback : researchGaps);
   const notice = options.research
-    ? boundedResearchNotice({ reason: budget.reason, deep, coverageLimited, unfinished, fallbackText: usedFallback ? text : undefined, partial: options.research?.usedPartial })
+    ? boundedResearchNotice({ reason: budget.reason, deep, coverageLimited, unfinished, fallbackText: usedFallback ? text : undefined, partial: options.research?.partialCause })
     : budget.reason === "context_limit"
     ? "Не вдалося продовжити аналіз усіх джерел. Наведено часткову відповідь за вже зібраними матеріалами; охоплення джерел неповне. Уточніть запит, щоб продовжити."
     : budget.policy.preset === "deep"
@@ -4575,13 +4593,17 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       assertResearch();
       if (contextCompaction.failure()) throw contextCompaction.failure();
       if (research && budget) {
-        // Synthesis writes the answer after tools, so research may simply end without any text.
-        const researchEnd = { allowEmpty: true };
+        // Synthesis writes the answer after tools, so research may simply end without any text,
+        // or with a turn the output limit cut off: the provider answered, so it is no provider
+        // failure, and unfinished work is re-prompted (incident 01a1d9d0).
+        const researchEnd = { allowEmpty: true, allowCutOff: true };
         const failedStart = research.noteFailedStart(lastAssistantMessage(currentTurnAssistantMessages));
         if (!failedStart) validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
         // The reply to the request itself: a Deep reminder to search that still runs no tool
         // only confirms it, and its own reply is the completion note that reminder asks for.
-        const reply = failedStart ? undefined : assistantMessageText(lastAssistantMessage(currentTurnAssistantMessages));
+        // A failed or cut-off reply is none, so the reply to the re-prompt counts.
+        const researchReply = lastAssistantMessage(currentTurnAssistantMessages);
+        const reply = failedStart || cutOff(researchReply) ? undefined : assistantMessageText(researchReply);
         await continueOpenResearch(session, research, budget);
         if (journal?.failure) throw journal.failure;
         if (toolLimitError) throw toolLimitError;
@@ -4603,7 +4625,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
         // Research that ran no tool already answered from the whole conversation.
         const answer = report ?? (!usedTools && !documentWork
-          ? research.directAnswer(reply ?? assistantMessageText(lastAssistantMessage(currentTurnAssistantMessages)), budget)
+          ? research.directAnswer(reply ?? uncutText(lastAssistantMessage(currentTurnAssistantMessages)), budget)
           : undefined);
         await completeLimitedResearch({ payload, budget, selectedEngine: selectedModel,
           evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence, aggregates: [...deliveredAggregates.values()] },

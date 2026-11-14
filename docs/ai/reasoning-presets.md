@@ -56,6 +56,7 @@ legacy behavior.
 | GLM-5.3 | Chat Completions | low | high | max | low |
 | GPT-6-Sol | Responses | none | medium | max | none |
 | GPT-6.1-Sol | Responses | low | medium | max | low |
+| GLM-5.3 Flash | Chat Completions | default | default | default | low |
 
 GLM thinking stays enabled. OpenAI Responses uses `store: false`, preserves
 encrypted reasoning and function-call IDs between tool rounds, and uses the
@@ -68,7 +69,10 @@ The optional host setting `ai_agent_reasoning_presets_enabled = true` enables
 the selector. Without it, existing installations retain their behavior.
 Only engines listed in `ai_agent_reasoning_verified_engine_ids` receive the
 variable effort mappings above. Other engines receive time limits with their
-existing fixed reasoning configuration.
+existing fixed reasoning configuration. GLM-5.3 Flash has no preset efforts:
+its research keeps the provider's default thinking, and its checkpoints and final
+synthesis always run at `low`, because the default thinking used the whole output
+allowance of about a third of its syntheses (#4203).
 Engine IDs must be verified against their **actual configured endpoint** before
 being listed. A catalogue entry or SDK fixture is insufficient evidence.
 Queue labels and elapsed execution times are shown independently of this flag.

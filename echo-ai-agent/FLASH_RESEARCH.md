@@ -62,7 +62,8 @@ intact. Transitions happen
 between completed tool rounds; deadline timers and cancellation remain backstops.
 
 A turn that ends with pending checklist items, or with no saved state after a
-public progress report that no tool call followed, does not end research: the
+public progress report that no tool call followed or after the output limit cut it
+off, does not end research: the
 runner re-prompts the model to do the work or mark it done or blocked. Deep allows
 three re-prompts and the other presets one, while time for a turn remains. A
 re-prompt that runs no tool ends the loop. There is no forced tool choice here.
@@ -83,7 +84,13 @@ Deep's answer before its search reminder, still completes as usual.
 The chat then says the provider did not answer and offers a retry or another
 model (incident 01a1d35e: a 194-second wait ended in the inability text).
 Research may also end without any text, as GLM-5.3 does: synthesis writes the
-answer, so an empty final turn is not a provider failure. When research called no
+answer, so an empty final turn is not a provider failure. Nor is a turn the output
+limit cut off: Flash's hidden reasoning can use the whole allowance before any text
+or tool call. Its unfinished text is never an answer, and unfinished work gets the
+usual re-prompt, which then also asks the model to keep its reasoning brief
+(incident 01a1d9d0, where one such turn ended a Deep research as a provider failure).
+Without a saved plan, a cut-off last turn counts as unfinished work, so an answer
+after it is marked as incomplete coverage. When research called no
 tool at all, not even a rejected or private one, its reply already answers from the
 whole conversation and is delivered as written, after the same link validation and
 map, file and document link safeguards; synthesis could only rewrite it from a
@@ -112,7 +119,9 @@ nothing to report. Its conversation is the opening user message, which often set
 rules for the whole chat, plus the newest history entries that fit a quarter of the
 engine's input allowance; the rest stays for evidence. Synthesis uses the same context-aware evidence packing as other engines and at
 most 16,384 output tokens (the whole configured output cap on Deep), bounded by
-that cap. Hidden thinking counts against it. It preserves
+that cap. Hidden thinking counts against it, so Flash synthesis and checkpoints run
+at reasoning effort `low` when the request has a reasoning-preset policy; its research
+keeps the default thinking. It preserves
 full records when they fit rather than cutting each source to a fixed prefix.
 The compact saved draft is included once. A truncated, empty, interrupted or
 citation-invalid completion may receive one corrective attempt if its observed
@@ -122,13 +131,14 @@ authorization failures, filtering and cancellation remain terminal.
 Intermediate assistant text and private-tool events never
 enter the streamed answer; public progress and source activity remain visible.
 When the finalization deadline cuts a synthesis off, the provider hands over the text
-it streamed so far, after a wait of at most 300 ms. Text that a provider failure or
+it streamed so far, after a wait of at most 300 ms; a synthesis the output limit cut
+off hands over its text the same way. Text that a provider failure or
 a content filter ended is not used. A last line without a final
 newline may be unfinished and is dropped, together with any trailing heading. The
 finished lines then count as an answer if their links validate (incident 01a1d054,
 where the deadline discarded 73 seconds of a cited report). An unfinished synthesis returns whichever of that part and the latest
 completed draft is longer, when its links still validate against the available
-citations. A cut-off part says the time limit cut it. Without either, it returns a
+citations. A cut-off part says whether the time limit or the output limit cut it. Without either, it returns a
 short inability notice. Answers grounded solely in user-provided text need no
 invented citation, and registered map links remain supported. It never
 substitutes raw source excerpts. Unread cursors,
