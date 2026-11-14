@@ -56,6 +56,9 @@ const chat = {
   accountMemberStatus: null,
   lastMessageDate: null,
   telegram: null,
+  oldestReadAt: null,
+  newestReadAt: null,
+  unreadCount: 0,
 };
 
 describe('MessengerChatView', () => {

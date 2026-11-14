@@ -1061,10 +1061,35 @@ export type MessengersChatItem = {
   accountMemberStatus: string | null;
   lastMessageDate: number | null;
   telegram: MessengersTelegramChatId | null;
+  oldestReadAt: number | null;
+  newestReadAt: number | null;
+  unreadCount: number;
 };
 
 export type MessengersChatsListRsp = {
   items: Array<MessengersChatItem>;
+};
+
+export type MessengersChatReadStateGetReq = {
+  accountId: string;
+  chatId: string;
+};
+
+export type MessengersChatReadStateUpdateReq = {
+  accountId: string;
+  chatId: string;
+  oldestReadAt: number;
+  newestReadAt: number;
+};
+
+export type MessengersChatReadState = {
+  oldestReadAt: number | null;
+  newestReadAt: number | null;
+  unreadCount: number;
+};
+
+export type MessengersChatsMarkAllReadReq = {
+  accountId: string;
 };
 
 export type MessengersChatMembersListReq = {
@@ -1132,6 +1157,7 @@ export type MessengersMessagesListReq = {
   limit: number | null;
   direction: MessengersMessagesDirection | null;
   aroundMessageId: string | null;
+  aroundSentAt: number | null;
 };
 
 export type MessengersTelegramMessageId = {

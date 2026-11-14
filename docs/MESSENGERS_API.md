@@ -20,14 +20,18 @@ are removed from the RER inbox and analysis feeds; see
 | `POST /accounts/list` | Implemented | `{}` | `MessengersAccountsListRsp` |
 | `POST /accounts/update` | Implemented | `MessengersAccountUpdateReq` | `null` |
 | `POST /chats/list` | Implemented | `MessengersChatsListReq` | `MessengersChatsListRsp` |
+| `POST /chats/read-state/get` | Implemented | `MessengersChatReadStateGetReq` | `MessengersChatReadState` |
+| `POST /chats/read-state/update` | Implemented | `MessengersChatReadStateUpdateReq` | `MessengersChatReadState` |
+| `POST /chats/mark-all-read` | Implemented | `MessengersChatsMarkAllReadReq` | `null` |
 | `POST /chats/members/list` | Implemented | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
 | `POST /contacts/list` | Implemented | `MessengersContactsListReq` | `MessengersContactsListRsp` |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 | `POST /attachments/list` | Implemented | `MessengersAttachmentsListReq` | `MessengersAttachmentsListRsp` |
 | `POST /attachments/count` | Implemented | `MessengersAttachmentsCountsReq` | `MessengersAttachmentsCountsRsp` |
 
-Every route is a read except `accounts/update`, the only write, which changes
-only fields owned by Echo users; collected data stays read-only. Requests use `POST` with a JSON body, like
+Every route is a read except `accounts/update`, which changes only fields
+owned by Echo users, and the [read state](#read-state) routes, which change only
+the caller's own read state; collected data stays read-only. Requests use `POST` with a JSON body, like
 `/api/rer-importer/get-inbox`, so later filters can be added as optional body
 fields without changing the route.
 
@@ -76,7 +80,7 @@ account.
 
 | Status | Meaning | Body |
 |---|---|---|
-| `400` | Invalid uuid, an invalid `cursor`, `limit`, `direction` or combination of them on `messages/list` or `attachments/list`, or an invalid `page` or `limit` on `contacts/list` | Plain-text message |
+| `400` | Invalid uuid, an invalid `cursor`, `limit`, `direction` or combination of them on `messages/list` or `attachments/list`, an invalid `page` or `limit` on `contacts/list`, an invalid `around_sent_at` or combination with it on `messages/list`, or invalid bounds on `chats/read-state/update` | Plain-text message |
 | `401` | Not authenticated | `Unauthenticated` |
 | `403` | Missing `CyberMessengers`, or missing `Rer` / `CyberViewerRestricted` | `Forbidden` |
 | `404` | Account or chat is unknown, deleted, outside the caller's groups, or the chat is not under that account. Also an `around_message_id` that is not a visible message of the chat | `Not found` |
@@ -194,7 +198,8 @@ sync, and never reads or changes `internal_notes`.
 ### `POST /chats/list`
 
 Every chat of one account, most recent first:
-`last_message_date` descending with nulls last, then `id` descending.
+`last_message_date` descending with nulls last, then `id` descending. Each
+item carries the caller's [read state](#read-state) of the chat.
 
 ```ts
 type MessengersChatsListReq = {
@@ -216,6 +221,9 @@ type MessengersChatItem = {
   account_member_status: string | null  // the account's membership in the chat
   last_message_date: number | null      // epoch ms
   telegram: { chat_id: string } | null
+  oldest_read_at: number | null         // epoch ms, the caller's read span; null until read
+  newest_read_at: number | null         // epoch ms
+  unread_count: number                  // messages outside the read span
 }
 ```
 
@@ -251,6 +259,124 @@ type MessengersChatMemberItem = {
   telegram: { user_id: string } | null
 }
 ```
+
+## Read state
+
+Each login has its own read state per chat: the span of the chat timeline it
+has read, `[oldest_read_at, newest_read_at]`, bounds included. Messages sent
+outside the span are unread; a chat the login has never read has no span, and
+every message in it is unread. The span is kept per login, so other logins
+viewing the same chat are not affected.
+
+The timeline is `messenger_sent_at`, as in [`messages/list`](#post-messageslist),
+not message ids, because backfilled history is stored out of send order. A
+consequence: history backfilled before `oldest_read_at` after the chat was read
+counts as unread.
+
+`chats/list` returns the same `oldest_read_at`, `newest_read_at` and
+`unread_count` for every chat, so the list needs no extra request.
+
+### `POST /chats/read-state/get`
+
+The caller's read state of one chat.
+
+```ts
+type MessengersChatReadStateGetReq = {
+  account_id: string
+  chat_id: string
+}
+
+type MessengersChatReadState = {
+  oldest_read_at: number | null         // epoch ms; null until the chat is read
+  newest_read_at: number | null         // epoch ms
+  unread_count: number
+}
+```
+
+### `POST /chats/read-state/update`
+
+Marks the messages sent within `[oldest_read_at, newest_read_at]` as read,
+typically the `sent_at` of the oldest and newest message the client has shown.
+The response is the merged state.
+
+```ts
+type MessengersChatReadStateUpdateReq = {
+  account_id: string
+  chat_id: string
+  oldest_read_at: number                // epoch ms, included
+  newest_read_at: number                // epoch ms, included
+}
+```
+
+- The stored span only widens: it becomes the earliest of the stored and sent
+  `oldest_read_at` and the latest of the two `newest_read_at`. A stale tab or a
+  late request cannot make read messages unread again, and there is no way to
+  mark messages unread.
+- Send times have microseconds while the API has milliseconds, so each bound
+  covers its whole millisecond: a message whose `sent_at` equals a bound is read.
+- `oldest_read_at` after `newest_read_at`, or a timestamp out of range, is a
+  `400`.
+
+### `POST /chats/mark-all-read`
+
+Marks every live chat of one account as read for the caller: each chat's span
+is widened to cover its first to its newest message. Chats without messages are
+left without a read state, which already counts no unread messages. The
+response body is `null`; read the counts again with `chats/list`.
+
+```ts
+type MessengersChatsMarkAllReadReq = {
+  account_id: string
+}
+```
+
+- All chats are updated in one transaction.
+- A message ingested while the request runs can stay unread, which is correct:
+  the caller has not seen it.
+
+### Opening a chat at its unread messages
+
+The read bounds are milliseconds that cover their whole millisecond, so the
+client compares them with `sent_at` directly: a message is unread when
+`sent_at > newest_read_at` or `sent_at < oldest_read_at`.
+
+| Chat in `chats/list` | First `messages/list` request |
+|---|---|
+| `unread_count` is `0` | The newest page: no `cursor` |
+| Read before, with unread messages | `around_sent_at: newest_read_at`: the first unread messages above the last read ones |
+| Never read (`newest_read_at` is `null`) | The newest page, or `direction: "Oldest"` to start from the first message |
+
+The unread divider goes above the oldest item with `sent_at > newest_read_at`.
+The client keeps the `newest_read_at` it opened the chat with for as long as the
+chat stays open, because its own `read-state/update` calls move the stored
+bound while the user scrolls. The paging cursors of the page continue in both
+directions as usual.
+
+While the user scrolls, the client sends `read-state/update` with the `sent_at`
+of the oldest and newest messages it has shown, debounced; late or repeated
+requests are harmless because the span only widens.
+
+Unread messages before `oldest_read_at`, from backfilled history, are above the
+read span. `around_sent_at: oldest_read_at - 1` opens the chat at the newest
+of them.
+
+The read state records how far the user has read, not where they left the
+chat: after scrolling back into older read messages, the chat reopens at the
+unread divider, not at that place. Keeping the last viewed place would be a
+separate, nullable column of `messenger_chat_read_state`, set by the client
+and opened the same way with `around_sent_at`; the routes and the paging would
+not change.
+
+Semantics of the counts:
+
+- `unread_count` counts every stored message of the chat, including messages
+  deleted in Echo (`signal_message.deleted`), which `messages/list` leaves out.
+  Messenger ingest does not delete messages, so the two agree in practice, and
+  skipping the check keeps the counts cheap.
+- Each bound is counted as its own range on the chat timeline index
+  (`messenger_chat_id`, `messenger_sent_at`), so a fully read chat costs two
+  index lookups, and the cost grows with the number of unread messages. A chat
+  that was never read is counted in full.
 
 ## Contacts
 
@@ -311,6 +437,7 @@ type MessengersMessagesListReq = {
   limit: number | null                  // default 50, at most 100
   direction: "Older" | "Newer" | "Oldest" | null   // default "Older"
   around_message_id: string | null      // Echo message uuid
+  around_sent_at: number | null         // epoch ms
 }
 
 type MessengersMessagesListRsp = {
@@ -348,6 +475,7 @@ Modes:
 | `cursor` from `older_cursor`, `direction` `"Older"` or omitted | Messages sent before that point |
 | `cursor` from `newer_cursor`, `direction: "Newer"` | The messages closest after that point |
 | `around_message_id` | That message with messages on both sides: `limit / 2` newer, the rest older including the message itself |
+| `around_sent_at` | The page split at the end of that millisecond: `limit / 2` messages sent after it, the rest sent at or before it. With a chat's `newest_read_at`, the first unread messages and the last read ones; see [Opening a chat at its unread messages](#opening-a-chat-at-its-unread-messages) |
 
 Example response:
 
@@ -402,7 +530,10 @@ Semantics:
 - Without a `cursor`, `"Older"` and `"Newer"` have no effect.
 - `"Oldest"` cannot be combined with `cursor`. Its `older_cursor` is `null`;
   continue from `newer_cursor` with `direction: "Newer"`.
-- `around_message_id` cannot be combined with `cursor` or `direction`.
+- `around_message_id` and `around_sent_at` cannot be combined with each other,
+  with `cursor` or with `direction`. A timestamp out of range is a `400`.
+- `around_sent_at` needs no message at that time; it works for any date, for
+  example to jump to a day in the chat.
 - An empty `Newer` page means nothing new. Both cursors in the response repeat
   the request's cursor, so it can be sent again to check for new messages.
 - `older_cursor` is only known to be final on `Older`, `Oldest`, newest and

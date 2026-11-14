@@ -1967,6 +1967,7 @@ UPDATE messenger_contact SET avatar_id = NULL;
 DELETE FROM messenger_avatar;
 DELETE FROM messenger_chat_member;
 DELETE FROM messenger_contact;
+DELETE FROM messenger_chat_read_state;
 DELETE FROM messenger_chat;
 DELETE FROM messenger_account;
 DELETE FROM signal_message_media;

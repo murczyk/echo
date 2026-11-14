@@ -29,6 +29,7 @@ fn has_read_deadline(path: &str) -> bool {
                 | "/api/rer-importer/get-inbox-count"
                 | "/api/rer-importer/get-inbox-unit-stats"
                 | "/api/rer-importer/messages-by-id-matching-filters"
+                | "/api/messengers/chats/list"
                 | "/api/messengers/messages/list"
                 | "/api/messengers/attachments/list"
                 | "/api/messengers/attachments/count"

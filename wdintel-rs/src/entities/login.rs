@@ -107,6 +107,8 @@ pub enum Relation {
     LoginTotp,
     #[sea_orm(has_many = "super::messenger_alert_delivery::Entity")]
     MessengerAlertDelivery,
+    #[sea_orm(has_many = "super::messenger_chat_read_state::Entity")]
+    MessengerChatReadState,
     #[sea_orm(has_many = "super::network_freq_last_datetime_in_aor::Entity")]
     NetworkFreqLastDatetimeInAor,
     #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
@@ -415,6 +417,12 @@ impl Related<super::messenger_alert_delivery::Entity> for Entity {
     }
 }
 
+impl Related<super::messenger_chat_read_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerChatReadState.def()
+    }
+}
+
 impl Related<super::network_freq_last_datetime_in_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NetworkFreqLastDatetimeInAor.def()
@@ -712,6 +720,19 @@ impl Related<super::user_group_feed_read_state::Entity> for Entity {
 impl Related<super::user_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserSettings.def()
+    }
+}
+
+impl Related<super::messenger_chat::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::messenger_chat_read_state::Relation::MessengerChat.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::messenger_chat_read_state::Relation::Login
+                .def()
+                .rev(),
+        )
     }
 }
 

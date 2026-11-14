@@ -98,6 +98,9 @@ describe('MessengerWorkspace', () => {
       accountMemberStatus: null,
       lastMessageDate: Date.UTC(2026, 8, 12, 12),
       telegram: null,
+      oldestReadAt: null,
+      newestReadAt: null,
+      unreadCount: 0,
     });
     vi.mocked(listMessengersChats).mockResolvedValue({
       items: [
@@ -160,6 +163,9 @@ describe('MessengerWorkspace', () => {
             accountMemberStatus: null,
             lastMessageDate: null,
             telegram: null,
+            oldestReadAt: null,
+            newestReadAt: null,
+            unreadCount: 0,
           },
         ],
       });
@@ -198,6 +204,9 @@ describe('MessengerWorkspace', () => {
       accountMemberStatus: null,
       lastMessageDate: null,
       telegram: null,
+      oldestReadAt: null,
+      newestReadAt: null,
+      unreadCount: 0,
     };
     vi.mocked(listMessengersChats).mockResolvedValue({ items: [chat] });
     vi.mocked(listMessengersChatMembers).mockResolvedValue({ items: [] });

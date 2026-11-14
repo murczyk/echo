@@ -69,6 +69,7 @@ describe('analysis messengers API', () => {
         limit: 20,
         direction: 'Newer',
         aroundMessageId: null,
+        aroundSentAt: null,
       },
       { signal },
     );
@@ -82,6 +83,7 @@ describe('analysis messengers API', () => {
         limit: 20,
         direction: 'Newer',
         around_message_id: null,
+        around_sent_at: null,
       },
       { signal },
     );
