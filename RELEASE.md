@@ -132,6 +132,8 @@ canaries are clean.
 
 Echo requires the exact harness release its running application was built for.
 Until they match, every AI chat request on that server fails.
+While they differ, the bgworker logs `ERROR` "AI harness mismatch …" every
+5 minutes, starting 15 minutes after it starts.
 
 `just deploy` and `just deploy-from-local` upgrade the harness themselves,
 straight after the application: they preview the upgrade to the release the

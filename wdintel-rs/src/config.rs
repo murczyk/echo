@@ -748,6 +748,11 @@ pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
 pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.13.2";
+/// How often the bgworker compares the namespace harness with
+/// `AI_AGENT_HARNESS_RELEASE` (#4186). The first check waits longer, because a
+/// deploy restarts the bgworker before it upgrades the harness.
+pub const AI_AGENT_HARNESS_CHECK_INTERVAL_SEC: u64 = 5 * 60;
+pub const AI_AGENT_HARNESS_CHECK_STARTUP_DELAY_SEC: u64 = 15 * 60;
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
