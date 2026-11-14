@@ -681,6 +681,60 @@ describe('AiAgentChat request queue', () => {
     expect(request.querySelectorAll('td')).toHaveLength(2);
   });
 
+  it('#4182 offers the answer copy menu once the answer is complete', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const write = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        constructor(readonly items: Record<string, Blob>) {}
+      },
+    );
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText, write },
+    });
+    const markdown = '**Важливо**\n\n```sh\nls -la\n```';
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-copy',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+
+    setTextarea('Покажи команду');
+    submitForm();
+    await flush();
+    await act(async () => streamEvent('request-copy', 1, 'assistant_delta', markdown));
+    const request = container.querySelector(
+      '[data-testid="live-request-request-copy"]',
+    ) as HTMLElement;
+    expect(request.querySelector('.ai-code-block button')?.textContent).toBe('Копіювати');
+    expect(request.querySelector('button[aria-label="Копіювати відповідь"]')).toBeNull();
+
+    await act(async () => streamEvent('request-copy', 2, 'completion', ''));
+    await flush();
+    await act(async () => clickAriaButton('Копіювати відповідь', request));
+    await flush();
+    const menu = document.body.querySelector('[role="menu"]') as HTMLElement;
+    expect(
+      Array.from(menu.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent),
+    ).toEqual(['Копіювати текст', 'Копіювати як Markdown']);
+    await act(async () => (menu.querySelectorAll('[role="menuitem"]')[1] as HTMLElement).click());
+    await flush();
+    expect(writeText).toHaveBeenCalledWith(markdown);
+
+    await act(async () => clickAriaButton('Копіювати відповідь', request));
+    await flush();
+    await act(async () =>
+      (document.body.querySelector('[role="menuitem"]') as HTMLElement).click(),
+    );
+    await flush();
+    const [[[item]]] = write.mock.calls;
+    expect(await item.items['text/plain'].text()).toBe('Важливо\n\nls -la');
+    expect(await item.items['text/html'].text()).toContain('<strong>Важливо</strong>');
+    Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
   it('serializes request creation, then streams and cancels requests independently', async () => {
     let resolveFirst:
       ((value: { id: string; conversationId: string; state: 'queued' }) => void) | null = null;

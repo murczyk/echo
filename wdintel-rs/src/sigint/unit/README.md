@@ -82,6 +82,26 @@ Regression coverage:
 `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-unit-references.spec.tsx`,
 `wdintel-web/tests/e2e/analysis-unit-cache.spec.ts`.
 
+## Unit creation
+
+Catalog and inbox unit creation fill missing military-district and army-region
+fields before generating the name and recording the creation changelog. The
+reference is the first non-deleted unit by ID with the same lowest populated
+echelon and value, ignoring case and surrounding spaces. Inactive references
+are eligible; every lower echelon must be blank. Entered upper values are
+preserved. Units whose lowest echelon is above army, units without echelons,
+and requests without a matching reference remain unchanged. Other hierarchy
+fields are not inferred.
+
+Duplicate candidate discovery applies the same inference as submission
+validation, so candidates are matched against the inferred upper echelons in
+both cases.
+
+Regression coverage:
+`wdintel-rs/src/sigint/unit/mod.rs`,
+`wdintel-rs/src/sigint/unit/creation_hierarchy.rs`,
+`wdintel-rs/src/sigint/unit/message_creation.rs`.
+
 ## Inbox unit labels
 
 Inbox responses keep the stored parser/editor input in `unit`. Cards use

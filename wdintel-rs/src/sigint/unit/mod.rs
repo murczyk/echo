@@ -30,6 +30,7 @@ pub mod activity;
 pub mod attachment;
 pub mod changelog;
 pub mod combat_type;
+mod creation_hierarchy;
 pub mod hierarchy;
 pub mod labels;
 mod merge_task;
@@ -1230,7 +1231,7 @@ async fn create_unit_for_login(
         clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req)
             .await
             .context(h!())?;
-    let transaction = begin_unit_creation_transaction(&env.dbx, &req)
+    let transaction = begin_unit_creation_transaction(&env.dbx, &mut req)
         .await
         .context(h!())?;
     let unit = insert_merge_link_unit(&transaction, login, &req)
@@ -1346,8 +1347,9 @@ pub async fn create_unit_with_auto_network_for_login(
         Some(locations)
     };
 
-    let transaction =
-        begin_unit_creation_transaction(&env.dbx, &req.unit).await?;
+    let transaction = begin_unit_creation_transaction(&env.dbx, &mut req.unit)
+        .await
+        .context(h!())?;
     let unit = insert_merge_link_unit(&transaction, login, &req.unit).await?;
     let (network_id, created_network) = create_optional_unit_network(
         &transaction,
@@ -1404,19 +1406,21 @@ async fn create_optional_unit_network(
 
 async fn begin_unit_creation_transaction(
     dbx: &DatabaseConnection,
-    req: &CreateUnitReq,
+    req: &mut CreateUnitReq,
 ) -> Result<DatabaseTransaction, AppError> {
-    if req.active {
-        Ok(
-            begin_orbit_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
-                .await
-                .c(h!())?,
-        )
-    } else {
-        Ok(begin_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
+    let transaction = if req.active {
+        begin_orbit_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
             .await
-            .c(h!())?)
-    }
+            .c(h!())?
+    } else {
+        begin_unit_merge_transaction(dbx, &req.duplicate_unit_ids)
+            .await
+            .c(h!())?
+    };
+    creation_hierarchy::fill_missing_upper_echelons(&transaction, req)
+        .await
+        .c(h!())?;
+    Ok(transaction)
 }
 
 async fn insert_merge_link_unit(
@@ -5201,43 +5205,102 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn create_unit_merges_requested_duplicates_after_insert() {
-        let env = cleanup().await.unwrap();
+        let (env, _guard) = cleanup_locked().await.unwrap();
         insert_settings(&env.dbx, true).await;
         let login_id = test_login_id(&env).await;
-        let duplicate = crate::functest::tests::mk_sigint_unit(
+        crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
-                active: Set(true),
+                company: Set("2 шр".to_string()),
+                military_district: Set("Група армій".to_string()),
+                army_region: Set("Регіон".to_string()),
+                active: Set(false),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
-        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
-        let mut req = auto_req(true, vec![], vec![]);
-        req.unit.duplicate_unit_ids = vec![duplicate.id, duplicate.id];
-
-        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
+        for auto_network in [false, true] {
+            let duplicate = crate::functest::tests::mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    active: Set(true),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
+            let orbit_unit_id =
+                link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+            let req = CreateUnitReq {
+                company: "2 шр".to_string(),
+                active: true,
+                duplicate_unit_ids: vec![duplicate.id, duplicate.id],
+                ..Default::default()
+            };
+            assert!(!orbit::create_unit_duplicate_candidate_ids_for_req(
+                &env.dbx, &req,
+            )
+            .await
+            .unwrap()
+            .contains(&duplicate.id));
+            orbit_unit::ActiveModel {
+                unit_id: Set(orbit_unit_id),
+                operational_unit_name_full: Set(Some(
+                    "2 шр / 3 ошб / 44 осбр / Група армій / Регіон".to_string(),
+                )),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+            assert!(orbit::create_unit_duplicate_candidate_ids_for_req(
+                &env.dbx, &req,
+            )
+            .await
+            .unwrap()
+            .contains(&duplicate.id));
+            let unit_id = if auto_network {
+                create_unit_with_auto_network_for_login(
+                    &login_id,
+                    &env,
+                    CreateUnitWithAutoNetworkReq {
+                        unit: req,
+                        skip_network_creation: true,
+                        locations: vec![],
+                        unit_mask: vec![],
+                    },
+                )
+                .await
+                .unwrap()
+                .unit
+                .id
+            } else {
+                create_unit_for_login(&login_id, &env, req)
+                    .await
+                    .unwrap()
+                    .0
+                    .id
+            };
 
-        assert_ne!(rsp.unit.id, duplicate.id);
-        assert!(
-            sigint_unit::Entity::find_by_id(duplicate.id)
+            assert_ne!(unit_id, duplicate.id);
+            assert!(
+                sigint_unit::Entity::find_by_id(duplicate.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .deleted
+            );
+            let unit = sigint_unit::Entity::find_by_id(unit_id)
                 .one(&env.dbx)
                 .await
                 .unwrap()
-                .unwrap()
-                .deleted
-        );
-        assert!(
-            !sigint_unit::Entity::find_by_id(rsp.unit.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .deleted
-        );
+                .unwrap();
+            assert!(!unit.deleted);
+            assert_eq!(unit.military_district, "Група армій");
+            assert_eq!(unit.army_region, "Регіон");
+        }
     }
 
     #[tokio::test]

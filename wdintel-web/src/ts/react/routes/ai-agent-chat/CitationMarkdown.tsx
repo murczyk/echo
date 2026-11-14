@@ -1,3 +1,4 @@
+import { CodeBlock } from './CopyControls';
 import { FileCitationChip } from './FileCitationChip';
 import { fileCitationHref } from '../../services/api/device-documents';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
@@ -173,7 +174,7 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
     </MessageSummaryPreview>
   );
 }
-const MARKDOWN_COMPONENTS = { a: CitationAnchor };
+const MARKDOWN_COMPONENTS = { a: CitationAnchor, pre: CodeBlock };
 
 export function CitationMarkdown({
   children,
@@ -313,6 +314,7 @@ export function CitationMarkdown({
       {failed ? (
         <button
           type="button"
+          data-copy-skip
           onClick={() => {
             setResolved(
               (previous) => new Map([...previous].filter(([, source]) => source !== 'error')),

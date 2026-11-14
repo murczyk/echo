@@ -809,6 +809,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
               onSubmit={submitMinimalReport}
               onRequestClose={handleDrawerClose}
               onExpand={expandMinimalReport}
+              onDelete={reportDeleteId != null ? () => setDeleteConfirmOpen(true) : null}
             />
           ) : null}
           {editorDialogs}

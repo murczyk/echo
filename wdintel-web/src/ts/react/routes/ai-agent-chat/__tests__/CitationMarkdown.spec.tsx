@@ -53,6 +53,8 @@ describe('AI message citations', () => {
     container?.remove();
     container = undefined as unknown as HTMLDivElement;
     document.body.innerHTML = '';
+    Reflect.deleteProperty(navigator, 'clipboard');
+    vi.useRealTimers();
     vi.resetAllMocks();
   });
   it('keeps single newlines in answers as line breaks', async () => {
@@ -186,4 +188,40 @@ describe('AI message citations', () => {
       expect(mocks.notify).toHaveBeenCalled();
     },
   );
+
+  it('#4182 labels code blocks with their language and copies only the code', async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    await render('Код:\n\n```python\nprint("Ехо")\n\n# кінець\n```\n\n```\nбез мови\n```');
+    const blocks = container.querySelectorAll('.ai-code-block');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].querySelector('[data-copy-skip]')?.textContent).toBe('pythonКопіювати');
+    expect(blocks[1].querySelector('[data-copy-skip]')?.textContent).toBe('Копіювати');
+
+    const button = blocks[0].querySelector('button')!;
+    await act(async () => button.click());
+    expect(writeText).toHaveBeenCalledWith('print("Ехо")\n\n# кінець');
+    expect(button.textContent).toBe('Скопійовано');
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(button.textContent).toBe('Копіювати');
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it('#4182 reports a failed code copy', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    });
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: () => false });
+    await render('```\nкод\n```');
+    const button = container.querySelector('.ai-code-block button') as HTMLButtonElement;
+    await act(async () => button.click());
+    expect(button.textContent).toBe('Копіювати');
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося скопіювати',
+    });
+    Reflect.deleteProperty(document, 'execCommand');
+  });
 });

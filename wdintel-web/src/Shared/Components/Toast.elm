@@ -1,9 +1,10 @@
-module Shared.Components.Toast exposing (Level(..), Model, Msg(..), Toast, ToastV2, addError, addErrorV2, addErrors, addWarning, init, overlay, update, view)
+module Shared.Components.Toast exposing (Level(..), Model, Msg(..), Toast, ToastV2, addError, addErrorV2, addErrorV2Dismissing, addErrors, addWarning, init, overlay, update, view)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Html.Extra as HtmlX
+import Process
 import Task
 import Time
 import Utils.EnumeratedList as EL exposing (EnumeratedItem, EnumeratedList)
@@ -13,7 +14,8 @@ type Msg
     = NoOp
     | CloseAll
     | AddToastGotTime { level : Level, label : String } Time.Posix
-    | AddToastV2GotTime { level : Level, title : String, content : String } Time.Posix
+    | AddToastV2GotTime { level : Level, title : String, content : String, dismissAfterMs : Maybe Float } Time.Posix
+    | Dismiss Int
 
 
 type Level
@@ -30,7 +32,8 @@ type alias Toast =
 
 
 type alias ToastV2 =
-    { level : Level
+    { id : Int
+    , level : Level
     , title : String
     , content : String
     , created : Time.Posix
@@ -40,6 +43,7 @@ type alias ToastV2 =
 type alias Model =
     { toasts : EnumeratedList Toast
     , toastsV2 : EnumeratedList ToastV2
+    , nextId : Int
     }
 
 
@@ -47,6 +51,7 @@ init : Model
 init =
     { toasts = EL.fromList []
     , toastsV2 = EL.fromList []
+    , nextId = 0
     }
 
 
@@ -72,13 +77,29 @@ update msg model =
         AddToastV2GotTime data t ->
             let
                 new =
-                    { title = data.title
+                    { id = model.nextId
+                    , title = data.title
                     , content = data.content
                     , level = data.level
                     , created = t
                     }
             in
-            ( { model | toastsV2 = EL.fromList (EL.toList model.toastsV2 ++ [ new ]) }, Cmd.none )
+            ( { model
+                | toastsV2 = EL.fromList (EL.toList model.toastsV2 ++ [ new ])
+                , nextId = model.nextId + 1
+              }
+            , case data.dismissAfterMs of
+                Just ms ->
+                    Task.perform (\_ -> Dismiss new.id) (Process.sleep ms)
+
+                Nothing ->
+                    Cmd.none
+            )
+
+        Dismiss id ->
+            ( { model | toastsV2 = EL.fromList (List.filter (\toast -> toast.id /= id) (EL.toList model.toastsV2)) }
+            , Cmd.none
+            )
 
 
 addToast :
@@ -96,17 +117,25 @@ addToastV2 :
     , level : Level
     , title : String
     , content : String
+    , dismissAfterMs : Maybe Float
     }
     -> Cmd msg
 addToastV2 ps =
-    Cmd.map ps.toMsg (Task.perform (AddToastV2GotTime { level = ps.level, title = ps.title, content = ps.content }) Time.now)
+    Cmd.map ps.toMsg (Task.perform (AddToastV2GotTime { level = ps.level, title = ps.title, content = ps.content, dismissAfterMs = ps.dismissAfterMs }) Time.now)
 
 
 {-| Add error toast with separate title and content (V2 API)
 -}
 addErrorV2 : (Msg -> msg) -> String -> String -> Cmd msg
 addErrorV2 toMsg title content =
-    addToastV2 { toMsg = toMsg, level = Error, title = title, content = content }
+    addToastV2 { toMsg = toMsg, level = Error, title = title, content = content, dismissAfterMs = Nothing }
+
+
+{-| Add error toast that closes itself after the given number of milliseconds
+-}
+addErrorV2Dismissing : (Msg -> msg) -> Float -> String -> String -> Cmd msg
+addErrorV2Dismissing toMsg dismissAfterMs title content =
+    addToastV2 { toMsg = toMsg, level = Error, title = title, content = content, dismissAfterMs = Just dismissAfterMs }
 
 
 {-| Legacy function - adds error toast with single label (backward compatibility)

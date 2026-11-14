@@ -8,7 +8,7 @@ rust_log := if log_sql == "true" { "RUST_LOG=sqlx=trace,seaorm=trace " } else { 
 no_bgworker := "false"
 dev_back_args := if no_bgworker == "true" { "--no-bgworker" } else { "" }
 server := ""
-active_servers := "echo-staging echo-cbr-staging echo-cbr echo-kharkiv2 echo-kupiansk echo-siversk echo-zp2 echo-skhid echo-pivnich"
+active_servers := "echo-staging echo-cbr-staging echo-kharkiv2 echo-kzmi echo-kupiansk echo-siversk echo-cbr echo-zp2 echo-skhid echo-pivnich"
 ai_servers := "echo-cbr-staging echo-cbr"
 target := ""
 backup_key_id := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key_id -f ./deploy/config-backup.toml; else echo ""; fi`
@@ -1210,6 +1210,7 @@ deploy _server_pos="" server silent="false":
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
+    MAINTENANCE_STARTED=0
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
     echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
@@ -1220,8 +1221,16 @@ deploy _server_pos="" server silent="false":
         -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
         '{{ discord_webhook_infra }}' || true
     fi
-    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" "$SERVER"; then
-      echo "WARNING: AI harness check failed. Run: just ai-control-panel scan --host $SERVER --json" >&2
+    # AI chat refuses every request until the harness matches the deployed build.
+    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" --sync "$SERVER"; then
+      printf "\n🔴🔴🔴 AI harness on %s is not confirmed in sync with the deployed application; AI chat there refuses every request while it is out of sync. The application deploy itself succeeded. Fix the cause above, then run: python3 deploy/ai-control-panel/deploy-notice.py --sync %s 🔴🔴🔴\n" "$SERVER" "$SERVER" >&2
+      if [[ "{{ silent }}" != "true" ]]; then
+        curl -sS -X POST \
+          -H 'Content-Type: application/json' \
+          -d "{\"content\":\"🔴 $SERVER (version $VERSION): AI harness is not confirmed in sync; AI chat may refuse every request until it is\"}" \
+          '{{ discord_webhook_infra }}' || true
+      fi
+      exit 1
     fi
 
 [arg('server', long='server')]
@@ -1518,6 +1527,7 @@ deploy-from-local _server_pos="" server silent="false":
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
+    MAINTENANCE_STARTED=0
 
     if [[ "{{ silent }}" != "true" ]]; then
       # Success notification
@@ -1526,8 +1536,16 @@ deploy-from-local _server_pos="" server silent="false":
         -d "{\"content\":\"✅ Deployed $SERVER from local .deb ($DEB_NAME)\"}" \
         '{{ discord_webhook_infra }}' || true
     fi
-    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" "$SERVER"; then
-      echo "WARNING: AI harness check failed. Run: just ai-control-panel scan --host $SERVER --json" >&2
+    # AI chat refuses every request until the harness matches the deployed build.
+    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" --sync "$SERVER"; then
+      printf "\n🔴🔴🔴 AI harness on %s is not confirmed in sync with the deployed application; AI chat there refuses every request while it is out of sync. The application deploy itself succeeded. Fix the cause above, then run: python3 deploy/ai-control-panel/deploy-notice.py --sync %s 🔴🔴🔴\n" "$SERVER" "$SERVER" >&2
+      if [[ "{{ silent }}" != "true" ]]; then
+        curl -sS -X POST \
+          -H 'Content-Type: application/json' \
+          -d "{\"content\":\"🔴 $SERVER (local .deb $DEB_NAME): AI harness is not confirmed in sync; AI chat may refuse every request until it is\"}" \
+          '{{ discord_webhook_infra }}' || true
+      fi
+      exit 1
     fi
 
 [arg('server', long='server')]
