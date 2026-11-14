@@ -426,12 +426,6 @@ where
         )
         .await
         .c(h!())?;
-    crate::rer_importer::inbox::invalidate_messages_network_frequency_last_seen(
-        dbx,
-        &sigint_inbox_item_ids,
-    )
-    .await
-    .c(h!())?;
     let sigint_inbox_items = filter_network_calc_items(sigint_inbox_items, dbx)
         .await
         .c(h!())?;
@@ -640,6 +634,11 @@ where
         .map(|link| link.id)
         .collect::<Vec<_>>();
     for stale_ids in stale_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
+        crate::rer_importer::inbox::invalidate_network_links_frequency_last_seen(
+            dbx, stale_ids,
+        )
+        .await
+        .c(h!())?;
         sigint_inbox_item_network::Entity::delete_many()
             .filter(
                 sigint_inbox_item_network::Column::Id.is_in(stale_ids.to_vec()),

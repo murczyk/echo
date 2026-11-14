@@ -1211,6 +1211,36 @@ mod tests {
             .unwrap();
         let kept_unit_row =
             *unit_rows.iter().find(|row| row.1 == units[0].id).unwrap();
+        // Both networks last saw this message. A recalculation that keeps a
+        // link must not clear that: the activity cache only falls back to
+        // recently created links, and kept links are no longer recreated.
+        sigint_network_freq::Entity::update_many()
+            .col_expr(
+                sigint_network_freq::Column::LastSeenDt,
+                Expr::value(inbox_item.datetime),
+            )
+            .filter(
+                sigint_network_freq::Column::NetworkId
+                    .is_in([networks[0].id, networks[1].id]),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+        let last_seen = || async {
+            let mut rows = sigint_network_freq::Entity::find()
+                .filter(
+                    sigint_network_freq::Column::NetworkId
+                        .is_in([networks[0].id, networks[1].id]),
+                )
+                .all(db)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|freq| (freq.network_id, freq.last_seen_dt.is_some()))
+                .collect::<Vec<_>>();
+            rows.sort();
+            rows
+        };
 
         let calculated = calculate().await.unwrap();
         assert_eq!(calculated[&inbox_item.id].len(), 2);
@@ -1218,6 +1248,10 @@ mod tests {
             saved_link_rows_4202(db, inbox_item.id).await,
             (network_rows.clone(), unit_rows.clone()),
             "an unchanged recalculation must not rewrite link rows"
+        );
+        assert_eq!(
+            last_seen().await,
+            vec![(networks[0].id, true), (networks[1].id, true)]
         );
 
         sigint_inbox_item_network::Entity::update_many()
@@ -1248,6 +1282,11 @@ mod tests {
             (vec![kept_network_row], vec![kept_unit_row]),
             "only the link that is no longer calculated may change, and an \
              outdated item uuid is fixed in place"
+        );
+        assert_eq!(
+            last_seen().await,
+            vec![(networks[0].id, true), (networks[1].id, false)],
+            "only the removed link's network loses its last-seen time"
         );
     }
 
@@ -1294,7 +1333,16 @@ mod tests {
             .all(db)
             .await
             .unwrap();
-        assert!(frequencies.iter().all(|freq| freq.last_seen_dt.is_none()));
+        // Only the removed link's network loses its last-seen time. The kept
+        // link to networks[0] still supplies it, so its last activity is not
+        // blanked while the queued recalculation is pending (ECHO-4202).
+        assert!(
+            frequencies.iter().all(|freq| {
+                freq.last_seen_dt.is_none()
+                    == (freq.network_id == networks[1].id)
+            }),
+            "{frequencies:?}"
+        );
         let queued_frequency_ids = network_recalculation_task::Entity::find()
             .select_only()
             .column(network_recalculation_task::Column::NetworkFreqId)

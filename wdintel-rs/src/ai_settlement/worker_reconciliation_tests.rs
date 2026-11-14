@@ -169,13 +169,16 @@ async fn replacement_and_removal_reconcile_networks_and_statistics_2133() {
         network_fixture(dbx).await;
     assert_networks(dbx, inbox_item.id, &networks[..1]).await;
 
-    for (settlements, expected, previous_frequency) in [
+    // Only a removed link clears its frequency's last-seen time. A kept link
+    // still supplies it, so the network's last activity stays visible until
+    // the queued recalculation runs (ECHO-4202).
+    for (settlements, expected, removed_frequency) in [
         (
             vec!["#2133 FAR".to_string()],
             &networks[1..],
-            frequency_ids[0],
+            Some(frequency_ids[0]),
         ),
-        (vec![], networks.as_slice(), frequency_ids[1]),
+        (vec![], networks.as_slice(), None),
     ] {
         sigint_network_freq::Entity::update_many()
             .col_expr(
@@ -207,15 +210,20 @@ async fn replacement_and_removal_reconcile_networks_and_statistics_2133() {
         .await
         .unwrap());
         assert_networks(dbx, inbox_item.id, expected).await;
-        assert_eq!(
-            sigint_network_freq::Entity::find_by_id(previous_frequency)
-                .one(dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .last_seen_dt,
-            None,
-        );
+        for frequency_id in &frequency_ids {
+            let last_seen_dt =
+                sigint_network_freq::Entity::find_by_id(*frequency_id)
+                    .one(dbx)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .last_seen_dt;
+            assert_eq!(
+                last_seen_dt.is_none(),
+                removed_frequency == Some(*frequency_id),
+                "frequency {frequency_id}"
+            );
+        }
         let queued_frequency_ids = network_recalculation_task::Entity::find()
             .select_only()
             .column(network_recalculation_task::Column::NetworkFreqId)
