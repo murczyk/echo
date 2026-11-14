@@ -1,3 +1,4 @@
+import { StatisticsLink } from '../shared/group-navigation/StatisticsLink';
 import { GroupList, type GroupScope } from '../shared/group-navigation';
 import type { AnalysisPageViewModel } from './types';
 
@@ -41,6 +42,7 @@ export function AnalysisLeftPanel({ page, leftPanelVisible, fullHeight = false }
           onRetry={page.groupNavigation.retry}
         />
       </section>
+      <StatisticsLink />
     </aside>
   );
 }

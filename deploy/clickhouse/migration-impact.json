@@ -1094,6 +1094,18 @@
         { "table": "public.ai_position_settings", "strategy": "excluded" },
         { "table": "public.ai_worker_progress", "strategy": "excluded" }
       ]
+    },
+    "echo:m20261112_115044_organism_user_labels": {
+      "changes": [
+        { "table": "public.organism_user_label", "strategy": "excluded" },
+        { "table": "public.organism_user_label_assignment", "strategy": "excluded" },
+        { "table": "public.organism_user_label_revision", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261113_095232_organism_message_stats_exclusion": {
+      "changes": [
+        { "table": "public.organism_message_stats_exclusion", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

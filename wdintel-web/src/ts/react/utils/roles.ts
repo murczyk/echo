@@ -1,5 +1,6 @@
 export type UserRole =
   | 'Admin'
+  | 'OrganismAdmin'
   | 'Api'
   | 'ApiAgent'
   | 'Full'
@@ -22,6 +23,8 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
   const has = (target: UserRole) => Boolean(roles?.includes(target));
 
   switch (role) {
+    case 'OrganismAdmin':
+      return has('Admin') || has('OrganismAdmin');
     case 'Admin':
       return has('Admin');
     case 'Api':

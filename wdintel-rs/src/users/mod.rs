@@ -340,6 +340,9 @@ pub(crate) fn role_matches(
 ) -> Result<bool, AppError> {
     Ok(match role {
         "Admin" => roles.contains(&"Admin".to_string()),
+        crate::config::ROLE_ORGANISM_ADMIN => roles.iter().any(|role| {
+            role == "Admin" || role == crate::config::ROLE_ORGANISM_ADMIN
+        }),
         "Api" => roles.contains(&ROLE_API.to_string()),
         "ApiAgent" => roles.contains(&AI_AGENT_ROLE_API.to_string()),
         "Full" => {
@@ -440,7 +443,9 @@ pub async fn update_login(
     env: actix_web::web::Data<Env>,
     req: Json<serde_json::Value>,
 ) -> Result<Json<Login>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .c(h!())?;
 
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
@@ -454,7 +459,9 @@ pub async fn update_login(
         .c(h!())?;
 
     let login_id = Uuid::parse_str(&req.id).c(h!())?;
-    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id)
+        .await
+        .context(h!())?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
@@ -462,8 +469,24 @@ pub async fn update_login(
         .one(&txn)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
+    scope.ensure_login(&login_obj).context(h!())?;
+    scope
+        .ensure_signal_profile_assignment(
+            update_signal_profile
+                && req.signal_profile_id != login_obj.signal_profile_id,
+        )
+        .context(h!())?;
 
+    scope
+        .ensure_login_settings(&txn, req.organism_id, req.roles.as_deref())
+        .await
+        .context(h!())?;
+    scope
+        .ensure_user_zone(&txn, req.sigint_zone_id)
+        .await
+        .context(h!())?;
     let login_name = normalize_login_value(&req.login);
     if login_name.is_empty() {
         return Err(AppError::Form(BTreeMap::from_iter([(
@@ -501,6 +524,7 @@ pub async fn update_login(
         original_delta_login.as_deref(),
         effective_delta_login.as_deref(),
     );
+    scope.ensure_delta_assignment(delta_changed).context(h!())?;
     let delta_id = if delta_changed {
         assign_delta_login(
             &txn,
@@ -594,7 +618,7 @@ pub async fn update_login(
         clear_totp || password_changed || password_auth_disabled;
     if invalidate_totp_challenges {
         if clear_totp {
-            let admin_login_id = login_id_from_identity(&user)?;
+            let admin_login_id = login_id_from_identity(&user).context(h!())?;
             info!(
                 "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
             );
@@ -609,7 +633,7 @@ pub async fn update_login(
         login_totp::clear_secret(&txn, login_id).await.c(h!())?;
     }
     let res = login_obj.update(&txn).await.c(h!())?;
-    if let Some(delta_id) = delta_id {
+    if let Some(delta_id) = delta_id.filter(|_| scope.organism_id.is_none()) {
         unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
             .await
             .c(h!())?;
@@ -683,18 +707,25 @@ pub async fn delete_login(
     env: actix_web::web::Data<Env>,
     req: Json<String>,
 ) -> Result<Json<()>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let login_id = Uuid::parse_str(req.as_str()).c(h!())?;
-    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id)
+        .await
+        .context(h!())?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
+        .lock_exclusive()
         .one(&txn)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
+    scope.ensure_login(&login_obj).context(h!())?;
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.deleted = Set(true);
     login_obj.update(&txn).await.c(h!())?;
@@ -711,10 +742,27 @@ pub async fn create_login(
     env: actix_web::web::Data<Env>,
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(
-        create_login_1(&env.dbx, req.into_inner()).await.c(h!())?,
-    ))
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    scope
+        .ensure_login_settings(&env.dbx, req.organism_id, Some(&req.roles))
+        .await
+        .context(h!())?;
+    scope
+        .ensure_delta_assignment(
+            normalize_optional_login_value(req.delta_login.clone()).is_some(),
+        )
+        .context(h!())?;
+    scope
+        .ensure_signal_profile_assignment(req.signal_profile_id.is_some())
+        .context(h!())?;
+    let mut req = req.into_inner();
+    req.sigint_zone_id = scope
+        .creation_zone(&env.dbx, req.sigint_zone_id)
+        .await
+        .context(h!())?;
+    Ok(Json(create_login_1(&env.dbx, req).await.c(h!())?))
 }
 
 async fn create_login_1(
@@ -885,7 +933,9 @@ pub async fn list_logins(
     env: actix_web::web::Data<Env>,
     req: Json<ListLoginsReq>,
 ) -> Result<Json<ListLoginsRsp>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .c(h!())?;
 
     #[derive(FromQueryResult)]
     struct LoginRes {
@@ -910,6 +960,9 @@ pub async fn list_logins(
     }
 
     let users_iter = login::Entity::find()
+        .apply_if(scope.organism_id, |query, id| {
+            query.filter(login::Column::OrganismId.eq(id))
+        })
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())

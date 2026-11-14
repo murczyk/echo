@@ -23,6 +23,7 @@ type AutocompleteOption = {
 
 type Props = {
   label: string;
+  showCounts?: boolean;
   options: AnalysisFilterOption[];
   value: string[];
   disabled?: boolean;
@@ -167,6 +168,7 @@ function filterOptionsByInput(
 
 export function AnalysisFilterField({
   label,
+  showCounts = true,
   options,
   value,
   disabled,
@@ -347,12 +349,14 @@ export function AnalysisFilterField({
               <Typography variant="body2" sx={{ minWidth: 0, flex: 1 }} noWrap title={option.label}>
                 {option.label}
               </Typography>
-              <Typography
-                variant="body2"
-                sx={{ flexShrink: 0, whiteSpace: 'nowrap', color: 'text.secondary' }}
-              >
-                {option.count}
-              </Typography>
+              {showCounts ? (
+                <Typography
+                  variant="body2"
+                  sx={{ flexShrink: 0, whiteSpace: 'nowrap', color: 'text.secondary' }}
+                >
+                  {option.count}
+                </Typography>
+              ) : null}
             </Box>
           </li>
         );

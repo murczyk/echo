@@ -274,7 +274,8 @@ export function AppNavbar({
 
   const serverModeIsLive =
     shared?.serverInfo?.mode === 'live' || shared?.serverInfo?.mode === 'debug';
-  const isAdminMenuVisible = hasRole(user?.roles, 'Admin');
+  const isGlobalAdmin = hasRole(user?.roles, 'Admin');
+  const isAdminMenuVisible = hasRole(user?.roles, 'OrganismAdmin');
   const isBasic = hasRole(user?.roles, 'Basic');
   const isRerOrCyber = hasRerOrCyber(user?.roles);
   const isApiAgent = hasRole(user?.roles, 'ApiAgent');
@@ -294,7 +295,9 @@ export function AppNavbar({
 
   const goiMenuIsVisible = serverModeIsLive && isRerOrCyber && user.goiIntegrations?.length > 0;
   const visibleAdminSubs = filterTranscriptionSettings(
-    adminSubs,
+    isGlobalAdmin
+      ? adminSubs
+      : adminSubs.filter((item) => item.type === 'item' && item.activeName === 'organisms-neo'),
     loadedAudioTranscription === true,
   );
   const showClassicDuty = loadedShowClassicDuty !== false || userShowClassicDuty;

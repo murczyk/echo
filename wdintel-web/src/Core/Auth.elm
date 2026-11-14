@@ -8,6 +8,9 @@ import Bindings as B exposing (User)
 hasRole : String -> User -> Bool
 hasRole role user =
     case role of
+        "OrganismAdmin" ->
+            List.member "Admin" user.roles || List.member "OrganismAdmin" user.roles
+
         "Admin" ->
             List.member "Admin" user.roles
 

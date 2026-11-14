@@ -1,3 +1,4 @@
+import { useOrganismManagement } from '../admin-organisms-neo/management-context';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -417,6 +418,7 @@ function GoiIntegrationEditor({
   onCheckConnection: (form: GoiForm) => Promise<void>;
   onSetupWorker: (form: GoiForm) => Promise<GoiForm | undefined>;
 }) {
+  const { globalAdmin } = useOrganismManagement();
   const [form, setForm] = React.useState(initialForm);
   const initialFormRef = React.useRef(initialForm);
 
@@ -484,7 +486,7 @@ function GoiIntegrationEditor({
           >
             Скасувати
           </PowerButton>
-          {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+          {globalAdmin && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
             <PowerButton
               variant="outlined"
               onClick={() => void onCheckConnection(form)}
@@ -494,7 +496,7 @@ function GoiIntegrationEditor({
               Перевірити з'єднання
             </PowerButton>
           ) : null}
-          {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+          {globalAdmin && form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
             <PowerButton
               variant="outlined"
               onClick={handleSetupWorker}

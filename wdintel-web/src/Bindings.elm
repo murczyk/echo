@@ -2792,6 +2792,346 @@ analysisStatsReqEncoder struct =
         ]
 
 
+type DailyMessageStatsGrouping
+    = DailyStatsGroups
+    | DailyStatsSenders
+
+
+dailyMessageStatsGroupingEncoder : DailyMessageStatsGrouping -> Json.Encode.Value
+dailyMessageStatsGroupingEncoder enum =
+    case enum of
+        DailyStatsGroups ->
+            Json.Encode.string "Groups"
+        DailyStatsSenders ->
+            Json.Encode.string "Senders"
+
+type alias DailyMessageSenderKey =
+    { sender : Maybe (String)
+    }
+
+
+dailyMessageSenderKeyEncoder : DailyMessageSenderKey -> Json.Encode.Value
+dailyMessageSenderKeyEncoder struct =
+    Json.Encode.object
+        [ ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sender )
+        ]
+
+
+type alias DailyMessageStatsReq =
+    { userLabelId : Maybe (Int)
+    , fromDate : String
+    , toDate : String
+    , grouping : DailyMessageStatsGrouping
+    , selectedGroups : Maybe (List (String))
+    , selectedSenders : Maybe (List (DailyMessageSenderKey))
+    , selectedUnitIds : Maybe (List (Int))
+    , cursor : Maybe (String)
+    }
+
+
+dailyMessageStatsReqEncoder : DailyMessageStatsReq -> Json.Encode.Value
+dailyMessageStatsReqEncoder struct =
+    Json.Encode.object
+        [ ( "user_label_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.userLabelId )
+        , ( "from_date", (Json.Encode.string) struct.fromDate )
+        , ( "to_date", (Json.Encode.string) struct.toDate )
+        , ( "grouping", (dailyMessageStatsGroupingEncoder) struct.grouping )
+        , ( "selected_groups", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedGroups )
+        , ( "selected_senders", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (dailyMessageSenderKeyEncoder))) struct.selectedSenders )
+        , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias DailyMessageStatsPoint =
+    { messages : Int
+    , counterparts : Int
+    }
+
+
+dailyMessageStatsPointEncoder : DailyMessageStatsPoint -> Json.Encode.Value
+dailyMessageStatsPointEncoder struct =
+    Json.Encode.object
+        [ ( "messages", (Json.Encode.int) struct.messages )
+        , ( "counterparts", (Json.Encode.int) struct.counterparts )
+        ]
+
+
+type alias DailyMessageStatsSeries =
+    { key : Maybe (String)
+    , label : String
+    , points : List (DailyMessageStatsPoint)
+    }
+
+
+dailyMessageStatsSeriesEncoder : DailyMessageStatsSeries -> Json.Encode.Value
+dailyMessageStatsSeriesEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "points", (Json.Encode.list (dailyMessageStatsPointEncoder)) struct.points )
+        ]
+
+
+type alias DailyMessageStatsRsp =
+    { days : List (String)
+    , series : List (DailyMessageStatsSeries)
+    , totalSeries : Int
+    , nextCursor : Maybe (String)
+    , generatedAtMs : Int
+    }
+
+
+dailyMessageStatsRspEncoder : DailyMessageStatsRsp -> Json.Encode.Value
+dailyMessageStatsRspEncoder struct =
+    Json.Encode.object
+        [ ( "days", (Json.Encode.list (Json.Encode.string)) struct.days )
+        , ( "series", (Json.Encode.list (dailyMessageStatsSeriesEncoder)) struct.series )
+        , ( "total_series", (Json.Encode.int) struct.totalSeries )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        , ( "generated_at_ms", (Json.Encode.int) struct.generatedAtMs )
+        ]
+
+
+type alias DailyMessageStatsOptionsReq =
+    { filter : DailyMessageStatsReq
+    , search : Maybe (String)
+    , includeChildren : Maybe (Bool)
+    }
+
+
+dailyMessageStatsOptionsReqEncoder : DailyMessageStatsOptionsReq -> Json.Encode.Value
+dailyMessageStatsOptionsReqEncoder struct =
+    Json.Encode.object
+        [ ( "filter", (dailyMessageStatsReqEncoder) struct.filter )
+        , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "include_children", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeChildren )
+        ]
+
+
+type alias DailyMessageStatsOption =
+    { key : Maybe (String)
+    , label : String
+    , count : Int
+    }
+
+
+dailyMessageStatsOptionEncoder : DailyMessageStatsOption -> Json.Encode.Value
+dailyMessageStatsOptionEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias DailyMessageStatsOptionsRsp =
+    { options : List (DailyMessageStatsOption)
+    , nextCursor : Maybe (String)
+    , total : Int
+    , unitOptions : List (UnitStatsOption)
+    }
+
+
+dailyMessageStatsOptionsRspEncoder : DailyMessageStatsOptionsRsp -> Json.Encode.Value
+dailyMessageStatsOptionsRspEncoder struct =
+    Json.Encode.object
+        [ ( "options", (Json.Encode.list (dailyMessageStatsOptionEncoder)) struct.options )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "unit_options", (Json.Encode.list (unitStatsOptionEncoder)) struct.unitOptions )
+        ]
+
+
+type alias DailyMessageStatsCatalogReq =
+    { knownHierarchyRevision : Maybe (String)
+    , selectedSenders : List (DailyMessageSenderKey)
+    }
+
+
+dailyMessageStatsCatalogReqEncoder : DailyMessageStatsCatalogReq -> Json.Encode.Value
+dailyMessageStatsCatalogReqEncoder struct =
+    Json.Encode.object
+        [ ( "known_hierarchy_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownHierarchyRevision )
+        , ( "selected_senders", (Json.Encode.list (dailyMessageSenderKeyEncoder)) struct.selectedSenders )
+        ]
+
+
+type alias DailyMessageStatsGroupLabel =
+    { key : String
+    , label : String
+    }
+
+
+dailyMessageStatsGroupLabelEncoder : DailyMessageStatsGroupLabel -> Json.Encode.Value
+dailyMessageStatsGroupLabelEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Json.Encode.string) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias DailyMessageStatsSenderLabel =
+    { key : Maybe (String)
+    , label : String
+    }
+
+
+dailyMessageStatsSenderLabelEncoder : DailyMessageStatsSenderLabel -> Json.Encode.Value
+dailyMessageStatsSenderLabelEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias DailyMessageStatsCatalogRsp =
+    { accessRevision : String
+    , groups : List (DailyMessageStatsGroupLabel)
+    , unitHierarchy : Maybe (UnitHierarchyRsp)
+    , senderLabels : List (DailyMessageStatsSenderLabel)
+    }
+
+
+dailyMessageStatsCatalogRspEncoder : DailyMessageStatsCatalogRsp -> Json.Encode.Value
+dailyMessageStatsCatalogRspEncoder struct =
+    Json.Encode.object
+        [ ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        , ( "groups", (Json.Encode.list (dailyMessageStatsGroupLabelEncoder)) struct.groups )
+        , ( "unit_hierarchy", (Maybe.withDefault Json.Encode.null << Maybe.map (unitHierarchyRspEncoder)) struct.unitHierarchy )
+        , ( "sender_labels", (Json.Encode.list (dailyMessageStatsSenderLabelEncoder)) struct.senderLabels )
+        ]
+
+
+type alias DailyMessageStatsPanel =
+    { labelId : Int
+    , name : String
+    , color : String
+    , organismName : Maybe (String)
+    }
+
+
+dailyMessageStatsPanelEncoder : DailyMessageStatsPanel -> Json.Encode.Value
+dailyMessageStatsPanelEncoder struct =
+    Json.Encode.object
+        [ ( "label_id", (Json.Encode.int) struct.labelId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "color", (Json.Encode.string) struct.color )
+        , ( "organism_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.organismName )
+        ]
+
+
+type alias DailyMessageStatsPanelsRsp =
+    { panels : List (DailyMessageStatsPanel)
+    , accessRevision : String
+    }
+
+
+dailyMessageStatsPanelsRspEncoder : DailyMessageStatsPanelsRsp -> Json.Encode.Value
+dailyMessageStatsPanelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "panels", (Json.Encode.list (dailyMessageStatsPanelEncoder)) struct.panels )
+        , ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        ]
+
+
+type DailyMessageStatsFacet
+    = DailyGroupsFacet
+    | DailyUnitsFacet
+
+
+dailyMessageStatsFacetEncoder : DailyMessageStatsFacet -> Json.Encode.Value
+dailyMessageStatsFacetEncoder enum =
+    case enum of
+        DailyGroupsFacet ->
+            Json.Encode.string "Groups"
+        DailyUnitsFacet ->
+            Json.Encode.string "Units"
+
+type alias DailyMessageStatsFacetReq =
+    { facet : DailyMessageStatsFacet
+    , filter : DailyMessageStatsReq
+    , includeChildren : Bool
+    }
+
+
+dailyMessageStatsFacetReqEncoder : DailyMessageStatsFacetReq -> Json.Encode.Value
+dailyMessageStatsFacetReqEncoder struct =
+    Json.Encode.object
+        [ ( "facet", (dailyMessageStatsFacetEncoder) struct.facet )
+        , ( "filter", (dailyMessageStatsReqEncoder) struct.filter )
+        , ( "include_children", (Json.Encode.bool) struct.includeChildren )
+        ]
+
+
+type alias DailyMessageStatsFacetCount =
+    { value : String
+    , count : Int
+    }
+
+
+dailyMessageStatsFacetCountEncoder : DailyMessageStatsFacetCount -> Json.Encode.Value
+dailyMessageStatsFacetCountEncoder struct =
+    Json.Encode.object
+        [ ( "value", (Json.Encode.string) struct.value )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias DailyMessageStatsFacetRsp =
+    { counts : List (DailyMessageStatsFacetCount)
+    , accessRevision : String
+    , hierarchyRevision : Maybe (String)
+    , generatedAtMs : Int
+    }
+
+
+dailyMessageStatsFacetRspEncoder : DailyMessageStatsFacetRsp -> Json.Encode.Value
+dailyMessageStatsFacetRspEncoder struct =
+    Json.Encode.object
+        [ ( "counts", (Json.Encode.list (dailyMessageStatsFacetCountEncoder)) struct.counts )
+        , ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        , ( "hierarchy_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.hierarchyRevision )
+        , ( "generated_at_ms", (Json.Encode.int) struct.generatedAtMs )
+        ]
+
+
+type alias DailyMessageStatsSendersReq =
+    { filter : DailyMessageStatsReq
+    , search : Maybe (String)
+    , cursor : Maybe (String)
+    }
+
+
+dailyMessageStatsSendersReqEncoder : DailyMessageStatsSendersReq -> Json.Encode.Value
+dailyMessageStatsSendersReqEncoder struct =
+    Json.Encode.object
+        [ ( "filter", (dailyMessageStatsReqEncoder) struct.filter )
+        , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias DailyMessageStatsSendersRsp =
+    { options : List (DailyMessageStatsSenderLabel)
+    , nextCursor : Maybe (String)
+    , total : Int
+    , accessRevision : String
+    , generatedAtMs : Int
+    }
+
+
+dailyMessageStatsSendersRspEncoder : DailyMessageStatsSendersRsp -> Json.Encode.Value
+dailyMessageStatsSendersRspEncoder struct =
+    Json.Encode.object
+        [ ( "options", (Json.Encode.list (dailyMessageStatsSenderLabelEncoder)) struct.options )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        , ( "generated_at_ms", (Json.Encode.int) struct.generatedAtMs )
+        ]
+
+
 type AnalysisCallsignPageOrder
     = CountDesc
     | MatchThenName
@@ -8924,6 +9264,118 @@ deviceSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "has_mattermost_webhook", (Json.Encode.bool) struct.hasMattermostWebhook )
         , ( "activity_split_files_audio", (Json.Encode.bool) struct.activitySplitFilesAudio )
+        ]
+
+
+type alias OrganismUserLabel =
+    { id : Int
+    , organismId : Int
+    , name : String
+    , color : String
+    }
+
+
+organismUserLabelEncoder : OrganismUserLabel -> Json.Encode.Value
+organismUserLabelEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "color", (Json.Encode.string) struct.color )
+        ]
+
+
+type alias OrganismUserLabelAssignment =
+    { loginId : String
+    , labelId : Int
+    }
+
+
+organismUserLabelAssignmentEncoder : OrganismUserLabelAssignment -> Json.Encode.Value
+organismUserLabelAssignmentEncoder struct =
+    Json.Encode.object
+        [ ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "label_id", (Json.Encode.int) struct.labelId )
+        ]
+
+
+type alias OrganismUserLabelsRsp =
+    { labels : List (OrganismUserLabel)
+    , assignments : List (OrganismUserLabelAssignment)
+    , excludedLoginIds : List (String)
+    }
+
+
+organismUserLabelsRspEncoder : OrganismUserLabelsRsp -> Json.Encode.Value
+organismUserLabelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "labels", (Json.Encode.list (organismUserLabelEncoder)) struct.labels )
+        , ( "assignments", (Json.Encode.list (organismUserLabelAssignmentEncoder)) struct.assignments )
+        , ( "excluded_login_ids", (Json.Encode.list (Json.Encode.string)) struct.excludedLoginIds )
+        ]
+
+
+type alias UpsertOrganismUserLabelReq =
+    { id : Maybe (Int)
+    , organismId : Int
+    , name : String
+    , color : String
+    }
+
+
+upsertOrganismUserLabelReqEncoder : UpsertOrganismUserLabelReq -> Json.Encode.Value
+upsertOrganismUserLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.id )
+        , ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "color", (Json.Encode.string) struct.color )
+        ]
+
+
+type alias DeleteOrganismUserLabelReq =
+    { organismId : Int
+    , labelId : Int
+    }
+
+
+deleteOrganismUserLabelReqEncoder : DeleteOrganismUserLabelReq -> Json.Encode.Value
+deleteOrganismUserLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "label_id", (Json.Encode.int) struct.labelId )
+        ]
+
+
+type alias AssignOrganismUserLabelReq =
+    { organismId : Int
+    , loginId : String
+    , labelId : Maybe (Int)
+    }
+
+
+assignOrganismUserLabelReqEncoder : AssignOrganismUserLabelReq -> Json.Encode.Value
+assignOrganismUserLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "label_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.labelId )
+        ]
+
+
+type alias SetOrganismMessageStatsExclusionReq =
+    { organismId : Int
+    , loginId : String
+    , excluded : Bool
+    }
+
+
+setOrganismMessageStatsExclusionReqEncoder : SetOrganismMessageStatsExclusionReq -> Json.Encode.Value
+setOrganismMessageStatsExclusionReqEncoder struct =
+    Json.Encode.object
+        [ ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "excluded", (Json.Encode.bool) struct.excluded )
         ]
 
 
@@ -22769,6 +23221,209 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_time_basis" (Json.Decode.nullable (messageTimeBasisDecoder))))
 
 
+dailyMessageStatsGroupingDecoder : Json.Decode.Decoder DailyMessageStatsGrouping
+dailyMessageStatsGroupingDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Groups" ->
+                            Json.Decode.succeed DailyStatsGroups
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Senders" ->
+                            Json.Decode.succeed DailyStatsSenders
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+dailyMessageSenderKeyDecoder : Json.Decode.Decoder DailyMessageSenderKey
+dailyMessageSenderKeyDecoder =
+    Json.Decode.succeed DailyMessageSenderKey
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsReqDecoder : Json.Decode.Decoder DailyMessageStatsReq
+dailyMessageStatsReqDecoder =
+    Json.Decode.succeed DailyMessageStatsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_label_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "from_date" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to_date" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grouping" (dailyMessageStatsGroupingDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_groups" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_senders" (Json.Decode.nullable (Json.Decode.list (dailyMessageSenderKeyDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsPointDecoder : Json.Decode.Decoder DailyMessageStatsPoint
+dailyMessageStatsPointDecoder =
+    Json.Decode.succeed DailyMessageStatsPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counterparts" (Json.Decode.int)))
+
+
+dailyMessageStatsSeriesDecoder : Json.Decode.Decoder DailyMessageStatsSeries
+dailyMessageStatsSeriesDecoder =
+    Json.Decode.succeed DailyMessageStatsSeries
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (dailyMessageStatsPointDecoder))))
+
+
+dailyMessageStatsRspDecoder : Json.Decode.Decoder DailyMessageStatsRsp
+dailyMessageStatsRspDecoder =
+    Json.Decode.succeed DailyMessageStatsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "days" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "series" (Json.Decode.list (dailyMessageStatsSeriesDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_series" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_at_ms" (Json.Decode.int)))
+
+
+dailyMessageStatsOptionsReqDecoder : Json.Decode.Decoder DailyMessageStatsOptionsReq
+dailyMessageStatsOptionsReqDecoder =
+    Json.Decode.succeed DailyMessageStatsOptionsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter" (dailyMessageStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_children" (Json.Decode.nullable (Json.Decode.bool))))
+
+
+dailyMessageStatsOptionDecoder : Json.Decode.Decoder DailyMessageStatsOption
+dailyMessageStatsOptionDecoder =
+    Json.Decode.succeed DailyMessageStatsOption
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+dailyMessageStatsOptionsRspDecoder : Json.Decode.Decoder DailyMessageStatsOptionsRsp
+dailyMessageStatsOptionsRspDecoder =
+    Json.Decode.succeed DailyMessageStatsOptionsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "options" (Json.Decode.list (dailyMessageStatsOptionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_options" (Json.Decode.list (unitStatsOptionDecoder))))
+
+
+dailyMessageStatsCatalogReqDecoder : Json.Decode.Decoder DailyMessageStatsCatalogReq
+dailyMessageStatsCatalogReqDecoder =
+    Json.Decode.succeed DailyMessageStatsCatalogReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_hierarchy_revision" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_senders" (Json.Decode.list (dailyMessageSenderKeyDecoder))))
+
+
+dailyMessageStatsGroupLabelDecoder : Json.Decode.Decoder DailyMessageStatsGroupLabel
+dailyMessageStatsGroupLabelDecoder =
+    Json.Decode.succeed DailyMessageStatsGroupLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+dailyMessageStatsSenderLabelDecoder : Json.Decode.Decoder DailyMessageStatsSenderLabel
+dailyMessageStatsSenderLabelDecoder =
+    Json.Decode.succeed DailyMessageStatsSenderLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+dailyMessageStatsCatalogRspDecoder : Json.Decode.Decoder DailyMessageStatsCatalogRsp
+dailyMessageStatsCatalogRspDecoder =
+    Json.Decode.succeed DailyMessageStatsCatalogRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (dailyMessageStatsGroupLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_hierarchy" (Json.Decode.nullable (unitHierarchyRspDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_labels" (Json.Decode.list (dailyMessageStatsSenderLabelDecoder))))
+
+
+dailyMessageStatsPanelDecoder : Json.Decode.Decoder DailyMessageStatsPanel
+dailyMessageStatsPanelDecoder =
+    Json.Decode.succeed DailyMessageStatsPanel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsPanelsRspDecoder : Json.Decode.Decoder DailyMessageStatsPanelsRsp
+dailyMessageStatsPanelsRspDecoder =
+    Json.Decode.succeed DailyMessageStatsPanelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "panels" (Json.Decode.list (dailyMessageStatsPanelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+
+
+dailyMessageStatsFacetDecoder : Json.Decode.Decoder DailyMessageStatsFacet
+dailyMessageStatsFacetDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Groups" ->
+                            Json.Decode.succeed DailyGroupsFacet
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Units" ->
+                            Json.Decode.succeed DailyUnitsFacet
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+dailyMessageStatsFacetReqDecoder : Json.Decode.Decoder DailyMessageStatsFacetReq
+dailyMessageStatsFacetReqDecoder =
+    Json.Decode.succeed DailyMessageStatsFacetReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "facet" (dailyMessageStatsFacetDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter" (dailyMessageStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_children" (Json.Decode.bool)))
+
+
+dailyMessageStatsFacetCountDecoder : Json.Decode.Decoder DailyMessageStatsFacetCount
+dailyMessageStatsFacetCountDecoder =
+    Json.Decode.succeed DailyMessageStatsFacetCount
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+dailyMessageStatsFacetRspDecoder : Json.Decode.Decoder DailyMessageStatsFacetRsp
+dailyMessageStatsFacetRspDecoder =
+    Json.Decode.succeed DailyMessageStatsFacetRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (Json.Decode.list (dailyMessageStatsFacetCountDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hierarchy_revision" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_at_ms" (Json.Decode.int)))
+
+
+dailyMessageStatsSendersReqDecoder : Json.Decode.Decoder DailyMessageStatsSendersReq
+dailyMessageStatsSendersReqDecoder =
+    Json.Decode.succeed DailyMessageStatsSendersReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter" (dailyMessageStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsSendersRspDecoder : Json.Decode.Decoder DailyMessageStatsSendersRsp
+dailyMessageStatsSendersRspDecoder =
+    Json.Decode.succeed DailyMessageStatsSendersRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "options" (Json.Decode.list (dailyMessageStatsSenderLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_at_ms" (Json.Decode.int)))
+
+
 analysisCallsignFrequencyMatchesReqDecoder : Json.Decode.Decoder AnalysisCallsignFrequencyMatchesReq
 analysisCallsignFrequencyMatchesReqDecoder =
     Json.Decode.succeed AnalysisCallsignFrequencyMatchesReq
@@ -26972,6 +27627,62 @@ deviceSettingsItemDecoder =
     Json.Decode.succeed DeviceSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_mattermost_webhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_split_files_audio" (Json.Decode.bool)))
+
+
+organismUserLabelDecoder : Json.Decode.Decoder OrganismUserLabel
+organismUserLabelDecoder =
+    Json.Decode.succeed OrganismUserLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+
+
+organismUserLabelAssignmentDecoder : Json.Decode.Decoder OrganismUserLabelAssignment
+organismUserLabelAssignmentDecoder =
+    Json.Decode.succeed OrganismUserLabelAssignment
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+
+
+organismUserLabelsRspDecoder : Json.Decode.Decoder OrganismUserLabelsRsp
+organismUserLabelsRspDecoder =
+    Json.Decode.succeed OrganismUserLabelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (organismUserLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "assignments" (Json.Decode.list (organismUserLabelAssignmentDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "excluded_login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+upsertOrganismUserLabelReqDecoder : Json.Decode.Decoder UpsertOrganismUserLabelReq
+upsertOrganismUserLabelReqDecoder =
+    Json.Decode.succeed UpsertOrganismUserLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+
+
+deleteOrganismUserLabelReqDecoder : Json.Decode.Decoder DeleteOrganismUserLabelReq
+deleteOrganismUserLabelReqDecoder =
+    Json.Decode.succeed DeleteOrganismUserLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+
+
+assignOrganismUserLabelReqDecoder : Json.Decode.Decoder AssignOrganismUserLabelReq
+assignOrganismUserLabelReqDecoder =
+    Json.Decode.succeed AssignOrganismUserLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.nullable (Json.Decode.int))))
+
+
+setOrganismMessageStatsExclusionReqDecoder : Json.Decode.Decoder SetOrganismMessageStatsExclusionReq
+setOrganismMessageStatsExclusionReqDecoder =
+    Json.Decode.succeed SetOrganismMessageStatsExclusionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "excluded" (Json.Decode.bool)))
 
 
 organismDecoder : Json.Decode.Decoder Organism

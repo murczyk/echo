@@ -14429,3 +14429,1382 @@ fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
     );
     assert!(summary.row_values_truncated);
 }
+
+#[tokio::test]
+#[serial]
+async fn issue_3873_daily_statistics_preserve_access_identity_and_distinct_counts(
+) {
+    use super::daily_messages::{
+        load, load_catalog, load_group_counts, load_options, load_sender_page,
+        DailyMessageSenderKey, DailyMessageStatsCatalogReq,
+        DailyMessageStatsGrouping, DailyMessageStatsOptionsReq,
+        DailyMessageStatsReq, DailyMessageStatsSendersReq,
+    };
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let allowed = get_identity_sigint_groups(db, &login.id).await.unwrap();
+    assert!(!allowed.contains(&fixture.secret_hidden.signal_group.master_key));
+    let first = mk_analysis_message(
+        db,
+        "3873-first",
+        "3873",
+        test_dt(2026, 10, 25, 0, 30),
+        &[&fixture.alpha, &fixture.beta],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let second = mk_analysis_message(
+        db,
+        "3873-second",
+        "3873",
+        test_dt(2026, 10, 25, 1, 30),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let unknown = mk_analysis_message(
+        db,
+        "3873-unknown",
+        "3873",
+        test_dt(2026, 10, 25, 2, 30),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    mk_analysis_message(
+        db,
+        "3873-hidden",
+        "3873",
+        test_dt(2026, 10, 25, 2, 30),
+        &[&fixture.secret_hidden],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    for message in [&first, &second, &unknown] {
+        signal_message_group::Entity::update_many()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message.id),
+            )
+            .col_expr(
+                signal_message_group::Column::Sender,
+                Expr::value(if message.id == unknown.id {
+                    None
+                } else {
+                    Some("3873-sender")
+                }),
+            )
+            .col_expr(
+                signal_message_group::Column::LoginId,
+                Expr::value(Option::<uuid::Uuid>::None),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+    }
+    signal_group::Entity::update_many()
+        .filter(signal_group::Column::MasterKey.is_in([
+            fixture.alpha.signal_group.master_key.clone(),
+            fixture.beta.signal_group.master_key.clone(),
+        ]))
+        .col_expr(signal_group::Column::Name, Expr::value("Same name"))
+        .exec(db)
+        .await
+        .unwrap();
+    let mut req = DailyMessageStatsReq {
+        user_label_id: None,
+        from_date: "2026-10-24".into(),
+        to_date: "2026-10-26".into(),
+        grouping: DailyMessageStatsGrouping::DailyStatsGroups,
+        selected_groups: None,
+        selected_senders: None,
+        selected_unit_ids: None,
+        cursor: None,
+    };
+    let stats = load(db, &req, allowed.clone()).await.unwrap();
+    let catalog_req = DailyMessageStatsCatalogReq {
+        known_hierarchy_revision: None,
+        selected_senders: vec![
+            DailyMessageSenderKey {
+                sender: Some("3873-sender".into()),
+            },
+            DailyMessageSenderKey {
+                sender: Some("3873-no-accessible-sender".into()),
+            },
+            DailyMessageSenderKey { sender: None },
+        ],
+    };
+    let catalog = load_catalog(
+        &fixture.env,
+        &catalog_req,
+        allowed.clone(),
+        "test-access".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(catalog.sender_labels.len(), 2);
+    assert!(catalog
+        .groups
+        .iter()
+        .all(|group| allowed.contains(&group.key)));
+    assert!(catalog
+        .groups
+        .iter()
+        .any(|group| group.key == fixture.alpha.signal_group.master_key
+            && group.label == "Same name"));
+    let conditional = load_catalog(
+        &fixture.env,
+        &DailyMessageStatsCatalogReq {
+            known_hierarchy_revision: Some(
+                catalog.unit_hierarchy.unwrap().revision,
+            ),
+            ..catalog_req
+        },
+        allowed.clone(),
+        "test-access".into(),
+    )
+    .await
+    .unwrap();
+    assert!(conditional.unit_hierarchy.is_none());
+    assert_eq!(stats.days, ["2026-10-24", "2026-10-25", "2026-10-26"]);
+    let alpha = stats
+        .series
+        .iter()
+        .find(|series| {
+            series.key.as_ref() == Some(&fixture.alpha.signal_group.master_key)
+        })
+        .unwrap();
+    let beta = stats
+        .series
+        .iter()
+        .find(|series| {
+            series.key.as_ref() == Some(&fixture.beta.signal_group.master_key)
+        })
+        .unwrap();
+    assert_eq!(alpha.label, beta.label);
+    assert_eq!(
+        (alpha.points[1].messages, alpha.points[1].counterparts),
+        (3, 2)
+    );
+    assert_eq!(
+        (beta.points[1].messages, beta.points[1].counterparts),
+        (1, 1)
+    );
+    assert_eq!(alpha.points[0].messages, 0);
+    assert_eq!(alpha.points[2].messages, 0);
+    assert!(stats.series.iter().all(|series| series.key.as_ref()
+        != Some(&fixture.secret_hidden.signal_group.master_key)));
+    let counts = load_group_counts(db, &req, allowed.clone()).await.unwrap();
+    assert_eq!(
+        counts
+            .iter()
+            .find(|row| row.value == fixture.alpha.signal_group.master_key)
+            .unwrap()
+            .count,
+        3
+    );
+    assert!(!counts
+        .iter()
+        .any(|row| row.value == fixture.secret_hidden.signal_group.master_key));
+    let sender_req = DailyMessageStatsSendersReq {
+        filter: req.clone(),
+        search: None,
+        cursor: None,
+    };
+    let sender_page = load_sender_page(
+        db,
+        &sender_req,
+        allowed.clone(),
+        "test-access".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sender_page.total, 2);
+    assert_eq!(sender_page.options.len(), 2);
+    assert!(sender_page.options.iter().any(|row| row.key.is_none()));
+    let searched = load_sender_page(
+        db,
+        &DailyMessageStatsSendersReq {
+            search: Some("3873-sender".into()),
+            ..sender_req.clone()
+        },
+        allowed.clone(),
+        "test-access".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(searched.total, 2);
+    assert_eq!(searched.options.len(), 1);
+    let absent = load_sender_page(
+        db,
+        &DailyMessageStatsSendersReq {
+            search: Some("no-such-sender".into()),
+            ..sender_req.clone()
+        },
+        allowed.clone(),
+        "test-access".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(absent.total, 2);
+    assert!(absent.options.is_empty());
+    let mut empty_sender_req = sender_req;
+    empty_sender_req.filter.selected_groups =
+        Some(vec![fixture.secret_hidden.signal_group.master_key.clone()]);
+    let empty = load_sender_page(
+        db,
+        &empty_sender_req,
+        allowed.clone(),
+        "test-access".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(empty.total, 0);
+    assert!(empty.options.is_empty());
+    req.grouping = DailyMessageStatsGrouping::DailyStatsSenders;
+    let stats = load(db, &req, allowed.clone()).await.unwrap();
+    let sender = stats
+        .series
+        .iter()
+        .find(|series| series.key.as_deref() == Some("3873-sender"))
+        .unwrap();
+    assert_eq!(
+        (sender.points[1].messages, sender.points[1].counterparts),
+        (2, 2)
+    );
+    let unknown = stats
+        .series
+        .iter()
+        .find(|series| series.key.is_none())
+        .unwrap();
+    assert_eq!(
+        (unknown.points[1].messages, unknown.points[1].counterparts),
+        (1, 1)
+    );
+    req.selected_groups =
+        Some(vec![fixture.beta.signal_group.master_key.clone()]);
+    req.selected_senders = Some(vec![DailyMessageSenderKey { sender: None }]);
+    assert!(load(db, &req, allowed.clone())
+        .await
+        .unwrap()
+        .series
+        .is_empty());
+    req.selected_senders = Some(vec![DailyMessageSenderKey {
+        sender: Some("3873-sender".into()),
+    }]);
+    let stats = load(db, &req, allowed.clone()).await.unwrap();
+    assert_eq!(stats.series[0].points[1].messages, 1);
+    req.selected_groups =
+        Some(vec![fixture.secret_hidden.signal_group.master_key.clone()]);
+    assert!(load(db, &req, allowed.clone())
+        .await
+        .unwrap()
+        .series
+        .is_empty());
+    req.selected_groups = Some(vec![]);
+    assert!(load(db, &req, allowed.clone())
+        .await
+        .unwrap()
+        .series
+        .is_empty());
+    req.selected_groups = None;
+    req.selected_unit_ids = Some(vec![]);
+    assert!(load(db, &req, allowed.clone())
+        .await
+        .unwrap()
+        .series
+        .is_empty());
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    for kind in [
+        SigintInboxItemUnitKind::Parsed,
+        SigintInboxItemUnitKind::Network,
+    ] {
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(first.id),
+            unit_id: Set(unit.id),
+            kind: Set(kind),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+    req.selected_unit_ids = Some(vec![unit.id]);
+    let stats = load(db, &req, allowed.clone()).await.unwrap();
+    assert_eq!(
+        (
+            stats.series[0].points[1].messages,
+            stats.series[0].points[1].counterparts
+        ),
+        (1, 2)
+    );
+    req.selected_unit_ids = None;
+    req.selected_groups =
+        Some(vec![fixture.alpha.signal_group.master_key.clone()]);
+    let options = load_options(
+        db,
+        &DailyMessageStatsOptionsReq {
+            filter: req.clone(),
+            search: None,
+            include_children: None,
+        },
+        allowed.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(options.total, 2);
+    assert_eq!(
+        options
+            .options
+            .iter()
+            .find(|entry| entry.key.is_none())
+            .unwrap()
+            .count,
+        1
+    );
+    assert_eq!(
+        options
+            .options
+            .iter()
+            .find(|entry| entry.key.as_deref() == Some("3873-sender"))
+            .unwrap()
+            .count,
+        2
+    );
+    assert!(options.options.iter().any(|entry| entry.key.is_none()));
+    assert!(options
+        .options
+        .iter()
+        .any(|entry| entry.key.as_deref() == Some("3873-sender")));
+
+    req.grouping = DailyMessageStatsGrouping::DailyStatsGroups;
+    let options = load_options(
+        db,
+        &DailyMessageStatsOptionsReq {
+            filter: req.clone(),
+            search: Some("Same name".into()),
+            include_children: None,
+        },
+        allowed.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(options.total, 2);
+    assert_eq!(options.options.len(), 2);
+    assert_ne!(options.options[0].key, options.options[1].key);
+    assert_eq!(
+        options
+            .options
+            .iter()
+            .find(|entry| entry.key.as_ref()
+                == Some(&fixture.alpha.signal_group.master_key))
+            .unwrap()
+            .count,
+        2
+    );
+    assert_eq!(
+        options
+            .options
+            .iter()
+            .find(|entry| entry.key.as_ref()
+                == Some(&fixture.beta.signal_group.master_key))
+            .unwrap()
+            .count,
+        1
+    );
+
+    req.selected_senders = None;
+    req.from_date = "2026-10-25".into();
+    req.to_date = "2026-10-25".into();
+    for (index, datetime) in [
+        test_dt(2026, 10, 24, 20, 59),
+        test_dt(2026, 10, 24, 21, 0),
+        test_dt(2026, 10, 25, 21, 59),
+        test_dt(2026, 10, 25, 22, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        mk_analysis_message(
+            db,
+            &format!("3873-midnight-{index}"),
+            "3873",
+            datetime,
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    signal_message::Entity::update_many()
+        .filter(signal_message::Column::Id.eq(first.id))
+        .col_expr(
+            signal_message::Column::Timestamp,
+            Expr::value(test_dt(2026, 1, 1, 0, 0)),
+        )
+        .exec(db)
+        .await
+        .unwrap();
+    let stats = load(db, &req, allowed).await.unwrap();
+    assert_eq!(stats.series[0].points[0].messages, 5);
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3873_daily_statistics_cursor_and_calendar_validation() {
+    use super::daily_messages::{
+        load, load_options, DailyMessageStatsGrouping,
+        DailyMessageStatsOptionsReq, DailyMessageStatsReq,
+    };
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut allowed = vec![];
+    for index in 0..53 {
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(format!("3873-page-{index:02}")),
+                name: Set(Some("Repeated label".into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        allowed.push(group.master_key);
+    }
+    let mut req = DailyMessageStatsReq {
+        user_label_id: None,
+        from_date: "2026-10-25".into(),
+        to_date: "2026-10-25".into(),
+        grouping: DailyMessageStatsGrouping::DailyStatsGroups,
+        selected_groups: None,
+        selected_senders: None,
+        selected_unit_ids: None,
+        cursor: None,
+    };
+    let mut keys = vec![];
+    loop {
+        let page = load(&env.dbx, &req, allowed.clone()).await.unwrap();
+        assert_eq!(page.total_series, 53);
+        assert!(page.series.iter().all(|entry| entry.points[0].messages == 0
+            && entry.points[0].counterparts == 0));
+        keys.extend(page.series.into_iter().map(|series| series.key.unwrap()));
+        req.cursor = page.next_cursor;
+        if req.cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(keys, allowed);
+    let mut keys = vec![];
+    loop {
+        let page = load_options(
+            &env.dbx,
+            &DailyMessageStatsOptionsReq {
+                filter: req.clone(),
+                search: Some("Repeated".into()),
+                include_children: None,
+            },
+            allowed.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.total, 53);
+        keys.extend(page.options.into_iter().map(|entry| entry.key.unwrap()));
+        req.cursor = page.next_cursor;
+        if req.cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(keys, allowed);
+    for (from, to) in
+        [("2026-01-01", "2026-03-31"), ("2026-10-25", "2026-10-25")]
+    {
+        req.from_date = from.into();
+        req.to_date = to.into();
+        assert!(load(&env.dbx, &req, vec![]).await.is_ok());
+    }
+    for (from, to) in [
+        ("2026-01-01", "2026-04-01"),
+        ("2026-02-30", "2026-03-01"),
+        ("2026-10-26", "2026-10-25"),
+        ("2099-01-01", "2099-01-01"),
+    ] {
+        req.from_date = from.into();
+        req.to_date = to.into();
+        assert!(load(&env.dbx, &req, vec![]).await.is_err());
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3873_filter_counts_preserve_access_and_deduplicate_unit_subtrees(
+) {
+    use super::daily_messages::{
+        load, load_unit_options, DailyMessageStatsGrouping,
+        DailyMessageStatsReq,
+    };
+    use crate::sigint::unit::types::{
+        UnitHierarchyGroup, UnitHierarchyRsp, UnitHierarchyUnit,
+    };
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let allowed = get_identity_sigint_groups(db, &login.id).await.unwrap();
+    let parent = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let child = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let first = mk_analysis_message(
+        db,
+        "3873-count-first",
+        "3873",
+        test_dt(2026, 10, 25, 10, 0),
+        &[&fixture.alpha, &fixture.beta],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let second = mk_analysis_message(
+        db,
+        "3873-count-second",
+        "3873",
+        test_dt(2026, 10, 25, 11, 0),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let hidden = mk_analysis_message(
+        db,
+        "3873-count-hidden",
+        "3873",
+        test_dt(2026, 10, 25, 12, 0),
+        &[&fixture.secret_hidden],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    mk_analysis_message(
+        db,
+        "3873-count-undefined",
+        "3873",
+        test_dt(2026, 10, 25, 13, 0),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    for (item_id, unit_id, kind) in [
+        (first.id, parent.id, SigintInboxItemUnitKind::Parsed),
+        (first.id, child.id, SigintInboxItemUnitKind::Parsed),
+        (first.id, child.id, SigintInboxItemUnitKind::Network),
+        (second.id, child.id, SigintInboxItemUnitKind::Parsed),
+        (hidden.id, child.id, SigintInboxItemUnitKind::Parsed),
+    ] {
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(item_id),
+            unit_id: Set(unit_id),
+            kind: Set(kind),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+    let hierarchy = UnitHierarchyRsp {
+        revision: "3873".into(),
+        selections: vec![],
+        groups: vec![
+            UnitHierarchyGroup {
+                id: "group:2:army".into(),
+                label: "Army".into(),
+                level: 2,
+                parent_index: None,
+            },
+            UnitHierarchyGroup {
+                id: "group:2:army|3:virtual".into(),
+                label: "Virtual".into(),
+                level: 3,
+                parent_index: Some(0),
+            },
+            UnitHierarchyGroup {
+                id: "group:2:army|3:virtual|4:child".into(),
+                label: "Child".into(),
+                level: 4,
+                parent_index: Some(1),
+            },
+        ],
+        units: vec![
+            UnitHierarchyUnit {
+                id: parent.id,
+                name: "Army".into(),
+                group_index: Some(0),
+            },
+            UnitHierarchyUnit {
+                id: child.id,
+                name: "Child".into(),
+                group_index: Some(2),
+            },
+        ],
+    };
+    let mut req = DailyMessageStatsReq {
+        user_label_id: None,
+        from_date: "2026-10-25".into(),
+        to_date: "2026-10-25".into(),
+        grouping: DailyMessageStatsGrouping::DailyStatsGroups,
+        selected_groups: None,
+        selected_senders: None,
+        selected_unit_ids: Some(vec![]),
+        cursor: None,
+    };
+    for (children, expected_parent, expected_virtual) in
+        [(true, 2, 2), (false, 1, 0)]
+    {
+        let counts =
+            load_unit_options(db, &req, allowed.clone(), &hierarchy, children)
+                .await
+                .unwrap();
+        assert_eq!(
+            counts
+                .iter()
+                .find(|option| option.value == format!("unit-id:{}", parent.id))
+                .unwrap()
+                .count,
+            expected_parent
+        );
+        assert_eq!(
+            counts
+                .iter()
+                .find(|option| option.value
+                    == "unit-parent:group:2:army|3:virtual")
+                .unwrap()
+                .count,
+            expected_virtual
+        );
+        assert_eq!(
+            counts
+                .iter()
+                .find(|option| option.value == format!("unit-id:{}", child.id))
+                .unwrap()
+                .count,
+            2
+        );
+        assert_eq!(
+            counts
+                .iter()
+                .find(|option| option.value == "unit-id:0")
+                .unwrap()
+                .count,
+            1
+        );
+    }
+    req.selected_unit_ids =
+        Some(vec![crate::config::ANALYSIS_STATS_UNDEFINED_UNIT_ID]);
+    let undefined = load(db, &req, allowed.clone()).await.unwrap();
+    assert_eq!(
+        undefined
+            .series
+            .iter()
+            .map(|series| series.points[0].messages)
+            .sum::<i64>(),
+        1
+    );
+    req.selected_groups =
+        Some(vec![fixture.beta.signal_group.master_key.clone()]);
+    let counts = load_unit_options(db, &req, allowed.clone(), &hierarchy, true)
+        .await
+        .unwrap();
+    assert!(counts.iter().all(|option| option.count
+        == if option.value == "unit-id:0" { 0 } else { 1 }));
+    req.selected_groups =
+        Some(vec![fixture.secret_hidden.signal_group.master_key.clone()]);
+    assert!(load_unit_options(db, &req, allowed, &hierarchy, true)
+        .await
+        .unwrap()
+        .iter()
+        .all(|option| option.count == 0));
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3873_label_panels_and_filters_respect_sender_organisms() {
+    use super::daily_messages::{
+        load, load_catalog, load_group_counts, load_options, load_panels,
+        load_sender_page, load_unit_options, DailyMessageStatsAccess,
+        DailyMessageStatsCatalogReq, DailyMessageStatsGrouping,
+        DailyMessageStatsOptionsReq, DailyMessageStatsReq,
+        DailyMessageStatsSendersReq,
+    };
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let own = mk_organism(db, Default::default()).await.unwrap();
+    let other = mk_organism(db, Default::default()).await.unwrap();
+    let author = mk_login(
+        db,
+        login::ActiveModel {
+            organism_id: Set(Some(own.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let external = mk_login(
+        db,
+        login::ActiveModel {
+            organism_id: Set(Some(other.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let profile_key = uuid::Uuid::new_v4().to_string();
+    db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+        "insert into signal_profile(uuid,given_name) values ($1,'Signal sender')", [profile_key.clone().into()])).await.unwrap();
+    login::Entity::update_many()
+        .filter(login::Column::Id.eq(external.id))
+        .col_expr(
+            login::Column::SignalProfileId,
+            Expr::value(profile_key.clone()),
+        )
+        .exec(db)
+        .await
+        .unwrap();
+    let mut labels = vec![];
+    for (organism, user) in [(&own, &author), (&other, &external)] {
+        let label = crate::organism::labels::OrganismUserLabel::find_by_statement(Statement::from_sql_and_values(DbBackend::Postgres,
+            "insert into organism_user_label (organism_id,name,color) values ($1,'Same name','#87d7f1') returning *", [organism.id.into()])).one(db).await.unwrap().unwrap();
+        db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+            "insert into organism_user_label_assignment (login_id,organism_id,label_id) values ($1,$2,$3)", [user.id.into(), organism.id.into(), label.id.into()])).await.unwrap();
+        labels.push(label.id);
+    }
+    let api_sender_id = uuid::Uuid::new_v4();
+    let api_sender_key = api_sender_id.to_string();
+    api_sender::ActiveModel {
+        sender_uuid: Set(api_sender_id),
+        api_id: Set(author.id),
+        login_id: Set(external.id),
+        display_name: Set("API sender".into()),
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    for (index, sender) in [
+        None,
+        Some(profile_key.as_str()),
+        Some(api_sender_key.as_str()),
+        Some("unmapped-3873"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let message = mk_analysis_message(
+            db,
+            &format!("label-panel-{index}"),
+            "3873",
+            test_dt(2026, 10, 25, 12, 0),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        signal_message_group::Entity::update_many()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message.id),
+            )
+            .col_expr(signal_message_group::Column::Sender, Expr::value(sender))
+            .col_expr(
+                signal_message_group::Column::LoginId,
+                Expr::value(Some(if sender == Some(api_sender_key.as_str()) {
+                    external.id
+                } else {
+                    author.id
+                })),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+    }
+    let allowed = vec![fixture.alpha.signal_group.master_key.clone()];
+    let mut req = DailyMessageStatsReq {
+        user_label_id: None,
+        from_date: "2026-10-25".into(),
+        to_date: "2026-10-25".into(),
+        grouping: DailyMessageStatsGrouping::DailyStatsSenders,
+        selected_groups: None,
+        selected_senders: None,
+        selected_unit_ids: None,
+        cursor: None,
+    };
+    let own_access =
+        DailyMessageStatsAccess::for_organism(allowed.clone(), Some(own.id));
+    let other_access =
+        DailyMessageStatsAccess::for_organism(allowed.clone(), Some(other.id));
+    let panels = load_panels(db, &req, own_access.clone()).await.unwrap();
+    assert_eq!(panels.len(), 2);
+    assert!(panels.iter().any(|panel| panel.label_id == labels[0]
+        && panel.organism_name.as_deref() == Some(own.name.as_str())));
+    assert!(!panels.iter().any(|panel| panel.label_id == labels[1]));
+    let other_panels =
+        load_panels(db, &req, other_access.clone()).await.unwrap();
+    assert!(other_panels.iter().any(|panel| panel.label_id == labels[1]));
+    for label in [
+        labels[0],
+        labels[1],
+        crate::config::USER_LABEL_UNASSIGNED_ID,
+    ] {
+        req.user_label_id = Some(label);
+        let stats = load(db, &req, allowed.clone()).await.unwrap();
+        let expected: Vec<String> = if label == labels[0] {
+            vec![author.id.to_string()]
+        } else if label == labels[1] {
+            vec![profile_key.clone(), api_sender_key.clone()]
+        } else {
+            vec!["unmapped-3873".into()]
+        };
+        assert_eq!(stats.series.len(), expected.len());
+        for series in stats.series {
+            assert_eq!(series.points[0].messages, 1);
+            assert!(expected
+                .iter()
+                .any(|key| Some(key) == series.key.as_ref()));
+        }
+    }
+    let hidden = load_panels(
+        db,
+        &req,
+        DailyMessageStatsAccess::for_organism(vec![], Some(own.id)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(hidden.len(), 1);
+    assert_eq!(hidden[0].label_id, crate::config::USER_LABEL_UNASSIGNED_ID);
+    let duplicate = mk_login(
+        db,
+        login::ActiveModel {
+            organism_id: Set(Some(own.id)),
+            signal_profile_id: Set(Some(profile_key.clone())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    req.user_label_id = Some(labels[1]);
+    let remaining = load(db, &req, allowed.clone()).await.unwrap();
+    assert_eq!(remaining.series.len(), 1);
+    assert_eq!(
+        remaining.series[0].key.as_deref(),
+        Some(api_sender_key.as_str())
+    );
+    req.user_label_id = Some(crate::config::USER_LABEL_UNASSIGNED_ID);
+    assert_eq!(
+        load(db, &req, allowed.clone()).await.unwrap().series.len(),
+        2
+    );
+    login::Entity::delete_by_id(duplicate.id)
+        .exec(db)
+        .await
+        .unwrap();
+
+    let child = mk_organism(
+        db,
+        organism::ActiveModel {
+            parent_id: Set(Some(own.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut unlabelled = vec![];
+    for organism_id in [own.id, other.id, child.id] {
+        let user = mk_login(
+            db,
+            login::ActiveModel {
+                organism_id: Set(Some(organism_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_analysis_message(
+            db,
+            &format!("label-unassigned-{organism_id}"),
+            "3873",
+            test_dt(2026, 10, 25, 12, 0),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        signal_message_group::Entity::update_many()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message.id),
+            )
+            .col_expr(
+                signal_message_group::Column::Sender,
+                Expr::value(Some(user.id.to_string())),
+            )
+            .col_expr(
+                signal_message_group::Column::LoginId,
+                Expr::value(Some(author.id)),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+        unlabelled.push(user);
+    }
+    let stats = load(db, &req, own_access.clone()).await.unwrap();
+    assert_eq!(stats.series.len(), 1);
+    assert_eq!(
+        stats.series[0].key.as_deref(),
+        Some(unlabelled[0].id.to_string().as_str())
+    );
+    assert_eq!(stats.series[0].points[0].messages, 1);
+    req.user_label_id = Some(labels[1]);
+    assert!(load(db, &req, own_access.clone())
+        .await
+        .unwrap()
+        .series
+        .is_empty());
+    req.user_label_id = None;
+    let stats = load(db, &req, own_access.clone()).await.unwrap();
+    assert_eq!(stats.series.len(), 2);
+    assert!(stats
+        .series
+        .iter()
+        .all(|series| series.points[0].messages == 1));
+    let other_stats = load(db, &req, other_access.clone()).await.unwrap();
+    assert_eq!(other_stats.series.len(), 3);
+    let sender_page = load_sender_page(
+        db,
+        &DailyMessageStatsSendersReq {
+            filter: req.clone(),
+            search: None,
+            cursor: None,
+        },
+        own_access.clone(),
+        "own".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sender_page.total, 2);
+    let counts = load_group_counts(db, &req, own_access.clone())
+        .await
+        .unwrap();
+    assert_eq!(counts[0].count, 2);
+    let hierarchy = crate::sigint::unit::hierarchy::load(&fixture.env)
+        .await
+        .unwrap();
+    let counts =
+        load_unit_options(db, &req, own_access.clone(), &hierarchy, true)
+            .await
+            .unwrap();
+    assert_eq!(
+        counts
+            .iter()
+            .find(|count| count.value == "unit-id:0")
+            .unwrap()
+            .count,
+        2
+    );
+    let catalog = load_catalog(
+        &fixture.env,
+        &DailyMessageStatsCatalogReq {
+            known_hierarchy_revision: None,
+            selected_senders: [
+                Some(author.id.to_string()),
+                Some(unlabelled[0].id.to_string()),
+                Some(profile_key.clone()),
+                Some("unmapped-3873".into()),
+                None,
+            ]
+            .into_iter()
+            .map(|sender| super::daily_messages::DailyMessageSenderKey {
+                sender,
+            })
+            .collect(),
+        },
+        own_access.clone(),
+        "own".into(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(catalog.sender_labels.len(), 2);
+    req.grouping = DailyMessageStatsGrouping::DailyStatsGroups;
+    let options = load_options(
+        db,
+        &DailyMessageStatsOptionsReq {
+            filter: req.clone(),
+            search: None,
+            include_children: None,
+        },
+        own_access.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(options.options[0].count, 2);
+    let no_organism = DailyMessageStatsAccess::for_organism(allowed, None);
+    assert!(load_panels(db, &req, no_organism.clone())
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(load(db, &req, no_organism).await.unwrap().series.is_empty());
+
+    req.grouping = DailyMessageStatsGrouping::DailyStatsSenders;
+    for id in [unlabelled[0].id, author.id] {
+        db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+            r#"insert into organism_message_stats_exclusion(login_id,organism_id) values ($1,$2)"#,
+            [id.into(), own.id.into()])).await.unwrap();
+    }
+    assert!(load(db, &req, own_access.clone())
+        .await
+        .unwrap()
+        .series
+        .is_empty());
+    req.user_label_id = Some(crate::config::USER_LABEL_UNASSIGNED_ID);
+    assert!(load(db, &req, own_access.clone())
+        .await
+        .unwrap()
+        .series
+        .is_empty());
+    let panels = load_panels(db, &req, own_access).await.unwrap();
+    assert_eq!(
+        panels
+            .iter()
+            .map(|panel| panel.label_id)
+            .collect::<Vec<_>>(),
+        vec![crate::config::USER_LABEL_UNASSIGNED_ID]
+    );
+    req.user_label_id = None;
+    db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+        r#"insert into organism_message_stats_exclusion(login_id,organism_id) values ($1,$2)"#,
+        [external.id.into(), other.id.into()])).await.unwrap();
+    let remaining = load(db, &req, other_access.clone()).await.unwrap();
+    assert_eq!(remaining.series.len(), 1);
+    assert_eq!(
+        remaining.series[0].key.as_deref(),
+        Some(unlabelled[1].id.to_string().as_str())
+    );
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"delete from organism_message_stats_exclusion where login_id=$1"#,
+        [external.id.into()],
+    ))
+    .await
+    .unwrap();
+    let ambiguous = mk_login(
+        db,
+        login::ActiveModel {
+            organism_id: Set(Some(own.id)),
+            signal_profile_id: Set(Some(profile_key.clone())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+        r#"insert into organism_message_stats_exclusion(login_id,organism_id) values ($1,$2)"#,
+        [ambiguous.id.into(), own.id.into()])).await.unwrap();
+    let remaining = load(db, &req, other_access.clone()).await.unwrap();
+    assert_eq!(remaining.series.len(), 2);
+    assert!(remaining
+        .series
+        .iter()
+        .all(|series| series.key.as_deref() != Some(profile_key.as_str())));
+    api_sender::ActiveModel {
+        sender_uuid: Set(author.id),
+        api_id: Set(external.id),
+        login_id: Set(external.id),
+        display_name: Set("Excluded direct UUID".into()),
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let remaining = load(db, &req, other_access).await.unwrap();
+    assert!(remaining
+        .series
+        .iter()
+        .all(|series| series.key.as_deref()
+            != Some(author.id.to_string().as_str())));
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3873_statistics_revalidate_organism_for_cached_and_legacy_routes(
+) {
+    use super::daily_messages::*;
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let viewer = find_test_login(db).await.unwrap();
+    let own = viewer.organism_id.unwrap();
+    let other = mk_organism(db, Default::default()).await.unwrap();
+    mk_organism_aor(
+        db,
+        organism_aor::ActiveModel {
+            organism_id: Set(other.id),
+            aor_id: Set(fixture.north_aor.id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut authors = vec![];
+    let mut labels = vec![];
+    for (index, organism_id) in [own, other.id].into_iter().enumerate() {
+        let author = mk_login(
+            db,
+            login::ActiveModel {
+                organism_id: Set(Some(organism_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let label = crate::organism::labels::OrganismUserLabel::find_by_statement(Statement::from_sql_and_values(DbBackend::Postgres,
+            r#"insert into organism_user_label(organism_id,name,color) values ($1,'Same name','#87d7f1') returning *"#, [organism_id.into()])).one(db).await.unwrap().unwrap();
+        db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+            r#"insert into organism_user_label_assignment(login_id,organism_id,label_id) values ($1,$2,$3)"#, [author.id.into(), organism_id.into(), label.id.into()])).await.unwrap();
+        for number in 0..=index {
+            let message = mk_analysis_message(
+                db,
+                &format!("organism-scope-{index}-{number}"),
+                "3873",
+                test_dt(2026, 10, 25, 12, 0),
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap();
+            signal_message_group::Entity::update_many()
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .eq(message.id),
+                )
+                .col_expr(
+                    signal_message_group::Column::Sender,
+                    Expr::value(Some(author.id.to_string())),
+                )
+                .exec(db)
+                .await
+                .unwrap();
+        }
+        authors.push(author);
+        labels.push(label.id);
+    }
+    let store = RedisSessionStore::new(
+        crate::redis_conn_string(&fixture.env.config).unwrap(),
+    )
+    .await
+    .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(fixture.env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .route(
+                "/test/organism-stats-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .service(daily_messages)
+            .service(daily_message_options)
+            .service(daily_catalog)
+            .service(daily_facet_counts)
+            .service(daily_senders)
+            .service(daily_panels)
+            .service(crate::organism::message_statistics::set_exclusion),
+    )
+    .await;
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/organism-stats-login/{}", viewer.id))
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let filter = serde_json::json!({"from_date":"2026-10-25","to_date":"2026-10-25","grouping":"Senders","selected_groups":[fixture.alpha.signal_group.master_key],"selected_senders":null,"selected_unit_ids":null,"cursor":null});
+    let mut revisions = vec![];
+    for (organism_id, role, author_index) in [
+        (Some(own), "Rer", Some(0)),
+        (Some(other.id), "Rer", Some(1)),
+        (None, "Rer", None),
+        (Some(own), "Admin", Some(0)),
+    ] {
+        login::Entity::update_many()
+            .filter(login::Column::Id.eq(viewer.id))
+            .col_expr(login::Column::OrganismId, Expr::value(organism_id))
+            .col_expr(
+                login::Column::Roles,
+                Expr::value(serde_json::json!([role])),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+        macro_rules! call {
+            ($path:expr, $body:expr) => {{
+                let response = actix_test::call_service(
+                    &app,
+                    actix_test::TestRequest::post()
+                        .uri($path)
+                        .cookie(cookie.clone())
+                        .set_json($body)
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(response.status(), StatusCode::OK, "{}", $path);
+                let body: serde_json::Value =
+                    actix_test::read_body_json(response).await;
+                body
+            }};
+        }
+        let stats = call!("/api/rer/analysis/stats/daily-messages", &filter);
+        assert_eq!(
+            stats["series"].as_array().unwrap().len(),
+            usize::from(author_index.is_some())
+        );
+        if let Some(index) = author_index {
+            assert_eq!(
+                stats["series"][0]["key"],
+                authors[index].id.to_string()
+            );
+            assert_eq!(stats["series"][0]["points"][0]["messages"], index + 1);
+        }
+        let options = call!(
+            "/api/rer/analysis/stats/daily-messages/options",
+            serde_json::json!({"filter":filter,"search":null,"include_children":true})
+        );
+        assert_eq!(options["total"], usize::from(author_index.is_some()));
+        let panels =
+            call!("/api/rer/analysis/stats/daily-messages/panels", &filter);
+        let panel_ids: Vec<_> = panels["panels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|panel| panel["label_id"].as_i64().unwrap())
+            .collect();
+        assert_eq!(
+            panel_ids,
+            author_index.map_or(vec![], |index| vec![
+                labels[index],
+                crate::config::USER_LABEL_UNASSIGNED_ID
+            ])
+        );
+        let catalog = call!(
+            "/api/rer/analysis/stats/daily-messages/catalog",
+            serde_json::json!({"known_hierarchy_revision":null,"selected_senders":authors.iter().map(|author| serde_json::json!({"sender":author.id})).collect::<Vec<_>>()})
+        );
+        assert_eq!(
+            catalog["sender_labels"].as_array().unwrap().len(),
+            usize::from(author_index.is_some())
+        );
+        let counts = call!(
+            "/api/rer/analysis/stats/daily-messages/facet-counts",
+            serde_json::json!({"filter":filter,"facet":"Groups","include_children":true})
+        );
+        let count = counts["counts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["value"] == fixture.alpha.signal_group.master_key)
+            .map_or(0, |row| row["count"].as_u64().unwrap());
+        assert_eq!(count, author_index.map_or(0, |index| index as u64 + 1));
+        revisions.push(counts["access_revision"].clone());
+        let sender_page = call!(
+            "/api/rer/analysis/stats/daily-messages/senders",
+            serde_json::json!({"filter":filter,"search":null,"cursor":null})
+        );
+        assert_eq!(sender_page["total"], usize::from(author_index.is_some()));
+        let foreign = call!(
+            "/api/rer/analysis/stats/daily-messages",
+            serde_json::json!({"user_label_id":author_index.map(|index| labels[1-index]),"from_date":"2026-10-25","to_date":"2026-10-25","grouping":"Senders"})
+        );
+        assert!(foreign["series"].as_array().unwrap().is_empty());
+        if role == "Admin" {
+            let unit_filter = serde_json::json!({"filter":filter,"facet":"Units","include_children":true});
+            let _ = call!(
+                "/api/rer/analysis/stats/daily-messages/facet-counts",
+                &unit_filter
+            );
+            let mut previous_revision = counts["access_revision"].clone();
+            for excluded in [true, false] {
+                call!(
+                    "/api/organism/message-stats-exclusion",
+                    serde_json::json!({"organism_id":own,"login_id":authors[0].id,"excluded":excluded})
+                );
+                let expected = usize::from(!excluded);
+                let stats =
+                    call!("/api/rer/analysis/stats/daily-messages", &filter);
+                assert_eq!(stats["series"].as_array().unwrap().len(), expected);
+                let counts = call!(
+                    "/api/rer/analysis/stats/daily-messages/facet-counts",
+                    serde_json::json!({"filter":filter,"facet":"Groups","include_children":true})
+                );
+                assert_ne!(counts["access_revision"], previous_revision);
+                previous_revision = counts["access_revision"].clone();
+                assert_eq!(
+                    counts["counts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|row| row["value"]
+                            == fixture.alpha.signal_group.master_key)
+                        .unwrap()["count"],
+                    expected
+                );
+                let unit_counts = call!(
+                    "/api/rer/analysis/stats/daily-messages/facet-counts",
+                    &unit_filter
+                );
+                assert_eq!(
+                    unit_counts["counts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|row| row["value"] == "unit-id:0")
+                        .unwrap()["count"],
+                    expected
+                );
+                let sender_page = call!(
+                    "/api/rer/analysis/stats/daily-messages/senders",
+                    serde_json::json!({"filter":filter,"search":null,"cursor":null})
+                );
+                assert_eq!(sender_page["total"], expected);
+                let options = call!(
+                    "/api/rer/analysis/stats/daily-messages/options",
+                    serde_json::json!({"filter":filter,"search":null,"include_children":true})
+                );
+                assert_eq!(options["total"], expected);
+                let panels = call!(
+                    "/api/rer/analysis/stats/daily-messages/panels",
+                    &filter
+                );
+                assert_eq!(
+                    panels["panels"].as_array().unwrap().len(),
+                    expected + 1
+                );
+                let catalog = call!(
+                    "/api/rer/analysis/stats/daily-messages/catalog",
+                    serde_json::json!({"known_hierarchy_revision":null,"selected_senders":[{"sender":authors[0].id}]})
+                );
+                assert_eq!(
+                    catalog["sender_labels"].as_array().unwrap().len(),
+                    expected
+                );
+            }
+        }
+    }
+    assert_ne!(revisions[0], revisions[1]);
+    assert_ne!(revisions[1], revisions[2]);
+}
