@@ -48,15 +48,26 @@ export function indexUnitHierarchyTree(
       .at(-1)
       ?.split(':')[0];
     if (Number(level) < 2) return descendants;
-    const value = directUnits.length === 1 ? directUnits[0] : `${UNIT_PARENT_PREFIX}${node.id}`;
+    const label = HIERARCHY_KEYS.slice(2)
+      .map((key) => node.hierarchy[key]?.trim())
+      .filter(Boolean)
+      .reverse()
+      .join(' ');
+    const matchingIds = node.children.flatMap((child) =>
+      child.kind === 'leaf' && child.label.trim() === label ? [child.unitId] : [],
+    );
+    const parentValue = `${UNIT_PARENT_PREFIX}${node.id}`;
+    const value =
+      directUnits.length === 1
+        ? directUnits[0]
+        : matchingIds.length > 0
+          ? getUnitIdFilterValue(Math.min(...matchingIds))
+          : parentValue;
+    index.children.set(parentValue, descendants);
+    index.exact.set(parentValue, directUnits);
     index.children.set(value, descendants);
     index.exact.set(value, directUnits);
     if (node.children.some((child) => child.kind === 'group') || directUnits.length > 1) {
-      const label = HIERARCHY_KEYS.slice(2)
-        .map((key) => node.hierarchy[key]?.trim())
-        .filter(Boolean)
-        .reverse()
-        .join(' ');
       index.parents.push({ value, label, descendants });
     }
     return descendants;

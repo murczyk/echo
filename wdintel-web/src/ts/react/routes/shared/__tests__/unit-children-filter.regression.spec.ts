@@ -48,14 +48,26 @@ describe('unit descendants regression #3527', () => {
     );
     const armies = options.filter((option) => option.label === '22 А');
     expect(armies).toHaveLength(1);
+    expect(armies[0].value).toBe('unit-id:30');
     expect(armies[0].count).toBe(17);
     expect(options.find((option) => option.value === 'unit-id:33')?.count).toBe(7);
-    expect(
-      buildInboxReq({
-        filter: { ...emptyFilter(), unitsSelected: [armies[0].value] },
+    for (const value of [armies[0].value, 'unit-parent:group:0:Регіон|1:Округ|2:22 А']) {
+      const duty = buildInboxReq({
+        filter: { ...emptyFilter(), unitsSelected: [value], unitsDenied: [value] },
         unitHierarchy: hierarchy,
-      }).selectedUnitIds?.sort(),
-    ).toEqual([30, 31, 32, 33]);
+      });
+      expect(duty.selectedUnitIds?.sort()).toEqual([30, 31, 32, 33]);
+      expect(duty.deniedUnitIds?.sort()).toEqual([30, 31, 32, 33]);
+      expect(
+        buildAnalysisReq({
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-10-30T00:00',
+          toDateTimeStr: '2026-10-31T00:00',
+          unitsSelected: [value],
+          unitHierarchy: hierarchy,
+        })?.selectedUnitIds?.sort(),
+      ).toEqual([30, 31, 32, 33]);
+    }
   });
 
   it('does not join unrelated armies whose names contain hierarchy path delimiters', () => {
