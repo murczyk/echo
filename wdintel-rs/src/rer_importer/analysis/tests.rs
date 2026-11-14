@@ -2236,7 +2236,7 @@ fn analytics_freqs_selected_networks_use_scoped_flat_joins() {
     assert!(
         str::contains(
             &sql,
-            "INNER JOIN \"sigint_inbox_item_network\" AS \
+            "INNER JOIN \"echo_clickhouse_derived\".\"message_network_link\" AS \
              \"analytics_network_filter_link\""
         ),
         "{sql}"
@@ -2307,7 +2307,7 @@ fn analytics_groups_selected_networks_use_scoped_flat_joins() {
 
     assert!(str::contains(
         &sql,
-        "INNER JOIN \"sigint_inbox_item_network\" AS \
+        "INNER JOIN \"echo_clickhouse_derived\".\"message_network_link\" AS \
          \"analytics_network_filter_link\""
     ));
     assert!(str::contains(
@@ -2528,7 +2528,7 @@ fn analytics_senders_selected_networks_use_scoped_flat_joins() {
 
     assert!(str::contains(
         &sql,
-        "INNER JOIN \"sigint_inbox_item_network\" AS \
+        "INNER JOIN \"echo_clickhouse_derived\".\"message_network_link\" AS \
          \"analytics_network_filter_link\""
     ));
     assert!(str::contains(

@@ -29,19 +29,25 @@ metadata_database="${CLICKHOUSE_CURRENT_DB}_meta"
 message_callsign_view=message_callsign_v2
 message_aor_link_view=message_aor_link_v1
 message_network_link_view=message_network_link_v1
+message_unit_link_view=message_unit_link_v1
 callsign_table=sigint_inbox_item_callsign_by_message_v1
 callsign_ingest_view=sigint_inbox_item_callsign_by_message_ingest_v1
 network_link_table=sigint_inbox_item_network_by_message_v1
 network_link_ingest_view=sigint_inbox_item_network_by_message_ingest_v1
+unit_link_table=sigint_inbox_item_unit_by_message_v1
+unit_link_ingest_view=sigint_inbox_item_unit_by_message_ingest_v1
 validate_identifier derived_database "$derived_database"
 validate_identifier metadata_database "$metadata_database"
 validate_identifier message_callsign_view "$message_callsign_view"
 validate_identifier message_aor_link_view "$message_aor_link_view"
 validate_identifier message_network_link_view "$message_network_link_view"
+validate_identifier message_unit_link_view "$message_unit_link_view"
 validate_identifier callsign_table "$callsign_table"
 validate_identifier callsign_ingest_view "$callsign_ingest_view"
 validate_identifier network_link_table "$network_link_table"
 validate_identifier network_link_ingest_view "$network_link_ingest_view"
+validate_identifier unit_link_table "$unit_link_table"
+validate_identifier unit_link_ingest_view "$unit_link_ingest_view"
 
 reconcile_query_index() {
   local table=$1
@@ -140,7 +146,8 @@ reconcile_query_index() {
 
 reconcile_network_link_table() {
   local raw_table=sigint_inbox_item_network
-  local raw_uuid state_exists target_exists ingest_exists
+  local columns='id, sigint_inbox_item_id, sigint_network_id, created_at, _peerdb_synced_at, _peerdb_is_deleted, _peerdb_version'
+  local raw_uuid state_exists target_exists ingest_exists ingest_started_at
 
   raw_uuid=$(clickhouse_admin_http "
     SELECT toString(uuid)
@@ -180,6 +187,7 @@ reconcile_network_link_table() {
   fi
 
   log "Rebuilding message-ordered network links for raw table UUID $raw_uuid"
+  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
   clickhouse_admin \
     --receive_timeout 600 \
     --multiquery \
@@ -232,6 +240,11 @@ reconcile_network_link_table() {
         _peerdb_version
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
+  catch_up_derived_rows \
+    "$network_link_table" \
+    "$raw_table" \
+    "$columns" \
+    "$ingest_started_at"
   clickhouse_admin_http "
     INSERT INTO \`$metadata_database\`.\`derived_table_reconciliation\`
     (
@@ -254,9 +267,142 @@ reconcile_network_link_table() {
   "
 }
 
+# Copies PeerDB versions that a materialized view may have missed. An INSERT
+# that was already running when the view was created does not feed it, and
+# its rows can commit after the backfill snapshot. Duplicates are harmless:
+# ReplacingMergeTree keeps one row per key and version.
+catch_up_derived_rows() {
+  local derived_table=$1
+  local raw_table=$2
+  local columns=$3
+  local ingest_started_at=$4
+
+  clickhouse_admin \
+    --receive_timeout 600 \
+    --query "
+      INSERT INTO \`$derived_database\`.\`$derived_table\`
+      SELECT $columns
+      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`
+      WHERE _peerdb_synced_at
+        >= toDateTime64('$ingest_started_at', 9) - INTERVAL 10 MINUTE
+    "
+}
+
+# Unit links ordered by message, so the analytics message-ID scope prunes them
+# by primary key. PeerDB orders the raw table by its surrogate id, which made
+# every unit facet read the whole table (ECHO-4202).
+reconcile_unit_link_table() {
+  local raw_table=sigint_inbox_item_unit
+  local columns='id, item_id, unit_id, kind, created_at, _peerdb_synced_at, _peerdb_is_deleted, _peerdb_version'
+  local raw_uuid state_exists target_exists ingest_exists ingest_started_at
+
+  raw_uuid=$(clickhouse_admin_http "
+    SELECT toString(uuid)
+    FROM system.tables
+    WHERE database = '$CLICKHOUSE_RAW_DB'
+      AND name = '$raw_table'
+  ")
+  [[ "$raw_uuid" =~ ^[0-9a-fA-F-]{36}$ ]] \
+    || die "could not resolve table UUID for $CLICKHOUSE_RAW_DB.$raw_table"
+
+  state_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM \`$metadata_database\`.\`derived_table_reconciliation\`
+    FINAL
+    WHERE raw_database = '$CLICKHOUSE_RAW_DB'
+      AND raw_table = '$raw_table'
+      AND raw_table_uuid = toUUID('$raw_uuid')
+      AND derived_database = '$derived_database'
+      AND derived_table = '$unit_link_table'
+  ")
+  target_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM system.tables
+    WHERE database = '$derived_database'
+      AND name = '$unit_link_table'
+      AND engine = 'ReplacingMergeTree'
+  ")
+  ingest_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM system.tables
+    WHERE database = '$derived_database'
+      AND name = '$unit_link_ingest_view'
+      AND engine = 'MaterializedView'
+  ")
+  if [[ "$state_exists" == 1 && "$target_exists" == 1 && "$ingest_exists" == 1 ]]; then
+    return
+  fi
+
+  log "Rebuilding message-ordered unit links for raw table UUID $raw_uuid"
+  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
+  clickhouse_admin \
+    --receive_timeout 600 \
+    --multiquery \
+    --query "
+      DROP VIEW IF EXISTS
+        \`$derived_database\`.\`$message_unit_link_view\`;
+      DROP VIEW IF EXISTS
+        \`$derived_database\`.\`$unit_link_ingest_view\`;
+      DROP TABLE IF EXISTS
+        \`$derived_database\`.\`$unit_link_table\`;
+      CREATE TABLE
+        \`$derived_database\`.\`$unit_link_table\`
+      (
+        id Int64,
+        item_id Int64,
+        unit_id Int64,
+        kind LowCardinality(String),
+        created_at DateTime64(6),
+        _peerdb_synced_at DateTime64(9),
+        _peerdb_is_deleted UInt8,
+        _peerdb_version UInt64
+      )
+      ENGINE = ReplacingMergeTree(
+        _peerdb_version,
+        _peerdb_is_deleted
+      )
+      ORDER BY (item_id, id);
+      CREATE MATERIALIZED VIEW
+        \`$derived_database\`.\`$unit_link_ingest_view\`
+      TO \`$derived_database\`.\`$unit_link_table\`
+      AS
+      SELECT $columns
+      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
+      INSERT INTO \`$derived_database\`.\`$unit_link_table\`
+      SELECT $columns
+      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
+    "
+  catch_up_derived_rows \
+    "$unit_link_table" \
+    "$raw_table" \
+    "$columns" \
+    "$ingest_started_at"
+  clickhouse_admin_http "
+    INSERT INTO \`$metadata_database\`.\`derived_table_reconciliation\`
+    (
+      raw_database,
+      raw_table,
+      raw_table_uuid,
+      derived_database,
+      derived_table,
+      reconciled_at
+    )
+    VALUES
+    (
+      '$CLICKHOUSE_RAW_DB',
+      '$raw_table',
+      toUUID('$raw_uuid'),
+      '$derived_database',
+      '$unit_link_table',
+      now64()
+    )
+  "
+}
+
 reconcile_callsign_table() {
   local raw_table=sigint_inbox_item_callsign
-  local raw_uuid state_exists target_exists ingest_exists
+  local columns='id, sigint_inbox_item_id, callsign, deleted, _peerdb_synced_at, _peerdb_is_deleted, _peerdb_version'
+  local raw_uuid state_exists target_exists ingest_exists ingest_started_at
 
   raw_uuid=$(clickhouse_admin_http "
     SELECT toString(uuid)
@@ -296,6 +442,7 @@ reconcile_callsign_table() {
   fi
 
   log "Rebuilding message-ordered callsigns for raw table UUID $raw_uuid"
+  ingest_started_at=$(clickhouse_admin_http "SELECT toString(now64(9))")
   clickhouse_admin \
     --receive_timeout 600 \
     --multiquery \
@@ -346,6 +493,11 @@ reconcile_callsign_table() {
         _peerdb_version
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
+  catch_up_derived_rows \
+    "$callsign_table" \
+    "$raw_table" \
+    "$columns" \
+    "$ingest_started_at"
   clickhouse_admin_http "
     INSERT INTO \`$metadata_database\`.\`derived_table_reconciliation\`
     (
@@ -431,6 +583,15 @@ clickhouse_admin_http "
     sigint_inbox_item_id,
     sigint_network_id
   FROM \`$derived_database\`.\`$network_link_table\` FINAL
+"
+reconcile_unit_link_table
+clickhouse_admin_http "
+  CREATE OR REPLACE VIEW \`$derived_database\`.\`$message_unit_link_view\` AS
+  SELECT
+    item_id,
+    unit_id,
+    kind
+  FROM \`$derived_database\`.\`$unit_link_table\` FINAL
 "
 callsign_table_exists=$(clickhouse_admin_http "
   SELECT count()
@@ -531,7 +692,8 @@ BEGIN
     SELECT unnest(ARRAY[
       'message_callsign',
       'message_aor_link',
-      'message_network_link'
+      'message_network_link',
+      'message_unit_link'
     ])
   LOOP
     relation_kind := NULL;
@@ -638,6 +800,24 @@ CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS
 SELECT sigint_inbox_item_id, sigint_network_id
 FROM echo_clickhouse_derived_foreign.message_network_link;
 REVOKE ALL ON TABLE echo_clickhouse_derived.message_network_link FROM PUBLIC;
+CREATE FOREIGN TABLE IF NOT EXISTS
+echo_clickhouse_derived_foreign.message_unit_link (
+  item_id bigint NOT NULL,
+  unit_id bigint NOT NULL,
+  kind text NOT NULL
+)
+SERVER echo_clickhouse
+OPTIONS (
+  database :'derived_database',
+  table_name :'message_unit_link_view',
+  engine 'View'
+);
+REVOKE ALL ON TABLE echo_clickhouse_derived_foreign.message_unit_link
+  FROM PUBLIC;
+CREATE OR REPLACE VIEW echo_clickhouse_derived.message_unit_link AS
+SELECT item_id, unit_id, kind
+FROM echo_clickhouse_derived_foreign.message_unit_link;
+REVOKE ALL ON TABLE echo_clickhouse_derived.message_unit_link FROM PUBLIC;
 SELECT format(
   'GRANT USAGE ON SCHEMA echo_clickhouse_derived TO %I',
   :'gateway_user'
@@ -654,6 +834,10 @@ SELECT format(
   'GRANT SELECT ON TABLE echo_clickhouse_derived.message_network_link TO %I',
   :'gateway_user'
 ) \gexec
+SELECT format(
+  'GRANT SELECT ON TABLE echo_clickhouse_derived.message_unit_link TO %I',
+  :'gateway_user'
+) \gexec
 COMMIT;
 SQL
 } | postgres_psql --dbname "$GATEWAY_DB" \
@@ -664,6 +848,7 @@ SQL
   -v message_callsign_view="$message_callsign_view" \
   -v message_aor_link_view="$message_aor_link_view" \
   -v message_network_link_view="$message_network_link_view" \
+  -v message_unit_link_view="$message_unit_link_view" \
   -v gateway_user="$GATEWAY_USER"
 
 log "Reconciled derived analytics schema"
