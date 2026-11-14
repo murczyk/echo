@@ -1,9 +1,5 @@
 import type { AiAgentCompletionMetadata, AiAgentReasoningPreset } from '../../../../Bindings';
-import type {
-  AiAgentConfiguration,
-  AiAgentMessage,
-  AiAgentProvider,
-} from '../../services/api/ai-agent';
+import type { AiAgentMessage, AiAgentProvider } from '../../services/api/ai-agent';
 import type { LiveRequest } from './index';
 
 /** Completion reasons after which another model may succeed (#4112). */
@@ -110,19 +106,6 @@ export function nextProvider(
     }
   }
   return null;
-}
-
-/**
- * The engine to preselect instead of `candidateId`, when an admin marked it unhealthy and a
- * healthy one exists. Returns null when `candidateId` should stay.
- */
-export function healthyReplacement(
-  configuration: AiAgentConfiguration | null,
-  candidateId: string,
-): AiAgentProvider | null {
-  const candidate = configuration?.providers.find((provider) => provider.id === candidateId);
-  if (!configuration || !candidate?.unhealthy) return null;
-  return nextProvider(configuration.providers, candidateId);
 }
 
 /** The turn's depth when the target engine offers it; otherwise the engine decides. */
