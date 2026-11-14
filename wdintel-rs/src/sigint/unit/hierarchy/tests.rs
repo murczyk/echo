@@ -237,6 +237,51 @@ async fn regression_3527_invalid_or_unbounded_cache_is_rebuilt_from_units() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn regression_3527_scoped_alias_retains_canonical_parent_siblings() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    clear_cache(&env).await;
+    let mut ids = Vec::new();
+    for (name, division) in [
+        ("Headquarters", ""),
+        ("22 А", ""),
+        ("22 А", ""),
+        ("Child", "72 мсд"),
+    ] {
+        let unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set(name.to_string()),
+                army: Set("22 А".to_string()),
+                division: Set(division.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ids.push(unit.id);
+    }
+    notify_change(&env).await;
+    let tree = load(&env).await.unwrap();
+    let scoped = scope_tree(
+        tree,
+        &UnitHierarchyReq {
+            known_revision: None,
+            unit_ids: Some(Vec::new()),
+            selection_values: Some(vec![format!("unit-id:{}", ids[2])]),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        scoped.units.iter().map(|unit| unit.id).collect::<Vec<_>>(),
+        ids[..3]
+    );
+    assert_eq!(scoped.selections[0].unit_ids, ids);
+    assert_eq!(scoped.selections[0].exact_unit_ids, vec![ids[2]]);
+    clear_cache(&env).await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn regression_3571_scoped_hierarchy_resolves_complete_branches() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     clear_cache(&env).await;

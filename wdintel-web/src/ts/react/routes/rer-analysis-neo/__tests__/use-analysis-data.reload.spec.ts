@@ -193,6 +193,42 @@ describe('mergeSignalProfiles', () => {
 });
 
 describe('loadFilterSectionData', () => {
+  it('#3527 subtracts collapsed catalog rows from the unit section total', async () => {
+    const units = [
+      { unitId: 30, name: '22 А', count: 2 },
+      { unitId: 31, name: '22 А', count: 3 },
+      { unitId: 32, name: '72 мсд 22 А', count: 5 },
+      { unitId: 33, name: 'Army headquarters', count: 7 },
+    ];
+    const options = [
+      { value: 'unit-id:30', label: '22 А', count: 17 },
+      { value: 'unit-id:32', label: '72 мсд 22 А', count: 5 },
+      { value: 'unit-id:33', label: 'Army headquarters', count: 7 },
+    ];
+    mocks.fetchAnalysisUnits.mockResolvedValue({ units, options });
+    let currentOptions = structuredClone(emptyOptions);
+
+    await loadFilterSectionData('units', {
+      analysisReq: buildAnalysisReq(buildQueryState())!,
+      loadVersion: 0,
+      loadVersionRef: { current: 0 },
+      queryState: buildQueryState(),
+      setAorEntries: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setNetworks: vi.fn(),
+      setOptions: (update) => {
+        currentOptions = typeof update === 'function' ? update(currentOptions) : update;
+      },
+      setProfiles: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
+      unitsMap: {},
+    });
+
+    expect(currentOptions.units).toEqual(options);
+    expect(units.length + currentOptions.unitParentCount!).toBe(3);
+  });
+
   it('uses sender names returned with the analysis sender statistics', async () => {
     mocks.fetchAnalysisSenders.mockResolvedValue({
       senders: [{ uuid: 'messenger-sender', count: 2, freqBreakdown: [], perDay: {} }],

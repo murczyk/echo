@@ -2,8 +2,8 @@
 
 A release has two phases, run from a clean `stable` checkout:
 
-- **Prepare**: sync branches, bump the version, deploy to canary servers and
-  upgrade their AI harness.
+- **Prepare**: sync branches, date the changelog and post it to #DEV, bump the
+  version, deploy to canary servers and upgrade their AI harness.
 - **Make**: deploy to every other active server and upgrade its AI harness.
 
 "Prepare release", "make release", and "prepare and make release" mean these
@@ -15,7 +15,8 @@ stable release" release what is on `stable` without merging `main`; see
 
 A user message asking for a phase approves exactly that phase's operations and
 targets, as AGENTS.md allows. Prepare covers pushing `stable` and `main`,
-deploying the canaries, and upgrading their AI harness. Make covers deploying
+posting the release's changelog entries to #DEV, deploying the canaries, and
+upgrading their AI harness. Make covers deploying
 the remaining active servers and upgrading their AI harness. A stable release
 covers the same, except that its Prepare pushes only `stable`.
 
@@ -40,9 +41,59 @@ Everything else still needs separate approval, including:
 
    If the log is not empty, merge `stable` into `main` and push `main`.
 
-2. Merge `main` into `stable`, without pushing:
+2. Check that CI passed on the `main` head. Builds from `stable` skip the tests,
+   so this is their only test run.
+
+3. Date the changelog on that commit and push it to `main`. Every entry under
+   `## NEXT` moves to a dated section right below it, and `## NEXT` stays as an
+   empty heading:
+
+   - Entries that `origin/stable`'s `CHANGELOG.md` doesn't have are this
+     release. They go under `## YYYY-MM-DD`, today's UTC date, as in the
+     version `just bump-version-push` makes.
+   - Entries already in `origin/stable`'s `CHANGELOG.md` shipped in an earlier
+     release that wasn't dated, such as a stable release. Give each such release its
+     own section, under the date of the first `bump:` commit whose
+     `CHANGELOG.md` has the entry:
+
+     ```bash
+     git log --reverse --format='%h %s' --grep='^bump: ' origin/stable
+     git show <bump>:CHANGELOG.md
+     ```
+
+   - When a date has several releases, number the later sections in release
+     order, counting sections already in the file: `## 2026-11-14`,
+     `## 2026-11-14 (2)`.
+
+   Put the newest release first, keep entries in their `NEXT` order, and change
+   no other line.
 
    ```bash
+   git switch --detach origin/main
+   # edit CHANGELOG.md
+   git commit -m "docs(changelog): dated release $(date -u +%F)" CHANGELOG.md
+   git push origin HEAD:main
+   ```
+
+   If the push is rejected because `main` moved, fetch and go back to step 2.
+   The new commit's own CI run is not needed: it changes only `CHANGELOG.md`.
+
+4. Right after that push, post this release's section to the #DEV Mattermost
+   channel, so the team can say what needs more testing or blocks the release.
+   Post nothing if the release has no entries. Also list the section's `👷` and
+   `🚨` entries for the final report:
+
+   ```bash
+   section=2026-11-14   # this release's heading, without "## "
+   entries=$(awk -v h="## $section" '$0 == h {f = 1; next} /^## / {f = 0} f && /^- /' CHANGELOG.md)
+   just notify-dev "$(printf '%s\n\n%s' 'Готую реліз, передивіться список фіч що потребують додаткового тестування або блокують його:' "$entries")"
+   grep -E '👷|🚨' <<<"$entries"
+   ```
+
+5. Merge `main` into `stable`, without pushing:
+
+   ```bash
+   git switch stable
    git pull --ff-only origin stable
    git merge --ff-only origin/main
    ```
@@ -50,28 +101,20 @@ Everything else still needs separate approval, including:
    Do not push yet: every `stable` push builds packages, so the merge and the
    bump should go out together.
 
-3. Check that CI passed on the `main` head. Builds from `stable` skip the tests,
-   so this is their only test run. List the `👷` and `🚨` entries this release
-   adds, for the final report:
-
-   ```bash
-   git diff origin/stable origin/main -- CHANGELOG.md | grep -E '^\+.*(👷|🚨)'
-   ```
-
-4. Bump the version and push. CI then builds the deb:
+6. Bump the version and push. CI then builds the deb:
 
    ```bash
    just bump-version-push
    ```
 
-5. Wait for the `CI Build Test and Publish (amd64)` run for that commit:
+7. Wait for the `CI Build Test and Publish (amd64)` run for that commit:
 
    ```bash
    gh run list --limit 20 --json databaseId,headSha,status,conclusion
    gh run watch <run-id> --exit-status
    ```
 
-6. Deploy the canaries one by one, in this order: `echo-staging`,
+8. Deploy the canaries one by one, in this order: `echo-staging`,
    `echo-cbr-staging`, `echo-kharkiv2`. The deploy also upgrades the server's AI
    harness (see [Upgrading the AI harness](#upgrading-the-ai-harness)). Check
    logs after each one (see [Checking a server](#checking-a-server)).
@@ -83,7 +126,7 @@ Everything else still needs separate approval, including:
 
    `just deploy` refuses to run on `main`.
 
-7. Report the version, the canary results, the harness release on each canary,
+9. Report the version, the canary results, the harness release on each canary,
    and the `👷`/`🚨` entries.
 
 ## Make
@@ -103,26 +146,32 @@ A stable release ships what is already on `stable`, for example a hotfix while
 leaves `main` untouched. The next normal release brings `stable` back into
 `main` in Prepare step 1.
 
-"Prepare stable release" replaces Prepare steps 1 to 3 with these two steps, then
-continues from Prepare step 4:
+"Prepare stable release" replaces Prepare steps 1 to 5 with these three steps,
+then continues from Prepare step 6:
 
-1. Update `stable` and list what came after the last bump:
+1. Update `stable` and list what came after the last bump, with its changelog
+   entries:
 
    ```bash
    git switch stable
    git pull --ff-only origin stable
    last_bump=$(git log -1 --format=%h --grep='^bump: ')
    git log --oneline "$last_bump"..
-   git diff "$last_bump" -- CHANGELOG.md | grep -E '^\+.*(👷|🚨)'
+   entries=$(git diff "$last_bump" -- CHANGELOG.md | sed -n 's/^+- /- /p')
+   grep -E '👷|🚨' <<<"$entries"
    ```
 
    If the log lists only `[skip ci]` commits, the last bump's deb already is this
-   release, so also skip Prepare steps 4 and 5.
+   release, so also skip Prepare steps 6 and 7.
 
 2. Check that each listed commit passed the tests. Builds from `stable` skip
    them, so that run is on the commit's PR or on `main`, and a commit pushed
    straight to `stable` has none. Report any such commit with the `👷`/`🚨`
    entries.
+
+3. Post the entries to #DEV as in Prepare step 4. Leave `CHANGELOG.md` as it
+   is: the next release dates them in its Prepare step 3, and editing `NEXT` on
+   `stable` would conflict with `main`.
 
 "Make stable release" is [Make](#make) as written, because Make merges nothing.
 For "prepare and make stable release", start it straight after Prepare if the
@@ -203,6 +252,9 @@ appear, or a service is unhealthy. Do not deploy further servers or start
 recovery without approval.
 
 ## Notifications
+
+`just notify` and `just notify-dev` read their webhooks from `.env`. In a
+worktree they also read the main checkout's `.env`, so it needs no copy.
 
 Run `just notify "<text>"` after each long successful step:
 

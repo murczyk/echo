@@ -1,4 +1,4 @@
-import type { UnitHierarchyReq } from '../../../../Bindings';
+import type { UnitHierarchyReq, UnitHierarchyRsp } from '../../../../Bindings';
 import { useEffect, useRef, useState } from 'react';
 import { getUnitHierarchy } from '../../services/api/units';
 import {
@@ -74,26 +74,7 @@ function loadHierarchyCatalog(
       // one so reconciliation that changes nothing keeps the hierarchy's
       // identity; dependants reload their unit data when it changes (#4202).
       if (response || (empty && !catalog)) {
-        const tree = response ? readUnitHierarchyTree(response) : [];
-        const hierarchy = indexUnitHierarchyTree(tree, response?.units ?? []);
-        for (const selection of response?.selections ?? []) {
-          hierarchy.children.set(
-            selection.value,
-            selection.unitIds.map((id) => `unit-id:${id}`),
-          );
-          hierarchy.exact.set(
-            selection.value,
-            selection.exactUnitIds.map((id) => `unit-id:${id}`),
-          );
-          if (!hierarchy.parents.some((parent) => parent.value === selection.value)) {
-            hierarchy.parents.push({
-              value: selection.value,
-              label: selection.label,
-              descendants: selection.unitIds.map((id) => `unit-id:${id}`),
-            });
-          }
-        }
-        catalog = { revision: response?.revision ?? '', hierarchy, tree };
+        catalog = readHierarchyCatalog(response);
       }
       if (!catalog) throw new Error('Сервер не повернув ієрархію підрозділів');
       catalogs.set(scopeKey, catalog);
@@ -107,6 +88,40 @@ function loadHierarchyCatalog(
     });
   pendingCatalogs.set(scopeKey, request);
   return request;
+}
+
+function readHierarchyCatalog(response: UnitHierarchyRsp | null): HierarchyCatalog {
+  const tree = response ? readUnitHierarchyTree(response) : [];
+  const hierarchy = indexUnitHierarchyTree(
+    tree,
+    response?.units ?? [],
+    response?.selections?.map((selection) => selection.value),
+  );
+  for (const selection of response?.selections ?? []) {
+    const descendants = selection.unitIds.map((id) => `unit-id:${id}`);
+    hierarchy.children.set(selection.value, descendants);
+    hierarchy.exact.set(
+      selection.value,
+      selection.exactUnitIds.map((id) => `unit-id:${id}`),
+    );
+    const parent = hierarchy.parents.find(
+      (parent) => parent.value === selection.value || parent.aliases.includes(selection.value),
+    );
+    if (parent) {
+      parent.descendants = descendants;
+      for (const value of [parent.value, ...parent.aliases]) {
+        hierarchy.children.set(value, descendants);
+      }
+    } else {
+      hierarchy.parents.push({
+        value: selection.value,
+        label: selection.label,
+        descendants,
+        aliases: [],
+      });
+    }
+  }
+  return { revision: response?.revision ?? '', hierarchy, tree };
 }
 
 export function useUnitHierarchyCatalog(
