@@ -9,6 +9,7 @@ pub mod documents;
 pub mod evaluation;
 mod events;
 pub(crate) mod file_citations;
+pub mod harness_check;
 pub(crate) mod lifecycle;
 pub mod maps;
 pub mod middleware;

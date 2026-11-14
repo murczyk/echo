@@ -1038,6 +1038,15 @@ fn spawn_background_workers(
         .await;
     });
 
+    let harness_check_env = env.clone();
+    let harness_check_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_harness_check_worker", bg_set, async move {
+        crate::ai_agent::harness_check::run_nofail(
+            harness_check_env,
+            harness_check_cancellation,
+        )
+        .await;
+    });
     let ai_agent_upload_env = env.clone();
     let ai_agent_upload_cancellation = cancel_token.clone();
     spawn_named_worker("ai_agent_upload_worker", bg_set, async move {
