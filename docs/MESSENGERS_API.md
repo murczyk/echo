@@ -24,7 +24,7 @@ are removed from the RER inbox and analysis feeds; see
 | `POST /contacts/list` | Implemented | `MessengersContactsListReq` | `MessengersContactsListRsp` |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 | `POST /attachments/list` | Implemented | `MessengersAttachmentsListReq` | `MessengersAttachmentsListRsp` |
-| `POST /attachments/counts` | Implemented | `MessengersAttachmentsCountsReq` | `MessengersAttachmentsCountsRsp` |
+| `POST /attachments/count` | Implemented | `MessengersAttachmentsCountsReq` | `MessengersAttachmentsCountsRsp` |
 
 Every route is a read except `accounts/update`, the only write, which changes
 only fields owned by Echo users; collected data stays read-only. Requests use `POST` with a JSON body, like
@@ -521,7 +521,7 @@ Semantics:
   indexes in timeline order, so it reads every attachment of those types in
   the scope, or walks the scope's timeline past the other types.
 
-### `POST /attachments/counts`
+### `POST /attachments/count`
 
 The number of attachments of one chat, or of every chat of an account, for
 each Telegram media type, for the labels of the tabs of a media gallery

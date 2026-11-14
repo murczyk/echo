@@ -99,7 +99,7 @@ export async function countMessengersAttachments(
 ): Promise<MessengersAttachmentsCountsRsp> {
   return transformSnakeToCamel<MessengersAttachmentsCountsRsp>(
     await postJson<unknown>(
-      '/api/messengers/attachments/counts',
+      '/api/messengers/attachments/count',
       transformCamelToSnake(req),
       options,
     ),

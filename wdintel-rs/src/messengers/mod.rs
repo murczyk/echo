@@ -104,7 +104,7 @@ pub async fn messages_list(
     Ok(Json(rsp))
 }
 
-#[post("/api/messengers/attachments/counts")]
+#[post("/api/messengers/attachments/count")]
 pub async fn attachments_counts(
     user: actix_identity::Identity,
     env: Data<Env>,

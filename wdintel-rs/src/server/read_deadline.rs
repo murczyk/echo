@@ -31,6 +31,7 @@ fn has_read_deadline(path: &str) -> bool {
                 | "/api/rer-importer/messages-by-id-matching-filters"
                 | "/api/messengers/messages/list"
                 | "/api/messengers/attachments/list"
+                | "/api/messengers/attachments/count"
                 | "/api/sigint/freqs"
                 | "/api/sigint/freqs-v2"
                 | "/api/sigint/freqs-for-period"
@@ -176,6 +177,7 @@ mod tests {
                     web::resource([
                         "/api/rer/analysis/stats/messages/count",
                         "/api/rer-importer/get-inbox-unit-stats",
+                        "/api/messengers/attachments/count",
                     ])
                     .route(web::post().to(
                         |queue: web::Data<tokio::sync::Mutex<()>>| async move {
@@ -190,6 +192,7 @@ mod tests {
         for path in [
             "/api/rer/analysis/stats/messages/count",
             "/api/rer-importer/get-inbox-unit-stats",
+            "/api/messengers/attachments/count",
         ] {
             let response = test::try_call_service(
                 &app,
