@@ -21,6 +21,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+/// How `require_template` in `echo_ai_agent_dispatcher.py` refuses a template
+/// whose release is missing or isn't the one the namespace expects.
+const TEMPLATE_RELEASE_REJECTION: &str =
+    "selected template belongs to another harness release";
+
 /// Releases the dispatcher reports for this server's namespace.
 struct ObservedHarness {
     namespace: String,
@@ -32,8 +37,8 @@ struct ObservedHarness {
 #[derive(Debug)]
 enum Template {
     Release(Option<String>),
-    /// The dispatcher refused the template, for example because it belongs
-    /// to another harness release; new containers can't be cloned from it.
+    /// The dispatcher refused the template because of its harness release;
+    /// new containers can't be cloned from it.
     Rejected(String),
 }
 
@@ -95,15 +100,17 @@ async fn observe(env: &Env) -> anyhow::Result<Option<ObservedHarness>> {
     };
     let dispatcher = DispatcherClient::from_record(&dispatcher).c(h!())?;
     let template_id = access::template_login_id(&settings).c(h!())?;
-    // Listing first shows the dispatcher is reachable, so a preflight
-    // business-logic error below is the dispatcher refusing the template.
     let inventory = dispatcher.call("list", None, json!({})).await.c(h!())?;
+    // Transport failures are business-logic errors too, so only the
+    // dispatcher's release refusal counts as a mismatch.
     let template = match dispatcher
         .call("preflight", None, json!({ "template_id": template_id }))
         .await
     {
         Ok(preflight) => Template::Release(release(&preflight.result)),
-        Err(AppError::BL { msg }) => Template::Rejected(msg),
+        Err(AppError::BL { msg }) if is_release_rejection(&msg) => {
+            Template::Rejected(msg)
+        }
         Err(err) => return Err(err).c(h!()),
     };
     Ok(Some(ObservedHarness {
@@ -117,6 +124,10 @@ async fn observe(env: &Env) -> anyhow::Result<Option<ObservedHarness>> {
             .map(|instances| instances.iter().map(release).collect())
             .unwrap_or_default(),
     }))
+}
+
+fn is_release_rejection(message: &str) -> bool {
+    message.contains(TEMPLATE_RELEASE_REJECTION)
 }
 
 fn release(value: &Value) -> Option<String> {
@@ -242,6 +253,19 @@ mod tests {
                 "the dispatcher rejected the template (AI agent dispatcher: selected template belongs to another harness release) and 1 of 1 containers have other releases (2026.11.13.1 ×1)"
             )
         );
+    }
+
+    #[test]
+    fn only_the_release_refusal_is_a_rejection() {
+        assert!(is_release_rejection(
+            "AI agent dispatcher: selected template belongs to another harness release"
+        ));
+        assert!(!is_release_rejection(
+            "AI agent dispatcher returned no terminal response"
+        ));
+        assert!(!is_release_rejection(
+            "AI agent dispatcher: selected template does not exist"
+        ));
     }
 
     #[test]
