@@ -24,6 +24,7 @@ import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  AreaOfResponsibility,
   CreateLoginReq,
   DeactivationReasonType,
   Login,
@@ -63,6 +64,7 @@ import {
   type UpdateLoginPatch,
   updateLogin,
 } from '../../services/api/logins';
+import { listAors } from '../../services/api/aor';
 import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -71,6 +73,7 @@ import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import { MessengerProfileSelect } from './MessengerProfileSelect';
 import { UserUuidValue } from './UserUuidValue';
 import { ApiSenders } from './ApiSenders';
+import { type AorColumnLookup, buildAorColumnLookup, organismAorLabels } from './aor-column';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -114,6 +117,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   id: false,
   roles: true,
   organism: true,
+  aors: true,
   zone: false,
   deltaLogin: false,
   createdAt: true,
@@ -128,6 +132,7 @@ const DEFAULT_COLUMN_ORDER = [
   'id',
   'roles',
   'organism',
+  'aors',
   'zone',
   'deltaLogin',
   'createdAt',
@@ -639,7 +644,7 @@ function matchesStatusFilter(login: Login, filterValue: unknown): boolean {
   return selected.length === 0 || selected.includes(getStatusInfo(login).label);
 }
 
-function useUsersColumns(): AppMrtColumnDef<Login>[] {
+function useUsersColumns(aorLookup: AorColumnLookup): AppMrtColumnDef<Login>[] {
   return useMemo(
     () => [
       {
@@ -733,6 +738,23 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
         size: 220,
       },
       {
+        header: 'Смуги',
+        id: 'aors',
+        accessorFn: (row) => organismAorLabels(row, aorLookup),
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<Login, string>({
+          items: ({ row }) => organismAorLabels(row.original, aorLookup),
+          renderItem: (label) => <EchoChip label={label} tone="neutral" />,
+          measurementScope: 'admin-users:aors',
+          getItemText: (label) => label,
+        }),
+        filterVariant: 'multi-select',
+        filterSelectOptions: aorLookup.filterOptions,
+        filterFn: 'arrIncludesSome',
+        enableSorting: false,
+        size: 240,
+      },
+      {
         header: 'Напрямок',
         id: 'zone',
         accessorFn: (row) => formatOptionalLabel(row.sigintZoneName),
@@ -809,7 +831,7 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
         size: 260,
       },
     ],
-    [],
+    [aorLookup],
   );
 }
 
@@ -1717,11 +1739,12 @@ function RowActions(props: {
 function UsersTable(props: {
   data: Login[];
   loading: boolean;
+  aorLookup: AorColumnLookup;
   onEdit: (login: Login) => void;
   onUserUpdated: (login: Login) => void;
 }) {
   const tableStateContext = useTableStateContext();
-  const columns = useUsersColumns();
+  const columns = useUsersColumns(props.aorLookup);
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps =
     typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
@@ -1825,6 +1848,9 @@ function AdminUsersNeoPageBody() {
   const [zonesError, setZonesError] = useState<string | null>(null);
   const [organismsStatus, setOrganismsStatus] = useState<LoadingStatus>('idle');
   const [organismsError, setOrganismsError] = useState<string | null>(null);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [aorsStatus, setAorsStatus] = useState<LoadingStatus>('idle');
+  const [aorsError, setAorsError] = useState<string | null>(null);
 
   async function loadLogins() {
     debugLog('loadLogins:start');
@@ -1877,11 +1903,29 @@ function AdminUsersNeoPageBody() {
     }
   }
 
+  async function loadAors() {
+    setAorsStatus('loading');
+    setAorsError(null);
+    try {
+      setAors(await listAors({ sortBy: null }));
+      setAorsStatus('success');
+    } catch (err) {
+      setAorsStatus('error');
+      setAorsError(formatErrorMessage(err));
+    }
+  }
+
   useEffect(() => {
     loadLogins();
     void loadZones();
     void loadOrganisms();
+    void loadAors();
   }, []);
+
+  const aorLookup = useMemo(
+    () => buildAorColumnLookup(organisms, aors, aorsStatus === 'success' || aorsStatus === 'error'),
+    [organisms, aors, aorsStatus],
+  );
 
   const lookups: UserLookups = {
     zones,
@@ -1902,6 +1946,7 @@ function AdminUsersNeoPageBody() {
             <UsersTable
               data={logins}
               loading
+              aorLookup={aorLookup}
               onEdit={(login) => setEditingLogin(login)}
               onUserUpdated={(login) =>
                 setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
@@ -1914,6 +1959,7 @@ function AdminUsersNeoPageBody() {
           <UsersTable
             data={logins}
             loading={false}
+            aorLookup={aorLookup}
             onEdit={(login) => setEditingLogin(login)}
             onUserUpdated={(login) =>
               setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
@@ -1941,6 +1987,12 @@ function AdminUsersNeoPageBody() {
           }
         />
       </div>
+
+      {aorsError ? (
+        <div className="shrink-0">
+          <PowerAlert severity="error">{`Не вдалося завантажити смуги: ${aorsError}`}</PowerAlert>
+        </div>
+      ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1">{renderTable()}</div>
 
