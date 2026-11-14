@@ -732,6 +732,10 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
             );
         }
         assert!(flash_policy.reasoning_effort.is_none());
+        // #4203: Flash's default thinking used the whole output allowance
+        // of synthesis and checkpoints.
+        assert_eq!(flash_policy.checkpoint_effort.as_deref(), Some("low"));
+        assert_eq!(flash_policy.synthesis_effort.as_deref(), Some("low"));
     }
     // #4031: Balanced runs longer on non-OpenAI engines only.
     let balanced_runtime = |engine| {
