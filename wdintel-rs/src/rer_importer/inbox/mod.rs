@@ -1374,7 +1374,7 @@ async fn rer_duty_neo_adaptive_lower_bound(
         return Some(log_rer_duty_neo_fallback_cutoff(now, "unit_filter"));
     }
     let accessible_groups =
-        match crate::messenger::group::get_identity_sigint_groups(
+        match crate::messenger::group::get_rer_feed_sigint_groups(
             &env.dbx, login,
         )
         .await
@@ -1570,7 +1570,7 @@ async fn inbox_group_stats(
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let group_names = signal_group::Entity::find()

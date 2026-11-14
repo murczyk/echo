@@ -3,7 +3,7 @@ use crate::config::*;
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::messenger::group::get_identity_sigint_groups;
+use crate::messenger::group::get_rer_feed_sigint_groups;
 use crate::messenger::group::types::SignalGroupEntryF2;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
@@ -408,6 +408,10 @@ pub(crate) fn role_matches(
         "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
         "No2FA" => roles.contains(&ROLE_NO2FA.to_string()),
         "MessengerIngest" => roles.contains(&ROLE_MESSENGER_INGEST.to_string()),
+        ROLE_CYBER_MESSENGERS => {
+            roles.contains(&ROLE_ADMIN.to_string())
+                || roles.contains(&ROLE_CYBER_MESSENGERS.to_string())
+        }
         role => {
             return Err(AppError::BL {
                 msg: format!("impossible! unknown role {role}"),
@@ -1759,8 +1763,9 @@ pub async fn user_sigint_groups(
 ) -> Result<Json<Vec<String>>, AppError> {
     // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    // Group pickers of RER feeds; messenger accounts live in /api/messengers.
     let all_groups =
-        get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
+        get_rer_feed_sigint_groups(&env.dbx, &login).await.c(h!())?;
     let Some(since_ts) = &req.since_date_inclusive_ms else {
         return Ok(Json(all_groups));
     };
@@ -1860,7 +1865,7 @@ pub async fn user_sigint_groups_detailed(
     .await?;
     let login = login_id_from_identity(&user)?;
     let mut keys =
-        get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
+        get_rer_feed_sigint_groups(&env.dbx, &login).await.c(h!())?;
     if let Some(since_ts) = &req.since_date_inclusive_ms {
         let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
         let recent_keys = signal_message_group::Entity::find()

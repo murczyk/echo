@@ -13,6 +13,19 @@
   border-radius: 3px;
 }
 
+/* Slim modern scrollbar: a thin pill that is faint until the area is hovered. Standard properties,
+   so the colors follow the theme tokens; browsers without them keep the default scrollbar. */
+.slim-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--echo-color-text-muted, #6b7280) 30%, transparent)
+    transparent;
+}
+
+.slim-scrollbar:hover {
+  scrollbar-color: color-mix(in srgb, var(--echo-color-text-muted, #6b7280) 60%, transparent)
+    transparent;
+}
+
 /* Waterfall scrollbar styles */
 [id^='waterfall-wf-']::-webkit-scrollbar {
   width: 6px;

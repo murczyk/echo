@@ -997,6 +997,214 @@ export type SignalGroupsRsp = {
   data: Array<SignalGroupEntry>;
 };
 
+export type MessengersTelegramAccountId = {
+  userId: string;
+};
+
+export type MessengersDatasourceGroup = {
+  id: number;
+  groupMasterKey: string;
+  datasourceId: number;
+  name: string;
+  lastSyncAt: number;
+  createdAt: number;
+};
+
+export type MessengersAccountItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  displayName: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  status: string | null;
+  statusError: string | null;
+  statusChangedAt: number | null;
+  isActive: boolean | null;
+  isPaused: boolean | null;
+  createdAt: number | null;
+  lastSync: number | null;
+  notes: string | null;
+  internalNotes: string | null;
+  externalUrl: string | null;
+  telegram: MessengersTelegramAccountId | null;
+  datasourceGroup: MessengersDatasourceGroup;
+};
+
+export type MessengersAccountsListRsp = {
+  items: Array<MessengersAccountItem>;
+};
+
+export type MessengersAccountUpdateReq = {
+  accountId: string;
+  internalNotes: string | null;
+};
+
+export type MessengersTelegramChatId = {
+  chatId: string;
+};
+
+export type MessengersChatsListReq = {
+  accountId: string;
+};
+
+export type MessengersChatItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  chatType: string | null;
+  title: string | null;
+  username: string | null;
+  membersCount: number | null;
+  accountMemberStatus: string | null;
+  lastMessageDate: number | null;
+  telegram: MessengersTelegramChatId | null;
+};
+
+export type MessengersChatsListRsp = {
+  items: Array<MessengersChatItem>;
+};
+
+export type MessengersChatMembersListReq = {
+  accountId: string;
+  chatId: string;
+};
+
+export type MessengersChatMemberItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  isBot: boolean | null;
+  role: string | null;
+  joinedDate: number | null;
+  deleted: boolean;
+  telegram: MessengersTelegramAccountId | null;
+};
+
+export type MessengersChatMembersListRsp = {
+  items: Array<MessengersChatMemberItem>;
+};
+
+export type MessengersContactsListReq = {
+  accountId: string;
+  page: number | null;
+  limit: number | null;
+};
+
+export type MessengersContactItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  isMutual: boolean | null;
+  isCloseFriend: boolean | null;
+  createdAt: number;
+  updatedAt: number;
+  telegram: MessengersTelegramAccountId | null;
+};
+
+export type MessengersContactsListRsp = {
+  items: Array<MessengersContactItem>;
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type MessengersMessagesDirection =
+  | 'Older'
+  | 'Newer'
+  | 'Oldest'
+;
+
+export type MessengersMessagesListReq = {
+  accountId: string;
+  chatId: string;
+  cursor: string | null;
+  limit: number | null;
+  direction: MessengersMessagesDirection | null;
+  aroundMessageId: string | null;
+};
+
+export type MessengersTelegramMessageId = {
+  messageId: string;
+};
+
+export type MessengersTelegramMedia = {
+  fileId: string;
+  mediaType: string | null;
+};
+
+export type MessengersAttachment = {
+  media: MessageMediaInfo;
+  externalId: string;
+  createdAt: number | null;
+  telegram: MessengersTelegramMedia | null;
+};
+
+export type MessengersMessageItem = {
+  id: string;
+  externalId: string;
+  sentAt: number;
+  text: string;
+  isOutgoing: boolean | null;
+  hasMedia: boolean | null;
+  senderChatMemberId: string | null;
+  attachments: Array<MessengersAttachment>;
+  telegram: MessengersTelegramMessageId | null;
+};
+
+export type MessengersMessagesListRsp = {
+  items: Array<MessengersMessageItem>;
+  olderCursor: string | null;
+  newerCursor: string | null;
+};
+
+export type MessengersAttachmentsListReq = {
+  accountId: string;
+  chatId: string | null;
+  cursor: string | null;
+  limit: number | null;
+  direction: MessengersMessagesDirection | null;
+  telegramMediaTypes: Array<string> | null;
+};
+
+export type MessengersAttachmentItem = {
+  chatId: string;
+  messageId: string;
+  sentAt: number;
+  senderChatMemberId: string | null;
+  attachment: MessengersAttachment;
+};
+
+export type MessengersAttachmentsListRsp = {
+  items: Array<MessengersAttachmentItem>;
+  olderCursor: string | null;
+  newerCursor: string | null;
+};
+
+export type MessengersAttachmentsCountsReq = {
+  accountId: string;
+  chatId: string | null;
+};
+
+export type MessengersAttachmentTypeCount = {
+  telegramMediaType: string | null;
+  count: number;
+};
+
+export type MessengersAttachmentsCountsRsp = {
+  items: Array<MessengersAttachmentTypeCount>;
+};
+
 export type BatchMessageCommentsReq = {
   messages: Array<MessageCommentsReq>;
 };

@@ -18,6 +18,12 @@ the operator's management connection. SSH credentials, ports, jump hosts and
 host keys remain in the operator's SSH configuration. Legacy TOML settings are
 imported into the database at Echo startup; the database is authoritative.
 
+To manage an operator-owned agent VM, list its bare hostname in
+`ECHO_AI_AGENT_HOSTS` (comma or space separated, e.g.
+`ECHO_AI_AGENT_HOSTS=echo-ai-agent-vm.example.ts.net just ai-control-panel scan`).
+It is managed as `echo@<hostname>` and must match the instance's
+`ai_agent_dispatcher.host`.
+
 `--agent-host` remains an explicit override for either supported management
 connection and must match the instance's configured dispatcher. Unsupported or
 missing dispatcher settings block management instead of choosing a default VM.

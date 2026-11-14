@@ -263,39 +263,42 @@ export function useRerCallsignsNeoPageActions({
     setEditForm(null);
   }, [editSubmitting, setEditForm, setEditValidationError]);
 
-  const onSaveEdit = useCallback(async (draft = editForm) => {
-    setEditValidationError(null);
-    setStatus(null);
+  const onSaveEdit = useCallback(
+    async (draft = editForm) => {
+      setEditValidationError(null);
+      setStatus(null);
 
-    const validation = validateEditForm(draft, radioFeaturesAllowed);
-    if (!validation.valid) {
-      setEditValidationError(validation.error);
-      return;
-    }
-    if (!draft) return;
+      const validation = validateEditForm(draft, radioFeaturesAllowed);
+      if (!validation.valid) {
+        setEditValidationError(validation.error);
+        return;
+      }
+      if (!draft) return;
 
-    setEditSubmitting(true);
-    try {
-      const updated = normalizeCallsign(await updateCallsign(makeUpdatePayload(draft)));
-      setCallsigns((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      setEditForm(null);
-      setStatus({ kind: 'success', text: 'Позивний оновлено' });
-      await refreshLookupsAndStats();
-    } catch (error) {
-      setEditValidationError(`Помилка оновлення позивного: ${formatErrorMessage(error)}`);
-    } finally {
-      setEditSubmitting(false);
-    }
-  }, [
-    editForm,
-    radioFeaturesAllowed,
-    refreshLookupsAndStats,
-    setCallsigns,
-    setEditForm,
-    setEditSubmitting,
-    setEditValidationError,
-    setStatus,
-  ]);
+      setEditSubmitting(true);
+      try {
+        const updated = normalizeCallsign(await updateCallsign(makeUpdatePayload(draft)));
+        setCallsigns((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        setEditForm(null);
+        setStatus({ kind: 'success', text: 'Позивний оновлено' });
+        await refreshLookupsAndStats();
+      } catch (error) {
+        setEditValidationError(`Помилка оновлення позивного: ${formatErrorMessage(error)}`);
+      } finally {
+        setEditSubmitting(false);
+      }
+    },
+    [
+      editForm,
+      radioFeaturesAllowed,
+      refreshLookupsAndStats,
+      setCallsigns,
+      setEditForm,
+      setEditSubmitting,
+      setEditValidationError,
+      setStatus,
+    ],
+  );
 
   const onRequestDelete = useCallback(
     (callsign: Callsign) => {

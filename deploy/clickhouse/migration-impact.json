@@ -293,6 +293,21 @@
         { "table": "public.messenger_chat_member", "strategy": "excluded" }
       ]
     },
+    "echo:m20261105_142754_messenger_account_internal_notes": {
+      "changes": [
+        { "table": "public.messenger_account", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261110_122635_messenger_media_meta_timeline": {
+      "changes": [
+        { "table": "public.messenger_media_meta", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261113_124500_messenger_account_external_url": {
+      "changes": [
+        { "table": "public.messenger_account", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
       "changes": [
         { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },

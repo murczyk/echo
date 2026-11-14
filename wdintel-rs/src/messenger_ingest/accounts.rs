@@ -1,4 +1,6 @@
-use crate::config::MESSENGER_INGEST_SYNC_MAX_ITEMS;
+use crate::config::{
+    MESSENGER_INGEST_GROUP_KEY_PREFIX, MESSENGER_INGEST_SYNC_MAX_ITEMS,
+};
 use crate::entities::sea_orm_active_enums::InterseptionKind;
 use crate::entities::{datasource_group, messenger_account, signal_group};
 use crate::error::AppError;
@@ -7,7 +9,7 @@ use crate::messenger_ingest::access::IngestScope;
 use crate::messenger_ingest::refs::{
     ensure_provider_fields, ensure_unique_created_external_ids,
     find_scoped_account_by_external_id, find_scoped_account_by_id,
-    parse_i64_decimal,
+    normalize_external_url, parse_i64_decimal,
 };
 use crate::messenger_ingest::types::{
     MessengerIngestAccountInput, MessengerIngestAccountItem,
@@ -93,6 +95,7 @@ fn account_item(
         is_active: account.is_active,
         is_paused: account.is_paused,
         notes: account.notes.clone(),
+        external_url: account.external_url.clone(),
         created_at: account
             .external_created_at
             .map(|dt| dt.and_utc().timestamp_millis()),
@@ -116,6 +119,8 @@ pub(crate) async fn create_or_restore_account(
 ) -> anyhow::Result<messenger_account::Model> {
     ensure_provider_fields(&item.messenger_type, item.telegram.is_some())
         .c(h!())?;
+    let external_url =
+        normalize_external_url(item.external_url.as_deref()).c(h!())?;
     let user_id = item
         .telegram
         .as_ref()
@@ -146,7 +151,13 @@ pub(crate) async fn create_or_restore_account(
                 .c(h!())?;
         }
         return restore_and_update_account(
-            scope, &account, item, user_id, now, txn,
+            scope,
+            &account,
+            item,
+            user_id,
+            external_url,
+            now,
+            txn,
         )
         .await;
     }
@@ -183,6 +194,7 @@ pub(crate) async fn create_or_restore_account(
         is_active: Set(item.is_active),
         is_paused: Set(item.is_paused),
         notes: Set(item.notes.clone()),
+        external_url: Set(external_url),
         external_created_at: Set(ts_from_millis(item.created_at).c(h!())?),
         external_last_sync_at: Set(ts_from_millis(item.last_sync).c(h!())?),
         deleted: Set(false),
@@ -249,6 +261,7 @@ async fn restore_and_update_account(
     account: &messenger_account::Model,
     item: &MessengerIngestAccountInput,
     user_id: Option<i64>,
+    external_url: Option<String>,
     now: NaiveDateTime,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<messenger_account::Model> {
@@ -274,6 +287,7 @@ async fn restore_and_update_account(
         is_active: Set(item.is_active),
         is_paused: Set(item.is_paused),
         notes: Set(item.notes.clone()),
+        external_url: Set(external_url),
         external_created_at: Set(ts_from_millis(item.created_at).c(h!())?),
         external_last_sync_at: Set(ts_from_millis(item.last_sync).c(h!())?),
         deleted: Set(false),
@@ -316,6 +330,8 @@ async fn update_account(
     let account = find_scoped_account_by_id(txn, scope, id).await.c(h!())?;
     ensure_provider_fields(&item.messenger_type, item.telegram.is_some())
         .c(h!())?;
+    let external_url =
+        normalize_external_url(item.external_url.as_deref()).c(h!())?;
     let user_id = item
         .telegram
         .as_ref()
@@ -348,6 +364,7 @@ async fn update_account(
         is_active: Set(item.is_active),
         is_paused: Set(item.is_paused),
         notes: Set(item.notes.clone()),
+        external_url: Set(external_url),
         external_created_at: Set(ts_from_millis(item.created_at).c(h!())?),
         external_last_sync_at: Set(ts_from_millis(item.last_sync).c(h!())?),
         deleted: Set(false),
@@ -419,7 +436,7 @@ async fn create_account_group(
 ) -> anyhow::Result<datasource_group::Model> {
     // One signal_group and one datasource_group per messenger account;
     // the echo-generated key keeps accounts of different datasources apart.
-    let master_key = format!("messenger_ingest.{account_id}");
+    let master_key = format!("{MESSENGER_INGEST_GROUP_KEY_PREFIX}{account_id}");
     let signal_group = crate::operator::insert_or_sync_signal_group(
         txn,
         scope.datasource_id(),
@@ -561,6 +578,7 @@ mod tests {
             is_active: Some(true),
             is_paused: None,
             notes: None,
+            external_url: None,
             created_at: None,
             last_sync: None,
             telegram: Some(MessengerIngestTelegramAccountId {
@@ -616,9 +634,12 @@ mod tests {
         );
 
         // updated → full-state update, group name kept in sync.
+        assert_eq!(account.external_url, None);
         let mut changed = account_input("collector-account-1", "700001");
         changed.display_name = "Renamed account".to_string();
         changed.is_active = Some(false);
+        changed.external_url =
+            Some("https://example.com/accounts/1".to_string());
         let account = update_account(
             &scope,
             &account.id.to_string(),
@@ -629,6 +650,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(account.display_name, "Renamed account");
+        assert_eq!(
+            account.external_url.as_deref(),
+            Some("https://example.com/accounts/1")
+        );
         let datasource_group =
             crate::entities::datasource_group::Entity::find_by_id(
                 account.datasource_group_id,
@@ -638,6 +663,35 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(datasource_group.name, "Renamed account");
+
+        // A link that is not an http(s) URL is refused.
+        let mut bad_url = account_input("collector-account-1", "700001");
+        bad_url.external_url = Some("javascript:alert(1)".to_string());
+        let error = update_account(
+            &scope,
+            &account.id.to_string(),
+            &bad_url,
+            now,
+            &txn,
+        )
+        .await
+        .unwrap_err()
+        .downcast::<AppError>()
+        .unwrap();
+        assert!(matches!(error, AppError::BL { .. }));
+
+        // A blank link clears the stored one.
+        changed.external_url = Some(" ".to_string());
+        let account = update_account(
+            &scope,
+            &account.id.to_string(),
+            &changed,
+            now,
+            &txn,
+        )
+        .await
+        .unwrap();
+        assert_eq!(account.external_url, None);
 
         // deleted → soft-deleted together with the group mirror.
         let deleted =

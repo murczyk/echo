@@ -156,7 +156,6 @@ export const DEBUG_SAFE_DETAIL_KEYS = new Set([
   'viewportAnchorActive',
   'width',
   'windowedUnreadCount',
-  'workspaceFabAvoidance',
   'countsLoading',
   'editorOpen',
   'paginationLoading',

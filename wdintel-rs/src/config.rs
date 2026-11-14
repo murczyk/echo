@@ -935,10 +935,21 @@ pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";
 pub const ROLE_NO2FA: &str = "No2FA";
 pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
+pub const ROLE_CYBER_MESSENGERS: &str = "CyberMessengers";
+pub const MESSENGERS_MESSAGES_DEFAULT_LIMIT: i64 = 50;
+pub const MESSENGERS_MESSAGES_MAX_LIMIT: i64 = 100;
+pub const MESSENGERS_ATTACHMENTS_DEFAULT_LIMIT: i64 = 50;
+pub const MESSENGERS_ATTACHMENTS_MAX_LIMIT: i64 = 100;
+pub const MESSENGERS_CONTACTS_DEFAULT_LIMIT: i64 = 100;
+pub const MESSENGERS_CONTACTS_MAX_LIMIT: i64 = 250;
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
+/// Master keys of messenger account groups are this prefix plus the account id.
+pub const MESSENGER_INGEST_GROUP_KEY_PREFIX: &str = "messenger_ingest.";
 pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
 pub const MESSENGER_INGEST_SYNC_MAX_ITEMS: usize = 200;
+/// Longest account link kept, the common practical limit of URL length.
+pub const MESSENGER_INGEST_EXTERNAL_URL_MAX_LEN: usize = 2048;
 /// Every ingest request, including each TUS chunk, resolves the ingest
 /// datasource; its `last_sync_at` is refreshed at most this often.
 pub const MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS: i64 = 300;

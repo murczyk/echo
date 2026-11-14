@@ -579,6 +579,64 @@ async fn load_completed_audio_transcriptions(
     crate::transcriber::completed_transcriptions(dbx, &audio_media_ids).await
 }
 
+/// Everything `MessageMediaInfo` reports about media beyond its own row.
+pub(crate) struct MessageMediaDetails {
+    transcriptions: HashMap<Uuid, String>,
+    ocr: HashMap<Uuid, crate::ocr::types::OcrMediaSummary>,
+    summaries: HashMap<Uuid, crate::media_summary::types::MediaSummaryStatus>,
+    coordinates:
+        HashMap<Uuid, crate::attachments::types::AttachmentCoordinateStatus>,
+    kmz_conversions: HashMap<Uuid, String>,
+}
+
+pub(crate) async fn load_message_media_details(
+    env: &Env,
+    media: &[signal_message_media::Model],
+) -> Result<MessageMediaDetails, AppError> {
+    Ok(MessageMediaDetails {
+        transcriptions: load_completed_audio_transcriptions(&env.dbx, media)
+            .await
+            .c(h!())?,
+        ocr: crate::ocr::load_media_summaries(&env.dbx, media)
+            .await
+            .c(h!())?,
+        summaries: crate::media_summary::load_statuses(&env.dbx, media)
+            .await
+            .c(h!())?,
+        coordinates: crate::attachments::coordinates::load_statuses(
+            &env.dbx, media,
+        )
+        .await
+        .c(h!())?,
+        kmz_conversions: crate::sigint::media_conversion::load_statuses(
+            &env.dbx, media,
+        )
+        .await
+        .c(h!())?,
+    })
+}
+
+pub(crate) fn message_media_info(
+    media: &signal_message_media::Model,
+    details: &MessageMediaDetails,
+    positions: Vec<CNPosition>,
+) -> MessageMediaInfo {
+    MessageMediaInfo {
+        id: media.id.to_string(),
+        order_f64: media.order_f64,
+        content_type: media.content_type.clone(),
+        file_name: media.file_name.clone(),
+        size_bytes: media.size_bytes,
+        href: mk_media_url(media),
+        transcription: details.transcriptions.get(&media.id).cloned(),
+        ocr: details.ocr.get(&media.id).cloned(),
+        summary: details.summaries.get(&media.id).cloned(),
+        coordinate_status: details.coordinates.get(&media.id).cloned(),
+        kmz_conversion_status: details.kmz_conversions.get(&media.id).cloned(),
+        positions,
+    }
+}
+
 pub async fn get_inbox_map_items(
     login: &uuid::Uuid,
     env: &Env,
@@ -931,29 +989,7 @@ pub async fn aggregate_to_inbox_messages(
         crate::messenger::audio_ref::for_messages(env, &env.dbx, &message_ids)
             .await
             .c(h!())?;
-    let transcriptions_by_media =
-        load_completed_audio_transcriptions(&env.dbx, &media_entries)
-            .await
-            .c(h!())?;
-    let ocr_by_media =
-        crate::ocr::load_media_summaries(&env.dbx, &media_entries)
-            .await
-            .c(h!())?;
-    let summaries_by_media =
-        crate::media_summary::load_statuses(&env.dbx, &media_entries)
-            .await
-            .c(h!())?;
-    let coordinates_by_media = crate::attachments::coordinates::load_statuses(
-        &env.dbx,
-        &media_entries,
-    )
-    .await
-    .c(h!())?;
-    let kmz_conversion_statuses =
-        crate::sigint::media_conversion::load_statuses(
-            &env.dbx,
-            &media_entries,
-        )
+    let media_details = load_message_media_details(env, &media_entries)
         .await
         .c(h!())?;
     let mut media_by_message: HashMap<i64, Vec<signal_message_media::Model>> =
@@ -1059,21 +1095,10 @@ pub async fn aggregate_to_inbox_messages(
             .unwrap_or_default();
         let media_infos = media
             .iter()
-            .map(|m| MessageMediaInfo {
-                id: m.id.to_string(),
-                order_f64: m.order_f64,
-                content_type: m.content_type.clone(),
-                file_name: m.file_name.clone(),
-                size_bytes: m.size_bytes,
-                href: mk_media_url(m),
-                transcription: transcriptions_by_media.get(&m.id).cloned(),
-                ocr: ocr_by_media.get(&m.id).cloned(),
-                summary: summaries_by_media.get(&m.id).cloned(),
-                coordinate_status: coordinates_by_media.get(&m.id).cloned(),
-                kmz_conversion_status: kmz_conversion_statuses
-                    .get(&m.id)
-                    .cloned(),
-                positions: positions_by_media.remove(&m.id).unwrap_or_default(),
+            .map(|m| {
+                let positions =
+                    positions_by_media.remove(&m.id).unwrap_or_default();
+                message_media_info(m, &media_details, positions)
             })
             .collect_vec();
         let images = media

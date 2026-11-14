@@ -6,6 +6,7 @@ import {
 } from '../internal/scroll-math';
 import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import type { FeedScrollHelpers } from '../internal/internal.types';
+import type { MessageFeedId } from '../message-feed.types';
 
 export function useMessageFeedScrollEvents({
   refs,
@@ -24,7 +25,7 @@ export function useMessageFeedScrollEvents({
 }: Pick<FeedScrollHelpers, 'refs' | 'anchors' | 'follow' | 'tracking'> & {
   pendingAnchorRestoreRafRef: MutableRefObject<number | null>;
   initialPositioningReady: boolean;
-  directItemTargetIdRef: MutableRefObject<number | null>;
+  directItemTargetIdRef: MutableRefObject<MessageFeedId | null>;
   scheduleTrackedItemCenter: (reason: string) => void;
   debugFeedId?: string;
   topLoadBufferPx: number;

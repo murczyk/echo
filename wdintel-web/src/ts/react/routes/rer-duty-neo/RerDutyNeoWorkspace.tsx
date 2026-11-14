@@ -383,7 +383,6 @@ export function RerDutyNeoWorkspace({
           view: {
             ...column.view,
             scrollTrackingEnabled: true,
-            workspaceFabAvoidance: 'above' as const,
             initialScrollAnchorSnapshot:
               feedScrollAnchorsRef.current.get(activeOnlyFeed.id) ?? null,
             onScrollAnchorSnapshotChange: handleScrollAnchorSnapshotChange,
@@ -602,7 +601,6 @@ export function RerDutyNeoWorkspace({
                           : undefined,
                       maxWidth: feed.id === searchFeedId ? '100%' : column.view.maxWidth,
                       scrollTrackingEnabled: true,
-                      workspaceFabAvoidance: 'none',
                       initialScrollAnchorSnapshot:
                         feedScrollAnchorsRef.current.get(feed.id) ?? null,
                       onScrollAnchorSnapshotChange: handleScrollAnchorSnapshotChange,

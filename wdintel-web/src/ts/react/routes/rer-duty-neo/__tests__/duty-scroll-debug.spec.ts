@@ -240,7 +240,6 @@ describe('Duty global debug recorder adapter', () => {
         unreadCount: 7,
         unreadPrefetchNeeded: true,
         pendingNewerFlushNeeded: false,
-        workspaceFabAvoidance: 'above',
         initialScrollAnchorSnapshot: {
           anchors: [{ id: 885555, index: 2, offsetTop: 24 }],
           itemOffsets: new Map([[885555, 24]]),
@@ -291,7 +290,6 @@ describe('Duty global debug recorder adapter', () => {
         unreadCount: 7,
         unreadPrefetchNeeded: true,
         pendingNewerFlushNeeded: false,
-        workspaceFabAvoidance: 'above',
         documentVisibility: 'visible',
         initialAnchors: [
           {

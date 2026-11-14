@@ -19,7 +19,7 @@ import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
 import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
-import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
+import { LeftPanelTab, type AnalysisCenterTab, type AnalysisPageViewModel } from './types';
 
 type Props = {
   page: AnalysisPageViewModel;
@@ -28,6 +28,8 @@ type Props = {
   isNarrowLayout: boolean;
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
+  // False while the right panel has nothing to show (messenger mode without an open chat): no toggle then.
+  rightPanelAvailable?: boolean;
   onOpenReport?: (focusTarget: HTMLElement) => void;
 };
 
@@ -37,7 +39,14 @@ type SettingsMenuProps = {
   onOpenReport?: (focusTarget: HTMLElement) => void;
 };
 
+// In messenger mode the refresh reloads the messenger entities only, otherwise the echo ones.
+function refreshAction(page: AnalysisPageViewModel) {
+  const messenger = page.leftPanelTab === LeftPanelTab.Messenger;
+  return () => (messenger ? page.refreshMessenger() : page.reload({ preserveMessagePage: true }));
+}
+
 function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps) {
+  const refresh = refreshAction(page);
   const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuOpen = Boolean(anchorElement);
@@ -101,10 +110,12 @@ function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps
           <ListItemText>Спочатку нові</ListItemText>
         </MenuItem>
         <MenuItem
-          disabled={loading}
+          disabled={
+            page.leftPanelTab === LeftPanelTab.Messenger ? page.messengerRefreshing : loading
+          }
           onClick={() => {
             closeMenu();
-            page.reload({ preserveMessagePage: true });
+            refresh();
           }}
         >
           <ListItemIcon>
@@ -112,22 +123,24 @@ function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps
           </ListItemIcon>
           <ListItemText>Оновити</ListItemText>
         </MenuItem>
-        <MenuItem
-          disabled={page.threadMode != null}
-          onClick={() => {
-            closeMenu();
-            if (onOpenReport) {
-              window.requestAnimationFrame(() => openReport(settingsButtonRef.current));
-            } else {
-              page.openReport();
-            }
-          }}
-        >
-          <ListItemIcon>
-            <DescriptionOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Звіти</ListItemText>
-        </MenuItem>
+        {page.leftPanelTab !== LeftPanelTab.Messenger ? (
+          <MenuItem
+            disabled={page.threadMode != null}
+            onClick={() => {
+              closeMenu();
+              if (onOpenReport) {
+                window.requestAnimationFrame(() => openReport(settingsButtonRef.current));
+              } else {
+                page.openReport();
+              }
+            }}
+          >
+            <ListItemIcon>
+              <DescriptionOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Звіти</ListItemText>
+          </MenuItem>
+        ) : null}
       </Menu>
     </>
   );
@@ -140,6 +153,7 @@ export function AnalysisPageHeader({
   isNarrowLayout,
   leftPanelVisible,
   rightPanelVisible,
+  rightPanelAvailable = true,
   onOpenReport,
 }: Props) {
   const openReport = (focusTarget: HTMLElement) => {
@@ -155,7 +169,11 @@ export function AnalysisPageHeader({
     messageTransitionLoading ||
     page.messagesTotalLoading ||
     page.summaryLoading;
-  const showPagination = !isNarrowLayout;
+  const refresh = refreshAction(page);
+  const showPagination = !isNarrowLayout && page.leftPanelTab !== LeftPanelTab.Messenger;
+  const showDateRange = page.leftPanelTab !== LeftPanelTab.Messenger;
+  const isMessenger = page.leftPanelTab === LeftPanelTab.Messenger;
+  const showReport = !isMessenger;
   return (
     <PageHeader
       title="Аналіз"
@@ -164,6 +182,7 @@ export function AnalysisPageHeader({
           <AnalysisHeaderControls
             queryState={page.queryState}
             updateQueryState={page.updateQueryState}
+            showDateRange={showDateRange}
           />
         )
       }
@@ -181,6 +200,7 @@ export function AnalysisPageHeader({
           <AnalysisHeaderControls
             queryState={page.queryState}
             updateQueryState={page.updateQueryState}
+            showDateRange={showDateRange}
             isCompactLayout
           />
         ) : undefined
@@ -191,12 +211,14 @@ export function AnalysisPageHeader({
         isNarrowLayout ? (
           <Stack direction="row" spacing={0.5} alignItems="center">
             <AnalysisSettingsMenu page={page} loading={loading} onOpenReport={onOpenReport} />
-            <SidePanelToggleButton
-              side="right"
-              active={rightPanelVisible}
-              label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
-              onClick={() => page.toggleRightPanel()}
-            />
+            {rightPanelAvailable ? (
+              <SidePanelToggleButton
+                side="right"
+                active={rightPanelVisible}
+                label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
+                onClick={() => page.toggleRightPanel()}
+              />
+            ) : null}
           </Stack>
         ) : undefined
       }
@@ -246,8 +268,8 @@ export function AnalysisPageHeader({
               <Tooltip title="Оновити" arrow>
                 <span>
                   <IconButton
-                    onClick={() => page.reload({ preserveMessagePage: true })}
-                    disabled={loading}
+                    onClick={refresh}
+                    disabled={isMessenger ? page.messengerRefreshing : loading}
                     aria-label="Оновити"
                     sx={{
                       width: 40,
@@ -261,29 +283,33 @@ export function AnalysisPageHeader({
                   </IconButton>
                 </span>
               </Tooltip>
-              <Button
-                variant="outlined"
-                color="inherit"
-                disabled={page.threadMode != null}
-                onClick={(event) => openReport(event.currentTarget)}
-                title="Відкрити звіти"
-                sx={{
-                  height: 40,
-                  px: 2,
-                  display: { xs: 'none', md: 'inline-flex' },
-                  ml: 1,
-                  borderColor: 'divider',
-                  '&:hover': { borderColor: 'text.secondary' },
-                }}
-              >
-                Звіти
-              </Button>
-              <SidePanelToggleButton
-                side="right"
-                active={rightPanelVisible}
-                label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
-                onClick={() => page.toggleRightPanel()}
-              />
+              {showReport ? (
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  disabled={page.threadMode != null}
+                  onClick={(event) => openReport(event.currentTarget)}
+                  title="Відкрити звіти"
+                  sx={{
+                    height: 40,
+                    px: 2,
+                    display: { xs: 'none', md: 'inline-flex' },
+                    ml: 1,
+                    borderColor: 'divider',
+                    '&:hover': { borderColor: 'text.secondary' },
+                  }}
+                >
+                  Звіти
+                </Button>
+              ) : null}
+              {rightPanelAvailable ? (
+                <SidePanelToggleButton
+                  side="right"
+                  active={rightPanelVisible}
+                  label={rightPanelVisible ? 'Згорнути праву панель' : 'Розгорнути праву панель'}
+                  onClick={() => page.toggleRightPanel()}
+                />
+              ) : null}
             </Stack>
           </Stack>
         ) : undefined

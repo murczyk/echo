@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
@@ -13,31 +14,144 @@ import {
 } from 'react';
 import { MessageFeedViewport, type MessageFeedViewportProps } from './MessageFeedViewport';
 import { MessageFeedItemRegistration } from './MessageFeedItem';
+import { CreateMessageFab } from '../manage-message/CreateMessageFab';
+import { MessageFeedScrollFab } from './MessageFeedScrollFab';
 import { MessageFeedSkeletons } from './MessageFeedSkeletons';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 import {
-  areNumberArraysEqual,
+  areIdArraysEqual,
   isAtPhysicalBottom,
   LOAD_NEWER_SCROLL_IDLE_MS,
   nowMs,
 } from './internal/scroll-math';
-import type { MessageFeedHandle, MessageFeedScrollOptions } from './message-feed.types';
+import type {
+  MessageFeedHandle,
+  MessageFeedId,
+  MessageFeedScrollOptions,
+} from './message-feed.types';
 import './message-feed.css';
 
 export { MessageFeedRows } from './MessageFeedViewport';
 
+// The jump-to-newest control. A host with its own button passes `renderControl`; otherwise the feed
+// shows the shared arrow, and only when `onClick` is there to handle it.
 export type MessageFeedNewestNavigation = {
   edge: 'top' | 'bottom';
-  renderControl: (atNewestEdge: boolean) => ReactNode;
+  // Extra classes for the floating stack that holds the arrow (and the create button). Move it with
+  // `--message-feed-fab-right` and `--message-feed-fab-bottom` (`-top` for a top edge), e.g.
+  // `[--message-feed-fab-right:32px]`.
+  className?: string;
+} & (
+  | { renderControl: (atNewestEdge: boolean) => ReactNode }
+  | {
+      renderControl?: undefined;
+      onClick?: () => void;
+      // True once the newest message is loaded; reaching the end of a loaded chunk is not enough.
+      newestLoaded: boolean;
+      loading?: boolean;
+      label?: string;
+    }
+);
+
+// The jump-to-oldest arrow, opt-in: a host passes it when it can load the start of its list (the
+// chat room does). It always sits in the bottom stack, above the jump-to-newest arrow and below the
+// create button.
+export type MessageFeedOldestNavigation = {
+  onClick: () => void;
+  // True once the oldest message is loaded; reaching the top of a loaded chunk is not enough.
+  oldestLoaded: boolean;
+  loading?: boolean;
+  label?: string;
 };
+
+export function shouldShowOldestNavigation(atOldestEdge: boolean, oldestLoaded: boolean): boolean {
+  return !atOldestEdge || !oldestLoaded;
+}
 
 export function shouldShowNewestNavigation(atNewestEdge: boolean, newestLoaded: boolean): boolean {
   return !atNewestEdge || !newestLoaded;
 }
 
-export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & {
-  scrollOptions: MessageFeedScrollOptions;
+// A plain function, not a component: it returns null when nothing is to be shown, and the floating
+// stack then stays out of the DOM.
+function renderDefaultNewestControl(
+  navigation: Extract<MessageFeedNewestNavigation, { renderControl?: undefined }>,
+  atNewestEdge: boolean,
+): ReactNode {
+  const { edge, onClick, newestLoaded, loading, label } = navigation;
+  if (onClick == null || !shouldShowNewestNavigation(atNewestEdge, newestLoaded)) return null;
+  return (
+    <MessageFeedScrollFab
+      direction={edge === 'bottom' ? 'down' : 'up'}
+      ariaLabel={label ?? 'До найновіших повідомлень'}
+      onClick={onClick}
+      loading={loading}
+      disabled={loading}
+    />
+  );
+}
+
+// Memoized: the feed re-renders on scroll-edge and loading changes, the create button does not need to.
+const MemoCreateMessageFab = memo(CreateMessageFab);
+
+// The arrow and the create button share one stack, arrow above, so they never overlap. Controls the
+// host does not pass are simply absent. A top-edge arrow sits alone at the top.
+function MessageFeedFloatingControls({
+  edge,
+  className,
+  newestControl,
+  oldestControl,
+  onCreateMessage,
+}: {
+  edge: 'top' | 'bottom';
+  className?: string;
+  newestControl: ReactNode;
+  oldestControl: ReactNode;
+  onCreateMessage?: (focusTarget?: HTMLElement) => void;
+}) {
+  const classes = `message-feed-floating-controls${className ? ` ${className}` : ''}`;
+  const arrowOnTop = edge === 'top';
+  const stackedArrow = arrowOnTop ? null : newestControl;
+  const createButton = onCreateMessage ? (
+    <MemoCreateMessageFab placement="inline" onClick={onCreateMessage} />
+  ) : null;
+  return (
+    <>
+      {arrowOnTop && newestControl != null ? (
+        <div data-message-feed-floating-controls data-edge="top" className={classes}>
+          {newestControl}
+        </div>
+      ) : null}
+      {stackedArrow != null || oldestControl != null || createButton != null ? (
+        <div data-message-feed-floating-controls data-edge="bottom" className={classes}>
+          {oldestControl == null ? (
+            // Without the oldest arrow the order is what it always was: newest arrow, then create.
+            <>
+              {stackedArrow}
+              {createButton}
+            </>
+          ) : (
+            <>
+              {createButton}
+              {oldestControl}
+              {stackedArrow}
+            </>
+          )}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export type MessageFeedProps<T, Id extends MessageFeedId = number> = Omit<
+  MessageFeedViewportProps<T, Id>,
+  'scroll'
+> & {
+  scrollOptions: MessageFeedScrollOptions<Id>;
   newestNavigation?: MessageFeedNewestNavigation;
+  oldestNavigation?: MessageFeedOldestNavigation;
+  // Shows the create button under the arrow. Without it there is no button.
+  onCreateMessage?: (focusTarget?: HTMLElement) => void;
   isLoading?: boolean;
   showLoadingSkeleton?: boolean;
   loadingAbove?: boolean;
@@ -45,13 +159,15 @@ export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & 
   hasMoreAbove?: boolean;
   hasMoreBelow?: boolean;
   skeletonCount?: number;
-  editorHighlightedMessageId?: number | null;
+  editorHighlightedMessageId?: Id | null;
 };
 
-function MessageFeedInner<T>(
+function MessageFeedInner<T, Id extends MessageFeedId = number>(
   {
     scrollOptions,
     newestNavigation,
+    oldestNavigation,
+    onCreateMessage,
     loadingAbove = false,
     loadingBelow = false,
     hasMoreAbove = false,
@@ -68,8 +184,8 @@ function MessageFeedInner<T>(
     beforeMessages,
     afterMessages,
     ...viewportProps
-  }: MessageFeedProps<T>,
-  ref: ForwardedRef<MessageFeedHandle>,
+  }: MessageFeedProps<T, Id>,
+  ref: ForwardedRef<MessageFeedHandle<Id>>,
 ) {
   const itemIds = useMemo(() => items.map(getMessageId), [items, getMessageId]);
   const incoming = {
@@ -98,7 +214,7 @@ function MessageFeedInner<T>(
     }, delayMs);
   }, []);
   useLayoutEffect(() => {
-    const sameWindow = areNumberArraysEqual(shown.items.map(getMessageId), itemIds);
+    const sameWindow = areIdArraysEqual(shown.items.map(getMessageId), itemIds);
     const unchanged =
       shown.items === items &&
       shown.children === viewportProps.children &&
@@ -159,12 +275,10 @@ function MessageFeedInner<T>(
     loadingOlder: shown.loadingAbove,
     loadingNewer: shown.loadingBelow,
   });
-  const [linkedHighlightedMessageId, setLinkedHighlightedMessageId] = useState<number | null>(null);
+  const [linkedHighlightedMessageId, setLinkedHighlightedMessageId] = useState<Id | null>(null);
   const highlightedElementRef = useRef<HTMLElement | null>(null);
-  const highlightedWindowRef = useRef<readonly number[] | null>(null);
-  const highlightLoadStartRef = useRef<{ items: readonly T[]; ids: readonly number[] } | null>(
-    null,
-  );
+  const highlightedWindowRef = useRef<readonly Id[] | null>(null);
+  const highlightLoadStartRef = useRef<{ items: readonly T[]; ids: readonly Id[] } | null>(null);
   const highlightedMessageId = editorHighlightedMessageId ?? linkedHighlightedMessageId;
   useLayoutEffect(() => {
     const loadingContent =
@@ -177,7 +291,7 @@ function MessageFeedInner<T>(
       highlightLoadStartRef.current ??= { items: visibleItems, ids: visibleItemIds };
     } else if (highlightLoadStartRef.current !== null) {
       const started = highlightLoadStartRef.current;
-      if (started.items !== visibleItems || !areNumberArraysEqual(started.ids, visibleItemIds)) {
+      if (started.items !== visibleItems || !areIdArraysEqual(started.ids, visibleItemIds)) {
         highlightLoadStartRef.current = null;
         setLinkedHighlightedMessageId(null);
       } else if (items === visibleItems) {
@@ -188,7 +302,7 @@ function MessageFeedInner<T>(
       linkedHighlightedMessageId !== null &&
       (!visibleItemIds.includes(linkedHighlightedMessageId) ||
         (highlightedWindowRef.current !== null &&
-          !areNumberArraysEqual(highlightedWindowRef.current, visibleItemIds)))
+          !areIdArraysEqual(highlightedWindowRef.current, visibleItemIds)))
     ) {
       setLinkedHighlightedMessageId(null);
     }
@@ -233,7 +347,7 @@ function MessageFeedInner<T>(
     visibleItems,
   ]);
   const highlightLinkedMessage = useCallback(
-    (id: number) => {
+    (id: Id) => {
       if (!scroll.getItemElement(id)) return false;
       highlightLoadStartRef.current = null;
       highlightedWindowRef.current = visibleItemIds;
@@ -251,6 +365,15 @@ function MessageFeedInner<T>(
     setAtNewestEdge((previous) => (previous === atEdge ? previous : atEdge));
   }, [newestEdge, scroll.scrollerRef]);
   useLayoutEffect(updateNewestEdge, [updateNewestEdge, visibleItems, scroll.bottomSpacerPx]);
+  const [atOldestEdge, setAtOldestEdge] = useState(true);
+  const hasOldestNavigation = oldestNavigation != null;
+  const updateOldestEdge = useCallback(() => {
+    const scroller = scroll.scrollerRef.current;
+    if (!scroller || !hasOldestNavigation) return;
+    const atEdge = scroller.scrollTop <= 0;
+    setAtOldestEdge((previous) => (previous === atEdge ? previous : atEdge));
+  }, [hasOldestNavigation, scroll.scrollerRef]);
+  useLayoutEffect(updateOldestEdge, [updateOldestEdge, visibleItems]);
   useImperativeHandle(
     ref,
     () => ({
@@ -276,6 +399,23 @@ function MessageFeedInner<T>(
     shown.showLoadingSkeleton && shown.isLoading && visibleItems.length > 0;
   const showAboveSkeleton = visibleItems.length > 0 && shown.hasMoreAbove;
   const showBelowSkeleton = visibleItems.length > 0 && shown.hasMoreBelow;
+  const newestControl =
+    newestNavigation == null
+      ? null
+      : newestNavigation.renderControl != null
+        ? newestNavigation.renderControl(atNewestEdge)
+        : renderDefaultNewestControl(newestNavigation, atNewestEdge);
+  const oldestControl =
+    oldestNavigation != null &&
+    shouldShowOldestNavigation(atOldestEdge, oldestNavigation.oldestLoaded) ? (
+      <MessageFeedScrollFab
+        direction="up"
+        ariaLabel={oldestNavigation.label ?? 'До найстаріших повідомлень'}
+        onClick={oldestNavigation.onClick}
+        loading={oldestNavigation.loading}
+        disabled={oldestNavigation.loading}
+      />
+    ) : null;
   const RefreshContainer = listTag === 'ul' ? 'li' : 'div';
   return (
     <MessageFeedItemRegistration setItemRef={scroll.setItemRef}>
@@ -308,6 +448,7 @@ function MessageFeedInner<T>(
               }
             }
             updateNewestEdge();
+            updateOldestEdge();
             scrollerProps?.onScroll?.(event);
           },
         }}
@@ -345,11 +486,17 @@ function MessageFeedInner<T>(
           </>
         }
       />
-      {newestNavigation?.renderControl(atNewestEdge)}
+      <MessageFeedFloatingControls
+        edge={newestNavigation?.edge ?? 'bottom'}
+        className={newestNavigation?.className}
+        newestControl={newestControl}
+        oldestControl={oldestControl}
+        onCreateMessage={onCreateMessage}
+      />
     </MessageFeedItemRegistration>
   );
 }
 
-export const MessageFeed = forwardRef(MessageFeedInner) as <T>(
-  props: MessageFeedProps<T> & RefAttributes<MessageFeedHandle>,
+export const MessageFeed = forwardRef(MessageFeedInner) as <T, Id extends MessageFeedId = number>(
+  props: MessageFeedProps<T, Id> & RefAttributes<MessageFeedHandle<Id>>,
 ) => ReactElement;

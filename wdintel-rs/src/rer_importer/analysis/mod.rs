@@ -4138,9 +4138,7 @@ async fn summary_table_freq_access(
     req: &AnalysisStatsReq,
 ) -> Result<(uuid::Uuid, Vec<String>), AppError> {
     let master_keys =
-        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
-            .await
-            .c(h!())?;
+        get_identity_rer_feed_groups(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, req)
         .await
@@ -5377,7 +5375,7 @@ async fn collect_summary_table_report_data(
     req: &AnalysisStatsReq,
 ) -> Result<SummaryTableReportData, AppError> {
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
     let report_settings =
@@ -5981,7 +5979,7 @@ async fn correlated_freqs(
     };
 
     let accessible_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let analytics_groups = accessible_groups.clone();
@@ -6824,7 +6822,7 @@ pub async fn bi_new_callsigns(
     req: &AnalysisStatsReq,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_base_role_by_id(&env.dbx, user_id).await.c(h!())?;
-    let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
+    let group_master_keys = get_rer_feed_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
     let analytics_supported = analytics_count_request_supported(req);
@@ -6933,7 +6931,7 @@ pub async fn bi_new_callsigns_chunked(
     min_mentions: i64,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_base_role_by_id(&env.dbx, user_id).await.c(h!())?;
-    let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
+    let group_master_keys = get_rer_feed_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
     let report_chunks = report_period_chunks(
@@ -7970,10 +7968,9 @@ pub async fn activity_daily(
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
-    let accessible_groups =
-        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
-            .await
-            .context(h!())?;
+    let accessible_groups = get_identity_rer_feed_groups(&env.dbx, &user)
+        .await
+        .context(h!())?;
     let analytics_groups = accessible_groups.clone();
     let postgres_groups = accessible_groups;
     let analytics_req = &req;
@@ -8070,10 +8067,9 @@ pub async fn callsign_relations(
             ),
         });
     }
-    let accessible_groups =
-        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
-            .await
-            .context(h!())?;
+    let accessible_groups = get_identity_rer_feed_groups(&env.dbx, &user)
+        .await
+        .context(h!())?;
     let analytics_groups = accessible_groups.clone();
     let postgres_groups = accessible_groups;
     let analytics_req = &req;
@@ -8178,10 +8174,9 @@ pub async fn callsign_frequency_matches(
         }));
     }
     let search_req = stats::callsign_frequency_match_search_req(&req.req);
-    let accessible_groups =
-        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
-            .await
-            .context(h!())?;
+    let accessible_groups = get_identity_rer_feed_groups(&env.dbx, &user)
+        .await
+        .context(h!())?;
     let analytics_groups = accessible_groups.clone();
     let postgres_groups = accessible_groups;
     let analytics_req = &search_req;
@@ -8255,10 +8250,9 @@ async fn group_stats(
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
-    let master_keys_noimport =
-        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
-            .await
-            .context(h!())?;
+    let master_keys_noimport = get_identity_rer_feed_groups(&env.dbx, &user)
+        .await
+        .context(h!())?;
     let login_obj = login::Entity::find()
         .filter(login::Column::Id.eq(login))
         .filter(login::Column::DeletedPermanently.eq(false))
@@ -8421,7 +8415,7 @@ async fn sender_stats(
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
-    let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
+    let master_keys: Vec<String> = get_rer_feed_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -8485,7 +8479,7 @@ async fn device_name_stats(
         .await
         .c(h!())?;
     let master_keys =
-        get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
+        get_rer_feed_sigint_groups(&env.dbx, &login).await.c(h!())?;
     let analytics_master_keys = master_keys.clone();
     let analytics_req = &req.0;
     let postgres_req = &req.0;
@@ -8551,7 +8545,7 @@ async fn post_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -8625,7 +8619,7 @@ async fn freq_stats(
         .c(h!())?;
 
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -8683,7 +8677,7 @@ async fn callsign_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -8750,7 +8744,7 @@ async fn callsign_page(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let page = stats::fetch_callsigns_page_for_login(
@@ -8776,7 +8770,7 @@ async fn metadata_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -8843,7 +8837,7 @@ async fn tag_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let analytics_tag_access =
@@ -8913,7 +8907,7 @@ async fn unit_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -8982,7 +8976,7 @@ async fn location_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -9065,7 +9059,7 @@ async fn aor_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -9175,7 +9169,7 @@ async fn network_stats(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_tag_access =
@@ -9301,7 +9295,7 @@ async fn count_stats(
         .await
         .c(h!())?;
 
-    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+    let master_keys = get_rer_feed_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
     let master_keys_noimport = master_keys.clone();
@@ -10810,7 +10804,7 @@ async fn message_stats_count(
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
-    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+    let master_keys = get_rer_feed_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -10867,7 +10861,7 @@ async fn unit_match_stats_count(
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
-    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+    let master_keys = get_rer_feed_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -10925,10 +10919,9 @@ async fn group_stats_count(
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
-    let master_keys_noimport =
-        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
-            .await
-            .context(h!())?;
+    let master_keys_noimport = get_identity_rer_feed_groups(&env.dbx, &user)
+        .await
+        .context(h!())?;
     let analytics_master_keys = master_keys_noimport.clone();
     let postgres_master_keys = master_keys_noimport.clone();
     let analytics_req = &req;
@@ -10994,7 +10987,7 @@ async fn sender_stats_count(
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
-    let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
+    let master_keys: Vec<String> = get_rer_feed_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -11063,7 +11056,7 @@ async fn post_stats_count(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -11139,7 +11132,7 @@ async fn freq_stats_count(
         .c(h!())?;
 
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -11208,7 +11201,7 @@ async fn callsign_stats_count(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -11277,7 +11270,7 @@ async fn tag_stats_count(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let analytics_tag_access =
@@ -11348,7 +11341,7 @@ async fn unit_stats_count(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -11414,7 +11407,7 @@ async fn location_stats_count(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -11497,7 +11490,7 @@ async fn aor_stats_count(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_master_keys = master_keys.clone();
@@ -11579,7 +11572,7 @@ async fn network_stats_count(
         .await
         .c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let analytics_tag_access =
@@ -11655,7 +11648,7 @@ async fn stats_deprecated(
 
     let instant = std::time::Instant::now();
 
-    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+    let master_keys = get_rer_feed_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
     let freshness = env

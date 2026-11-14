@@ -22,6 +22,8 @@ import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
 import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
+import { MessengerWorkspace, type MessengerJump } from './components/MessengerWorkspace';
+import { MessengerRightPanel, type MessengerOpenChat } from './components/MessengerRightPanel';
 import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
@@ -33,7 +35,7 @@ import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
   useManageMessageEditorPresentation,
 } from '../shared/manage-message/ManageMessageEditorSurface';
-import { getAnalysisCenterTabs, type AnalysisPageViewModel } from './types';
+import { getAnalysisCenterTabs, LeftPanelTab, type AnalysisPageViewModel } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import {
   parseAnalysisPanelQueryStateFromWindow,
@@ -112,6 +114,9 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const theme = useTheme();
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  // The chat open in the messenger workspace; its right panel (media, members) takes the place of the echo analytics.
+  const [messengerChat, setMessengerChat] = useState<MessengerOpenChat | null>(null);
+  const [messengerJump, setMessengerJump] = useState<MessengerJump | null>(null);
   const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
     null,
   );
@@ -129,15 +134,17 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
   const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
   const { notify, dismiss } = usePowerSnackbar();
+  // Echo loads keep running behind the analysis messenger workspace, so their errors stay hidden there.
+  const snackbarError = page.leftPanelTab === LeftPanelTab.Messenger ? null : page.error;
   useEffect(() => {
-    if (!page.error) return;
+    if (!snackbarError) return;
     const id = notify({
       severity: 'error',
-      message: page.error,
+      message: snackbarError,
       durationMs: page.errorPersistent ? null : undefined,
     });
     return () => dismiss(id);
-  }, [notify, dismiss, page.error, page.errorPersistent, page.errorOccurrence]);
+  }, [notify, dismiss, snackbarError, page.errorPersistent, page.errorOccurrence]);
   useEffect(() => {
     if (!page.directMessageError) return;
     notify({ severity: 'error', message: page.directMessageError });
@@ -186,7 +193,10 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
       page.editorMessage?.id ??
       (page.editTargetLoadState.status !== 'idle' ? page.editTargetLoadState.reportId : null))
     : null;
-  const rightPanelVisible = requestedRightPanelVisible && !editorOpen;
+  const messengerMode = page.leftPanelTab === LeftPanelTab.Messenger;
+  // In messenger mode the panel belongs to an open chat, so it does not exist without one.
+  const rightPanelAvailable = !messengerMode || messengerChat != null;
+  const rightPanelVisible = requestedRightPanelVisible && !editorOpen && rightPanelAvailable;
   const modalEditorOpen = editorOpen && editorPresentation === 'modal';
   const toggleFilterPanel = useCallback(() => {
     filterPanelTouchedRef.current = true;
@@ -474,6 +484,34 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
     previousCanWriteRef.current = canWrite;
   }, [closeMessageEditor, editorOpen, notify, page.currentUser?.roles]);
 
+  // The right panel of an open messenger chat, or the echo analytics; in a drawer the drawer has the close button.
+  const rightPanelContent = (inDrawer: boolean) =>
+    messengerMode ? (
+      messengerChat && (
+        <MessengerRightPanel
+          chat={messengerChat}
+          refreshToken={page.messengerRefreshToken}
+          showNarrowCloseButton={!inDrawer}
+          divider={!inDrawer}
+          onOpenMessage={(chatId, messageId) => {
+            setMessengerJump({ chatId, messageId });
+            // The drawer covers the chat, so it closes to show the message.
+            if (inDrawer) page.toggleRightPanel();
+          }}
+          onClose={page.toggleRightPanel}
+        />
+      )
+    ) : showLoadingSkeletons ? (
+      <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
+    ) : (
+      <AnalysisRightPanel
+        page={page}
+        rightPanelVisible
+        isCompactLayout={isAnalysisCompactLayout}
+        showNarrowCloseButton={!inDrawer}
+      />
+    );
+
   const content = (
     <RadioFeaturesProvider allowed={page.radioFeaturesAllowed}>
       <Box
@@ -506,6 +544,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
             isNarrowLayout={isNarrowLayout}
             leftPanelVisible={leftPanelVisible}
             rightPanelVisible={rightPanelVisible}
+            rightPanelAvailable={rightPanelAvailable}
             onOpenReport={openReport}
           />
         </Box>
@@ -561,7 +600,21 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
               <PointBlacklistPaletteNamesCacheProvider>
                 <MessageDeviceAccessProvider allowed={page.cyberEchoEnabled}>
-                  {showLoadingSkeletons ? (
+                  {page.leftPanelTab === LeftPanelTab.Messenger ? (
+                    <MessengerWorkspace
+                      loading={page.messengerAccountsLoading}
+                      refreshToken={page.messengerRefreshToken}
+                      onBusyChange={page.setMessengerWorkspaceBusy}
+                      onOpenChatChange={setMessengerChat}
+                      jumpTo={messengerJump}
+                      onSaveInternalNotes={page.saveMessengerInternalNotes}
+                      account={
+                        page.messengerAccounts.find(
+                          (account) => account.id === page.selectedMessengerAccountId,
+                        ) ?? null
+                      }
+                    />
+                  ) : showLoadingSkeletons ? (
                     <AnalysisLoadingSkeletons
                       rightPanelVisible={inlineRightDockVisible && rightPanelVisible}
                     />
@@ -657,32 +710,15 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
                 }
                 analytics={
                   inlineRightDockVisible ? (
-                    showLoadingSkeletons ? (
-                      <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
-                    ) : (
-                      <AnalysisRightPanel
-                        page={page}
-                        rightPanelVisible
-                        isCompactLayout={isAnalysisCompactLayout}
-                      />
-                    )
+                    rightPanelContent(false)
                   ) : (
                     <AnalysisFullscreenPanelDrawer
                       anchor="right"
-                      title="Аналітична панель"
+                      title={messengerMode ? 'Панель чату' : 'Аналітична панель'}
                       open={rightPanelVisible && !modalEditorOpen}
                       onClose={page.toggleRightPanel}
                     >
-                      {showLoadingSkeletons ? (
-                        <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
-                      ) : (
-                        <AnalysisRightPanel
-                          page={page}
-                          rightPanelVisible
-                          isCompactLayout={isAnalysisCompactLayout}
-                          showNarrowCloseButton={false}
-                        />
-                      )}
+                      {rightPanelContent(true)}
                     </AnalysisFullscreenPanelDrawer>
                   )
                 }
@@ -722,7 +758,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
           onUpdate={page.updateReport}
         />
 
-        {!analysisMapVisible && !editorOpen ? (
+        {!analysisMapVisible && !editorOpen && page.leftPanelTab !== LeftPanelTab.Messenger ? (
           <CreateMessageFab ref={createMessageFabRef} onClick={openCreateMessageComposer} />
         ) : null}
       </Box>

@@ -38,8 +38,6 @@ import {
   groupFilterIdentity,
   type GroupScope,
 } from '../shared/group-navigation';
-import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
-import { DUTY_SCROLL_FAB_STACK_OFFSET } from './duty-scroll-fab-position';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
@@ -275,6 +273,14 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   }, [closeOpenPanels, showFilters, showGroups, showKeywordsPanel, showNotificationPanel]);
 
   const panelOpen = showFilters || showNotificationPanel || showKeywordsPanel || showGroups;
+  // The create button is hidden while a panel covers the feed.
+  const contentColumn = useMemo(
+    () =>
+      panelOpen && column.actions.onCreateMessage
+        ? { ...column, actions: { ...column.actions, onCreateMessage: undefined } }
+        : column,
+    [column, panelOpen],
+  );
   useEffect(() => {
     onPanelOpenChange?.(feed.id, panelOpen);
   }, [feed.id, onPanelOpenChange, panelOpen]);
@@ -362,16 +368,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         position: 'relative',
         scrollSnapAlign: narrowScreen ? 'start' : undefined,
         scrollSnapStop: narrowScreen ? 'always' : undefined,
-        ...(!narrowScreen && {
-          '&:has([data-duty-column-create-message]) [data-duty-feed-scroll-button]': {
-            transform: `translateY(-${DUTY_SCROLL_FAB_STACK_OFFSET}px)`,
-          },
-        }),
-        '@media (prefers-reduced-motion: reduce)': {
-          '& [data-duty-feed-scroll-button]': {
-            transition: 'none',
-          },
-        },
       }}
     >
       <FeedColumnHeader
@@ -465,7 +461,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
             className="flex flex-col flex-1 min-h-0"
             sx={{ position: 'relative' }}
           >
-            <FeedColumnContent ref={contentRef} column={column} />
+            <FeedColumnContent ref={contentRef} column={contentColumn} />
             {groupPresence.present ? (
               <div
                 ref={groupPresence.ref}
@@ -487,20 +483,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
               </div>
             ) : null}
           </Box>
-          {actions.onCreateMessage && !panelOpen ? (
-            <Box
-              data-duty-column-create-message
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 4,
-                pointerEvents: 'none',
-                '& .MuiFab-root': { pointerEvents: 'auto' },
-              }}
-            >
-              <CreateMessageFab onClick={actions.onCreateMessage} />
-            </Box>
-          ) : null}
         </div>
       </div>
       {removeConfirmationOpen ? (

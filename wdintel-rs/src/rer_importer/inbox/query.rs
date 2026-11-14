@@ -647,7 +647,7 @@ where
     }
 
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+        crate::messenger::group::get_rer_feed_sigint_groups(dbx, login)
             .await
             .c(h!())?;
     let source_scope = inbox_search_scope(req, &sigint_groups).c(h!())?;
@@ -1925,7 +1925,7 @@ async fn ensure_inbox_analytics_search_coverage(
         use crate::attachments::analytics::{
             SearchCoverageScope, SearchTimeBasis,
         };
-        let groups = crate::messenger::group::get_identity_sigint_groups(
+        let groups = crate::messenger::group::get_rer_feed_sigint_groups(
             &env.dbx, login,
         )
         .await
@@ -2712,7 +2712,7 @@ pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
     ids: &[i64],
 ) -> anyhow::Result<String> {
     let groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+        crate::messenger::group::get_rer_feed_sigint_groups(dbx, login)
             .await
             .c(h!())?;
     let query = build_inbox_query_base(req, InboxQueryPurpose::Messages, false)

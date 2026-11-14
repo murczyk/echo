@@ -7,41 +7,43 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import type { WindowedFeedScrollHandle } from './message-feed.types';
+import type { MessageFeedId, WindowedFeedScrollHandle } from './message-feed.types';
 
 export type FeedElementAttributes<T extends HTMLElement> = HTMLAttributes<T> & {
   [key: `data-${string}`]: string | boolean | undefined;
 };
 
-export type MessageFeedViewportProps<T> = {
-  scroll: WindowedFeedScrollHandle;
+export type MessageFeedViewportProps<T, Id extends MessageFeedId = number> = {
+  scroll: WindowedFeedScrollHandle<Id>;
   items: readonly T[];
-  getMessageId: (item: T) => number;
+  getMessageId: (item: T) => Id;
   renderMessage?: (item: T) => ReactNode;
   children?: ReactNode;
   scrollerProps?: FeedElementAttributes<HTMLDivElement>;
   listProps?: FeedElementAttributes<HTMLElement>;
   listTag?: 'div' | 'ul';
   itemSelector?: string;
+  /** Turns a `data-message-id` attribute back into an id. Defaults to `Number`; string-id hosts pass `String`. */
+  parseId?: (raw: string) => Id;
   beforeList?: ReactNode;
   beforeMessages?: ReactNode;
   afterMessages?: ReactNode;
   scrollerRef?: Ref<HTMLDivElement>;
 };
 
-export function MessageFeedRows<T>({
+export function MessageFeedRows<T, Id extends MessageFeedId = number>({
   items,
   getMessageId,
   renderMessage,
 }: {
   items: readonly T[];
-  getMessageId: (item: T) => number;
+  getMessageId: (item: T) => Id;
   renderMessage: (item: T) => ReactNode;
 }) {
   return items.map((item) => <Fragment key={getMessageId(item)}>{renderMessage(item)}</Fragment>);
 }
 
-export function MessageFeedViewport<T>({
+export function MessageFeedViewport<T, Id extends MessageFeedId = number>({
   scroll,
   items,
   getMessageId,
@@ -51,11 +53,12 @@ export function MessageFeedViewport<T>({
   listProps,
   listTag: List = 'div',
   itemSelector = '[data-message-id]',
+  parseId = Number as unknown as (raw: string) => Id,
   beforeList,
   beforeMessages,
   afterMessages,
   scrollerRef,
-}: MessageFeedViewportProps<T>) {
+}: MessageFeedViewportProps<T, Id>) {
   const setScrollerRef = useCallback(
     (element: HTMLDivElement | null) => {
       (scroll.scrollerRef as MutableRefObject<HTMLDivElement | null>).current = element;
@@ -73,10 +76,12 @@ export function MessageFeedViewport<T>({
   useLayoutEffect(() => {
     const elements = scroll.listRef.current?.querySelectorAll<HTMLElement>(itemSelector);
     elements?.forEach((element) => {
-      const id = Number(element.dataset.messageId ?? element.dataset.dutyMessageId);
-      if (Number.isFinite(id)) scroll.setItemRef(id)(element);
+      const raw = element.dataset.messageId ?? element.dataset.dutyMessageId;
+      if (raw === undefined) return;
+      const id = parseId(raw);
+      if (typeof id === 'string' || Number.isFinite(id)) scroll.setItemRef(id)(element);
     });
-  }, [items, itemSelector, scroll.setItemRef]);
+  }, [items, itemSelector, parseId, scroll.setItemRef]);
 
   return (
     <div

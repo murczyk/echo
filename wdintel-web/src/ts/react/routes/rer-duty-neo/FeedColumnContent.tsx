@@ -1,5 +1,4 @@
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import { Box, Button, CircularProgress, Fab, Paper, Typography } from '@mui/material';
+import { Box, Button, Paper, Typography } from '@mui/material';
 import {
   forwardRef,
   memo,
@@ -25,7 +24,6 @@ import type {
 } from '../../../../Bindings';
 import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './types';
-import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
 import { UnreadMessagesDivider } from '../shared/group-navigation/UnreadMessagesDivider';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
@@ -42,11 +40,11 @@ import {
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedHasUnrenderedHistoricalNewer, feedListRenderStateEqual } from './utils';
-import { dutyTopScrollButtonSx } from './top-action-styles';
 import {
   MessageFeed,
   MessageFeedItem,
   MessageFeedRows,
+  MessageFeedScrollFab,
   ScrollNavigationIntent,
   shouldShowNewestNavigation,
   type AnchorSnapshot,
@@ -558,8 +556,6 @@ type FeedColumnScrollFabProps = {
   isWatchMode: boolean;
   atNewestEdge: boolean;
   hasItems: boolean;
-  bottom: number | string;
-  right: number | string;
   onArrowClick?: () => void;
 };
 
@@ -569,8 +565,6 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   isWatchMode,
   atNewestEdge,
   hasItems,
-  bottom,
-  right,
   onArrowClick,
 }: FeedColumnScrollFabProps) {
   const {
@@ -590,23 +584,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
     return null;
   }
   return (
-    <Box
-      data-duty-feed-scroll-button
-      data-duty-bottom-offset={String(bottom)}
-      data-duty-right-offset={String(right)}
-      style={{
-        position: 'absolute',
-        bottom,
-        right,
-      }}
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1,
-        zIndex: 1,
-        transition: 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-      }}
-    >
+    <Box data-duty-feed-scroll-button sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       {!loadingNewer && isPresent(arrowResultMessage) && (
         <PowerChip
           size="small"
@@ -617,65 +595,43 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
           sx={{ fontWeight: 500 }}
         />
       )}
-      <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-        <Fab
-          color={bottomUnreadCount > 0 ? 'primary' : 'default'}
-          size="small"
-          sx={{
-            ...dutyTopScrollButtonSx,
-            position: 'relative',
-            zIndex: 0,
-            borderColor: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
-            color: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
-            '&:hover': {
-              backgroundColor: 'background.paper',
-              borderColor: 'primary.main',
-              color: 'primary.main',
-              boxShadow: 'none',
-            },
-          }}
-          aria-label={isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'}
-          onClick={onArrowClick}
-          disabled={loadingNewer}
-        >
-          {loadingNewer && explicitNavigationLoading ? (
-            <CircularProgress
-              size={20}
-              sx={{ color: 'primary.main' }}
-              aria-label="Завантаження нових повідомлень"
+      <MessageFeedScrollFab
+        highlighted={bottomUnreadCount > 0}
+        ariaLabel={isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'}
+        onClick={onArrowClick}
+        disabled={loadingNewer}
+        loading={loadingNewer && explicitNavigationLoading}
+        loadingLabel="Завантаження нових повідомлень"
+        badge={
+          bottomUnreadCount > 0 && !isWatchMode && isNullOrUndefined(arrowResultMessage) ? (
+            <PowerChip
+              size="small"
+              data-duty-scroll-unread-badge
+              label={bottomUnreadCount}
+              selected
+              interactive={false}
+              unselectedOpacity={1}
+              labelPaddingX={bottomUnreadCount < 10 ? 0 : undefined}
+              sx={{
+                position: 'absolute',
+                top: -6,
+                right: -6,
+                fontWeight: 600,
+                zIndex: 2,
+                pointerEvents: 'none',
+                ...(bottomUnreadCount < 10 && {
+                  width: 20,
+                  minWidth: 20,
+                  height: 20,
+                  minHeight: 20,
+                  boxSizing: 'border-box',
+                  borderRadius: '50%',
+                }),
+              }}
             />
-          ) : (
-            <ArrowDownwardIcon sx={{ fontSize: 20 }} />
-          )}
-        </Fab>
-        {bottomUnreadCount > 0 && !isWatchMode && isNullOrUndefined(arrowResultMessage) && (
-          <PowerChip
-            size="small"
-            data-duty-scroll-unread-badge
-            label={bottomUnreadCount}
-            selected
-            interactive={false}
-            unselectedOpacity={1}
-            labelPaddingX={bottomUnreadCount < 10 ? 0 : undefined}
-            sx={{
-              position: 'absolute',
-              top: -6,
-              right: -6,
-              fontWeight: 600,
-              zIndex: 2,
-              pointerEvents: 'none',
-              ...(bottomUnreadCount < 10 && {
-                width: 20,
-                minWidth: 20,
-                height: 20,
-                minHeight: 20,
-                boxSizing: 'border-box',
-                borderRadius: '50%',
-              }),
-            }}
-          />
-        )}
-      </Box>
+          ) : undefined
+        }
+      />
     </Box>
   );
 });
@@ -718,7 +674,6 @@ export const FeedColumnContent = memo(
       initialPositioningReady = true,
       unreadPrefetchNeeded = true,
       pendingNewerFlushNeeded = false,
-      workspaceFabAvoidance = 'none',
       initialScrollAnchorSnapshot = null,
       onScrollAnchorSnapshotChange,
     } = view;
@@ -835,11 +790,6 @@ export const FeedColumnContent = memo(
     const stableOnMessageEdit = useStableCallback(onMessageEdit);
     const stableOnOpenPointsOnMap = useStableCallback(onOpenPointsOnMap);
     const stableOnAddPointHighlightBlacklist = useStableCallback(onAddPointHighlightBlacklist);
-    const scrollFabPosition = resolveDutyScrollFabPosition({
-      narrowScreen,
-      workspaceFabAvoidance,
-    });
-
     useImperativeHandle(
       ref,
       () => ({
@@ -948,6 +898,7 @@ export const FeedColumnContent = memo(
           ref={feedRef}
           scrollerRef={scrollerRef}
           scrollOptions={scrollOptions}
+          onCreateMessage={actions.onCreateMessage}
           newestNavigation={{
             edge: 'bottom',
             renderControl: (atNewestEdge) => (
@@ -957,8 +908,6 @@ export const FeedColumnContent = memo(
                 isWatchMode={isWatchMode}
                 atNewestEdge={atNewestEdge}
                 hasItems={feed.items.length > 0}
-                bottom={scrollFabPosition.bottom}
-                right={scrollFabPosition.right}
                 onArrowClick={onArrowClick}
               />
             ),
@@ -1049,8 +998,7 @@ export const FeedColumnContent = memo(
       prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
       prevView.editorHighlightedMessageId !== nextView.editorHighlightedMessageId ||
       prevView.linkedMessageFocus !== nextView.linkedMessageFocus ||
-      prevView.unreadBoundaryMessageId !== nextView.unreadBoundaryMessageId ||
-      prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
+      prevView.unreadBoundaryMessageId !== nextView.unreadBoundaryMessageId
     ) {
       return false;
     }
@@ -1086,6 +1034,7 @@ export const FeedColumnContent = memo(
     const prevActions = prevProps.column.actions;
     const nextActions = nextProps.column.actions;
     if (
+      prevActions.onCreateMessage !== nextActions.onCreateMessage ||
       prevActions.onLoadHistory !== nextActions.onLoadHistory ||
       prevActions.onLoadOlder !== nextActions.onLoadOlder ||
       prevActions.onLoadNewer !== nextActions.onLoadNewer ||

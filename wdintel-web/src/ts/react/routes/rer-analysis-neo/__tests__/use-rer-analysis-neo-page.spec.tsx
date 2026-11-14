@@ -12,7 +12,7 @@ import type {
   SignalGroupEntry,
   User,
 } from '../../../../../Bindings';
-import type { AnalysisPageViewModel } from '../types';
+import { LeftPanelTab, type AnalysisPageViewModel } from '../types';
 import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
@@ -62,6 +62,9 @@ vi.mock('../../../services/api/client', () => ({
   isUnauthorizedError: () => false,
 }));
 
+vi.mock('../../../services/api/analysis-messengers', () => ({
+  listMessengersAccounts: vi.fn().mockResolvedValue({ items: [] }),
+}));
 vi.mock('../../../services/api/user', () => ({
   fetchCurrentUser: currentUserMock.fetchCurrentUser,
 }));
@@ -684,6 +687,54 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.groupScopeTransitionPending).toBe(false);
   });
+
+  it.each([
+    { roles: ['Rer'], expected: LeftPanelTab.EchoGroups },
+    { roles: ['CyberMessengers'], expected: LeftPanelTab.Messenger },
+  ])(
+    'lets $roles switch to the messenger tab only with CyberMessengers',
+    async ({ roles, expected }) => {
+      currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles } as User);
+      renderHook(roles);
+      await flushEffects();
+
+      act(() => latest?.setLeftPanelTab(LeftPanelTab.Messenger));
+      await flushEffects();
+
+      expect(latest?.leftPanelTab).toBe(expected);
+    },
+  );
+
+  it.each([
+    { roles: ['CyberMessengers'], keepsLink: true },
+    { roles: ['Rer'], keepsLink: false },
+  ])(
+    'opens a shared messenger link only for users with access (keeps link: $keepsLink)',
+    async ({ roles, keepsLink }) => {
+      window.history.replaceState(
+        {},
+        '',
+        '/rer-analysis-neo?leftPanelTab=messenger&messengerAccount=7',
+      );
+      let resolveUser: (user: User) => void = () => {};
+      currentUserMock.fetchCurrentUser.mockReturnValueOnce(
+        new Promise<User>((resolve) => (resolveUser = resolve)),
+      );
+      renderHook(roles);
+      await flushEffects();
+      // The role is still unknown, so the shared link must stay in the address bar.
+      expect(window.location.search).toContain('messengerAccount=7');
+
+      await act(async () => resolveUser({ name: 'tester', roles } as User));
+      await flushEffects();
+
+      expect(latest?.selectedMessengerAccountId).toBe('7');
+      expect(latest?.leftPanelTab).toBe(
+        keepsLink ? LeftPanelTab.Messenger : LeftPanelTab.EchoGroups,
+      );
+      expect(window.location.search.includes('messengerAccount=7')).toBe(keepsLink);
+    },
+  );
 
   // Regression: https://github.com/echoua/echo/issues/3568
   it('reconciles a bare date range when the user lookup adds Rer access', async () => {
