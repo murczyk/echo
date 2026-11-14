@@ -229,18 +229,8 @@ reconcile_network_link_table() {
         _peerdb_is_deleted,
         _peerdb_version
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
-      INSERT INTO \`$derived_database\`.\`$network_link_table\`
-      SELECT
-        id,
-        sigint_inbox_item_id,
-        sigint_network_id,
-        created_at,
-        _peerdb_synced_at,
-        _peerdb_is_deleted,
-        _peerdb_version
-      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
-  catch_up_derived_rows \
+  backfill_derived_rows \
     "$network_link_table" \
     "$raw_table" \
     "$columns" \
@@ -267,15 +257,37 @@ reconcile_network_link_table() {
   "
 }
 
-# Copies PeerDB versions that a materialized view may have missed. An INSERT
-# that was already running when the view was created does not feed it, and
-# its rows can commit after the backfill snapshot. Duplicates are harmless:
-# ReplacingMergeTree keeps one row per key and version.
-catch_up_derived_rows() {
+# Copies the raw table into a derived table after its ingestion view exists.
+# An INSERT that was already running when the view was created does not feed
+# it, so wait until every such INSERT has finished first: the backfill
+# snapshot then contains their rows, and every later INSERT goes through the
+# view. Rows in both are harmless, ReplacingMergeTree keeps one per key and
+# version. On timeout the rebuild fails before it is recorded, so the next
+# reconciliation starts it again.
+backfill_derived_rows() {
   local derived_table=$1
   local raw_table=$2
   local columns=$3
   local ingest_started_at=$4
+  local deadline=$((SECONDS + 600))
+  local running
+
+  while true; do
+    running=$(clickhouse_admin_http "
+      SELECT count()
+      FROM system.processes
+      WHERE query_kind = 'Insert'
+        AND positionCaseInsensitive(query, '$raw_table') > 0
+        AND elapsed >= (
+          toUnixTimestamp64Nano(now64(9))
+          - toUnixTimestamp64Nano(toDateTime64('$ingest_started_at', 9))
+        ) / 1e9
+    ")
+    [[ "$running" == 0 ]] && break
+    ((SECONDS < deadline)) \
+      || die "INSERTs into $CLICKHOUSE_RAW_DB.$raw_table that started before its ingestion view are still running"
+    sleep 1
+  done
 
   clickhouse_admin \
     --receive_timeout 600 \
@@ -283,8 +295,6 @@ catch_up_derived_rows() {
       INSERT INTO \`$derived_database\`.\`$derived_table\`
       SELECT $columns
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`
-      WHERE _peerdb_synced_at
-        >= toDateTime64('$ingest_started_at', 9) - INTERVAL 10 MINUTE
     "
 }
 
@@ -368,11 +378,8 @@ reconcile_unit_link_table() {
       AS
       SELECT $columns
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
-      INSERT INTO \`$derived_database\`.\`$unit_link_table\`
-      SELECT $columns
-      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
-  catch_up_derived_rows \
+  backfill_derived_rows \
     "$unit_link_table" \
     "$raw_table" \
     "$columns" \
@@ -482,18 +489,8 @@ reconcile_callsign_table() {
         _peerdb_is_deleted,
         _peerdb_version
       FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
-      INSERT INTO \`$derived_database\`.\`$callsign_table\`
-      SELECT
-        id,
-        sigint_inbox_item_id,
-        callsign,
-        deleted,
-        _peerdb_synced_at,
-        _peerdb_is_deleted,
-        _peerdb_version
-      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
     "
-  catch_up_derived_rows \
+  backfill_derived_rows \
     "$callsign_table" \
     "$raw_table" \
     "$columns" \

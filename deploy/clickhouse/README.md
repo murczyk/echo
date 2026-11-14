@@ -710,10 +710,12 @@ message-ID envelope prunes by the primary key: a two-week envelope reads about
 2% of the network-link granules. Reconciliation records each PeerDB raw-table
 UUID and rebuilds its derived table plus ingestion view after a mirror resync
 or resnapshot replaces that UUID; normal deploys need no manual step. A rebuild
-copies the existing rows and then copies rows synced within ten minutes before
-the ingestion view was created, which covers PeerDB inserts that were already
-running and so never reached the view. It runs under the reconcile lock, so
-analytics reads fall back to PostgreSQL until it finishes.
+creates the ingestion view, waits until every insert into the raw table that
+started before the view has finished, and only then copies the raw table, so
+each row is either in that copy or goes through the view. If such an insert
+is still running after ten minutes, the rebuild fails unrecorded and the next
+reconciliation starts it again. It runs under the reconcile lock, so analytics
+reads fall back to PostgreSQL until it finishes.
 
 The gateway exposes them as `echo_clickhouse_derived.message_callsign`,
 `message_network_link`, `message_unit_link` and `message_aor_link`. Analytics

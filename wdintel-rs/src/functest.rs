@@ -81,7 +81,8 @@ pub mod tests {
         ensure_test_database(&env.dbx, &env.config).await?;
         ANALYTICS_LINK_VIEWS
             .get_or_try_init(|| create_analytics_link_views(&env.dbx))
-            .await?;
+            .await
+            .context(h!())?;
         if let Some(file_registry_db) = &env.file_registry_db {
             file_registry_db
                 .connection()
