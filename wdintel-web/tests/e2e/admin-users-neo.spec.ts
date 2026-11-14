@@ -443,6 +443,48 @@ for (const width of [390, 1000, 1280]) {
   });
 }
 
+test('Admin Users AOR column filters by organism AORs that load after the users @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installAdminUsersApiMocks(page, [
+    { ...login, id: 'east-login', login: 'east-user', organismId: 2 },
+    { ...login, id: 'north-login', login: 'north-user', organismId: 3 },
+  ]);
+  let releaseLookups = () => {};
+  const lookupsReleased = new Promise<void>((resolve) => {
+    releaseLookups = resolve;
+  });
+  await page.route('**/api/organisms', async (route) => {
+    await lookupsReleased;
+    await route.fulfill({
+      json: [
+        { id: 2, name: 'Організм', enabled: true, aorIds: [10] },
+        { id: 3, name: 'Інший організм', enabled: true, aorIds: [11] },
+      ],
+    });
+  });
+  await page.route('**/api/sigint/aor', async (route) => {
+    await lookupsReleased;
+    await route.fulfill({
+      json: [
+        { id: 10, name: 'Схід' },
+        { id: 11, name: 'Північ' },
+      ],
+    });
+  });
+  const aorFilter = JSON.stringify([{ id: 'aors', value: ['Схід'] }]);
+  await page.goto(`/admin/users-neo?columnFilters=${encodeURIComponent(aorFilter)}`);
+
+  const users = page.locator('users-neo');
+  await expect(users.getByPlaceholder('Пошук')).toBeVisible();
+  releaseLookups();
+
+  const eastRow = users.locator('tbody tr').filter({ hasText: 'east-user' });
+  await expect(eastRow.getByText('Схід', { exact: true })).toBeVisible();
+  await expect(users.getByText('north-user', { exact: true })).toHaveCount(0);
+});
+
 test('Admin Users search clearing updates URL, rows, and the active-filter badge @regression', async ({
   page,
 }) => {
