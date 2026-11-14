@@ -37,6 +37,9 @@ const DEEP_SEARCH_PROMPT =
   "Deep mode was requested, but no tool has run. Search Echo before answering from general knowledge: a word with an everyday meaning may be a callsign, a unit or a term from the reports. Only reformatting or translating earlier text, or a task answerable entirely from text, files or images the user supplied, needs no tool; in that case finish with a brief completion message.";
 const FAILED_START_PROMPT =
   "The previous attempt failed before any work was done. Answer the user's request above now, starting with the tools it needs.";
+// Incident 01a1d9d0: hidden reasoning used the whole output allowance of a research turn.
+const CUT_OFF_HINT =
+  "Your previous turn used its whole output allowance on hidden reasoning and produced nothing usable. Keep your reasoning brief and act at once. ";
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
   preset: "balanced",
   api: "openai-completions",
@@ -373,15 +376,25 @@ export class FlashResearch {
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
   private researchStartedAt?: number;
-  // The longest validated part of a synthesis the finalization deadline cut off.
+  // The longest validated part of a synthesis the finalization deadline or the output
+  // limit cut off.
   private partial?: string;
+  private partialOutputLimit = false;
+  // The latest research turn ended at the output limit.
+  private cutOff = false;
   private readonly sources: () => Sources;
   private readonly journal?: WorkJournal;
   private readonly diagnostic: (event: CompletionDiagnostic) => void;
   private readonly tuning: ResearchTuning;
   usedFallback = false;
-  /** The answer is the finished part of a synthesis cut off by the deadline. */
+  /** The answer is the finished part of a cut-off synthesis. */
   usedPartial = false;
+
+  /** What cut off the synthesis whose finished part is the answer. */
+  get partialCause(): "deadline" | "output_limit" | undefined {
+    if (!this.usedPartial) return undefined;
+    return this.partialOutputLimit ? "output_limit" : "deadline";
+  }
 
   constructor(
     sources: () => Sources,
@@ -615,16 +628,18 @@ export class FlashResearch {
   get hasUnfinishedWork(): boolean {
     return (
       this.hasPendingTasks ||
-      (!this.state && this.publicToolRuns === 0 && this.toolRunsAtProgress === 0)
+      (!this.state &&
+        (this.cutOff || (this.publicToolRuns === 0 && this.toolRunsAtProgress === 0)))
     );
   }
 
-  // With saved state the checklist decides. Without it, the one sign of unfinished work
-  // is a public promise of progress that no tool call followed.
+  // With saved state the checklist decides. Without it, the signs of unfinished work are
+  // a public promise of progress that no tool call followed, and a last turn the output
+  // limit cut off, which may have been the plan for the whole request.
   private get unfinished(): boolean {
     return this.state
       ? this.hasPendingTasks
-      : this.toolRunsAtProgress === this.publicToolRuns;
+      : this.cutOff || this.toolRunsAtProgress === this.publicToolRuns;
   }
 
   // Deep was asked for more effort, so it must not simply end on an answer from memory.
@@ -673,12 +688,13 @@ export class FlashResearch {
 
   continuationPrompt(): string {
     if (this.failedStart) return FAILED_START_PROMPT;
+    const hint = this.cutOff ? CUT_OFF_HINT : "";
     const pending = this.pendingTasks;
-    if (!pending.length && !this.unfinished) return DEEP_SEARCH_PROMPT;
+    if (!pending.length && !this.unfinished) return hint + DEEP_SEARCH_PROMPT;
     const reason = pending.length
       ? `these tasks are still pending: ${JSON.stringify(pending)}`
       : "you announced work but ran no tool";
-    return `The work is not finished: ${reason}. Do the remaining work now by calling the tools it needs; a text reply does not do it. If a task cannot be done or needs no tool, mark it done or blocked with update_research, then finish with a brief completion message.`;
+    return `${hint}The work is not finished: ${reason}. Do the remaining work now by calling the tools it needs; a text reply does not do it. If a task cannot be done or needs no tool, mark it done or blocked with update_research, then finish with a brief completion message.`;
   }
 
   completed(purpose: string, durationMs: number): void {
@@ -693,6 +709,7 @@ export class FlashResearch {
     const durationMs = Date.now() - this.researchStartedAt;
     this.completed("research", durationMs);
     const completion = providerCompletion(message);
+    this.cutOff = completion.outcome === "output_limit";
     // Only the latest outcome counts: a provider that answered after a cooldown has
     // recovered, so a later failure gets the usual re-prompt.
     if (["stop", "toolUse", "length"].includes(completion.stopReason ?? "")) {
@@ -776,10 +793,12 @@ export class FlashResearch {
     return answer;
   }
 
-  private notePartial(text: string): void {
+  private notePartial(text: string, outputLimit = false): void {
     const answer = validatedFlashAnswer(completedLines(text), this.sources());
-    if (answer && answer.length > (this.partial?.length ?? 0))
+    if (answer && answer.length > (this.partial?.length ?? 0)) {
       this.partial = answer;
+      this.partialOutputLimit = outputLimit;
+    }
   }
 
   private async synthesisAttempt(
@@ -795,7 +814,7 @@ export class FlashResearch {
     let durationMs = 0;
     const candidate = await synthesizeBudgetEvidence({
       ...options,
-      onPartial: (text) => this.notePartial(text),
+      onPartial: (text, outputLimit) => this.notePartial(text, outputLimit),
       onOutcome: (event) => {
         outcome = event.outcome as CompletionStatus;
         durationMs = event.durationMs ?? 0;
