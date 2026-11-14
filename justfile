@@ -1,4 +1,4 @@
-set positional-arguments
+set positional-arguments := true
 
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
