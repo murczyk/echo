@@ -30,6 +30,8 @@ pub mod tests {
 
     static MIGRATE: tokio::sync::OnceCell<()> =
         tokio::sync::OnceCell::const_new();
+    static ANALYTICS_LINK_VIEWS: tokio::sync::OnceCell<()> =
+        tokio::sync::OnceCell::const_new();
     static CLEANUP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     const TEST_AOR_NAME: &str = "Смуга1";
@@ -77,6 +79,10 @@ pub mod tests {
             env
         };
         ensure_test_database(&env.dbx, &env.config).await?;
+        ANALYTICS_LINK_VIEWS
+            .get_or_try_init(|| create_analytics_link_views(&env.dbx))
+            .await
+            .context(h!())?;
         if let Some(file_registry_db) = &env.file_registry_db {
             file_registry_db
                 .connection()
@@ -152,6 +158,28 @@ pub mod tests {
     #[ignore = "CI entry point for deploy/ci/run_rust_shards.py"]
     async fn ci_migrate_test_databases() {
         migrate_test_databases().await;
+    }
+
+    /// PostgreSQL stand-ins for the gateway's message-ordered link views, so
+    /// analytics-path queries run against the test database. On the gateway
+    /// these read ClickHouse copies of the same tables.
+    async fn create_analytics_link_views(
+        dbx: &DatabaseConnection,
+    ) -> Result<(), AppError> {
+        dbx.execute_unprepared(
+            r#"
+            CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived;
+            CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS
+            SELECT sigint_inbox_item_id, sigint_network_id
+            FROM sigint_inbox_item_network;
+            CREATE OR REPLACE VIEW echo_clickhouse_derived.message_unit_link AS
+            SELECT item_id, unit_id, kind::text AS kind
+            FROM sigint_inbox_item_unit;
+            "#,
+        )
+        .await
+        .context(h!())?;
+        Ok(())
     }
 
     async fn ensure_test_database(

@@ -699,13 +699,30 @@ correlated full-history scans while retaining the PostgreSQL overlap
 semantics. The compatibility-view layout matches replicated gateway tables so
 joins and distinct aggregation remain pushdown-safe.
 
-The callsign, network, and AOR compatibility relations read derived
-`ReplacingMergeTree` tables ordered by `(sigint_inbox_item_id, id)`.
-Materialized views copy every PeerDB version and deletion marker into them, so
-`FINAL` preserves current-state semantics while the message-ID envelope prunes
-by the primary key. Reconciliation records each PeerDB raw-table UUID and
-rebuilds its derived table plus ingestion view after a mirror resync replaces
-that UUID.
+The callsign, network, unit, and AOR compatibility relations read derived
+`ReplacingMergeTree` tables ordered by the message: `(sigint_inbox_item_id, id)`,
+or `(item_id, id)` for unit links. PeerDB orders the raw link tables by their
+surrogate `id`, so without these copies a query bounded to a few days of
+messages still reads every link `FINAL`, including millions of deletion
+markers. Materialized views copy every PeerDB version and deletion marker into
+the derived tables, so `FINAL` preserves current-state semantics while the
+message-ID envelope prunes by the primary key: a two-week envelope reads about
+2% of the network-link granules. Reconciliation records each PeerDB raw-table
+UUID and rebuilds its derived table plus ingestion view after a mirror resync
+or resnapshot replaces that UUID; normal deploys need no manual step. A rebuild
+creates the ingestion view, waits until every insert into the raw table that
+started before the view has finished, and only then copies the raw table, so
+each row is either in that copy or goes through the view. A rebuild first
+supersedes its recorded state, so one that fails or is interrupted (for
+example, an insert still running after ten minutes) is not mistaken for a
+finished one and the next reconciliation starts it again. It runs under the
+reconcile lock, so analytics reads fall back to PostgreSQL until it finishes.
+
+The gateway exposes them as `echo_clickhouse_derived.message_callsign`,
+`message_network_link`, `message_unit_link` and `message_aor_link`. Analytics
+queries use the network and unit links instead of `sigint_inbox_item_network`
+and `sigint_inbox_item_unit` and bound them by the same message-ID scope;
+PostgreSQL routes keep reading the source tables.
 
 The derived-schema reconciliation also owns the ClickHouse data-skipping
 indexes used by time-bounded analytical queries. PeerDB does not copy

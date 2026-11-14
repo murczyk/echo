@@ -1194,7 +1194,7 @@ fn inbox_linked_unit_counts_query(
     let units = Alias::new("counted_unit");
     let mut query = Query::select();
     query
-        .from_as(sigint_inbox_item_unit::Entity, links.clone())
+        .from_as(unit_link_table(scope.as_ref()), links.clone())
         .expr_as(
             Expr::col((links.clone(), sigint_inbox_item_unit::Column::UnitId)),
             Alias::new("unit_id"),
@@ -1242,7 +1242,7 @@ fn inbox_undefined_unit_counts_query(
     let mut active_links = Query::select();
     active_links
         .expr(Expr::value(1))
-        .from_as(sigint_inbox_item_unit::Entity, links.clone())
+        .from_as(unit_link_table(scope.as_ref()), links.clone())
         .join_as(
             JoinType::InnerJoin,
             sigint_unit::Entity,
@@ -2184,18 +2184,25 @@ fn apply_resolved_analytics_aor_filter(
         matches = matches.add(signal_message::Column::Id.in_subquery(groups));
     }
     if !resolved.network_ids.is_empty() {
-        let networks = sigint_inbox_item_network::Entity::find()
-            .select_only()
-            .column(sigint_inbox_item_network::Column::SigintInboxItemId)
-            .filter(
-                sigint_inbox_item_network::Column::SigintNetworkId
-                    .is_in(resolved.network_ids.clone()),
+        let links = Alias::new("analytics_aor_network_link");
+        let networks = Query::select()
+            .column((
+                links.clone(),
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ))
+            .from_as(network_link_table(Some(scope)), links.clone())
+            .and_where(
+                Expr::col((
+                    links.clone(),
+                    sigint_inbox_item_network::Column::SigintNetworkId,
+                ))
+                .is_in(resolved.network_ids.clone()),
             )
-            .filter(scope.condition((
-                sigint_inbox_item_network::Entity,
+            .and_where(scope.condition((
+                links,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
             )))
-            .into_query();
+            .to_owned();
         matches = matches.add(signal_message::Column::Id.in_subquery(networks));
     }
     if resolved.group_keys.is_empty() && resolved.network_ids.is_empty() {
@@ -4069,5 +4076,41 @@ mod tests {
             )),
             "{query}"
         );
+    }
+
+    // ECHO-4202: on the gateway both arms read the message-ordered unit links,
+    // so the item-id scope prunes them by primary key in ClickHouse.
+    #[test]
+    fn analytics_unit_stats_read_message_ordered_links_4202() {
+        let messages = || {
+            signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+        };
+        let scope = AnalyticsMessageIdScope::Inclusive {
+            min_id: 10,
+            max_id: 20,
+        };
+        let query =
+            render_inbox_unit_stats_query(messages(), Some(scope), false);
+        let (linked, undefined) = query.split_once(" UNION ALL ").unwrap();
+        for arm in [linked, undefined] {
+            assert!(
+                arm.contains(
+                    r#""echo_clickhouse_derived"."message_unit_link" AS "counted_unit_link""#
+                ),
+                "{arm}"
+            );
+            assert!(
+                arm.contains(
+                    r#""counted_unit_link"."item_id" BETWEEN 10 AND 20"#
+                ),
+                "{arm}"
+            );
+        }
+
+        let source = render_inbox_unit_stats_query(messages(), None, false);
+        assert!(!source.contains("echo_clickhouse_derived"), "{source}");
+        assert!(source.contains(r#""sigint_inbox_item_unit""#), "{source}");
     }
 }

@@ -101,6 +101,38 @@ impl AnalyticsMessageIdScope {
     }
 }
 
+/// Unit links to read for a query. On the analytics gateway (`scope` is set)
+/// the copy ordered by `(item_id, id)` lets the message-ID scope prune by
+/// primary key; PeerDB orders `sigint_inbox_item_unit` by its surrogate `id`,
+/// so unit facets read that whole table. PostgreSQL reads the source table.
+pub(in crate::rer_importer) fn unit_link_table(
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> TableRef {
+    match scope {
+        Some(_) => (
+            Alias::new("echo_clickhouse_derived"),
+            Alias::new("message_unit_link"),
+        )
+            .into_table_ref(),
+        None => sigint_inbox_item_unit::Entity.into_table_ref(),
+    }
+}
+
+/// Network links to read for a query; see [`unit_link_table`]. The analytics
+/// copy is ordered by `(sigint_inbox_item_id, id)`.
+pub(in crate::rer_importer) fn network_link_table(
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> TableRef {
+    match scope {
+        Some(_) => (
+            Alias::new("echo_clickhouse_derived"),
+            Alias::new("message_network_link"),
+        )
+            .into_table_ref(),
+        None => sigint_inbox_item_network::Entity.into_table_ref(),
+    }
+}
+
 pub(super) async fn analytics_message_id_chunks(
     source_db: &DatabaseConnection,
     scope: AnalyticsMessageIdScope,
@@ -1086,7 +1118,7 @@ fn linked_unit_ids_condition(
     let mut query = Query::select();
     query
         .expr(Expr::value(1))
-        .from_as(sigint_inbox_item_unit::Entity, link_alias.clone())
+        .from_as(unit_link_table(scope), link_alias.clone())
         .join_as(
             JoinType::InnerJoin,
             sigint_unit::Entity,
@@ -3243,19 +3275,29 @@ where
 
     let inbox_network_alias = Alias::new("analytics_network_filter_link");
     let network_alias = Alias::new("analytics_network_filter");
-    let q = q
+    let mut q = q;
+    QuerySelect::query(&mut q)
         .join_as(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+            network_link_table(scope),
             inbox_network_alias.clone(),
+            Expr::col((
+                inbox_network_alias.clone(),
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .join_as(
             JoinType::InnerJoin,
-            sigint_inbox_item_network::Relation::SigintNetwork
-                .def()
-                .from_alias(inbox_network_alias.clone()),
+            sigint_network::Entity,
             network_alias.clone(),
-        )
+            Expr::col((network_alias.clone(), sigint_network::Column::Id))
+                .equals((
+                    inbox_network_alias.clone(),
+                    sigint_inbox_item_network::Column::SigintNetworkId,
+                )),
+        );
+    let q = q
         .filter(
             Expr::col((
                 inbox_network_alias.clone(),
@@ -3385,7 +3427,7 @@ fn network_exists_subquery(
     let mut subquery = Query::select();
     subquery
         .expr(Expr::value(1))
-        .from_as(sigint_inbox_item_network::Entity, network_alias.clone())
+        .from_as(network_link_table(scope), network_alias.clone())
         .join_as(
             JoinType::InnerJoin,
             sigint_network::Entity,
