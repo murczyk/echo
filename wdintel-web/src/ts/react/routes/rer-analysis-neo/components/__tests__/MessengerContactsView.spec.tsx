@@ -65,7 +65,16 @@ describe('MessengerContactsView', () => {
   beforeEach(() => {
     // The table keeps its sorting, filters and hidden columns in the URL and in the local storage.
     window.history.replaceState({}, '', '/rer-analysis-neo');
-    window.localStorage.clear();
+    // Node 25+ shadows the DOM storage with its own, which has no methods without a file.
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     // The table virtualizes its rows, which needs a layout that happy-dom does not have: a tall scroller, rows
     // of a fixed height, and plenty left to scroll, so no next page is asked for without a scroll.
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
@@ -95,6 +104,7 @@ describe('MessengerContactsView', () => {
   });
 
   afterEach(() => {
+    delete (window as { localStorage?: Storage }).localStorage;
     window.history.replaceState({}, '', '/');
     vi.restoreAllMocks();
     act(() => root.unmount());

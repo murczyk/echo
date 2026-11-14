@@ -55,7 +55,16 @@ describe('the account sidebar of the messenger workspace', () => {
     element.hasAttribute('inert') && element.getAttribute('aria-hidden') === 'true';
 
   beforeEach(() => {
-    window.localStorage.clear();
+    // Node 25+ shadows the DOM storage with its own, which has no methods without a file.
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     window.history.replaceState(
       {},
       '',
@@ -87,6 +96,7 @@ describe('the account sidebar of the messenger workspace', () => {
   });
 
   afterEach(() => {
+    delete (window as { localStorage?: Storage }).localStorage;
     act(() => root.unmount());
     container.remove();
     window.history.replaceState({}, '', '/');

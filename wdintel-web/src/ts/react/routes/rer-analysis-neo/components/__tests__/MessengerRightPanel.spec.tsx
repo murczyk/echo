@@ -55,7 +55,16 @@ describe('MessengerRightPanel', () => {
 
   beforeEach(() => {
     window.history.replaceState({}, '', '/rer-analysis-neo');
-    window.localStorage.clear();
+    // Node 25+ shadows the DOM storage with its own, which has no methods without a file.
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     // The table virtualizes its rows, which needs a layout that happy-dom does not have.
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element,
@@ -82,6 +91,7 @@ describe('MessengerRightPanel', () => {
   });
 
   afterEach(() => {
+    delete (window as { localStorage?: Storage }).localStorage;
     window.history.replaceState({}, '', '/');
     vi.restoreAllMocks();
     act(() => root.unmount());
