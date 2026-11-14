@@ -11,12 +11,23 @@ so unit names cannot merge unrelated paths.
 A parent without its own catalog row has a synthetic selection value and
 matches its descendants. An unresolved selection must never become an
 unrestricted query or the undefined-unit filter. Missing catalogs block only
-requests that need expansion. Catalog failures are visible and retried, and
-browser focus/online recovery reloads the catalog and invalidates affected
-requests. Duty's other feeds can continue loading.
+requests that need expansion. Catalog failures are visible; a changed catalog
+revision or unit event invalidates the affected scopes and retries them.
+Browser focus and online recovery do not reload unchanged catalogs. Duty's
+other feeds can continue loading.
 
 Parent counts add the counts of their own rows and descendants. Leaf counts
-use distinct message IDs, including when a message has multiple link kinds.
+remain separate for differently named units and for identical names in other
+hierarchy branches. A computed parent replaces direct catalog options whose
+trimmed names equal its label, using the lowest matching catalog ID even when
+that row has no direct message count. Analysis section totals account for both
+added parents and removed duplicate catalog options. Restored synthetic parent
+values and matching catalog IDs retain complete server-resolved descendants
+while local thread facets enrich their shared parent only once. Scoped
+selection responses retain direct siblings so both pickers recognize the same
+canonical parent, including its selected aliases, without rewriting saved
+values. Leaf counts use distinct message IDs, including when a message has
+multiple link kinds.
 A message linked to two different descendant units contributes to both units'
 counts; the parent shows their sum. Both pages load the hierarchy automatically,
 without a checkbox or hierarchy progress bar. The Rust backend enriches leaf
@@ -64,13 +75,19 @@ enrichment; normal backend facet responses arrive enriched and skip that work.
 Regression coverage:
 
 - `wdintel-web/src/ts/react/routes/shared/__tests__/unit-children-filter.regression.spec.ts`
+- `wdintel-web/src/ts/react/routes/shared/__tests__/use-unit-hierarchy-catalog.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts`
 - `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutyUnitOptions.regression.spec.tsx`
+- `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/FeedFilterPanel.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data-filter-sections.spec.ts`
+- `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.reload.spec.ts`
+- `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisFiltersPanel.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.core.inbox-refresh.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-saved-filters.spec.tsx`
 - `wdintel-web/tests/e2e/unit-children-filter.spec.ts`
 - `wdintel-rs/src/rer_importer/inbox/mod.rs`
+- `wdintel-rs/src/rer_importer/unit_stats.rs`
+- `wdintel-rs/src/sigint/unit/hierarchy/tests.rs`
 - `wdintel-rs/src/rer_importer/analysis/tests.rs`
 - `wdintel-rs/src/server/read_deadline.rs`

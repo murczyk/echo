@@ -12,7 +12,7 @@ export type UnitCountOption = {
 export type UnitHierarchyIndex = {
   children: Map<string, string[]>;
   exact: Map<string, string[]>;
-  parents: Array<{ value: string; label: string; descendants: string[] }>;
+  parents: Array<{ value: string; label: string; descendants: string[]; aliases: string[] }>;
 };
 
 const UNIT_PARENT_PREFIX = 'unit-parent:';
@@ -33,8 +33,10 @@ export function buildUnitHierarchyIndex(units: Unit[]): UnitHierarchyIndex {
 export function indexUnitHierarchyTree(
   tree: TreeNode[],
   units: Array<Pick<Unit, 'id' | 'name'>>,
+  selectionValues: readonly string[] = [],
 ): UnitHierarchyIndex {
   const index: UnitHierarchyIndex = { children: new Map(), exact: new Map(), parents: [] };
+  const selectedValues = new Set(selectionValues);
   const visit = (node: TreeNode): string[] => {
     if (node.kind === 'leaf') return [getUnitIdFilterValue(node.unitId)];
     const descendants = node.children.flatMap(visit);
@@ -48,16 +50,39 @@ export function indexUnitHierarchyTree(
       .at(-1)
       ?.split(':')[0];
     if (Number(level) < 2) return descendants;
-    const value = directUnits.length === 1 ? directUnits[0] : `${UNIT_PARENT_PREFIX}${node.id}`;
+    const label = HIERARCHY_KEYS.slice(2)
+      .map((key) => node.hierarchy[key]?.trim())
+      .filter(Boolean)
+      .reverse()
+      .join(' ');
+    const matchingIds = node.children.flatMap((child) =>
+      child.kind === 'leaf' && child.label.trim() === label ? [child.unitId] : [],
+    );
+    const parentValue = `${UNIT_PARENT_PREFIX}${node.id}`;
+    const value =
+      directUnits.length === 1
+        ? directUnits[0]
+        : matchingIds.length > 0
+          ? getUnitIdFilterValue(Math.min(...matchingIds))
+          : parentValue;
+    index.children.set(parentValue, descendants);
+    index.exact.set(parentValue, directUnits);
     index.children.set(value, descendants);
     index.exact.set(value, directUnits);
-    if (node.children.some((child) => child.kind === 'group') || directUnits.length > 1) {
-      const label = HIERARCHY_KEYS.slice(2)
-        .map((key) => node.hierarchy[key]?.trim())
-        .filter(Boolean)
-        .reverse()
-        .join(' ');
-      index.parents.push({ value, label, descendants });
+    if (
+      node.children.some((child) => child.kind === 'group') ||
+      directUnits.length > 1 ||
+      selectedValues.has(parentValue) ||
+      directUnits.some((value) => selectedValues.has(value))
+    ) {
+      index.parents.push({
+        value,
+        label,
+        descendants,
+        aliases: [parentValue, ...matchingIds.map(getUnitIdFilterValue)].filter(
+          (alias) => alias !== value,
+        ),
+      });
     }
     return descendants;
   };
@@ -100,9 +125,15 @@ export function aggregateUnitParentOptions(
     (option.values ?? [option.value]).forEach((value) => counts.set(value, option.count));
   });
   const merged = new Map(options.map((option) => [option.value, option]));
-  hierarchy.parents.forEach(({ value, label, descendants }) => {
+  hierarchy.parents.forEach(({ value, label, descendants, aliases }) => {
     const count = descendants.reduce((total, child) => total + (counts.get(child) ?? 0), 0);
-    if (count > 0) merged.set(value, { value, label: merged.get(value)?.label ?? label, count });
+    if (count <= 0) return;
+    const parentLabel = merged.get(value)?.label ?? label;
+    aliases.forEach((alias) => merged.delete(alias));
+    hierarchy.exact.get(value)?.forEach((unitValue) => {
+      if (merged.get(unitValue)?.label.trim() === parentLabel.trim()) merged.delete(unitValue);
+    });
+    merged.set(value, { value, label: parentLabel, count });
   });
   return [...merged.values()].sort((a, b) => a.label.localeCompare(b.label));
 }

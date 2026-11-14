@@ -83,6 +83,26 @@ fn scope_tree(
     for value in selections {
         if let Some(selection) = resolve_selection(&tree, &value) {
             included_units.extend(&selection.exact_unit_ids);
+            let exact_unit_ids = selection
+                .exact_unit_ids
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            let groups = tree
+                .units
+                .iter()
+                .filter(|unit| exact_unit_ids.contains(&unit.id))
+                .filter_map(|unit| unit.group_index)
+                .collect::<BTreeSet<_>>();
+            included_units.extend(
+                tree.units
+                    .iter()
+                    .filter(|unit| {
+                        unit.group_index
+                            .is_some_and(|index| groups.contains(&index))
+                    })
+                    .map(|unit| unit.id),
+            );
             if let Some(id) = selection.unit_ids.first() {
                 included_units.insert(*id);
             }
