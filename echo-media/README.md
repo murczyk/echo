@@ -200,15 +200,13 @@ All call sites are wired. Across them:
 
 ### Sandbox opt-in
 
-The sandbox is off unless `config.toml` sets:
-
-```toml
-media_sandbox_enabled = true
-```
+The sandbox is off unless the admin system settings enable «Пісочниця для
+обробки медіа» (`system_settings.media_sandbox_enabled`).
 
 - The web process and the bgworker read it once at startup
   (`init_runtime_env` calls `media_sandbox::init`); changing it needs a
-  restart. Without it, jobs run in `SandboxMode::Disabled`.
+  restart. Until an admin chooses a value, jobs run in
+  `SandboxMode::Disabled` and startup logs a warning.
 - When enabled, jobs run in `SandboxMode::default()` (`Enforce` on Linux). A
   host without Landlock uses the mount namespace fallback when the service has
   `CAP_SYS_ADMIN` (and logs a warning once).
@@ -304,8 +302,9 @@ a pre-signed S3 URL:
    `/tmp`.
 3. Check the deployment: Landlock in `/sys/kernel/security/lsm` (or the mount
    namespace fallback working there), `CAP_SYS_ADMIN` for the services, and
-   root-owned `ffmpeg` and `ffprobe` on the service `PATH`. Then set
-   `media_sandbox_enabled = true`; the startup self-check confirms it works.
+   root-owned `ffmpeg` and `ffprobe` on the service `PATH`. Then enable
+   «Пісочниця для обробки медіа» in the admin system settings and restart;
+   the startup self-check confirms it works.
 4. Clean up `.echo-media-root-*` directories in the temp dir. They are empty,
    and are left only if the service dies while spawning a job.
 

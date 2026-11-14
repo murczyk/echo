@@ -222,6 +222,7 @@ fn map_system_settings_item(
             .signoz_metrics_enabled
             .unwrap_or(false),
         signoz_metrics_endpoint: settings.signoz_metrics_endpoint,
+        media_sandbox_enabled: settings.media_sandbox_enabled,
     })
 }
 
@@ -255,6 +256,17 @@ where
         .c(h!())?
         .and_then(|settings| settings.enable_duty_search)
         .unwrap_or(false))
+}
+
+/// `None` until an admin chooses; `media_sandbox::init` then warns.
+pub async fn media_sandbox_enabled<C>(dbx: &C) -> anyhow::Result<Option<bool>>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.media_sandbox_enabled))
 }
 
 pub async fn import_legacy_duty_search_config<C>(
@@ -876,6 +888,7 @@ fn system_settings_active_model(
         )),
         signoz_metrics_enabled: Set(req.signoz_metrics_enabled),
         signoz_metrics_endpoint: Set(req.signoz_metrics_endpoint.clone()),
+        media_sandbox_enabled: Set(req.media_sandbox_enabled),
     })
 }
 
@@ -960,6 +973,11 @@ async fn create_system_settings_for_login(
             })
             .unwrap_or(false),
     );
+    req.media_sandbox_enabled = req.media_sandbox_enabled.or_else(|| {
+        settings
+            .as_ref()
+            .and_then(|settings| settings.media_sandbox_enabled)
+    });
     req.duty_selected_groups_enabled = Some(
         req.duty_selected_groups_enabled
             .or_else(|| {
@@ -1041,6 +1059,11 @@ async fn activate_system_settings_for_login(
                 .and_then(|settings| settings.enable_duty_search)
                 .unwrap_or(false),
         ));
+    }
+    if target.media_sandbox_enabled.is_none() {
+        settings.media_sandbox_enabled = Set(active
+            .as_ref()
+            .and_then(|settings| settings.media_sandbox_enabled));
     }
     settings.deleted = Set(false);
     settings.updated_by_login_id = Set(Some(*login));
@@ -2580,6 +2603,7 @@ mod tests {
                 crate::config::MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT,
             signoz_metrics_enabled: None,
             signoz_metrics_endpoint: None,
+            media_sandbox_enabled: None,
         }
     }
 
@@ -2669,6 +2693,7 @@ mod tests {
             messenger_media_cache_min_free_gib: Set(None),
             signoz_metrics_enabled: Set(None),
             signoz_metrics_endpoint: Set(None),
+            media_sandbox_enabled: Set(None),
         }
         .insert(dbx)
         .await

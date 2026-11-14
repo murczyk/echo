@@ -14,9 +14,6 @@ signal_import_fiven_name = "Rer Importer"
 static_path = "../wdintel-web/public"
 executable_path = "/Users/kon/workspace/wildducks-intel/wdintel-rs/target/debug/wdintel-rs"
 fill_comp_freq_worker = false
-# Run ffmpeg/ffprobe in the echo-media sandbox; read once at startup, which
-# fails if the sandbox self-check fails. See echo-media/README.md.
-media_sandbox_enabled = false
 # api_integration_iggy_event_batch_size = 5000
 summary_table_callsign_threshold = 3
 #settlements_sources="kurska_oblast_rf, luhanska_oblast"

@@ -1,6 +1,7 @@
 //! Whether echo-media jobs run sandboxed, from `media_sandbox_enabled` in
-//! config.toml, read once at startup. Off unless enabled. Every wdintel-rs
-//! media job takes its `Ffmpeg` from [`ffmpeg`].
+//! the active system settings, read once at startup: changing it needs a
+//! restart. Off unless enabled. Every wdintel-rs media job takes its
+//! `Ffmpeg` from [`ffmpeg`].
 
 use crate::h;
 use crate::types::ShortContext;
@@ -24,8 +25,9 @@ fn mode_for(enabled: bool) -> SandboxMode {
 }
 
 /// Sets the mode for the life of the process; later calls are ignored.
-/// `configured` is `media_sandbox_enabled`; absent keeps the sandbox off and
-/// warns, so existing deployments notice they decode media unisolated.
+/// `configured` is the system setting `media_sandbox_enabled`; never chosen
+/// keeps the sandbox off and warns, so existing deployments notice they
+/// decode media unisolated.
 /// With the sandbox enabled, a failed self-check stops startup: otherwise a
 /// broken sandbox would fail every media job, and device audio would reject
 /// each upload as invalid.
@@ -36,9 +38,10 @@ pub async fn init(configured: Option<bool>) -> anyhow::Result<()> {
     }
     match configured {
         None => log::warn!(
-            "media_sandbox_enabled is not set: echo-media sandbox is disabled, \
-             ffmpeg and ffprobe decode media without isolation; set \
-             media_sandbox_enabled = true in config.toml to enable it"
+            "media_sandbox_enabled is not set in system settings: echo-media \
+             sandbox is disabled, ffmpeg and ffprobe decode media without \
+             isolation; enable «Пісочниця для обробки медіа» in admin system \
+             settings and restart to apply it"
         ),
         Some(enabled) => {
             log::info!("echo-media sandbox enabled: {enabled}")

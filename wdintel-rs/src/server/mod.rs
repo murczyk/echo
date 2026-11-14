@@ -485,9 +485,13 @@ async fn init_runtime_env(
     crate::migration::run_migration_1(mode).await.c(h!())?;
     crate::use_pg_runtime_pool(role);
     let env = new_env(mode).await.c(h!())?;
-    crate::media_sandbox::init(env.config.media_sandbox_enabled)
-        .await
-        .c(h!())?;
+    crate::media_sandbox::init(
+        crate::system_settings::media_sandbox_enabled(&env.dbx)
+            .await
+            .c(h!())?,
+    )
+    .await
+    .c(h!())?;
     if let Some(file_registry_db) = &env.file_registry_db {
         crate::devices::analytics::initialize_definition(
             file_registry_db.connection(),

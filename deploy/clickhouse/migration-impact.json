@@ -9,6 +9,11 @@
         }
       ]
     },
+    "echo:m20261114_065246_media_sandbox_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261112_141106_attachment_order": {
       "changes": [
         { "table": "public.signal_message_media", "strategy": "cdc_additive" },
