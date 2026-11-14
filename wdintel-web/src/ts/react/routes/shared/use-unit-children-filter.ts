@@ -70,7 +70,10 @@ function loadHierarchyCatalog(
         throw new DOMException('Unit catalog changed', 'AbortError');
       }
       let catalog = previous;
-      if (response || empty) {
+      // An empty scope always yields the same empty catalog. Keep the previous
+      // one so reconciliation that changes nothing keeps the hierarchy's
+      // identity; dependants reload their unit data when it changes (#4202).
+      if (response || (empty && !catalog)) {
         const tree = response ? readUnitHierarchyTree(response) : [];
         const hierarchy = indexUnitHierarchyTree(tree, response?.units ?? []);
         for (const selection of response?.selections ?? []) {

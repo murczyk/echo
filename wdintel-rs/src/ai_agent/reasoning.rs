@@ -175,6 +175,12 @@ pub fn resolve(
                 }),
                 Some(lowest),
             )
+        } else if name == config::AI_AGENT_GLM_FLASH {
+            // Research keeps Flash's default thinking. Synthesis and checkpoints
+            // run at GLM-5.3's lowest effort: by default, Flash's hidden
+            // reasoning used the whole output allowance of a third of them
+            // (incident 01a1d9d0).
+            (ProviderApi::OpenaiCompletions, None, Some("low"))
         } else {
             let effort = if name == config::AI_AGENT_GLM_5_3 {
                 Some("max")

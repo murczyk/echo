@@ -152,6 +152,34 @@ describe('scoped hierarchy regression #3571', () => {
     expect(catalogs.get('selected')?.loading).toBe(false);
   });
 
+  it('#4202 keeps hierarchy identity on catalog reconciliation that changes nothing', async () => {
+    // The server's catalog revision changes every five minutes even when no
+    // unit changed. A new hierarchy object made every open Analysis tab reload
+    // its unit statistics at the same moment.
+    vi.mocked(getUnitHierarchy).mockResolvedValueOnce(response('stable')).mockResolvedValue(null);
+    await act(async () =>
+      root.render([
+        createElement(Harness, { id: 'empty', key: 'empty', unitIds: [] }),
+        createElement(Harness, { id: 'scoped', key: 'scoped' }),
+      ]),
+    );
+    const empty = catalogs.get('empty')?.hierarchy;
+    const scoped = catalogs.get('scoped')?.hierarchy;
+    expect(empty).toBeTruthy();
+    expect(scoped).toBeTruthy();
+
+    await act(async () => invalidateUnitCatalog({ refreshMessages: false }));
+
+    expect(getUnitHierarchy).toHaveBeenCalledTimes(2);
+    expect(getUnitHierarchy).toHaveBeenLastCalledWith('stable', {
+      unitIds: [1],
+      selectionValues: [],
+    });
+    expect(catalogs.get('scoped')?.hierarchy).toBe(scoped);
+    expect(catalogs.get('empty')?.hierarchy).toBe(empty);
+    expect(catalogs.get('empty')?.loading).toBe(false);
+  });
+
   it('skips empty scopes and uses server-resolved descendants outside downloaded paths', async () => {
     await act(async () => root.render(createElement(Harness, { id: 'first', unitIds: [] })));
     expect(getUnitHierarchy).not.toHaveBeenCalled();
