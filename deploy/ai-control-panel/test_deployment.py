@@ -118,6 +118,24 @@ class Routing(DeploymentFixture):
         self.assertEqual([entry[:2] for entry in self.actions], [(UA, 'inventory')])
         self.assertEqual(data['hosts'][1]['eligibility'][NEW], 'Ready')
 
+    def test_operator_agent_hosts_come_from_environment(self):
+        script = ('import json, control\n'
+                  'row = {"dispatcher": {"host": " Echo-AI-Agent-VM.Example.ts.net "}}\n'
+                  'print(json.dumps([control.resolve_agent_host(row), sorted(control.AGENT_CONNECTIONS)]))')
+        def run(value):
+            return subprocess.run(['python3', '-c', script], cwd=Path(__file__).parent, capture_output=True, text=True,
+                                  env={**os.environ, 'ECHO_AI_AGENT_HOSTS': value})
+        result = run('echo-ai-agent-vm.example.ts.net, other.example.ts.net')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        connection, hostnames = json.loads(result.stdout)
+        self.assertEqual(connection, 'echo@echo-ai-agent-vm.example.ts.net')
+        self.assertIn(control.AGENT_HOSTNAME, hostnames)
+        self.assertIn('other.example.ts.net', hostnames)
+        for value in ('echo@vm.example.ts.net', 'vm.example.ts.net:22', 'localhost'):
+            result = run(value)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('ECHO_AI_AGENT_HOSTS', result.stderr)
+
     def test_single_vm_json_keeps_existing_shared_and_release_fields(self):
         self.rows.pop('echo-kharkiv2')
         data = self.scan()
