@@ -233,12 +233,23 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     [unitsCatalogKey],
   );
   const unitCounts = useDutyUnitOptions(panel);
+  const unitParentValues = useMemo(
+    () =>
+      new Map(
+        sources.unitHierarchy?.parents.flatMap((parent) =>
+          parent.aliases.map((alias) => [alias, parent.value] as const),
+        ),
+      ),
+    [sources.unitHierarchy],
+  );
+  const unitParentValue = (value: string) => unitParentValues.get(value) ?? value;
   const visibleUnitOptions = unitCounts.options.map((option) => option.value);
   const unitCountsByValue = new Map(unitCounts.options.map((option) => [option.value, option]));
   const unitLabel = (value: string) =>
-    unitCountsByValue.get(value)?.label ??
+    unitCountsByValue.get(unitParentValue(value))?.label ??
     unitLabelsById.get(value) ??
-    sources.unitHierarchy?.parents.find((parent) => parent.value === value)?.label ??
+    sources.unitHierarchy?.parents.find((parent) => parent.value === unitParentValue(value))
+      ?.label ??
     value;
   const unitBulkPasteOptions = useMemo(
     () => [...new Set([...unitOptions, ...persistentUnitFilterValues])],
@@ -361,10 +372,11 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       options: visibleUnitOptions,
       bulkPasteOptions: unitBulkPasteOptions,
       getOptionLabel: (value: string) =>
-        unitCountsByValue.has(value)
-          ? `${unitLabel(value)} (${unitCountsByValue.get(value)!.count})`
+        unitCountsByValue.has(unitParentValue(value))
+          ? `${unitLabel(value)} (${unitCountsByValue.get(unitParentValue(value))!.count})`
           : unitLabel(value),
       getOptionKey: (value: string) => value,
+      isOptionEqualToValue: (option, value) => unitParentValue(option) === unitParentValue(value),
       rankedSearch: true,
       keepOpenAndPreserveInputOnSelect: true,
       showExactMatchControl: unitSelectionState.localValue.some(

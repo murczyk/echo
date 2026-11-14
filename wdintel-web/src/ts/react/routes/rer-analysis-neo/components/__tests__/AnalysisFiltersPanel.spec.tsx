@@ -957,6 +957,81 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).toContain('155');
   });
 
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+    ['unit-id:31', false],
+    ['unit-id:31', true],
+    ['unit-parent:group:2:22 А', false],
+    ['unit-parent:group:2:22 А', true],
+  ])(
+    '#3527 shows the normalized unit total after duplicate catalog rows collapse (selected: %s, local: %s)',
+    async (selected, local) => {
+      const unitsSelected = selected
+        ? [typeof selected === 'string' ? selected : 'unit-id:30']
+        : [];
+      const template = buildUnitFilterOptions([])[0];
+      const units = ['22 А', '22 А', '72 мсд 22 А', 'Army headquarters'].map((name, index) => ({
+        ...template,
+        id: index + 30,
+        name,
+        army: '22 А',
+        division: index === 2 ? '72 мсд' : '',
+      }));
+      const view = await renderComponent(
+        buildProps({
+          counts: { unitsCount: 4 },
+          options: {
+            ...buildOptions(),
+            units: local
+              ? units.map((unit, index) => ({
+                  value: `unit-id:${unit.id}`,
+                  label: unit.name,
+                  count: [2, 3, 5, 7][index],
+                }))
+              : [
+                  { value: 'unit-id:30', label: '22 А', count: 17 },
+                  { value: 'unit-id:32', label: '72 мсд 22 А', count: 5 },
+                  { value: 'unit-id:33', label: 'Army headquarters', count: 7 },
+                ],
+            unitParentCount: local ? undefined : -1,
+          },
+          queryState: {
+            ...emptyQueryState(),
+            unitsSelected,
+            unitHierarchy: buildUnitHierarchyIndex(units),
+          },
+        }),
+      );
+      rendered.push(view);
+      await vi.waitFor(() =>
+        expect(view.container.textContent).toContain(`Підрозділи${selected ? '1 з 3' : '3'}`),
+      );
+      if (typeof selected === 'string') {
+        const field = analysisFilterFieldSpy.mock.calls
+          .map(
+            ([props]) =>
+              props as {
+                label: string;
+                value: string[];
+                options: Array<{ value: string; label: string; values?: string[] }>;
+                preserveSelectedOptionValuesOnChange?: boolean;
+              },
+          )
+          .filter((props) => props.label === 'Підрозділи')
+          .at(-1)!;
+        expect(field.value).toEqual(unitsSelected);
+        expect(field.options.find((option) => option.value === 'unit-id:30')).toMatchObject({
+          label: '22 А',
+          values: ['unit-id:30', selected],
+        });
+        expect(field.preserveSelectedOptionValuesOnChange).toBe(true);
+      }
+    },
+  );
+
   it.each([false, true])(
     '#3527 counts parent unit options in the section total (selected parent: %s)',
     async (selectParent) => {
