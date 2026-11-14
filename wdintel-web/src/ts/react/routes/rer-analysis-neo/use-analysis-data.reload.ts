@@ -548,10 +548,8 @@ export async function loadFilterSectionData(
       context.setOptions((current) => ({
         ...current,
         units: unitsRsp.options,
-        unitParentCount: Math.max(
-          0,
+        unitParentCount:
           unitsRsp.options.length - unitsRsp.units.filter((unit) => unit.count > 0).length,
-        ),
       }));
       return;
     }

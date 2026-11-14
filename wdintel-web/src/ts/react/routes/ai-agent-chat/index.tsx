@@ -90,7 +90,6 @@ import {
 import { ModelFallbackActions } from './ModelFallback';
 import {
   conversationTurns,
-  healthyReplacement,
   modelFailureNote,
   modelFallback,
   nextProvider,
@@ -1010,8 +1009,6 @@ export function AiAgentChat({
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiAgentMessage[]>([]);
   const [providerId, setProviderId] = useState('');
-  // An admin marked this engine unhealthy, so a healthy one was preselected (#4112).
-  const [replacedProviderId, setReplacedProviderId] = useState<string | null>(null);
   const [reasoningPreset, setReasoningPreset] =
     useState<AiAgentReasoningPreset>(rememberedReasoningPreset);
   const [draft, setDraft] = useState('');
@@ -1054,8 +1051,6 @@ export function AiAgentChat({
   const configurationRef = useRef<AiAgentConfiguration | null>(null);
   const providerIdRef = useRef('');
   providerIdRef.current = providerId;
-  const replacedProviderIdRef = useRef<string | null>(null);
-  replacedProviderIdRef.current = replacedProviderId;
   // The user picked the engine in this view, so health changes must not replace it.
   const explicitProviderRef = useRef(false);
   const readyRef = useRef(false);
@@ -1141,23 +1136,19 @@ export function AiAgentChat({
   }
 
   /**
-   * Selects `candidateId`, the default when the chat no longer offers it, or a healthy
-   * engine when an admin marked the choice unhealthy.
+   * Selects `candidateId`, or the default when the chat no longer offers it. An unhealthy
+   * engine stays selected; the health notice offers a healthy one instead.
    */
   function chooseProvider(candidateId: string) {
     const offered = configurationRef.current?.providers.some(
       (provider) => provider.id === candidateId,
     );
     const choice = offered ? candidateId : defaultProviderIdRef.current;
-    if (!choice) return;
-    const replacement = healthyReplacement(configurationRef.current, choice);
-    setProviderId(replacement?.id ?? choice);
-    setReplacedProviderId(replacement ? choice : null);
+    if (choice) setProviderId(choice);
   }
 
   function selectProviderExplicitly(id: string) {
     explicitProviderRef.current = true;
-    setReplacedProviderId(null);
     setProviderId(id);
   }
 
@@ -1179,7 +1170,7 @@ export function AiAgentChat({
       );
       if (!selectedOffered) explicitProviderRef.current = false;
       if (!explicitProviderRef.current) {
-        chooseProvider(replacedProviderIdRef.current ?? providerIdRef.current);
+        chooseProvider(providerIdRef.current);
       }
     } catch (_) {
       // The last configuration stays; the next focus or finished request retries.
@@ -1849,20 +1840,11 @@ export function AiAgentChat({
   };
   const providerName = (id: string | null | undefined) =>
     providers.find((provider) => provider.id === id)?.name ?? null;
-  const replacedProvider = providers.find((provider) => provider.id === replacedProviderId);
-  const healthAlternative =
-    selectedProvider?.unhealthy && !replacedProvider
-      ? nextProvider(providers, selectedProvider.id)
-      : null;
-  const healthNotice = replacedProvider?.unhealthy ? (
-    <ProviderHealthNotice
-      message={`${replacedProvider.name} тимчасово недоступний${
-        replacedProvider.healthMessage ? `: ${replacedProvider.healthMessage}` : ''
-      }. Вибрано ${selectedProvider?.name ?? ''}.`}
-      actionLabel={`Все одно використати ${replacedProvider.name}`}
-      onAction={() => selectProviderExplicitly(replacedProvider.id)}
-    />
-  ) : selectedProvider?.unhealthy ? (
+  // Only the selected engine is warned about: switching to a healthy one clears it.
+  const healthAlternative = selectedProvider?.unhealthy
+    ? nextProvider(providers, selectedProvider.id)
+    : null;
+  const healthNotice = selectedProvider?.unhealthy ? (
     <ProviderHealthNotice
       message={`${selectedProvider.name}: ${
         selectedProvider.healthMessage || PROVIDER_UNHEALTHY_DEFAULT

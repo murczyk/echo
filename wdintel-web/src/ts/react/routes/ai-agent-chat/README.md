@@ -26,11 +26,11 @@ remembered one. The provider can be changed at any turn; each answer's caption
 names the engine that wrote it (#4112).
 
 The provider list follows the order set on the admin cards. An engine an admin
-marked unhealthy shows in the warning colour with the admin's message. When the
-remembered, default or conversation engine is unhealthy, the composer selects the
-next healthy engine in that order and a warning above it offers to switch back; an
-unhealthy engine the user picked deliberately keeps its warning and offers the next
-healthy one. The configuration is fetched again on window focus and after each
+marked unhealthy shows in the warning colour with the admin's message. The composer
+keeps the remembered, default or conversation engine even when it is unhealthy; while
+the selected engine is unhealthy, a warning above the composer offers the next healthy
+one in that order, and switching to a healthy engine removes the warning. The
+configuration is fetched again on window focus and after each
 request, so a change during the session shows up without a reload. See
 [reasoning presets](../../../../../../docs/ai/reasoning-presets.md) for the
 remembered depth.

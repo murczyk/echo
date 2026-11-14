@@ -8,6 +8,7 @@ import type { UnitHierarchyRsp } from '../../../../../Bindings';
 import { getUnitHierarchy } from '../../../services/api/units';
 import { invalidateUnitCatalog } from '../../../services/unit-catalog-events';
 import { buildAnalysisReq, emptyQueryState } from '../../rer-analysis-neo/helpers';
+import { aggregateUnitParentOptions } from '../unit-children-filter';
 import {
   loadUnitHierarchyForSelections,
   useUnitHierarchyCatalog,
@@ -202,4 +203,50 @@ describe('scoped hierarchy regression #3571', () => {
     expect(req?.selectedUnitIds).toEqual([1, 2, 3]);
     expect(catalogs.get('selected')?.tree).toHaveLength(1);
   });
+
+  it.each([
+    ['unit-parent:group:2:22 А', [30, 31]],
+    ['unit-id:31', [30, 31]],
+    ['unit-parent:group:2:22 А', [30]],
+  ] as const)(
+    '#3527 reconciles restored parent %s without duplicating local facet counts',
+    async (selection, directIds) => {
+      vi.mocked(getUnitHierarchy).mockResolvedValue({
+        revision: 'normalized',
+        groups: [{ id: 'group:2:22 А', label: '22 А', level: 2, parentIndex: null }],
+        units: directIds.map((id) => ({ id, name: '22 А', groupIndex: 0 })),
+        selections: [
+          {
+            value: selection,
+            label: '22 А',
+            unitIds: [...directIds, 32],
+            exactUnitIds: selection.startsWith('unit-parent:') ? [...directIds] : [31],
+          },
+        ],
+      });
+      const hierarchy = await loadUnitHierarchyForSelections([selection]);
+      const options = aggregateUnitParentOptions(
+        [
+          ...directIds.map((id) => ({ value: `unit-id:${id}`, label: '22 А', count: id - 28 })),
+          { value: 'unit-id:32', label: 'Child', count: 5 },
+        ],
+        hierarchy,
+      );
+
+      expect(options.filter((option) => option.label === '22 А')).toEqual([
+        { value: 'unit-id:30', label: '22 А', count: directIds.length === 1 ? 7 : 10 },
+      ]);
+      for (const value of [selection, 'unit-id:30']) {
+        expect(
+          buildAnalysisReq({
+            ...emptyQueryState(),
+            fromDateTimeStr: '2026-11-01T00:00',
+            toDateTimeStr: '2026-11-02T00:00',
+            unitsSelected: [value],
+            unitHierarchy: hierarchy,
+          })?.selectedUnitIds,
+        ).toEqual([...directIds, 32]);
+      }
+    },
+  );
 });

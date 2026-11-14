@@ -7,9 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedFilterPanelProps } from '.././FeedFilterPanel';
 import type { SignalGroupEntry } from '../../../../../Bindings';
+import { buildUnitFilterOptions } from '../../../utils/unit-search';
+import { buildUnitHierarchyIndex } from '../../shared/unit-children-filter';
 
 const selectionSpy = vi.hoisted(() => vi.fn());
 const radioFeatures = vi.hoisted(() => ({ allowed: true }));
+const unitOptions = vi.hoisted(() => ({
+  options: [] as Array<{ value: string; label: string; count: number }>,
+}));
+
+vi.mock('../useDutyUnitOptions', () => ({ useDutyUnitOptions: () => unitOptions }));
 
 vi.mock('../../shared/RadioFeatures', () => ({ useRadioFeatures: () => radioFeatures.allowed }));
 
@@ -112,6 +119,7 @@ describe('FeedFilterPanel', () => {
   beforeEach(() => {
     selectionSpy.mockClear();
     radioFeatures.allowed = true;
+    unitOptions.options = [];
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -158,6 +166,38 @@ describe('FeedFilterPanel', () => {
       selectionProps.find((value) => value.title === 'Підрозділи')?.bulkPasteSeparators,
     ).toEqual(['\n']);
   });
+
+  it.each(['unit-id:31', 'unit-parent:group:2:22 А'])(
+    '#3527 recognizes restored unit parent %s without rewriting its selection',
+    async (selection) => {
+      const template = buildUnitFilterOptions([])[0];
+      const unitsList = [30, 31].map((id) => ({ ...template, id, name: '22 А', army: '22 А' }));
+      unitOptions.options = [{ value: 'unit-id:30', label: '22 А', count: 10 }];
+      const props = buildProps();
+      props.panel.filterState.unitsSelected = [selection];
+      props.panel.sources.unitsList = unitsList;
+      props.panel.sources.unitHierarchy = buildUnitHierarchyIndex(unitsList);
+      await act(async () => root.render(<FeedFilterPanel {...props} />));
+      const field = selectionSpy.mock.calls
+        .map(
+          ([props]) =>
+            props as {
+              title: string;
+              value: string[];
+              options: string[];
+              getOptionLabel: (value: string) => string;
+              isOptionEqualToValue: (option: string, value: string) => boolean;
+            },
+        )
+        .findLast((props) => props.title === 'Підрозділи')!;
+
+      expect(field.value).toEqual([selection]);
+      expect(field.options).toEqual(['unit-id:30']);
+      expect(field.getOptionLabel(selection)).toBe('22 А (10)');
+      expect(field.isOptionEqualToValue('unit-id:30', selection)).toBe(true);
+      expect(field.isOptionEqualToValue('unit-id:32', selection)).toBe(false);
+    },
+  );
 
   it('discards the current filter from the filter panel', async () => {
     const onDiscardCurrentFilter = vi.fn();

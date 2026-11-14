@@ -1,13 +1,27 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { transformCamelToSnake } from '../../src/ts/snake-to-camel';
 import { buildUnitFilterOptions } from '../../src/ts/react/utils/unit-search';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
+test.beforeEach(async ({ page }) => {
+  const session = await page.context().newCDPSession(page);
+  await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+});
+
+async function installCatalogRevisionMock(page: Page, revision: () => string) {
+  await page.route('**/api/event-stream/long-poll', (route) =>
+    route.fulfill({
+      json: { events: [], last_event_id: null, unit_catalog_revision: revision() },
+    }),
+  );
+}
+
 for (const analysis of [false, true]) {
   test(`@regression #3527 ${analysis ? 'Analysis' : 'Duty'} uses backend parent counts and requests their children`, async ({
     page,
   }) => {
+    test.setTimeout(60_000);
     await page.setViewportSize({ width: 1500, height: 1000 });
     if (analysis) await installAnalysisNeoApiMocks(page);
     else await installRerDutyShortStateMocks(page, { latestFrequencies: ['123.4'] });
@@ -28,7 +42,8 @@ for (const analysis of [false, true]) {
     });
     let catalogRequests = 0;
     let catalogRecovered = false;
-    let catalogRevision = '3527';
+    let catalogRevision = '0:3527';
+    await installCatalogRevisionMock(page, () => catalogRevision);
     await page.route('**/api/sigint/units', async (route) => {
       await route.fulfill({
         json: transformCamelToSnake({
@@ -130,16 +145,8 @@ for (const analysis of [false, true]) {
     await expect(
       page.getByRole('progressbar', { name: 'Завантаження ієрархії підрозділів' }),
     ).toHaveCount(0);
-    await expect.poll(() => catalogRequests).toBeGreaterThan(0);
+    expect(catalogRequests).toBe(0);
     if (!analysis) await expect.poll(() => countRequests).toBeGreaterThan(0);
-    const initialCatalogRequests = catalogRequests;
-    releaseCatalog();
-    await expect(page.getByText(/Не вдалося завантажити ієрархію підрозділів/)).toBeVisible();
-    await expect.poll(() => catalogRequests).toBeGreaterThan(initialCatalogRequests);
-    catalogRecovered = true;
-    const catalogBeforeFocus = catalogRequests;
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect.poll(() => catalogRequests).toBe(catalogBeforeFocus + 1);
     if (analysis) {
       await expect(page.getByRole('button', { name: /^Підрозділи/ })).toHaveText('Підрозділи4');
       await expect(page.getByRole('combobox', { name: 'Підрозділи', exact: true })).toHaveCount(0);
@@ -162,6 +169,13 @@ for (const analysis of [false, true]) {
     await parent.click();
     await combo.press('Escape');
     await combo.blur();
+    await expect.poll(() => catalogRequests).toBeGreaterThan(0);
+    releaseCatalog();
+    await expect(page.getByText(/Не вдалося завантажити ієрархію підрозділів/)).toBeVisible();
+    const failedCatalogRequests = catalogRequests;
+    catalogRecovered = true;
+    catalogRevision = '1:3527';
+    await expect.poll(() => catalogRequests).toBeGreaterThan(failedCatalogRequests);
     await expect
       .poll(() => inboxRequests.at(-1)?.selected_unit_ids?.slice().sort())
       .toEqual([21, 22]);
@@ -214,9 +228,8 @@ for (const analysis of [false, true]) {
       });
     }
     const countBeforeReconciliation = countRequests;
-    catalogRevision = '3527-reconciled';
+    catalogRevision = '2:3527';
     countOffset = 2;
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect.poll(() => countRequests).toBeGreaterThan(countBeforeReconciliation);
     if (analysis) {
       await combo.click();
@@ -271,7 +284,8 @@ test('@regression #3527 Callsigns uses the cached tree for counts, group filters
     callsignRequests.push(route.request().postDataJSON());
     await route.fulfill({ json: { callsigns: [], show_load_more: false } });
   });
-  let hierarchyRevision = 'callsigns-3527';
+  let hierarchyRevision = '1:callsigns-3527';
+  await installCatalogRevisionMock(page, () => hierarchyRevision);
   let armyLabel = '6 А';
   const hierarchyRequests: Array<string | null> = [];
   await page.route('**/api/sigint/units/hierarchy', async (route) => {
@@ -323,8 +337,9 @@ test('@regression #3527 Callsigns uses the cached tree for counts, group filters
       filter_unit_army: '6 А',
       filter_unit_brigade: '27 омсбр',
     });
+  const requestsBeforeFocus = hierarchyRequests.length;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect.poll(() => hierarchyRequests.at(-1)).toBe('callsigns-3527');
+  expect(hierarchyRequests).toHaveLength(requestsBeforeFocus);
   const search = page.getByRole('textbox', { name: 'Пошук підрозділу у дереві статистики' });
   await search.fill('6 А');
   await expect(
@@ -335,9 +350,8 @@ test('@regression #3527 Callsigns uses the cached tree for counts, group filters
     page.getByRole('button', { name: 'Фільтрувати за гілкою 6 А, позивних 3', exact: true }),
   ).toBeVisible();
   await search.fill('');
-  hierarchyRevision = 'callsigns-3527-updated';
+  hierarchyRevision = '2:callsigns-3527';
   armyLabel = '7 А';
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(
     page.getByRole('button', { name: 'Фільтрувати за гілкою 7 А, позивних 5', exact: true }),
   ).toBeVisible();
