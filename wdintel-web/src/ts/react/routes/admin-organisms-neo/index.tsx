@@ -1,3 +1,4 @@
+import { useOrganismManagement } from './management-context';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -80,6 +81,7 @@ type OrganismLookup = {
 
 const ROLE_OPTIONS = [
   'Admin',
+  'OrganismAdmin',
   'ApiAgent',
   'Rer',
   'Bpla',
@@ -402,6 +404,7 @@ function RowActions(props: {
   onEdit: (organism: Organism) => void;
   onDelete: (organism: Organism) => void;
 }) {
+  const { globalAdmin } = useOrganismManagement();
   return (
     <MrtRowActions>
       <MrtRowActionButton
@@ -409,13 +412,15 @@ function RowActions(props: {
         onClick={() => props.onEdit(props.organism)}
         icon={<EditIcon fontSize="small" />}
       />
-      <MrtRowActionButton
-        label="Видалити"
-        onClick={() => props.onDelete(props.organism)}
-        icon={<DeleteIcon fontSize="small" />}
-        tone="danger"
-        opensModal
-      />
+      {globalAdmin ? (
+        <MrtRowActionButton
+          label="Видалити"
+          onClick={() => props.onDelete(props.organism)}
+          icon={<DeleteIcon fontSize="small" />}
+          tone="danger"
+          opensModal
+        />
+      ) : null}
     </MrtRowActions>
   );
 }
@@ -669,6 +674,7 @@ function DeleteOrganismDialog(props: {
 }
 
 function AdminOrganismsNeoPageBody() {
+  const { globalAdmin } = useOrganismManagement();
   const [organisms, setOrganisms] = useState<Organism[]>([]);
   const [organismsStatus, setOrganismsStatus] = useState<LoadingStatus>('idle');
   const [organismsError, setOrganismsError] = useState<string | null>(null);
@@ -836,9 +842,14 @@ function AdminOrganismsNeoPageBody() {
           internalActionsDisabled={organismsStatus !== 'success'}
           actions={
             <div className="flex gap-3">
-              <PowerButton variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-                Створити організм
-              </PowerButton>
+              {globalAdmin ? (
+                <PowerButton
+                  variant="contained"
+                  onClick={() => navigateWithinSpa(buildCreateHref())}
+                >
+                  Створити організм
+                </PowerButton>
+              ) : null}
             </div>
           }
         />

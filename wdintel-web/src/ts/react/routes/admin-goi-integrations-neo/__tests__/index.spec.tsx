@@ -29,6 +29,7 @@ vi.mock('../../../services/api/logins', () => ({
 }));
 
 import { AdminGoiIntegrationsNeoPage } from '../index';
+import { OrganismManagementContext } from '../../admin-organisms-neo/management-context';
 
 const integration = {
   id: 3,
@@ -59,7 +60,13 @@ async function renderPage() {
   document.body.appendChild(container);
   const root = createRoot(container);
   renderedRoot = root;
-  await act(async () => root.render(<AdminGoiIntegrationsNeoPage />));
+  await act(async () =>
+    root.render(
+      <OrganismManagementContext.Provider value={{ globalAdmin: true }}>
+        <AdminGoiIntegrationsNeoPage />
+      </OrganismManagementContext.Provider>,
+    ),
+  );
   await act(async () => Promise.resolve());
   await act(async () => Promise.resolve());
   return { container, root };

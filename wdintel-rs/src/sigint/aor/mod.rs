@@ -26,6 +26,7 @@ pub async fn aor_list(
         &login_id_from_identity(&user)?,
         vec![
             "Admin",
+            crate::config::ROLE_ORGANISM_ADMIN,
             "UnitsEditor",
             "Rer",
             ROLE_CYBER_VIEWER_RESTRICTED,

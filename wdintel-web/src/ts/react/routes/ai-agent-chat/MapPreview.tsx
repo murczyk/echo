@@ -59,6 +59,7 @@ export function MapPreview({
       type="button"
       className={inline ? 'ai-map-chip' : 'ai-map-preview'}
       aria-label={`Відкрити мапу: ${summary.title}`}
+      data-copy-text={summary.title}
       title={`${summary.title}: ${summary.validCount} з ${summary.totalCount} точок`}
       onClick={(event) => select?.(summary, event.currentTarget)}
     >

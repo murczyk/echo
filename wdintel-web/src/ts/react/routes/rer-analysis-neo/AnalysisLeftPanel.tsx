@@ -2,6 +2,7 @@ import { ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { useState } from 'react';
 
 import { GroupList, type GroupScope } from '../shared/group-navigation';
+import { StatisticsLink } from '../shared/group-navigation/StatisticsLink';
 import { MessengerAccountList } from './components/MessengerAccountList';
 import { MessengerSearchField } from './components/MessengerSearchField';
 import { LeftPanelTab, type AnalysisPageViewModel } from './types';
@@ -94,6 +95,7 @@ export function AnalysisLeftPanel({ page, leftPanelVisible, fullHeight = false }
           />
         )}
       </section>
+      <StatisticsLink />
     </aside>
   );
 }

@@ -528,6 +528,9 @@ mod m20261103_073829_important_notify_all_flag;
 mod m20261103_120000_ai_agent_documents;
 mod m20261104_064753_minimal_report_window;
 
+mod m20261112_115044_organism_user_labels;
+mod m20261113_095232_organism_message_stats_exclusion;
+
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
@@ -1263,8 +1266,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261109_104428_ai_network_match::Migration),
             Box::new(m20261110_100819_ai_network_match_job_generation::Migration),
             Box::new(m20261111_090000_message_replay_session::Migration),
+            Box::new(m20261112_115044_organism_user_labels::Migration),
             Box::new(m20261112_141106_attachment_order::Migration),
             Box::new(m20261113_093453_report_group_preferences::Migration),
+            Box::new(m20261113_095232_organism_message_stats_exclusion::Migration),
             Box::new(m20261113_114713_legacy_replay_marker_index::Migration),
         ]
     }

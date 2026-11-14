@@ -1038,6 +1038,15 @@ fn spawn_background_workers(
         .await;
     });
 
+    let harness_check_env = env.clone();
+    let harness_check_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_harness_check_worker", bg_set, async move {
+        crate::ai_agent::harness_check::run_nofail(
+            harness_check_env,
+            harness_check_cancellation,
+        )
+        .await;
+    });
     let ai_agent_upload_env = env.clone();
     let ai_agent_upload_cancellation = cancel_token.clone();
     spawn_named_worker("ai_agent_upload_worker", bg_set, async move {
@@ -1376,6 +1385,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::sender_stats)
             .service(crate::rer_importer::analysis::group_stats)
             .service(crate::rer_importer::analysis::activity_daily)
+            .service(crate::rer_importer::analysis::daily_messages::daily_messages)
+            .service(crate::rer_importer::analysis::daily_messages::daily_message_options)
+            .service(crate::rer_importer::analysis::daily_messages::daily_catalog)
+            .service(crate::rer_importer::analysis::daily_messages::daily_panels)
+            .service(crate::rer_importer::analysis::daily_messages::daily_facet_counts)
+            .service(crate::rer_importer::analysis::daily_messages::daily_senders)
             .service(crate::rer_importer::analysis::callsign_relations)
             .service(
                 crate::rer_importer::analysis::callsign_frequency_matches,
@@ -1663,6 +1678,11 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::users::update_login)
             .service(crate::users::keep_alive)
             .service(crate::users::mark_release_seen)
+            .service(crate::organism::labels::list)
+            .service(crate::organism::labels::upsert)
+            .service(crate::organism::labels::delete)
+            .service(crate::organism::labels::assign)
+            .service(crate::organism::message_statistics::set_exclusion)
             .service(crate::organism::list_organisms)
             .service(crate::organism::create_organism)
             .service(crate::organism::update_organism)

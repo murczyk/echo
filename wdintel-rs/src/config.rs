@@ -6,6 +6,10 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const ROLE_ORGANISM_ADMIN: &str = "OrganismAdmin";
+pub const USER_LABEL_UNASSIGNED_ID: i64 = -1;
+pub const USER_LABEL_NAME_MAX_CHARS: usize = 80;
+
 pub const DATASOURCE_ECHO_NATIVE_KIND: &str = "echo_native";
 pub const DATASOURCE_ECHO_NATIVE_GROUP_PREFIX: &str = "echo_native.";
 pub const DATASOURCE_NATIVE_VALIDATION_BATCH_SIZE: usize = 1000;
@@ -747,7 +751,12 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.13.1";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.13.2";
+/// How often the bgworker compares the namespace harness with
+/// `AI_AGENT_HARNESS_RELEASE` (#4186). The first check waits longer, because a
+/// deploy restarts the bgworker before it upgrades the harness.
+pub const AI_AGENT_HARNESS_CHECK_INTERVAL_SEC: u64 = 5 * 60;
+pub const AI_AGENT_HARNESS_CHECK_STARTUP_DELAY_SEC: u64 = 15 * 60;
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1197,6 +1206,13 @@ pub const IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT: bool = true;
 pub const DUTY_SELECTED_GROUPS_ENABLED_DEFAULT: bool = true;
 pub const ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT: u64 = 200;
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT: u64 = 50;
+pub const DAILY_MESSAGE_STATS_MAX_DAYS: i64 = 90;
+pub const DAILY_MESSAGE_STATS_FACET_CACHE_TTL_MS: u64 = 5_000;
+pub const DAILY_MESSAGE_STATS_FACET_CACHE_MAX_ENTRIES: usize = 128;
+pub const DAILY_MESSAGE_STATS_FACET_CACHE_MAX_BYTES: usize = 256 * 1024;
+pub const DAILY_MESSAGE_STATS_SERIES_PAGE_SIZE: i64 = 10;
+pub const DAILY_MESSAGE_STATS_OPTIONS_PAGE_SIZE: i64 = 50;
+
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_MAX: u64 = 100;
 pub const ANALYSIS_CALLSIGN_GRAPH_MAX_DAYS: i64 = 31;
 pub const ANALYSIS_CALLSIGN_GRAPH_MESSAGE_LIMIT: u64 = 100_000;

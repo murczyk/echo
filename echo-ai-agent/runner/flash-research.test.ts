@@ -1859,6 +1859,7 @@ async function researchWithProviderScript(
   const reads: unknown[] = [];
   const echoRequests: { path: string; body: unknown }[] = [];
   const synthesisBodies: string[] = [];
+  const researchBodies: string[] = [];
   let researchCalls = 0;
   const oldSignals = {
     SIGINT: process.listeners("SIGINT"),
@@ -1894,6 +1895,7 @@ async function researchWithProviderScript(
       synthesisBodies.push(init.body);
       return stream("Підсумок.");
     }
+    researchBodies.push(init.body);
     return script[researchCalls++]?.() ?? stream("");
   });
   try {
@@ -1933,11 +1935,40 @@ async function researchWithProviderScript(
   const metadata = events.find((event) => event.type === "completion_metadata");
   const reason = metadata?.reason;
   const answer = events.findLast((event) => event.type === "assistant_snapshot")?.text?.trim();
-  return { answer, echoRequests, events, metadata, reads, reason, researchCalls, synthesisBodies };
+  return { answer, echoRequests, events, metadata, reads, reason, researchBodies, researchCalls, synthesisBodies };
 }
 
 const readArchive = () =>
   stream("", { name: "echo_inbox_messages", args: { period } });
+
+test("incident 01a1d594: an over-long inbox period gets the windows, and the error limit is no provider failure", async (t) => {
+  const inbox = (period: unknown) => ({ name: "echo_inbox_messages", args: { period, search: "фанат" } });
+  const twice = (period: unknown) => () => stream("", [inbox(period), inbox(period)]);
+  // Shapes that gave the incident's rejections, two parallel calls a turn, until the guard stopped research.
+  const { events, reads, reason, researchBodies } = await researchWithProviderScript(t, [
+    twice({ kind: "relative_days", days: 90 }),
+    twice({ kind: "sinceDate", sinceDate: "2026-08-16", end: "2026-09-12" }),
+    twice({ kind: "date_range", sinceDate: "2026-07-16", tillDateInclusive: "2026-09-12" }),
+  ], policy, { timeContext: { timeZone: "Europe/Kyiv", requestStartedAtUtc: "2026-11-13T15:47:38Z" } });
+  assert.equal(reads.length, 0);
+  const diagnostics = events.filter((event) => event.type === "tool_diagnostic");
+  assert.deepEqual(diagnostics.map((event) => event.fields), [
+    "period:size", "period:size", "period.end:additional", "period.end:additional", "period:size", "period:size",
+  ]);
+  // The model read the exact windows after its first attempt, not a schema dump of every period shape.
+  const toolResults = (body: string) =>
+    JSON.parse(body).messages.filter((message: any) => message.role === "tool").map((message: any) =>
+      typeof message.content === "string" ? message.content : JSON.stringify(message.content));
+  const afterFirst = toolResults(researchBodies[1]).join("\n");
+  assert.match(afterFirst, /this period covers 90/);
+  // The windows the user saw it read (14.10–13.11, 13.09–13.10), then the rest of the 90 days.
+  for (const [since, till] of [["2026-10-14", "2026-11-13"], ["2026-09-13", "2026-10-13"], ["2026-08-16", "2026-09-12"]])
+    assert.ok(afterFirst.includes(`{"kind":"date_range","sinceDate":"${since}","tillDateInclusive":"${till}"}`), afterFirst);
+  assert.doesNotMatch(afterFirst, /must have required property/);
+  assert.ok(events.some((event) => event.type === "completion_diagnostic" && event.stage === "research" && event.outcome === "tool_error"));
+  // Echo's chat offers another model only for provider_error.
+  assert.equal(reason, "tool_limit");
+});
 
 test("incident 01a1b210: a model failure before any tool gets one more attempt", async (t) => {
   const { answer, events, reads, reason, researchCalls } =

@@ -43,6 +43,7 @@ import type {
   AiAgentFileCitation,
 } from '../../../../Bindings';
 import { CitationMarkdown } from './CitationMarkdown';
+import { AnswerCopyMenu } from './CopyControls';
 import { MapEditContext } from './MapEditContext';
 import { MapPreview } from './MapPreview';
 import {
@@ -540,7 +541,8 @@ export function MarkdownContent({
           fontFamily: 'monospace',
           fontSize: '0.875em',
         },
-        '& pre': { overflowX: 'auto', p: 1.5, bgcolor: 'action.hover', borderRadius: 1 },
+        '& .ai-code-block': { my: 1, bgcolor: 'action.hover', borderRadius: 1 },
+        '& pre': { overflowX: 'auto', m: 0, p: 1.5, pt: 0 },
         '& pre code': { p: 0, bgcolor: 'transparent' },
         '& table': { width: '100%', borderCollapse: 'collapse', my: 1.5 },
         '& th, & td': { border: 1, borderColor: 'divider', px: 1, py: 0.75, textAlign: 'left' },
@@ -566,6 +568,7 @@ function AssistantMessage({
   fileCitations = [],
   maps = [],
   documents = [],
+  copyable = true,
 }: {
   content: string;
   engineName?: string | null;
@@ -573,7 +576,10 @@ function AssistantMessage({
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
   documents?: AiAgentDocumentArtifact[];
+  /** Offer the copy menu; off while the answer is still streaming. */
+  copyable?: boolean;
 }) {
+  const contentRef = useRef<HTMLDivElement>(null);
   const unreferencedDocuments = documents.filter(
     (document) => !content.includes(`](${documentHref(document.documentId)})`),
   );
@@ -582,47 +588,56 @@ function AssistantMessage({
     (summary) => summary.id !== mainMap?.id && !content.includes(`](echo-map:${summary.id})`),
   );
   return (
-    <Box
-      sx={{
-        alignSelf: 'flex-start',
-        width: '100%',
-        maxWidth: '100%',
-        bgcolor: 'background.paper',
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 1,
-        px: 2,
-        py: 1.5,
-      }}
-    >
-      <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-        ЕХО Агент
-        {engineName ? ` · ${engineName}` : ''}
-      </Typography>
-      <MarkdownContent
-        citations={citations}
-        fileCitations={fileCitations}
-        maps={maps}
-        documents={documents}
+    <div className="flex w-full flex-col items-start">
+      <Box
+        sx={{
+          alignSelf: 'flex-start',
+          width: '100%',
+          maxWidth: '100%',
+          bgcolor: 'background.paper',
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1,
+          px: 2,
+          py: 1.5,
+        }}
       >
-        {content}
-      </MarkdownContent>
-      {unreferencedDocuments.length ? (
-        <p className="flex flex-wrap gap-echo-xs">
-          {unreferencedDocuments.map((document) => (
-            <DocumentChip key={document.documentId} document={document} />
-          ))}
-        </p>
+        <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
+          ЕХО Агент
+          {engineName ? ` · ${engineName}` : ''}
+        </Typography>
+        <div ref={contentRef}>
+          <MarkdownContent
+            citations={citations}
+            fileCitations={fileCitations}
+            maps={maps}
+            documents={documents}
+          >
+            {content}
+          </MarkdownContent>
+        </div>
+        {unreferencedDocuments.length ? (
+          <p className="flex flex-wrap gap-echo-xs">
+            {unreferencedDocuments.map((document) => (
+              <DocumentChip key={document.documentId} document={document} />
+            ))}
+          </p>
+        ) : null}
+        {unreferencedMaps.length ? (
+          <p className="flex flex-wrap gap-echo-xs">
+            {unreferencedMaps.map((summary) => (
+              <MapPreview key={`${summary.requestId}:${summary.id}`} summary={summary} inline />
+            ))}
+          </p>
+        ) : null}
+        {mainMap ? (
+          <MapPreview key={`${mainMap.requestId}:${mainMap.id}`} summary={mainMap} />
+        ) : null}
+      </Box>
+      {copyable && content.trim() ? (
+        <AnswerCopyMenu markdown={content} contentRef={contentRef} />
       ) : null}
-      {unreferencedMaps.length ? (
-        <p className="flex flex-wrap gap-echo-xs">
-          {unreferencedMaps.map((summary) => (
-            <MapPreview key={`${summary.requestId}:${summary.id}`} summary={summary} inline />
-          ))}
-        </p>
-      ) : null}
-      {mainMap ? <MapPreview key={`${mainMap.requestId}:${mainMap.id}`} summary={mainMap} /> : null}
-    </Box>
+    </div>
   );
 }
 
@@ -820,6 +835,7 @@ function LiveResponse({
           fileCitations={request.fileCitations}
           maps={request.maps}
           documents={request.documents}
+          copyable={TERMINAL_STATES.has(request.state)}
         />
       ) : null}
       {continuation}

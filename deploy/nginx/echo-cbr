@@ -1,3 +1,6 @@
+# Response status only, counted in memory by echo-vector (deploy/signoz/vector.yaml).
+log_format echo_status '$status';
+
 server {
     server_name echo-cbr.raptor-tench.ts.net;
 
@@ -21,7 +24,7 @@ server {
 		image/x-icon
 		application/rss+xml
 		application/atom_xml;
-    access_log  off;
+    access_log syslog:server=127.0.0.1:5140,tag=nginx_access,nohostname echo_status;
 
     client_max_body_size 200M;
     proxy_read_timeout 600;

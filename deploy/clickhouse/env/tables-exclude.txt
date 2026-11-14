@@ -200,3 +200,8 @@ public.sigint_group_sender_organism
 
 # Training replay control state; replayed messages themselves are replicated.
 public.message_replay_session
+
+public.organism_user_label
+public.organism_user_label_assignment
+public.organism_user_label_revision
+public.organism_message_stats_exclusion

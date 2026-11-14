@@ -291,7 +291,7 @@ updateForUser shared user msg model =
 
         InboxMessagesUpdated (Err e) ->
             ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити повідомлення" e
+            , Utils.Api.ErrorHandling.formatErrorForShowTransientErrorWithDetails "Не вдалося оновити повідомлення" e
             )
 
         InboxMessagesUpdated (Ok rsp) ->

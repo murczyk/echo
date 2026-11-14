@@ -1289,6 +1289,135 @@ export type AnalysisStatsReq = {
   messageTimeBasis: MessageTimeBasis | null;
 };
 
+export type DailyMessageStatsGrouping =
+  | 'Groups'
+  | 'Senders'
+;
+
+export type DailyMessageSenderKey = {
+  sender: string | null;
+};
+
+export type DailyMessageStatsReq = {
+  userLabelId: number | null;
+  fromDate: string;
+  toDate: string;
+  grouping: DailyMessageStatsGrouping;
+  selectedGroups: Array<string> | null;
+  selectedSenders: Array<DailyMessageSenderKey> | null;
+  selectedUnitIds: Array<number> | null;
+  cursor: string | null;
+};
+
+export type DailyMessageStatsPoint = {
+  messages: number;
+  counterparts: number;
+};
+
+export type DailyMessageStatsSeries = {
+  key: string | null;
+  label: string;
+  points: Array<DailyMessageStatsPoint>;
+};
+
+export type DailyMessageStatsRsp = {
+  days: Array<string>;
+  series: Array<DailyMessageStatsSeries>;
+  totalSeries: number;
+  nextCursor: string | null;
+  generatedAtMs: number;
+};
+
+export type DailyMessageStatsOptionsReq = {
+  filter: DailyMessageStatsReq;
+  search: string | null;
+  includeChildren: boolean | null;
+};
+
+export type DailyMessageStatsOption = {
+  key: string | null;
+  label: string;
+  count: number;
+};
+
+export type DailyMessageStatsOptionsRsp = {
+  options: Array<DailyMessageStatsOption>;
+  nextCursor: string | null;
+  total: number;
+  unitOptions: Array<UnitStatsOption>;
+};
+
+export type DailyMessageStatsCatalogReq = {
+  knownHierarchyRevision: string | null;
+  selectedSenders: Array<DailyMessageSenderKey>;
+};
+
+export type DailyMessageStatsGroupLabel = {
+  key: string;
+  label: string;
+};
+
+export type DailyMessageStatsSenderLabel = {
+  key: string | null;
+  label: string;
+};
+
+export type DailyMessageStatsCatalogRsp = {
+  accessRevision: string;
+  groups: Array<DailyMessageStatsGroupLabel>;
+  unitHierarchy: UnitHierarchyRsp | null;
+  senderLabels: Array<DailyMessageStatsSenderLabel>;
+};
+
+export type DailyMessageStatsPanel = {
+  labelId: number;
+  name: string;
+  color: string;
+  organismName: string | null;
+};
+
+export type DailyMessageStatsPanelsRsp = {
+  panels: Array<DailyMessageStatsPanel>;
+  accessRevision: string;
+};
+
+export type DailyMessageStatsFacet =
+  | 'Groups'
+  | 'Units'
+;
+
+export type DailyMessageStatsFacetReq = {
+  facet: DailyMessageStatsFacet;
+  filter: DailyMessageStatsReq;
+  includeChildren: boolean;
+};
+
+export type DailyMessageStatsFacetCount = {
+  value: string;
+  count: number;
+};
+
+export type DailyMessageStatsFacetRsp = {
+  counts: Array<DailyMessageStatsFacetCount>;
+  accessRevision: string;
+  hierarchyRevision: string | null;
+  generatedAtMs: number;
+};
+
+export type DailyMessageStatsSendersReq = {
+  filter: DailyMessageStatsReq;
+  search: string | null;
+  cursor: string | null;
+};
+
+export type DailyMessageStatsSendersRsp = {
+  options: Array<DailyMessageStatsSenderLabel>;
+  nextCursor: string | null;
+  total: number;
+  accessRevision: string;
+  generatedAtMs: number;
+};
+
 export type AnalysisCallsignPageOrder =
   | 'count_desc'
   | 'match_then_name'
@@ -3657,6 +3786,48 @@ export type DeviceSettingsReq = {
 export type DeviceSettingsItem = {
   hasMattermostWebhook: boolean;
   activitySplitFilesAudio: boolean;
+};
+
+export type OrganismUserLabel = {
+  id: number;
+  organismId: number;
+  name: string;
+  color: string;
+};
+
+export type OrganismUserLabelAssignment = {
+  loginId: string;
+  labelId: number;
+};
+
+export type OrganismUserLabelsRsp = {
+  labels: Array<OrganismUserLabel>;
+  assignments: Array<OrganismUserLabelAssignment>;
+  excludedLoginIds: Array<string>;
+};
+
+export type UpsertOrganismUserLabelReq = {
+  id: number | null;
+  organismId: number;
+  name: string;
+  color: string;
+};
+
+export type DeleteOrganismUserLabelReq = {
+  organismId: number;
+  labelId: number;
+};
+
+export type AssignOrganismUserLabelReq = {
+  organismId: number;
+  loginId: string;
+  labelId: number | null;
+};
+
+export type SetOrganismMessageStatsExclusionReq = {
+  organismId: number;
+  loginId: string;
+  excluded: boolean;
 };
 
 export type Organism = {

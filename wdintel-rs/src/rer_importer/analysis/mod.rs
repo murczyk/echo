@@ -42,6 +42,7 @@ use tempfile::TempDir;
 
 pub(in crate::rer_importer) mod analytics_unit;
 mod counts;
+pub mod daily_messages;
 pub mod geojson;
 pub mod kmz;
 pub mod search;

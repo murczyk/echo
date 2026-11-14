@@ -140,7 +140,11 @@ async fn admin_organism_list_tags(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<Json<Vec<TagAdmin>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?
+        .ensure_organism(path.0)
+        .context(h!())?;
     let organism_id = path.0;
     let res = bl::list_admin_organism_tags(&env.dbx, organism_id)
         .await
@@ -156,7 +160,11 @@ async fn create_organism_tag(
     path: actix_web::web::Path<(i64,)>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?
+        .ensure_organism(path.0)
+        .context(h!())?;
 
     let tag = bl::create_organism_tag(&env.dbx, path.0, req.0).await?;
 
@@ -172,7 +180,11 @@ async fn update_organism_tag(
     path: actix_web::web::Path<(i64, i64)>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?
+        .ensure_organism(path.0)
+        .context(h!())?;
 
     let (organism_id, tag_id) = path.into_inner();
     let tag =
@@ -189,7 +201,11 @@ async fn delete_organism_tag(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64, i64)>,
 ) -> Result<Json<()>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?
+        .ensure_organism(path.0)
+        .context(h!())?;
 
     let (organism_id, tag_id) = path.into_inner();
     let tag_id = bl::disable_organism_tag(&env.dbx, organism_id, tag_id)

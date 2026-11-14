@@ -13,10 +13,15 @@ use sea_orm::sea_query::Expr;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 
+pub mod access;
 pub mod bl;
 pub mod goi;
 pub mod keyword_sets;
+pub mod labels;
+pub mod message_statistics;
 pub mod oneoff;
+#[cfg(test)]
+mod tests;
 pub mod types;
 
 #[post("/api/organism/add-group")]
@@ -135,7 +140,8 @@ pub async fn organism_active_logins(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
+    scope.ensure_organism(req.0).context(h!())?;
 
     let logins = login::Entity::find()
         .filter(login::Column::OrganismId.eq(req.0))
@@ -286,9 +292,13 @@ pub async fn update_organism(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateOrganismReq>,
 ) -> Result<Json<Organism>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
+    scope
+        .ensure_organism_update(&txn, &req)
+        .await
+        .context(h!())?;
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -317,10 +327,22 @@ pub async fn group_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
 
+    let allowed = match scope.organism_id {
+        Some(id) => Some(
+            load_organism_group_ids(&env.dbx, id)
+                .await
+                .c(h!())?
+                .available_keys,
+        ),
+        None => None,
+    };
     Ok(Json(
         signal_group::Entity::find()
+            .apply_if(allowed, |query, keys| {
+                query.filter(signal_group::Column::MasterKey.eq_any(keys))
+            })
             .filter(signal_group::Column::Deleted.eq(false))
             .all(&env.dbx)
             .await
@@ -340,10 +362,13 @@ pub async fn organism_group_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrganismGroup>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
 
     Ok(Json(
         organism_group::Entity::find()
+            .apply_if(scope.organism_id, |query, id| {
+                query.filter(organism_group::Column::OrganismId.eq(id))
+            })
             .all(&env.dbx)
             .await
             .c(h!())?
@@ -363,7 +388,8 @@ pub async fn organism_available_groups(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
+    scope.ensure_organism(req.0).context(h!())?;
     let groups = load_organism_group_ids(&env.dbx, req.into_inner())
         .await
         .c(h!())?;
@@ -393,9 +419,13 @@ pub async fn organism_compute_available_groups(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateOrganismReq>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?; // DO NOT COMMIT IT!!!
+    scope
+        .ensure_organism_update(&txn, &req)
+        .await
+        .context(h!())?;
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
 
     let groups = load_organism_group_ids(&txn, organism.id).await.c(h!())?;
@@ -459,10 +489,11 @@ pub async fn organism_available_groups_batch(
     env: actix_web::web::Data<Env>,
     req: Json<Vec<i64>>,
 ) -> Result<Json<HashMap<i64, Vec<SignalGroupFull>>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
     let mut keys_map = HashMap::new();
     let mut keys_list = HashSet::new();
     for organism_id in req.into_inner() {
+        scope.ensure_organism(organism_id).context(h!())?;
         let groups = load_organism_group_ids(&env.dbx, organism_id)
             .await
             .c(h!())?;
@@ -532,7 +563,7 @@ pub async fn list_organisms(
     env: actix_web::web::Data<Env>,
     req: Json<ListOrganismsReq>,
 ) -> Result<Json<Vec<Organism>>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
     let default_sorting = req.sort_by.is_none();
 
     let (sort_by, order) = match req.sort_by {
@@ -554,6 +585,9 @@ pub async fn list_organisms(
     let organisms = organism::Entity::find()
         .find_with_related(organism_aor::Entity)
         .filter(organism::Column::DeletedPermanently.eq(false))
+        .apply_if(scope.organism_id, |query, id| {
+            query.filter(organism::Column::Id.eq(id))
+        })
         .order_by(sort_by, order)
         .all(&env.dbx)
         .await

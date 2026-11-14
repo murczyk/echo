@@ -1,3 +1,4 @@
+import { StatisticsLink } from './StatisticsLink';
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 
 import { GroupList } from './GroupList';
@@ -95,6 +96,7 @@ export function GroupPanel({
           error={error}
           onRetry={onRetry}
         />
+        <StatisticsLink />
       </aside>
     </div>
   );

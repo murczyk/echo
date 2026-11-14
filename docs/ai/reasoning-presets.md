@@ -79,6 +79,8 @@ reserve. They survive later host configuration changes. Completion metadata
 records limited coverage and its cause: `time_limit`, `tool_limit`,
 `context_limit`, `provider_error`, or `incomplete_research` when Fast or Balanced
 research ended with remaining gaps or a fallback answer without reaching a limit.
+`tool_limit` also covers research stopped after six failed tool calls in a row
+(#4179): the provider answered, so the chat does not offer another model.
 Echo also records `model_refusal` with `coverageLimited: false` (#4112): on a finished
 answer whose opening declines an operational request (`wdintel-rs/src/ai_agent/refusal.rs`,
 patterns in `config.rs` under `AI_AGENT_REFUSAL_`), and on a run that failed after the

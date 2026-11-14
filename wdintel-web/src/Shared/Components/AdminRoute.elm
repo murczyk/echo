@@ -8,7 +8,14 @@ import String
 
 adminRouteIsBlocked : Route.Path.Path -> B.User -> Bool
 adminRouteIsBlocked path user =
-    isAdminRoutePath path && not (adminMenuIsVisible user)
+    isAdminRoutePath path
+        && not
+            (adminMenuIsVisible user
+                || (Core.Auth.hasRole "OrganismAdmin" user
+                        && List.member (Route.Path.toString path)
+                            [ "/admin/organisms-neo", "/admin/organisms-neo/edit", "/admin/goi-integrations-neo" ]
+                   )
+            )
 
 
 adminMenuIsVisible : B.User -> Bool

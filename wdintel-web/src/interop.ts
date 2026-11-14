@@ -76,6 +76,7 @@ import './ts/react/api-integrations-element';
 import './ts/react/goi-settings-element';
 import './ts/react/rer-duty-neo-element';
 import { showAnalysisSharedError } from './ts/react/rer-analysis-neo-element';
+import './ts/react/message-statistics-element';
 import './ts/react/rer-network-details-neo-element';
 import './ts/react/devices-page-element';
 import './ts/react/device-details-page-element';

@@ -952,6 +952,55 @@ test("builds bounded paginated inbox requests with an inclusive upper boundary",
   );
 });
 
+test("#4179 an over-long inbox period names the date_range windows to call instead", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const message = (period: unknown) => {
+    try {
+      inboxMessagesRequestBody({ period }, context);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    assert.fail(`accepted ${JSON.stringify(period)}`);
+  };
+  const windowsOf = (text: string) =>
+    [...text.matchAll(/\{"kind":"date_range"[^}]*\}/g)].map(([json]) => JSON.parse(json));
+  // Today is 2026-08-04 in Kyiv: 90 days are 31 + 31 + 28, as SEARCH.md prescribes.
+  const ninety = message({ kind: "relative_days", days: 90 });
+  assert.match(ninety, /^recent Kyiv days must be between 1 and 31\. One call reads at most 31 Kyiv days and this period covers 90\./);
+  assert.deepEqual(windowsOf(ninety), [
+    { kind: "date_range", sinceDate: "2026-07-05", tillDateInclusive: "2026-08-04" },
+    { kind: "date_range", sinceDate: "2026-06-04", tillDateInclusive: "2026-07-04" },
+    { kind: "date_range", sinceDate: "2026-05-07", tillDateInclusive: "2026-06-03" },
+  ]);
+  assert.doesNotMatch(ninety, /continue/);
+  // Every window is accepted as is, and together they are the requested period.
+  const bodies = windowsOf(ninety).map((period) => inboxMessagesRequestBody({ period }, context));
+  const whole = { since: Date.parse("2026-05-06T21:00:00Z"), till: Date.parse("2026-08-04T21:00:00Z") - 1 };
+  assert.equal(bodies[0].till_date_inclusive_ms, whole.till);
+  assert.equal(bodies.at(-1)!.since_date_inclusive_ms, whole.since);
+  for (let index = 1; index < bodies.length; index++)
+    assert.equal((bodies[index].till_date_inclusive_ms as number) + 1, bodies[index - 1].since_date_inclusive_ms);
+
+  const range = message({ kind: "date_range", sinceDate: "2026-06-01", tillDateInclusive: "2026-07-31" });
+  assert.match(range, /^inbox messages date range cannot exceed 31 days\. One call reads at most 31 Kyiv days and this period covers 61\./);
+  assert.deepEqual(windowsOf(range), [
+    { kind: "date_range", sinceDate: "2026-07-01", tillDateInclusive: "2026-07-31" },
+    { kind: "date_range", sinceDate: "2026-06-01", tillDateInclusive: "2026-06-30" },
+  ]);
+  assert.deepEqual(windowsOf(message({ start: "2026-06-01", end: "2026-08-01" })), windowsOf(range));
+  assert.equal(windowsOf(message({ kind: "sinceDate", sinceDate: "2026-06-01" })).length, 3);
+  // Calendar windows would widen a rolling period, so hours keep the plain limit.
+  assert.equal(message({ kind: "relative_hours", hours: 1000 }), "recent hours must be between 1 and 744");
+
+  const year = message({ kind: "relative_days", days: 400 });
+  assert.equal(windowsOf(year).length, 4);
+  assert.match(year, /, then continue the same way back to 2025-07-01\.$/);
+  // Values no one means, and values below the range, keep the plain limit.
+  for (const period of [{ kind: "relative_days", days: 100_000 }, { kind: "relative_days", days: 0 }, { kind: "relative_hours", hours: 0 }])
+    assert.equal(windowsOf(message(period)).length, 0, JSON.stringify(period));
+  assert.equal(message({ kind: "relative_days", days: 0 }), "recent Kyiv days must be between 1 and 31");
+});
+
 test("#4083 a blank inbox search means no text filter", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   const period = { kind: "relative_days", days: 3 };
@@ -1236,7 +1285,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.13.1",
+    harnessRelease: "2026.11.13.2",
   });
 });
 
