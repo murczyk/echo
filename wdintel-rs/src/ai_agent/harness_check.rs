@@ -20,17 +20,21 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 /// How `require_template` in `echo_ai_agent_dispatcher.py` refuses a template
 /// whose release is missing or isn't the one the namespace expects.
 const TEMPLATE_RELEASE_REJECTION: &str =
     "selected template belongs to another harness release";
 
-/// Releases the dispatcher reports for this server's namespace.
+/// Releases the dispatcher reports for this server's namespace. The template
+/// and the containers are read separately, so one failing read doesn't hide
+/// a mismatch the other shows.
 struct ObservedHarness {
     namespace: String,
     ai_enabled: bool,
     template: Template,
+    /// Empty when listing the containers failed.
     containers: Vec<Option<String>>,
 }
 
@@ -40,9 +44,8 @@ enum Template {
     /// The dispatcher refused the template because of its harness release;
     /// new containers can't be cloned from it.
     Rejected(String),
-    /// Preflight failed for another reason, such as a timeout; only the
-    /// containers are checked.
-    Unknown(String),
+    /// Preflight failed for another reason, such as a timeout.
+    Unknown,
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation: CancellationToken) {
@@ -71,9 +74,6 @@ async fn check(env: &Env) {
             return;
         }
     };
-    if let Template::Unknown(err) = &observed.template {
-        warn!("AI harness check could not read the namespace template: {err}");
-    }
     if let Some(mismatch) = describe_mismatch(
         AI_AGENT_HARNESS_RELEASE,
         &observed.template,
@@ -106,10 +106,21 @@ async fn observe(env: &Env) -> anyhow::Result<Option<ObservedHarness>> {
     };
     let dispatcher = DispatcherClient::from_record(&dispatcher).c(h!())?;
     let template_id = access::template_login_id(&settings).c(h!())?;
-    let inventory = dispatcher.call("list", None, json!({})).await.c(h!())?;
+    Ok(Some(ObservedHarness {
+        namespace: dispatcher.namespace().to_string(),
+        ai_enabled: settings.feature_enabled,
+        template: observe_template(&dispatcher, template_id).await,
+        containers: observe_containers(&dispatcher).await,
+    }))
+}
+
+async fn observe_template(
+    dispatcher: &DispatcherClient,
+    template_id: Uuid,
+) -> Template {
     // Transport failures are business-logic errors too, so only the
     // dispatcher's release refusal counts as a mismatch.
-    let template = match dispatcher
+    match dispatcher
         .call("preflight", None, json!({ "template_id": template_id }))
         .await
     {
@@ -117,19 +128,34 @@ async fn observe(env: &Env) -> anyhow::Result<Option<ObservedHarness>> {
         Err(AppError::BL { msg }) if is_release_rejection(&msg) => {
             Template::Rejected(msg)
         }
-        Err(err) => Template::Unknown(format!("{:?}", err.c(h!()))),
-    };
-    Ok(Some(ObservedHarness {
-        namespace: dispatcher.namespace().to_string(),
-        ai_enabled: settings.feature_enabled,
-        template,
-        containers: inventory
+        Err(err) => {
+            warn!(
+                "AI harness check could not read the namespace template: {:?}",
+                err.c(h!())
+            );
+            Template::Unknown
+        }
+    }
+}
+
+async fn observe_containers(
+    dispatcher: &DispatcherClient,
+) -> Vec<Option<String>> {
+    match dispatcher.call("list", None, json!({})).await {
+        Ok(inventory) => inventory
             .result
             .get("instances")
             .and_then(Value::as_array)
             .map(|instances| instances.iter().map(release).collect())
             .unwrap_or_default(),
-    }))
+        Err(err) => {
+            warn!(
+                "AI harness check could not list the containers: {:?}",
+                err.c(h!())
+            );
+            Vec::new()
+        }
+    }
 }
 
 fn is_release_rejection(message: &str) -> bool {
@@ -160,7 +186,7 @@ fn describe_mismatch(
         )),
         Template::Rejected(reason) => parts
             .push(format!("the dispatcher rejected the template ({reason})")),
-        Template::Unknown(_) => {}
+        Template::Unknown => {}
     }
     let mut stale = BTreeMap::<&str, usize>::new();
     for container in containers {
@@ -264,7 +290,7 @@ mod tests {
 
     #[test]
     fn unknown_template_still_reports_stale_containers() {
-        let unknown = Template::Unknown("timed out".to_string());
+        let unknown = Template::Unknown;
         assert_eq!(
             describe_mismatch(
                 REQUIRED,
