@@ -1065,9 +1065,8 @@ for (const width of [1280, 320]) {
     });
     await page.goto(`/?conversation=${conversationId}`);
     await expect(page.getByText('Провайдер не відповів')).toBeVisible();
-    await expect(
-      page.getByText('GLM-5.3 тимчасово недоступний: Державний шлюз не відповідає.'),
-    ).toBeVisible();
+    await expect(page.getByText('GLM-5.3: Державний шлюз не відповідає')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Провайдер ШІ' })).toContainText('GLM-5.3');
     const fallback = page.getByRole('button', { name: 'Спробувати з GLM-5.3 Flash', exact: true });
     await expect(fallback).toBeEnabled();
     const box = await fallback.boundingBox();
