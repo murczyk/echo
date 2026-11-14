@@ -8,7 +8,7 @@ rust_log := if log_sql == "true" { "RUST_LOG=sqlx=trace,seaorm=trace " } else { 
 no_bgworker := "false"
 dev_back_args := if no_bgworker == "true" { "--no-bgworker" } else { "" }
 server := ""
-active_servers := "echo-staging echo-cbr-staging echo-cbr echo-kharkiv2 echo-kupiansk echo-siversk echo-zp2 echo-skhid echo-pivnich"
+active_servers := "echo-staging echo-cbr-staging echo-kharkiv2 echo-kzmi echo-kupiansk echo-siversk echo-cbr echo-zp2 echo-skhid echo-pivnich"
 ai_servers := "echo-cbr-staging echo-cbr"
 target := ""
 backup_key_id := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key_id -f ./deploy/config-backup.toml; else echo ""; fi`
