@@ -36,7 +36,7 @@ use sea_orm::{
     QueryOrder, QuerySelect, QueryTrait, RelationTrait, Statement,
     TransactionTrait,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
@@ -1304,14 +1304,27 @@ where
         .collect())
 }
 
-async fn delete_network_unit_links<C>(
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromQueryResult)]
+struct SavedNetworkUnitLink {
+    id: i64,
+    item_id: i64,
+    unit_id: i64,
+    item_uuid: Option<Uuid>,
+}
+
+async fn saved_network_unit_links<C>(
     db: &C,
     inbox_item_ids: &[i64],
-) -> anyhow::Result<()>
+) -> anyhow::Result<Vec<SavedNetworkUnitLink>>
 where
     C: ConnectionTrait,
 {
-    sigint_inbox_item_unit::Entity::delete_many()
+    sigint_inbox_item_unit::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item_unit::Column::Id)
+        .column(sigint_inbox_item_unit::Column::ItemId)
+        .column(sigint_inbox_item_unit::Column::UnitId)
+        .column(sigint_inbox_item_unit::Column::ItemUuid)
         .filter(
             sigint_inbox_item_unit::Column::ItemId
                 .is_in(inbox_item_ids.to_vec()),
@@ -1320,38 +1333,99 @@ where
             sigint_inbox_item_unit::Column::Kind
                 .eq(SigintInboxItemUnitKind::Network),
         )
-        .exec(db)
+        .into_model::<SavedNetworkUnitLink>()
+        .all(db)
         .await
-        .context(h!())?;
+        .context(h!())
+}
+
+async fn inbox_item_uuids<C>(
+    db: &C,
+    inbox_item_ids: &[i64],
+) -> anyhow::Result<HashMap<i64, Option<Uuid>>>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_inbox_item::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::IdUuid)
+        .filter(sigint_inbox_item::Column::Id.is_in(inbox_item_ids.to_vec()))
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect())
+}
+
+/// Removes saved network unit links that are no longer calculated, by id.
+/// Links that stay are not rewritten, so recalculating an unchanged item
+/// produces no Postgres or CDC writes.
+async fn delete_stale_network_unit_links<C>(
+    db: &C,
+    saved_links: &[SavedNetworkUnitLink],
+    unit_links: &HashSet<(i64, i64)>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let stale_ids = saved_links
+        .iter()
+        .filter(|link| !unit_links.contains(&(link.item_id, link.unit_id)))
+        .map(|link| link.id)
+        .collect_vec();
+    for stale_ids in stale_ids.chunks(INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE) {
+        sigint_inbox_item_unit::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_unit::Column::Id.is_in(stale_ids.to_vec()),
+            )
+            .exec(db)
+            .await
+            .context(h!())?;
+    }
+    Ok(())
+}
+
+async fn refresh_network_unit_link_uuids<C>(
+    db: &C,
+    saved_links: &[SavedNetworkUnitLink],
+    unit_links: &HashSet<(i64, i64)>,
+    item_uuids: &HashMap<i64, Option<Uuid>>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let outdated_ids_by_uuid = saved_links
+        .iter()
+        .filter(|link| unit_links.contains(&(link.item_id, link.unit_id)))
+        .filter_map(|link| {
+            let item_uuid = item_uuids.get(&link.item_id).copied().flatten();
+            (link.item_uuid != item_uuid).then_some((item_uuid, link.id))
+        })
+        .into_group_map();
+    for (item_uuid, link_ids) in outdated_ids_by_uuid {
+        sigint_inbox_item_unit::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item_unit::Column::ItemUuid,
+                Expr::value(item_uuid),
+            )
+            .filter(sigint_inbox_item_unit::Column::Id.is_in(link_ids))
+            .exec(db)
+            .await
+            .context(h!())?;
+    }
     Ok(())
 }
 
 async fn insert_network_unit_links<C>(
     db: &C,
     unit_links: Vec<(i64, i64)>,
+    item_uuids: &HashMap<i64, Option<Uuid>>,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    let unit_links = unit_links.into_iter().collect::<Vec<_>>();
-    let item_uuids = sigint_inbox_item::Entity::find()
-        .select_only()
-        .column(sigint_inbox_item::Column::Id)
-        .column(sigint_inbox_item::Column::IdUuid)
-        .filter(
-            sigint_inbox_item::Column::Id.eq_any(
-                unit_links
-                    .iter()
-                    .map(|(item_id, _)| *item_id)
-                    .collect::<Vec<_>>(),
-            ),
-        )
-        .into_tuple::<(i64, Option<Uuid>)>()
-        .all(db)
-        .await
-        .context(h!())?
-        .into_iter()
-        .collect::<HashMap<_, _>>();
     let unit_links = unit_links
         .into_iter()
         .map(|(item_id, unit_id)| sigint_inbox_item_unit::ActiveModel {
@@ -1382,6 +1456,43 @@ where
     Ok(())
 }
 
+/// Makes the saved network unit links of `inbox_item_ids` equal to
+/// `unit_links` without rewriting unchanged rows.
+///
+/// The whole calculated set is inserted with `ON CONFLICT DO NOTHING`, not
+/// only the links that looked missing: a concurrent sync may delete a link
+/// after it was read here, and the last sync must still leave its full set.
+/// Conflicting rows write nothing.
+async fn replace_network_unit_links<C>(
+    db: &C,
+    inbox_item_ids: &[i64],
+    unit_links: Vec<(i64, i64)>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let item_uuids =
+        inbox_item_uuids(db, inbox_item_ids).await.context(h!())?;
+    let saved_links = saved_network_unit_links(db, inbox_item_ids)
+        .await
+        .context(h!())?;
+    let unit_link_set = unit_links.iter().copied().collect::<HashSet<_>>();
+    delete_stale_network_unit_links(db, &saved_links, &unit_link_set)
+        .await
+        .context(h!())?;
+    refresh_network_unit_link_uuids(
+        db,
+        &saved_links,
+        &unit_link_set,
+        &item_uuids,
+    )
+    .await
+    .context(h!())?;
+    insert_network_unit_links(db, unit_links, &item_uuids)
+        .await
+        .context(h!())
+}
+
 pub(crate) async fn sync_network_unit_links<C>(
     db: &C,
     inbox_item_ids: &[i64],
@@ -1392,12 +1503,9 @@ where
     for inbox_item_ids in
         inbox_item_ids.chunks(INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE)
     {
-        delete_network_unit_links(db, inbox_item_ids)
-            .await
-            .context(h!())?;
         let unit_links =
             network_unit_links(db, inbox_item_ids).await.context(h!())?;
-        insert_network_unit_links(db, unit_links)
+        replace_network_unit_links(db, inbox_item_ids, unit_links)
             .await
             .context(h!())?;
     }
@@ -1415,9 +1523,6 @@ where
     for inbox_item_ids in
         inbox_item_ids.chunks(INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE)
     {
-        delete_network_unit_links(db, inbox_item_ids)
-            .await
-            .context(h!())?;
         let unit_links = calculated_network_unit_links(
             db,
             inbox_item_ids,
@@ -1425,7 +1530,7 @@ where
         )
         .await
         .context(h!())?;
-        insert_network_unit_links(db, unit_links)
+        replace_network_unit_links(db, inbox_item_ids, unit_links)
             .await
             .context(h!())?;
     }
@@ -3595,6 +3700,113 @@ mod tests {
 
         let failure = failure_rows(&env.dbx, second.id).await.remove(0);
         assert!(failure.1.is_bad_data);
+    }
+
+    async fn network_unit_link_rows(
+        db: &DatabaseConnection,
+        inbox_item_id: i64,
+    ) -> Vec<(i64, i64, NaiveDateTime)> {
+        sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item_id))
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Network),
+            )
+            .order_by_asc(sigint_inbox_item_unit::Column::Id)
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|link| (link.id, link.unit_id, link.created_at))
+            .collect()
+    }
+
+    // ECHO-4202: syncing unchanged network units must not delete and insert
+    // the same rows again, and must keep the full set under concurrency.
+    #[tokio::test]
+    #[serial]
+    async fn network_sync_keeps_unchanged_unit_link_rows_4202() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let network = crate::functest::tests::mk_sigint_network(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        sigint_inbox_item_network::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_network_id: Set(network.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        sync_network_unit_links(&env.dbx, &[inbox_item.id])
+            .await
+            .unwrap();
+        let rows = network_unit_link_rows(&env.dbx, inbox_item.id).await;
+        assert_eq!(rows.iter().map(|row| row.1).collect_vec(), [unit.id]);
+        sync_network_unit_links(&env.dbx, &[inbox_item.id])
+            .await
+            .unwrap();
+        assert_eq!(network_unit_link_rows(&env.dbx, inbox_item.id).await, rows);
+
+        // A sync reads the saved link, then a concurrent sync that no longer
+        // wants it deletes it. The first sync must still leave its full set,
+        // so it inserts every calculated link, not only the ones it saw
+        // missing.
+        let saved_links = saved_network_unit_links(&env.dbx, &[inbox_item.id])
+            .await
+            .unwrap();
+        sync_calculated_network_unit_links(
+            &env.dbx,
+            &[inbox_item.id],
+            &HashMap::new(),
+        )
+        .await
+        .unwrap();
+        assert!(network_unit_link_rows(&env.dbx, inbox_item.id)
+            .await
+            .is_empty());
+        let unit_links = vec![(inbox_item.id, unit.id)];
+        delete_stale_network_unit_links(
+            &env.dbx,
+            &saved_links,
+            &unit_links.iter().copied().collect(),
+        )
+        .await
+        .unwrap();
+        insert_network_unit_links(&env.dbx, unit_links, &HashMap::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                inbox_item.id,
+                SigintInboxItemUnitKind::Network,
+            )
+            .await,
+            vec![unit.id]
+        );
     }
 
     #[tokio::test]
