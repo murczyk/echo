@@ -1875,19 +1875,24 @@ describe('#4112 switching engines after a provider failure or refusal', () => {
     );
   });
 
-  it('preselects a healthy engine when the default is marked unhealthy', async () => {
+  it('keeps an unhealthy default engine and drops the warning once switched', async () => {
     const unhealthy = { ...PROVIDER, unhealthy: true, healthMessage: 'Шлюз недоступний' };
     await remountWithProviders([unhealthy, FLASH] as Array<typeof PROVIDER>);
-    expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
-    expect(container.textContent).toContain(
-      'Gemma тимчасово недоступний: Шлюз недоступний. Вибрано GLM-5.3 Flash.',
-    );
-
-    await act(async () => clickButton('Все одно використати Gemma'));
-    await flush();
     expect(selector('Провайдер ШІ').textContent).toContain('Gemma');
     expect(selector('Провайдер ШІ').querySelector('[aria-label="Несправний"]')).not.toBeNull();
     expect(container.textContent).toContain('Gemma: Шлюз недоступний');
-    expect(buttonTexts()).toContain('Перейти на GLM-5.3 Flash');
+    expect(container.textContent).not.toContain('тимчасово недоступний');
+    expect(buttonTexts()).not.toContain('Все одно використати Gemma');
+
+    await act(async () => clickButton('Перейти на GLM-5.3 Flash'));
+    await flush();
+    expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
+    expect(container.textContent).not.toContain('Шлюз недоступний');
+    expect(buttonTexts()).not.toContain('Перейти на GLM-5.3 Flash');
+
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await flush();
+    expect(selector('Провайдер ШІ').textContent).toContain(FLASH.name);
+    expect(container.textContent).not.toContain('Шлюз недоступний');
   });
 });

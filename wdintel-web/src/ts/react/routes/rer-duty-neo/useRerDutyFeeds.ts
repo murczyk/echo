@@ -251,89 +251,89 @@ export function useRerDutyFeeds(
     if (filterOpts.serverInfoError) feedState.setError(filterOpts.serverInfoError);
   }, [filterOpts.serverInfoError, feedState.setError]);
 
-  useInboxChangedMessageIds({
-    onMessageIds: async (messageIds) => {
-      const refreshes = feedState.messageFeeds.flatMap((feed) => {
-        if (feed.loading || !feedState.isFeedReady(feed)) return [];
-        const visibleMessageIds = new Set(
-          [...feed.items, ...(feed.pendingNewerItems ?? [])].map(([messageId]) => messageId),
-        );
-        const visibleChangedMessageIds = Array.from(
-          new Set(
-            messageIds.filter(
-              (messageId) =>
-                visibleMessageIds.has(messageId) ||
-                feed.windowedUnreadItems?.has(messageId) ||
-                feed.unresolvedUnreadIds?.has(messageId),
-            ),
+  // Refreshes loaded cards in place; a feed reload would re-pin every scroller to the bottom.
+  const refreshChangedMessages = useCallback(async (messageIds: number[]) => {
+    const feedState = feedStateRef.current;
+    const refreshes = feedState.messageFeeds.flatMap((feed) => {
+      if (feed.loading || !feedState.isFeedReady(feed)) return [];
+      const visibleMessageIds = new Set(
+        [...feed.items, ...(feed.pendingNewerItems ?? [])].map(([messageId]) => messageId),
+      );
+      const visibleChangedMessageIds = Array.from(
+        new Set(
+          messageIds.filter(
+            (messageId) =>
+              visibleMessageIds.has(messageId) ||
+              feed.windowedUnreadItems?.has(messageId) ||
+              feed.unresolvedUnreadIds?.has(messageId),
           ),
-        );
-        if (visibleChangedMessageIds.length === 0) return [];
-        const inboxReq = feedState.buildReqForFeed(feed, { loadLatest: true });
-        return [
-          {
-            feedId: feed.id,
-            messageIds: visibleChangedMessageIds,
-            inboxReq,
-            requestSignature: stableStringify(inboxReq),
-            loadGeneration: feedState.getFeedLoadGeneration(feed.id),
-          },
-        ];
-      });
-
-      if (refreshes.length === 0) return;
-
-      await Promise.all([
-        ...refreshes.map(
-          async ({
-            feedId,
-            messageIds: visibleChangedMessageIds,
-            inboxReq,
-            requestSignature,
-            loadGeneration,
-          }) => {
-            try {
-              const membershipFiltersActive =
-                Boolean(inboxReq.search?.trim()) ||
-                (inboxReq.selectedGroups?.length ?? 0) > 0 ||
-                (inboxReq.deniedGroups?.length ?? 0) > 0 ||
-                (inboxReq.selectedUnitIds?.length ?? 0) > 0 ||
-                (inboxReq.selectedUnits?.length ?? 0) > 0 ||
-                (inboxReq.deniedUnitIds?.length ?? 0) > 0 ||
-                (inboxReq.deniedUnits?.length ?? 0) > 0;
-              const nextMessages = await (membershipFiltersActive
-                ? fetchMessagesByIdsMatchingFilters(visibleChangedMessageIds, inboxReq)
-                : fetchMessagesByIds(visibleChangedMessageIds, inboxReq));
-              feedState.setMessageFeeds((current) =>
-                (() => {
-                  const currentFeed = current.find((feed) => feed.id === feedId);
-                  if (currentFeed == null) return current;
-                  if (!feedStateRef.current.isFeedReady(currentFeed)) return current;
-                  if (feedStateRef.current.getFeedLoadGeneration(feedId) !== loadGeneration)
-                    return current;
-                  const currentSignature = stableStringify(
-                    feedStateRef.current.buildReqForFeed(currentFeed, { loadLatest: true }),
-                  );
-                  if (currentSignature !== requestSignature) return current;
-                  return mergeUpdatedDutyFeedMessages(
-                    current,
-                    feedId,
-                    visibleChangedMessageIds,
-                    nextMessages,
-                  );
-                })(),
-              );
-            } catch (loadError) {
-              feedState.setError(
-                loadError instanceof Error ? loadError.message : String(loadError),
-              );
-              console.error(loadError);
-            }
-          },
         ),
-      ]);
-    },
-  });
+      );
+      if (visibleChangedMessageIds.length === 0) return [];
+      const inboxReq = feedState.buildReqForFeed(feed, { loadLatest: true });
+      return [
+        {
+          feedId: feed.id,
+          messageIds: visibleChangedMessageIds,
+          inboxReq,
+          requestSignature: stableStringify(inboxReq),
+          loadGeneration: feedState.getFeedLoadGeneration(feed.id),
+        },
+      ];
+    });
+
+    if (refreshes.length === 0) return;
+
+    await Promise.all([
+      ...refreshes.map(
+        async ({
+          feedId,
+          messageIds: visibleChangedMessageIds,
+          inboxReq,
+          requestSignature,
+          loadGeneration,
+        }) => {
+          try {
+            const membershipFiltersActive =
+              Boolean(inboxReq.search?.trim()) ||
+              (inboxReq.selectedGroups?.length ?? 0) > 0 ||
+              (inboxReq.deniedGroups?.length ?? 0) > 0 ||
+              (inboxReq.selectedUnitIds?.length ?? 0) > 0 ||
+              (inboxReq.selectedUnits?.length ?? 0) > 0 ||
+              (inboxReq.deniedUnitIds?.length ?? 0) > 0 ||
+              (inboxReq.deniedUnits?.length ?? 0) > 0;
+            const nextMessages = await (membershipFiltersActive
+              ? fetchMessagesByIdsMatchingFilters(visibleChangedMessageIds, inboxReq)
+              : fetchMessagesByIds(visibleChangedMessageIds, inboxReq));
+            feedState.setMessageFeeds((current) =>
+              (() => {
+                const currentFeed = current.find((feed) => feed.id === feedId);
+                if (currentFeed == null) return current;
+                if (!feedStateRef.current.isFeedReady(currentFeed)) return current;
+                if (feedStateRef.current.getFeedLoadGeneration(feedId) !== loadGeneration)
+                  return current;
+                const currentSignature = stableStringify(
+                  feedStateRef.current.buildReqForFeed(currentFeed, { loadLatest: true }),
+                );
+                if (currentSignature !== requestSignature) return current;
+                return mergeUpdatedDutyFeedMessages(
+                  current,
+                  feedId,
+                  visibleChangedMessageIds,
+                  nextMessages,
+                );
+              })(),
+            );
+          } catch (loadError) {
+            feedState.setError(loadError instanceof Error ? loadError.message : String(loadError));
+            console.error(loadError);
+          }
+        },
+      ),
+    ]);
+  }, []);
+
+  useInboxChangedMessageIds({ onMessageIds: refreshChangedMessages });
 
   useEffect(() => {
     const nowMs = Date.now();
@@ -558,6 +558,7 @@ export function useRerDutyFeeds(
     reloadEmptyFeeds: feedState.reloadEmptyFeeds,
     reloadFeeds: feedState.reloadFeeds,
     reloadEditedFeeds: feedState.reloadEditedFeeds,
+    refreshChangedMessages,
     loadFeedOlderMessages: feedState.loadFeedOlderMessages,
     loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     flushPendingNewerMessages: feedState.flushPendingNewerMessages,

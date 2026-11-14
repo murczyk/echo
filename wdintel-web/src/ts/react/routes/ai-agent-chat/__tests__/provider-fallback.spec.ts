@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AiAgentConfiguration, AiAgentProvider } from '../../../services/api/ai-agent';
+import type { AiAgentProvider } from '../../../services/api/ai-agent';
 import {
   conversationTurns,
-  healthyReplacement,
   modelFallback,
   nextProvider,
   presetFor,
@@ -81,20 +80,6 @@ describe('#4112 provider fallback', () => {
     expect(modelFallback([turn('glm', 'provider_error', 'failed')], [GLM, FLASH])?.next?.id).toBe(
       'flash',
     );
-  });
-
-  it('replaces only an unhealthy candidate', () => {
-    const configuration: AiAgentConfiguration = {
-      enabled: true,
-      defaultProviderId: 'glm',
-      providers: [{ ...GLM, unhealthy: true }, FLASH],
-    };
-    expect(healthyReplacement(configuration, 'glm')?.id).toBe('flash');
-    expect(healthyReplacement(configuration, 'flash')).toBeNull();
-    expect(
-      healthyReplacement({ ...configuration, providers: [{ ...GLM, unhealthy: true }] }, 'glm'),
-      'no healthy engine left',
-    ).toBeNull();
   });
 
   it('keeps the depth when the target engine offers it', () => {

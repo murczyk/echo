@@ -587,6 +587,34 @@ describe('useRerDutyFeeds', () => {
     expect(latest?.messageFeeds[0].unreadCount).toBe(1);
     expect(hoisted.pollNow).not.toHaveBeenCalled();
   });
+
+  it('refreshes an edited report parent card in place without reloading the feed', async () => {
+    const intercept = (reportText: string) => ({
+      text: 'intercept',
+      textMarked: [],
+      tags: [],
+      inboxTags: [],
+      intelligenceReports: [{ id: 91, text: reportText }],
+    });
+    hoisted.feedReady = true;
+    hoisted.messageFeeds = [
+      { id: 'mf-0', items: [[42, intercept('old conclusion')]], filter: {} },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[42, intercept('new conclusion')]]);
+    await act(async () => {
+      root.render(React.createElement(TestHarness));
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await latest!.refreshChangedMessages([91, 42]);
+    });
+
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([42], expect.anything());
+    expect(latest!.messageFeeds[0].items).toEqual([[42, intercept('new conclusion')]]);
+    expect(latest!.messageFeeds[0].loading).toBeUndefined();
+    expect(hoisted.loadFeedInitialMessages).not.toHaveBeenCalled();
+  });
 });
 describe('useRerDutyFeeds inbox refreshes', () => {
   beforeEach(() => {
