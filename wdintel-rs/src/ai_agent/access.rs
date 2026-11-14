@@ -277,6 +277,15 @@ pub fn agent_provider_transport(
     None
 }
 
+/// True when the engine can serve the refusal rewrite layer: the rewrite
+/// call goes through the Echo gateway, which only proxies government-hosted
+/// engines.
+pub fn refusal_rewrite_compatible(ai_engine: &ai_engine::Model) -> bool {
+    crate::ai_engine::client::is_government_url(&ai_engine.url)
+        && agent_provider_transport(ai_engine)
+            == Some(AgentProviderTransport::EchoGateway)
+}
+
 pub fn is_agent_engine(ai_engine: &ai_engine::Model) -> bool {
     agent_provider_transport(ai_engine).is_some()
 }

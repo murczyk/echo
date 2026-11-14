@@ -102,7 +102,8 @@ pub async fn update_settings(
         .refusal_rewrite_ai_engine_id
         .as_deref()
         .map(access::parse_uuid)
-        .transpose()?;
+        .transpose()
+        .context(h!())?;
     if default_ai_engine_id.is_some_and(|id| !unique_ids.contains(&id)) {
         return Err(AppError::BL {
             msg: "Default provider must be in the allowlist".to_string(),
@@ -126,6 +127,18 @@ pub async fn update_settings(
                 .to_string(),
         });
     }
+    if let Some(rewrite_id) = refusal_rewrite_ai_engine_id {
+        let rewrite_engine = access::allowed_engine_by_id(&env.dbx, rewrite_id)
+            .await
+            .context(h!())?;
+        if !access::refusal_rewrite_compatible(&rewrite_engine) {
+            return Err(AppError::BL {
+                msg:
+                    "Провайдер перезапису відмов має працювати через Echo-шлюз"
+                        .to_string(),
+            });
+        }
+    }
     if req.refusal_rewrite_enabled && refusal_rewrite_ai_engine_id.is_none() {
         let default_rewrite_engine = access::ordered_allowed_engines(&env.dbx)
             .await
@@ -134,6 +147,7 @@ pub async fn update_settings(
             .any(|ai_engine| {
                 ai_engine.model_name
                     == crate::config::AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL
+                    && access::refusal_rewrite_compatible(&ai_engine)
             });
         if !default_rewrite_engine {
             return Err(AppError::BL {
@@ -229,7 +243,7 @@ pub async fn update_settings(
     settings.default_ai_engine_id = Set(default_ai_engine_id);
     settings.reviewer_ai_engine_id = Set(reviewer_ai_engine_id);
     settings.security_review_enabled = Set(req.security_review_enabled);
-    settings.refusal_rewrite_enabled = Set(req.refusal_rewrite_enabled);
+    settings.refusal_rewrite_enabled = Set(Some(req.refusal_rewrite_enabled));
     settings.refusal_rewrite_ai_engine_id = Set(refusal_rewrite_ai_engine_id);
     settings.mattermost_chat_enabled = Set(req.mattermost_chat_enabled);
     settings.mattermost_webhook_url = Set(mattermost_webhook_url);
@@ -354,7 +368,9 @@ async fn settings_item(
             .reviewer_ai_engine_id
             .map(|id| id.to_string()),
         security_review_enabled: settings.security_review_enabled,
-        refusal_rewrite_enabled: settings.refusal_rewrite_enabled,
+        refusal_rewrite_enabled: settings
+            .refusal_rewrite_enabled
+            .unwrap_or(false),
         refusal_rewrite_ai_engine_id: settings
             .refusal_rewrite_ai_engine_id
             .map(|id| id.to_string()),

@@ -19,9 +19,9 @@ impl MigrationTrait for Migration {
 -- Refusal rewrite layer for OpenAI-family chat engines: when the model
 -- declines an operational request, the ask is rewritten to evidence-inventory
 -- form by a second engine and retried once. The engine is configurable and
--- defaults to gpt-6-luna when the column stays null.
+-- defaults to gpt-6-luna when the column stays null; a null flag is disabled.
 alter table ai_agent_settings
-    add column if not exists refusal_rewrite_enabled boolean not null default false,
+    add column if not exists refusal_rewrite_enabled boolean,
     add column if not exists refusal_rewrite_ai_engine_id uuid
         references ai_engine(id) on delete set null;
                 "#,

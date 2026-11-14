@@ -1261,10 +1261,12 @@ async fn refusal_rewrite_provider(
         return Ok(None);
     }
     let settings = access::settings(&env.dbx).await.c(h!())?;
-    if !settings.refusal_rewrite_enabled {
+    if !settings.refusal_rewrite_enabled.unwrap_or(false) {
         return Ok(None);
     }
-    let allowed = access::ordered_allowed_engines(&env.dbx).await?;
+    let allowed = access::ordered_allowed_engines(&env.dbx)
+        .await
+        .context(h!())?;
     let rewrite_engine = match settings.refusal_rewrite_ai_engine_id {
         Some(configured_id) => allowed
             .into_iter()
@@ -1274,10 +1276,12 @@ async fn refusal_rewrite_provider(
                 == crate::config::AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL
         }),
     };
-    let Some(rewrite_engine) = rewrite_engine else {
+    let Some(rewrite_engine) =
+        rewrite_engine.filter(access::refusal_rewrite_compatible)
+    else {
         warn!(
-            "Refusal rewrite is enabled but no rewrite engine is allowed; \
-             running the request without the layer"
+            "Refusal rewrite is enabled but no compatible gateway rewrite \
+             engine is allowed; running the request without the layer"
         );
         return Ok(None);
     };

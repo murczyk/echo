@@ -19,6 +19,7 @@ use crate::h;
 use crate::types::{warn, Deserialize, Env, Serialize, ShortContext};
 use actix_session::SessionExt;
 use actix_web::{post, web::Json, HttpRequest};
+use anyhow::Context;
 use base64::Engine;
 use rand::Rng;
 use redis::AsyncCommands;
@@ -393,11 +394,10 @@ async fn resolve_provider_engine(
     {
         let rewrite_engine =
             super::access::allowed_engine_by_id(&env.dbx, rewrite.ai_engine_id)
-                .await?;
+                .await
+                .context(h!())?;
         if rewrite_engine.model_name != rewrite.model_name
-            || !crate::ai_engine::client::is_government_url(&rewrite_engine.url)
-            || super::access::agent_provider_transport(&rewrite_engine)
-                != Some(super::access::AgentProviderTransport::EchoGateway)
+            || !super::access::refusal_rewrite_compatible(&rewrite_engine)
         {
             return Ok(None);
         }

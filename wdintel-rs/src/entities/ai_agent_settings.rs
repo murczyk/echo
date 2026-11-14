@@ -15,14 +15,14 @@ pub struct Model {
     pub default_ai_engine_id: Option<Uuid>,
     pub reviewer_ai_engine_id: Option<Uuid>,
     pub security_review_enabled: bool,
-    pub refusal_rewrite_enabled: bool,
-    pub refusal_rewrite_ai_engine_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub mattermost_webhook_url: Option<String>,
     pub updated_at: DateTime,
     pub mattermost_chat_enabled: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub mattermost_chat_webhook_url: Option<String>,
+    pub refusal_rewrite_enabled: Option<bool>,
+    pub refusal_rewrite_ai_engine_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -30,6 +30,14 @@ pub enum Relation {
     #[sea_orm(
         belongs_to = "super::ai_engine::Entity",
         from = "Column::DefaultAiEngineId",
+        to = "super::ai_engine::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    AiEngine3,
+    #[sea_orm(
+        belongs_to = "super::ai_engine::Entity",
+        from = "Column::RefusalRewriteAiEngineId",
         to = "super::ai_engine::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"
@@ -43,14 +51,6 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     AiEngine1,
-    #[sea_orm(
-        belongs_to = "super::ai_engine::Entity",
-        from = "Column::RefusalRewriteAiEngineId",
-        to = "super::ai_engine::Column::Id",
-        on_update = "NoAction",
-        on_delete = "SetNull"
-    )]
-    AiEngine3,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::TemplateLoginId",

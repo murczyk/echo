@@ -238,7 +238,9 @@ async fn load_profile(
             default_ai_engine_id: settings.default_ai_engine_id,
             reviewer_ai_engine_id: settings.reviewer_ai_engine_id,
             security_review_enabled: settings.security_review_enabled,
-            refusal_rewrite_enabled: settings.refusal_rewrite_enabled,
+            refusal_rewrite_enabled: settings
+                .refusal_rewrite_enabled
+                .unwrap_or(false),
             refusal_rewrite_ai_engine_id: settings.refusal_rewrite_ai_engine_id,
             mattermost_webhook_url: settings.mattermost_webhook_url,
             mattermost_chat_enabled: settings.mattermost_chat_enabled,
@@ -549,7 +551,7 @@ where
     settings.default_ai_engine_id = Set(None);
     settings.reviewer_ai_engine_id = Set(None);
     settings.security_review_enabled = Set(false);
-    settings.refusal_rewrite_enabled = Set(false);
+    settings.refusal_rewrite_enabled = Set(None);
     settings.refusal_rewrite_ai_engine_id = Set(None);
     settings.mattermost_webhook_url = Set(None);
     settings.mattermost_chat_enabled = Set(false);
@@ -791,7 +793,8 @@ where
     settings.reviewer_ai_engine_id =
         Set(remap_engine_id(profile.reviewer_ai_engine_id, engine_ids)?);
     settings.security_review_enabled = Set(profile.security_review_enabled);
-    settings.refusal_rewrite_enabled = Set(profile.refusal_rewrite_enabled);
+    settings.refusal_rewrite_enabled =
+        Set(Some(profile.refusal_rewrite_enabled));
     settings.refusal_rewrite_ai_engine_id = Set(remap_engine_id(
         profile.refusal_rewrite_ai_engine_id,
         engine_ids,
