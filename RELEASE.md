@@ -78,21 +78,16 @@ Everything else still needs separate approval, including:
    If the push is rejected because `main` moved, fetch and go back to step 2.
    The new commit's own CI run is not needed: it changes only `CHANGELOG.md`.
 
-   List this release's entries, and its `👷` and `🚨` entries for the final
-   report:
+4. Right after that push, post this release's section to the #DEV Mattermost
+   channel, so the team can say what needs more testing or blocks the release.
+   Post nothing if the release has no entries. Also list the section's `👷` and
+   `🚨` entries for the final report:
 
    ```bash
    section=2026-11-14   # this release's heading, without "## "
    entries=$(awk -v h="## $section" '$0 == h {f = 1; next} /^## / {f = 0} f && /^- /' CHANGELOG.md)
-   grep -E '👷|🚨' <<<"$entries"
-   ```
-
-4. Post this release's entries to the #DEV Mattermost channel, so the team can
-   say what needs more testing or blocks the release. Post nothing if the
-   release has no entries.
-
-   ```bash
    just notify-dev "$(printf '%s\n\n%s' 'Готую реліз, передивіться список фіч що потребують додаткового тестування або блокують його:' "$entries")"
+   grep -E '👷|🚨' <<<"$entries"
    ```
 
 5. Merge `main` into `stable`, without pushing:
