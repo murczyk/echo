@@ -158,8 +158,13 @@ gateway, and Echo logs every thirty seconds along with user memory and exception
 counts. Run `bin/manage-system-logs.sh --check` before and after the upgrade;
 record pre-existing findings and compare diagnostic-table TTLs to detect new drift.
 Check `system.text_log` as well as service journals so errors emitted by the
-metrics collector are included. Stop promotion for crashes, recurring errors,
-replication lag, or retention drift. Inspect any failed/partial installation
+metrics collector are included. Also check the `signoz-clickhouse-collector`
+journal for `scrape attempt failed`. A column type change in `system.query_log`
+breaks the slow-query collector while its service stays `active`; ClickHouse
+26.10 did this
+([collector §12](CLICKHOUSE_COLLECTOR_COMMANDS.md#12-troubleshooting)).
+Stop promotion for crashes, recurring errors, replication lag, or retention
+drift. Inspect any failed/partial installation
 before attempting
 recovery; do not automatically downgrade across release lines. Retain backups
 until the rollout is verified. No resnapshot, application configuration change,

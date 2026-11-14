@@ -1,0 +1,22 @@
+diff --git a/receiver/clickhousesystemtablesreceiver/query_log.go b/receiver/clickhousesystemtablesreceiver/query_log.go
+index b9f81dd..d94de4a 100644
+--- a/receiver/clickhousesystemtablesreceiver/query_log.go
++++ b/receiver/clickhousesystemtablesreceiver/query_log.go
+@@ -247,7 +247,7 @@ func scrapeQueryLogTable(
+ 			initial_port,
+ 			initial_query_start_time,
+ 			initial_query_start_time_microseconds,
+-			interface,
++			toUInt8(interface) as interface,
+ 			is_secure,
+ 			os_user,
+ 			client_hostname,
+@@ -256,7 +256,7 @@ func scrapeQueryLogTable(
+ 			client_version_major,
+ 			client_version_minor,
+ 			client_version_patch,
+-			http_method,
++			toUInt8(http_method) as http_method,
+ 			http_user_agent,
+ 			http_referer,
+ 			forwarded_for,
