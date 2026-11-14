@@ -68,6 +68,10 @@ struct ProfileSettings {
     default_ai_engine_id: Option<Uuid>,
     reviewer_ai_engine_id: Option<Uuid>,
     security_review_enabled: bool,
+    #[serde(default)]
+    refusal_rewrite_enabled: bool,
+    #[serde(default)]
+    refusal_rewrite_ai_engine_id: Option<Uuid>,
     mattermost_webhook_url: Option<String>,
     #[serde(default)]
     mattermost_chat_enabled: bool,
@@ -234,6 +238,8 @@ async fn load_profile(
             default_ai_engine_id: settings.default_ai_engine_id,
             reviewer_ai_engine_id: settings.reviewer_ai_engine_id,
             security_review_enabled: settings.security_review_enabled,
+            refusal_rewrite_enabled: settings.refusal_rewrite_enabled,
+            refusal_rewrite_ai_engine_id: settings.refusal_rewrite_ai_engine_id,
             mattermost_webhook_url: settings.mattermost_webhook_url,
             mattermost_chat_enabled: settings.mattermost_chat_enabled,
             mattermost_chat_webhook_url: settings.mattermost_chat_webhook_url,
@@ -543,6 +549,8 @@ where
     settings.default_ai_engine_id = Set(None);
     settings.reviewer_ai_engine_id = Set(None);
     settings.security_review_enabled = Set(false);
+    settings.refusal_rewrite_enabled = Set(false);
+    settings.refusal_rewrite_ai_engine_id = Set(None);
     settings.mattermost_webhook_url = Set(None);
     settings.mattermost_chat_enabled = Set(false);
     settings.mattermost_chat_webhook_url = Set(None);
@@ -783,6 +791,11 @@ where
     settings.reviewer_ai_engine_id =
         Set(remap_engine_id(profile.reviewer_ai_engine_id, engine_ids)?);
     settings.security_review_enabled = Set(profile.security_review_enabled);
+    settings.refusal_rewrite_enabled = Set(profile.refusal_rewrite_enabled);
+    settings.refusal_rewrite_ai_engine_id = Set(remap_engine_id(
+        profile.refusal_rewrite_ai_engine_id,
+        engine_ids,
+    )?);
     settings.mattermost_chat_enabled = Set(profile.mattermost_chat_enabled);
     settings.mattermost_webhook_url =
         Set(profile.mattermost_webhook_url.clone());
@@ -919,6 +932,8 @@ mod tests {
                 default_ai_engine_id: Some(engine_id),
                 reviewer_ai_engine_id: Some(engine_id),
                 security_review_enabled: true,
+                refusal_rewrite_enabled: true,
+                refusal_rewrite_ai_engine_id: Some(engine_id),
                 mattermost_webhook_url: Some(
                     "https://hooks.example.com/secret".to_string(),
                 ),

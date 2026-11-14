@@ -777,6 +777,10 @@ async fn run_request_inner(
         || checkpoint_output_tokens(&ai_engine, &runtime_profile),
         |checkpoint| checkpoint.max_tokens,
     );
+    let rewrite_provider =
+        refusal_rewrite_provider(env, &ai_engine, provider_transport)
+            .await
+            .c(h!())?;
     let gateway_capability =
         if provider_transport == access::AgentProviderTransport::EchoGateway {
             Some(
@@ -798,6 +802,7 @@ async fn run_request_inner(
                             model_name: checkpoint.model_name.clone(),
                             max_output_tokens: checkpoint.max_tokens,
                         }),
+                    rewrite_provider.clone(),
                 )
                 .await
                 .c(h!())?,
@@ -849,6 +854,10 @@ async fn run_request_inner(
         runner_payload["checkpointModelName"] = json!(checkpoint.model_name);
         runner_payload["checkpointContextWindow"] =
             json!(checkpoint.context_window);
+    }
+    if let Some(rewrite) = rewrite_provider {
+        runner_payload["rewriteModelName"] = json!(rewrite.model_name);
+        runner_payload["rewriteMaxTokens"] = json!(rewrite.max_output_tokens);
     }
     if let Some(map_edit) = map_edit {
         runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
@@ -1233,6 +1242,49 @@ async fn checkpoint_provider(
         model_name: ai_engine.model_name,
         context_window: checkpoint_profile.context_window_tokens,
         max_tokens,
+    }))
+}
+
+/// The refusal rewrite layer for OpenAI-family engines: when the model
+/// declines an operational request, the runner rewrites the ask into
+/// evidence-inventory form via this second engine and retries once.
+/// Returns the grant, or `None` when the layer is off or unusable; an
+/// unavailable engine degrades the request to running without the layer.
+async fn refusal_rewrite_provider(
+    env: &Env,
+    ai_engine: &crate::entities::ai_engine::Model,
+    provider_transport: access::AgentProviderTransport,
+) -> anyhow::Result<Option<auth::RewriteProviderGrant>> {
+    if provider_transport != access::AgentProviderTransport::EchoGateway
+        || !super::reasoning::openai_model(&ai_engine.model_name)
+    {
+        return Ok(None);
+    }
+    let settings = access::settings(&env.dbx).await.c(h!())?;
+    if !settings.refusal_rewrite_enabled {
+        return Ok(None);
+    }
+    let allowed = access::ordered_allowed_engines(&env.dbx).await?;
+    let rewrite_engine = match settings.refusal_rewrite_ai_engine_id {
+        Some(configured_id) => allowed
+            .into_iter()
+            .find(|engine| engine.id == configured_id),
+        None => allowed.into_iter().find(|engine| {
+            engine.model_name
+                == crate::config::AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL
+        }),
+    };
+    let Some(rewrite_engine) = rewrite_engine else {
+        warn!(
+            "Refusal rewrite is enabled but no rewrite engine is allowed; \
+             running the request without the layer"
+        );
+        return Ok(None);
+    };
+    Ok(Some(auth::RewriteProviderGrant {
+        ai_engine_id: rewrite_engine.id,
+        model_name: rewrite_engine.model_name,
+        max_output_tokens: crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS,
     }))
 }
 

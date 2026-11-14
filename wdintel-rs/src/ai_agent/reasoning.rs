@@ -81,6 +81,7 @@ pub enum ProviderPurpose {
     Research,
     Checkpoint,
     Synthesis,
+    Rewrite,
 }
 
 impl ProviderPurpose {
@@ -89,6 +90,7 @@ impl ProviderPurpose {
             None | Some("research") => Some(Self::Research),
             Some("checkpoint") => Some(Self::Checkpoint),
             Some("synthesis") => Some(Self::Synthesis),
+            Some("rewrite") => Some(Self::Rewrite),
             _ => None,
         }
     }
@@ -240,7 +242,13 @@ pub fn resolve(
 /// Every non-OpenAI engine (GLM, Gemma) runs the runner's bounded research
 /// harness, which reserves twice the base finalization time for synthesis.
 fn bounded_research(model_name: &str) -> bool {
-    !config::AI_AGENT_OPENAI_MODEL_PREFIXES
+    !openai_model(model_name)
+}
+
+/// OpenAI-family engines are the ones the refusal rewrite layer serves: only
+/// they produce the policy refusals the layer retries.
+pub fn openai_model(model_name: &str) -> bool {
+    config::AI_AGENT_OPENAI_MODEL_PREFIXES
         .iter()
         .any(|prefix| model_name.starts_with(prefix))
 }
@@ -264,4 +272,39 @@ pub fn deadline_millis(
         started.and_utc().timestamp_millis()
             + policy.max_runtime_seconds as i64 * 1000
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_every_provider_purpose() {
+        assert_eq!(
+            ProviderPurpose::parse(None),
+            Some(ProviderPurpose::Research)
+        );
+        for (value, expected) in [
+            ("research", ProviderPurpose::Research),
+            ("checkpoint", ProviderPurpose::Checkpoint),
+            ("synthesis", ProviderPurpose::Synthesis),
+            ("rewrite", ProviderPurpose::Rewrite),
+        ] {
+            assert_eq!(
+                ProviderPurpose::parse(Some(value)),
+                Some(expected),
+                "{value}"
+            );
+        }
+        assert_eq!(ProviderPurpose::parse(Some("other")), None);
+    }
+
+    #[test]
+    fn openai_model_prefixes_select_the_refusal_rewrite_layer() {
+        assert!(openai_model("gpt-6.1-sol"));
+        assert!(openai_model("gpt-6-luna"));
+        assert!(openai_model("o3-mini"));
+        assert!(!openai_model(crate::config::AI_AGENT_GLM_5_3));
+        assert!(!openai_model("gemma-4"));
+    }
 }

@@ -63,6 +63,8 @@ struct ProviderCapabilityGrant {
     #[serde(default)]
     checkpoint: Option<CheckpointProviderGrant>,
     #[serde(default)]
+    rewrite: Option<RewriteProviderGrant>,
+    #[serde(default)]
     execution_policy: Option<ExecutionPolicy>,
     #[serde(default)]
     deadline_at: Option<i64>,
@@ -74,6 +76,14 @@ struct ProviderCapabilityGrant {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckpointProviderGrant {
+    pub ai_engine_id: Uuid,
+    pub model_name: String,
+    pub max_output_tokens: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewriteProviderGrant {
     pub ai_engine_id: Uuid,
     pub model_name: String,
     pub max_output_tokens: i32,
@@ -136,6 +146,7 @@ pub async fn issue_provider_capability(
     ai_engine_id: Uuid,
     model_name: String,
     checkpoint: Option<CheckpointProviderGrant>,
+    rewrite: Option<RewriteProviderGrant>,
 ) -> Result<String, AppError> {
     let mut random = [0_u8; 32];
     rand::rng().fill(&mut random);
@@ -163,6 +174,7 @@ pub async fn issue_provider_capability(
         ai_engine_id,
         model_name,
         checkpoint,
+        rewrite,
         execution_policy,
         deadline_at,
         call_limit: Some(call_limit),
@@ -270,10 +282,13 @@ pub async fn authorize_provider_call(
             now >= deadline - policy.finalization_seconds as i64 * 1000;
         if requested_model_name != grant.model_name
             && purpose != ProviderPurpose::Checkpoint
+            && purpose != ProviderPurpose::Rewrite
         {
             return Ok(None);
         }
-    } else if purpose != ProviderPurpose::Research {
+    } else if purpose != ProviderPurpose::Research
+        && purpose != ProviderPurpose::Rewrite
+    {
         return Ok(None);
     }
     if !super::access::settings(&env.dbx).await?.feature_enabled {
@@ -338,8 +353,17 @@ pub async fn authorize_provider_call(
         authorization.checkpoint_max_tokens =
             Some(checkpoint.max_output_tokens);
     }
+    if purpose == ProviderPurpose::Rewrite {
+        let Some(rewrite) = grant.rewrite.as_ref() else {
+            return Ok(None);
+        };
+        authorization.checkpoint_max_tokens = Some(rewrite.max_output_tokens);
+    }
+    // The rewrite call is part of finalization, like synthesis: a refusal
+    // retry legitimately runs inside the finalization window.
     authorization.research_limit_reached = grant.execution_policy.is_some()
         && purpose != ProviderPurpose::Synthesis
+        && purpose != ProviderPurpose::Rewrite
         && (research_deadline_reached || calls == call_limit);
     authorization.execution_policy = grant.execution_policy;
     authorization.deadline_at = grant.deadline_at;
@@ -356,6 +380,30 @@ async fn resolve_provider_engine(
         return Ok(Some(AuthorizedProvider {
             ai_engine,
             checkpoint_max_tokens: None,
+            execution_policy: None,
+            deadline_at: None,
+            research_limit_reached: false,
+            request_id: grant.request_id,
+        }));
+    }
+    if let Some(rewrite) = grant
+        .rewrite
+        .as_ref()
+        .filter(|rewrite| rewrite.model_name == requested_model_name)
+    {
+        let rewrite_engine =
+            super::access::allowed_engine_by_id(&env.dbx, rewrite.ai_engine_id)
+                .await?;
+        if rewrite_engine.model_name != rewrite.model_name
+            || !crate::ai_engine::client::is_government_url(&rewrite_engine.url)
+            || super::access::agent_provider_transport(&rewrite_engine)
+                != Some(super::access::AgentProviderTransport::EchoGateway)
+        {
+            return Ok(None);
+        }
+        return Ok(Some(AuthorizedProvider {
+            ai_engine: rewrite_engine,
+            checkpoint_max_tokens: Some(rewrite.max_output_tokens),
             execution_policy: None,
             deadline_at: None,
             research_limit_reached: false,
