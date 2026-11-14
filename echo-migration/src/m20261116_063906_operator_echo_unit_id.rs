@@ -20,6 +20,13 @@ impl MigrationTrait for Migration {
 -- prefers it to the unit name parsed from the body. No foreign key: units are
 -- soft-deleted and merged, and resolution skips a deleted one.
 alter table signal_message add column if not exists echo_unit_id bigint;
+
+-- Column-scoped UPDATE triggers don't watch echo_unit_id, and the Iggy edit
+-- trigger skips rows where old is not distinct from new. One indexed row
+-- change publishes the nullable column through CDC without a backfill.
+update signal_message
+set echo_unit_id = null
+where id = (select id from signal_message order by id limit 1);
                 "#,
             )
             .await
