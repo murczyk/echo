@@ -1745,6 +1745,12 @@ function UsersTable(props: {
 }) {
   const tableStateContext = useTableStateContext();
   const columns = useUsersColumns(props.aorLookup);
+  // The table caches accessor values per row until `data` changes, so new
+  // AOR lookups need new rows for filtering to see them.
+  const data = useMemo(
+    () => (props.loading ? buildUserLoadingRows() : [...props.data]),
+    [props.loading, props.data, props.aorLookup],
+  );
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps =
     typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
@@ -1764,7 +1770,7 @@ function UsersTable(props: {
 
   const table = useAppMaterialReactTable({
     columns,
-    data: props.loading ? buildUserLoadingRows() : props.data,
+    data,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -1988,6 +1994,11 @@ function AdminUsersNeoPageBody() {
         />
       </div>
 
+      {organismsError ? (
+        <div className="shrink-0">
+          <PowerAlert severity="error">{`Не вдалося завантажити організми: ${organismsError}`}</PowerAlert>
+        </div>
+      ) : null}
       {aorsError ? (
         <div className="shrink-0">
           <PowerAlert severity="error">{`Не вдалося завантажити смуги: ${aorsError}`}</PowerAlert>
