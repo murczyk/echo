@@ -1,5 +1,6 @@
 use super::reasoning::{self, ExecutionPolicy, ProviderPurpose};
 use super::types::{AiAgentBootstrapExchangeReq, AiAgentBootstrapExchangeRsp};
+use crate::ai_engine::client::{government_model, model_id};
 use crate::config::{
     AI_AGENT_API_CALL_COUNT_REDIS_PREFIX, AI_AGENT_BOOTSTRAP_REDIS_PREFIX,
     AI_AGENT_BOOTSTRAP_TTL_SEC, AI_AGENT_CORRELATION_SESSION_REDIS_PREFIX,
@@ -320,7 +321,7 @@ pub async fn authorize_provider_call(
             .await?;
     if super::access::agent_provider_transport(&ai_engine)
         != Some(super::access::AgentProviderTransport::EchoGateway)
-        || ai_engine.model_name != grant.model_name
+        || model_id(&ai_engine) != grant.model_name
     {
         return Ok(None);
     }
@@ -352,7 +353,7 @@ async fn resolve_provider_engine(
     requested_model_name: &str,
     ai_engine: ai_engine::Model,
 ) -> anyhow::Result<Option<AuthorizedProvider>> {
-    if requested_model_name == ai_engine.model_name {
+    if requested_model_name == model_id(&ai_engine) {
         return Ok(Some(AuthorizedProvider {
             ai_engine,
             checkpoint_max_tokens: None,
@@ -362,15 +363,12 @@ async fn resolve_provider_engine(
             request_id: grant.request_id,
         }));
     }
-    if ai_engine.model_name != crate::config::AI_AGENT_GLM_5_3
-        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
-    {
+    if government_model(&ai_engine) != Some(crate::config::AI_AGENT_GLM_5_3) {
         return Ok(None);
     }
     let Some(checkpoint) = grant.checkpoint.as_ref().filter(|checkpoint| {
         checkpoint.model_name == requested_model_name
-            && checkpoint.model_name
-                == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
+            && crate::ai_engine::client::is_gpt_luna(&checkpoint.model_name)
             && checkpoint.max_output_tokens >= 256
     }) else {
         return Ok(None);
@@ -379,8 +377,7 @@ async fn resolve_provider_engine(
         super::access::allowed_engine_by_id(&env.dbx, checkpoint.ai_engine_id)
             .await
             .c(h!())?;
-    if ai_engine.model_name != checkpoint.model_name
-        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+    if government_model(&ai_engine) != Some(checkpoint.model_name.as_str())
         || super::access::agent_provider_transport(&ai_engine)
             != Some(super::access::AgentProviderTransport::EchoGateway)
     {

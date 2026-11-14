@@ -31,6 +31,20 @@ To warn chat users meanwhile, open **Admin → AI → ШІ-агент → Нал
 
 Agent containers receive an Echo capability, never Azure secrets or bearer tokens. Semantic OCR uses the same client through `/internal/ocr/infer`. Document extraction continues to use the existing extractor, Paddle and NuExtract3.
 
+## Through a credentials proxy
+
+The gateway can also be reached through a self-hosted OpenAI-compatible proxy that holds the Azure credentials itself, such as Bifrost. Echo then needs no Azure settings for those engines: the admin dialog and its switch apply only to engines on the gateway URL.
+
+1. In the proxy, register the gateway's models as `inference.ai.mod.gov.ua/<model>`, for example `inference.ai.mod.gov.ua/glm-5.3`, and issue a key for Echo (a Bifrost virtual key starting `sk-bf-`).
+2. Create an AI engine with the proxy's `/v1` Base URL, that model name and the key as its token. Use `http` or `https`; an `https` certificate must chain to a public CA (for example `tailscale cert`), because Echo does not read the host's certificate store. Point at the `https` URL directly: redirects are not followed.
+3. Only Echo backend hosts need to reach the proxy. Agents use these engines through the Echo gateway, so the key never enters an agent container.
+
+`gpt-luna` is handled exactly like `gpt-6-luna`, directly or through the proxy, including checkpoints and runtime-profile defaults; it has its own 429 cooldown. Activity titles prefer an enabled government Luna of either name: a direct one while the Azure gateway is enabled, a proxied one whenever it has its key; with several, the first by engine name wins.
+
+Echo treats such an engine as the government model named after the prefix: every quirk above applies (Sol and Luna parameters, GLM output floor, timeouts, checkpoints and the shared 429 cooldown), the agent runner sees the bare model name, and Echo restores the prefix on the way out. Requests carry `x-bf-passthrough-extra-params: true` so Bifrost forwards `allowed_openai_params` and `thinking`; other proxies ignore it. The proxy must also forward unknown request fields, streaming, error bodies and `Retry-After` unchanged, and must not fall back to another provider.
+
+A model name whose prefix looks like a host but is not exactly `inference.ai.mod.gov.ua/` is refused for agents, so a typo never hands the key to a container. Before rollout, check each host with `select name, url, model_name from ai_engine where enabled and model_name like '%/%';`: no name's first segment may contain a `.`. Provider metrics still label proxied calls `internal` or `other` with the prefixed model name.
+
 ## echo-tsur rollout
 
 The application deployment does not activate Azure or change existing engine assignments. Enter production credentials using the admin dialog, verify models, then configure the engines and worker assignments above.
@@ -45,4 +59,4 @@ If Azure returns 400/401, check tenant, client, scope, secret expiry and provide
 
 For rollback, select the previous engines in existing admin settings, restore their worker flags, then disable the government gateway. Keep the additive migration and encrypted settings when rolling back application code. Deleting the secret is optional after disable; it cannot be recovered from the API. Do not down-migrate to roll back a deployment.
 
-Regression coverage: `wdintel-rs/src/ai_engine/client_tests.rs`, `wdintel-rs/src/ai_engine/gov_tests.rs`, and `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/AiGovUaSettings.spec.tsx`.
+Regression coverage: `wdintel-rs/src/ai_engine/client_tests.rs`, `wdintel-rs/src/ai_engine/gov_tests.rs`, `wdintel-rs/src/ai_agent/access.rs`, `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/AiGovUaSettings.spec.tsx`, and `wdintel-web/src/ts/react/routes/admin-ai-agent/__tests__/engine-eligibility.spec.ts`.

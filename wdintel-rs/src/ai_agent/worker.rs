@@ -2,6 +2,7 @@ use super::{
     access, activity_titles::ActivityTitles, auth, chat_monitoring,
     dispatcher::DispatcherClient, events, lifecycle, review,
 };
+use crate::ai_engine::client::{government_model, model_id};
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
@@ -482,9 +483,7 @@ async fn run_request(
                     crate::config::AI_AGENT_DEADLINE_CLEANUP_SEC,
                 )
         })
-        .unwrap_or_else(|| {
-            request_execution_timeout(&ai_engine.model_name, &ai_engine.url)
-        });
+        .unwrap_or_else(|| request_execution_timeout(&ai_engine));
     match tokio::time::timeout(
         timeout,
         run_request_inner(env, request, cancellation, ai_engine, model_failure),
@@ -576,9 +575,11 @@ impl EnvironmentTimings {
     }
 }
 
-fn request_execution_timeout(model_name: &str, url: &str) -> StdDuration {
-    let seconds = if model_name == crate::config::AI_AGENT_GLM_5_3
-        && crate::ai_engine::client::is_government_url(url)
+fn request_execution_timeout(
+    ai_engine: &crate::entities::ai_engine::Model,
+) -> StdDuration {
+    let seconds = if government_model(ai_engine)
+        == Some(crate::config::AI_AGENT_GLM_5_3)
     {
         crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
     } else {
@@ -768,7 +769,7 @@ async fn run_request_inner(
     {
         checkpoint = Some(CheckpointProvider {
             ai_engine_id: ai_engine.id,
-            model_name: ai_engine.model_name.clone(),
+            model_name: model_id(&ai_engine).to_string(),
             context_window: runtime_profile.context_window_tokens,
             max_tokens: checkpoint_output_tokens(&ai_engine, &runtime_profile),
         });
@@ -786,12 +787,12 @@ async fn run_request_inner(
                     request.id,
                     correlation_id,
                     ai_engine.id,
-                    ai_engine.model_name.clone(),
+                    model_id(&ai_engine).to_string(),
                     checkpoint
                         .as_ref()
                         .filter(|checkpoint| {
                             execution_policy.is_some()
-                                || checkpoint.model_name != ai_engine.model_name
+                                || checkpoint.model_name != model_id(&ai_engine)
                         })
                         .map(|checkpoint| auth::CheckpointProviderGrant {
                             ai_engine_id: checkpoint.ai_engine_id,
@@ -813,7 +814,8 @@ async fn run_request_inner(
     let mut runner_payload = runner_payload_for_provider(
         json!({
             "echoPublicHost": env.config.public_host,
-            "modelName": ai_engine.model_name,
+            // The runner sees model names without a proxy prefix.
+            "modelName": model_id(&ai_engine),
             "contextWindow": runtime_profile.context_window_tokens,
             "providerRequestMaxBytes": (provider_transport == access::AgentProviderTransport::EchoGateway).then_some(crate::config::AI_AGENT_PROVIDER_REQUEST_MAX_BYTES),
             "maxTokens": runtime_profile.max_output_tokens,
@@ -1181,9 +1183,7 @@ async fn checkpoint_provider(
     ai_engine: &crate::entities::ai_engine::Model,
     runtime_profile: &ai_agent_engine_runtime_profile::Model,
 ) -> anyhow::Result<Option<CheckpointProvider>> {
-    if ai_engine.model_name != crate::config::AI_AGENT_GLM_5_3
-        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
-    {
+    if government_model(ai_engine) != Some(crate::config::AI_AGENT_GLM_5_3) {
         return Ok(None);
     }
     if env.config.ai_agent_glm_checkpoint_provider
@@ -1191,7 +1191,7 @@ async fn checkpoint_provider(
     {
         return Ok(Some(CheckpointProvider {
             ai_engine_id: ai_engine.id,
-            model_name: ai_engine.model_name.clone(),
+            model_name: model_id(ai_engine).to_string(),
             context_window: runtime_profile.context_window_tokens,
             max_tokens: checkpoint_output_tokens(ai_engine, runtime_profile),
         }));
@@ -1201,8 +1201,8 @@ async fn checkpoint_provider(
         .c(h!())?
         .into_iter()
         .filter(|ai_engine| {
-            ai_engine.model_name == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
-                && crate::ai_engine::client::is_government_url(&ai_engine.url)
+            government_model(ai_engine)
+                .is_some_and(crate::ai_engine::client::is_gpt_luna)
         })
         .min_by_key(|ai_engine| ai_engine.id);
     let Some(ai_engine) = ai_engine else {
@@ -1230,7 +1230,7 @@ async fn checkpoint_provider(
     );
     Ok(Some(CheckpointProvider {
         ai_engine_id: ai_engine.id,
-        model_name: ai_engine.model_name,
+        model_name: model_id(&ai_engine).to_string(),
         context_window: checkpoint_profile.context_window_tokens,
         max_tokens,
     }))
@@ -1240,9 +1240,7 @@ fn checkpoint_output_tokens(
     ai_engine: &crate::entities::ai_engine::Model,
     runtime_profile: &ai_agent_engine_runtime_profile::Model,
 ) -> i32 {
-    if ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
-        && crate::ai_engine::client::is_government_url(&ai_engine.url)
-    {
+    if government_model(ai_engine) == Some(crate::config::AI_AGENT_GLM_5_3) {
         std::cmp::max(
             runtime_profile.max_output_tokens,
             std::cmp::min(
@@ -2103,29 +2101,29 @@ mod tests {
     #[test]
     fn issue_3724_scoped_long_execution_to_government_glm() {
         let regular = StdDuration::from_secs(AI_AGENT_DISPATCHER_TIMEOUT_SEC);
+        let long = StdDuration::from_secs(
+            crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC,
+        );
+        let timeout = |url: &str, model_name: &str| {
+            request_execution_timeout(&crate::ai_engine::client::test_engine(
+                url, model_name, None,
+            ))
+        };
         let government = crate::config::AI_GOV_UA_API_BASE;
+        let glm = crate::config::AI_AGENT_GLM_5_3;
+        assert_eq!(timeout(government, glm), long);
+        assert_eq!(timeout("https://example.invalid/v1", glm), regular);
         assert_eq!(
-            request_execution_timeout(
-                crate::config::AI_AGENT_GLM_5_3,
-                government,
-            ),
-            StdDuration::from_secs(
-                crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
-            )
-        );
-        assert_eq!(
-            request_execution_timeout(
-                crate::config::AI_AGENT_GLM_5_3,
-                "https://example.invalid/v1",
-            ),
+            timeout(government, crate::config::AI_AGENT_OPENAI_GPT_6_LUNA),
             regular
         );
         assert_eq!(
-            request_execution_timeout(
-                crate::config::AI_AGENT_OPENAI_GPT_6_LUNA,
-                government,
+            timeout(
+                "http://proxy.internal:8080/v1",
+                "inference.ai.mod.gov.ua/glm-5.3"
             ),
-            regular
+            long,
+            "a proxied government GLM keeps the long execution"
         );
     }
 

@@ -97,6 +97,7 @@ import {
   type AiAgentEngineCompatibility,
   getAiAgentEngineCompatibility,
   getAiAgentTokenNotice,
+  getAiEngineModelId,
   getAiReviewerEngineCompatibility,
 } from './engine-eligibility';
 import { MattermostWebhookField } from './MattermostWebhookField';
@@ -1373,7 +1374,7 @@ function defaultProviderRuntimeProfile(engine: AiEngineItem): ProviderRuntimePro
 function defaultProviderRuntimeLimits(
   engine: AiEngineItem,
 ): Omit<ProviderRuntimeProfile, 'visionInputEnabled'> {
-  const modelName = engine.modelName.toLowerCase();
+  const modelName = getAiEngineModelId(engine).toLowerCase();
   if (modelName === 'gpt-6-sol') {
     return {
       aiEngineId: engine.id,
@@ -1383,7 +1384,7 @@ function defaultProviderRuntimeLimits(
       compactionKeepRecentTokens: 49_152,
     };
   }
-  if (modelName === 'gpt-6-luna') {
+  if (modelName === 'gpt-6-luna' || modelName === 'gpt-luna') {
     return {
       aiEngineId: engine.id,
       contextWindowTokens: 1_050_000,

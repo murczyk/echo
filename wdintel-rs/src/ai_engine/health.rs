@@ -519,7 +519,7 @@ pub(crate) async fn probe_engine(
 ) -> bool {
     let reasoning = AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES
         .iter()
-        .any(|prefix| engine.model_name.starts_with(prefix));
+        .any(|prefix| super::client::model_id(engine).starts_with(prefix));
     let body = match serde_json::to_value(OpenAiChatCompletionReq {
         model_name: engine.model_name.clone(),
         messages: vec![AiEngineMessage {

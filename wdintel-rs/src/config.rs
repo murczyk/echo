@@ -204,6 +204,13 @@ pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
 pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
 pub const AI_ENGINE_GOVERNMENT_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
+/// A proxy that holds the gateway's credentials (Bifrost or another one)
+/// names government models `<AI_GOV_UA_API_HOST>/<model>`.
+pub const AI_GOV_UA_PROXY_MODEL_PREFIX: &str = "inference.ai.mod.gov.ua/";
+/// Sent to that proxy so it forwards the gateway's extra request fields
+/// (`allowed_openai_params`, `thinking`); other proxies ignore it.
+pub const AI_GOV_UA_PROXY_HEADERS: &[(&str, &str)] =
+    &[("x-bf-passthrough-extra-params", "true")];
 pub const AI_PROVIDER_METRICS_OPENAI_HOST: &str = "api.openai.com";
 pub const AI_ENGINE_BLOCKED_OPENAI_DOMAIN: &str = "openai.com";
 pub const AI_PROVIDER_METRICS_PROCESS_ONEOFF: &str = "echo-oneoff";
@@ -238,7 +245,7 @@ pub const AI_ENGINE_HEALTH_PROBE_TIMEOUT_SECS: u64 = 60;
 pub const AI_ENGINE_HEALTH_PROBE_MAX_TOKENS: u32 = 16;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
 pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
-    &["gpt-5", "gpt-6", "o1", "o3", "o4"];
+    &["gpt-5", "gpt-6", "gpt-luna", "o1", "o3", "o4"];
 pub const AI_ENGINE_OPENAI_REASONING_NONE_MODELS: &[&str] = &[
     "gpt-5.1",
     "gpt-5.2",
@@ -252,6 +259,7 @@ pub const AI_ENGINE_OPENAI_REASONING_NONE_MODELS: &[&str] = &[
     "gpt-5.6-luna",
     "gpt-6-sol",
     "gpt-6-luna",
+    "gpt-luna",
 ];
 pub const AI_CHAT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_CHAT_TITLE_MAX_CHARS: usize = 120;
@@ -747,6 +755,8 @@ pub const AI_AGENT_DEEP_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 30 * 60;
 pub const AI_AGENT_DEADLINE_CLEANUP_SEC: u64 = 5;
 pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
+/// Served next to `gpt-6-luna` and handled exactly like it.
+pub const AI_AGENT_OPENAI_GPT_LUNA: &str = "gpt-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;

@@ -1,9 +1,10 @@
 use super::auth;
 use super::reasoning::{ProviderApi, ProviderPurpose};
+use crate::ai_engine::client::{government_model, model_id};
 use crate::ai_engine::StreamBodyTimer;
 use crate::config::{
-    AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_LUNA,
-    AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_SOL,
+    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
     AI_AGENT_PROVIDER_CONTENT_FILTER_MESSAGE,
     AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS,
@@ -106,10 +107,10 @@ async fn provider_call(
     }
     let validated = match api {
         ProviderApi::OpenaiCompletions => {
-            validate_request_body(&body, &authorization.ai_engine.model_name)
+            validate_request_body(&body, model_id(&authorization.ai_engine))
         }
         ProviderApi::OpenaiResponses => {
-            validate_responses_body(&body, &authorization.ai_engine.model_name)
+            validate_responses_body(&body, model_id(&authorization.ai_engine))
         }
     };
     let Some((mut body, streamed)) = validated else {
@@ -524,7 +525,7 @@ fn normalize_reasoning_effort(
     if expected_model_name
         .starts_with(AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX)
         || expected_model_name == AI_AGENT_OPENAI_GPT_6_SOL
-        || expected_model_name == AI_AGENT_OPENAI_GPT_6_LUNA
+        || crate::ai_engine::client::is_gpt_luna(expected_model_name)
     {
         body.insert(
             "reasoning_effort".to_string(),
@@ -538,8 +539,7 @@ fn provider_request_timeout(
     streamed: bool,
 ) -> Duration {
     let seconds = if streamed
-        && ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
-        && crate::ai_engine::client::is_government_url(&ai_engine.url)
+        && government_model(ai_engine) == Some(crate::config::AI_AGENT_GLM_5_3)
     {
         AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC
     } else {
@@ -1636,8 +1636,13 @@ mod tests {
 
     #[test]
     fn forces_reasoning_effort_none_for_chat_tool_models() {
-        for engine in ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-6-sol", "gpt-6-luna"]
-        {
+        for engine in [
+            "gpt-5.6-luna",
+            "gpt-5.6-sol",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-luna",
+        ] {
             for effort in [None, Some("high")] {
                 let mut body = json!({
                     "model": engine,

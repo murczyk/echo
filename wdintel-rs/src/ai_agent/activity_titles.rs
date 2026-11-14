@@ -1,5 +1,8 @@
 use super::types::AiAgentActivityPresentation;
 use super::{access, events};
+use crate::ai_engine::client::{
+    government_model, is_government_proxy, is_gpt_luna,
+};
 use crate::ai_engine::{request_structured_ai_response, AiEngineMessage};
 use crate::config::{
     AI_AGENT_ACTIVITY_DETAIL_MAX_CHARS, AI_AGENT_ACTIVITY_PURPOSE_MAX_CHARS,
@@ -7,7 +10,8 @@ use crate::config::{
     AI_AGENT_ACTIVITY_TITLE_MAX_GENERATIONS,
     AI_AGENT_ACTIVITY_TITLE_MAX_TOKENS, AI_AGENT_ACTIVITY_TITLE_PROMPT,
     AI_AGENT_ACTIVITY_TITLE_TIMEOUT_MS, AI_AGENT_OPENAI_GPT_6_LUNA,
-    AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
+    AI_AGENT_OPENAI_GPT_LUNA, AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
+    AI_GOV_UA_PROXY_MODEL_PREFIX,
 };
 use crate::entities::ai_engine;
 use crate::h;
@@ -147,7 +151,7 @@ async fn load_title_engine(
     engines.retain(|engine| {
         access::agent_provider_transport(engine)
             == Some(access::AgentProviderTransport::DirectHttp)
-            || crate::ai_engine::client::is_government_url(&engine.url)
+            || crate::ai_engine::client::government_model(engine).is_some()
     });
     engines.sort_by(|left, right| {
         (&left.name, left.id).cmp(&(&right.name, right.id))
@@ -168,22 +172,36 @@ async fn load_title_engine(
     Ok(engines.into_iter().next())
 }
 
+/// A government Luna, reached directly (while the Azure gateway is enabled)
+/// or through a credentials proxy (with its key), whichever sorts first.
 async fn government_luna_engine(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Option<ai_engine::Model>> {
-    if !crate::ai_engine::gov::gateway_enabled(dbx).await.c(h!())? {
-        return Ok(None);
-    }
+    let gateway_enabled =
+        crate::ai_engine::gov::gateway_enabled(dbx).await.c(h!())?;
+    let model_names = [AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_LUNA]
+        .into_iter()
+        .flat_map(|name| {
+            [
+                name.to_string(),
+                format!("{AI_GOV_UA_PROXY_MODEL_PREFIX}{name}"),
+            ]
+        });
     let engines = ai_engine::Entity::find()
         .filter(ai_engine::Column::Enabled.eq(true))
-        .filter(ai_engine::Column::ModelName.eq(AI_AGENT_OPENAI_GPT_6_LUNA))
+        .filter(ai_engine::Column::ModelName.is_in(model_names))
         .all(dbx)
         .await
         .c(h!())?;
     Ok(engines
         .into_iter()
         .filter(|engine| {
-            crate::ai_engine::client::is_government_url(&engine.url)
+            government_model(engine).is_some_and(is_gpt_luna)
+                && if is_government_proxy(engine) {
+                    engine.token.is_some()
+                } else {
+                    gateway_enabled
+                }
         })
         .min_by(|left, right| {
             (&left.name, left.id).cmp(&(&right.name, right.id))
@@ -452,6 +470,108 @@ mod tests {
         let title_engine = load_title_engine(dbx).await.unwrap();
         assert_eq!(title_engine.map(|engine| engine.id), Some(glm.id));
 
+        settings
+            .into_active_model()
+            .reset_all()
+            .update(dbx)
+            .await
+            .unwrap();
+        ai_agent_allowed_engine::Entity::delete_by_id(glm.id)
+            .exec(dbx)
+            .await
+            .unwrap();
+        set_engines_enabled(dbx, &other_luna_ids, true).await;
+        gateway
+            .into_active_model()
+            .reset_all()
+            .update(dbx)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn titles_use_a_proxied_government_luna_without_the_azure_gateway() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let dbx = &env.dbx;
+        let luna_names = [AI_AGENT_OPENAI_GPT_6_LUNA, "gpt-luna"]
+            .into_iter()
+            .flat_map(|name| {
+                [name.to_string(), format!("inference.ai.mod.gov.ua/{name}")]
+            });
+        let other_luna_ids = ai_engine::Entity::find()
+            .filter(ai_engine::Column::Enabled.eq(true))
+            .filter(ai_engine::Column::ModelName.is_in(luna_names))
+            .all(dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|engine| engine.id)
+            .collect::<Vec<_>>();
+        set_engines_enabled(dbx, &other_luna_ids, false).await;
+        let glm = government_engine(dbx, AI_AGENT_GLM_5_3).await;
+        ai_agent_allowed_engine::ActiveModel {
+            ai_engine_id: Set(glm.id),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let settings = access::settings(dbx).await.unwrap();
+        let mut enabled = settings.clone().into_active_model();
+        enabled.feature_enabled = Set(true);
+        enabled.default_ai_engine_id = Set(Some(glm.id));
+        enabled.update(dbx).await.unwrap();
+        let gateway =
+            ai_gov_ua_settings::Entity::find_by_id(AI_GOV_UA_SETTINGS_ID)
+                .one(dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        set_gateway_enabled(dbx, &gateway, false).await;
+        let proxied = |model_name: &str| ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("proxied-{model_name}-{}", Uuid::now_v7())),
+            url: Set("http://proxy.internal:8080/v1".to_string()),
+            token: Set(Some("sk-bf-test".to_string())),
+            model_name: Set(model_name.to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        };
+        let mistyped = proxied("inference.ai.mod.gov.au/gpt-luna")
+            .insert(dbx)
+            .await
+            .unwrap();
+        let title_engine = load_title_engine(dbx).await.unwrap();
+        assert_eq!(
+            title_engine.map(|engine| engine.id),
+            Some(glm.id),
+            "a mistyped proxy prefix is never a government Luna"
+        );
+
+        let luna = proxied("inference.ai.mod.gov.ua/gpt-luna")
+            .insert(dbx)
+            .await
+            .unwrap();
+        let title_engine = load_title_engine(dbx).await.unwrap();
+        assert_eq!(
+            title_engine.map(|engine| engine.id),
+            Some(luna.id),
+            "a proxied Luna needs no Azure gateway"
+        );
+
+        let mut keyless = luna.clone().into_active_model();
+        keyless.token = Set(None);
+        keyless.update(dbx).await.unwrap();
+        let title_engine = load_title_engine(dbx).await.unwrap();
+        assert_eq!(
+            title_engine.map(|engine| engine.id),
+            Some(glm.id),
+            "a proxied Luna without its key is skipped"
+        );
+
+        set_engines_enabled(dbx, &[luna.id, mistyped.id, glm.id], false).await;
         settings
             .into_active_model()
             .reset_all()
