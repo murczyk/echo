@@ -30,6 +30,34 @@ const units = [
 const hierarchy = buildUnitHierarchyIndex(units);
 
 describe('unit descendants regression #3527', () => {
+  it('shows one computed army parent when matching catalog rows already have counts', () => {
+    const hierarchy = buildUnitHierarchyIndex([
+      unit(30, '22 А', { army: '22 А' }),
+      unit(31, '22 А', { army: '22 А' }),
+      unit(32, '72 мсд 22 А', { army: '22 А', division: '72 мсд' }),
+      unit(33, 'Army headquarters', { army: '22 А' }),
+    ]);
+    const options = aggregateUnitParentOptions(
+      [
+        { value: 'unit-id:30', label: '22 А', count: 2 },
+        { value: 'unit-id:31', label: '22 А', count: 3 },
+        { value: 'unit-id:32', label: '72 мсд 22 А', count: 5 },
+        { value: 'unit-id:33', label: 'Army headquarters', count: 7 },
+      ],
+      hierarchy,
+    );
+    const armies = options.filter((option) => option.label === '22 А');
+    expect(armies).toHaveLength(1);
+    expect(armies[0].count).toBe(17);
+    expect(options.find((option) => option.value === 'unit-id:33')?.count).toBe(7);
+    expect(
+      buildInboxReq({
+        filter: { ...emptyFilter(), unitsSelected: [armies[0].value] },
+        unitHierarchy: hierarchy,
+      }).selectedUnitIds?.sort(),
+    ).toEqual([30, 31, 32, 33]);
+  });
+
   it('does not join unrelated armies whose names contain hierarchy path delimiters', () => {
     const unitHierarchy = buildUnitHierarchyIndex([
       unit(40, 'Independent army', { army: '6 А|3:1 АК' }),

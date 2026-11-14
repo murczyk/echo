@@ -102,7 +102,12 @@ export function aggregateUnitParentOptions(
   const merged = new Map(options.map((option) => [option.value, option]));
   hierarchy.parents.forEach(({ value, label, descendants }) => {
     const count = descendants.reduce((total, child) => total + (counts.get(child) ?? 0), 0);
-    if (count > 0) merged.set(value, { value, label: merged.get(value)?.label ?? label, count });
+    if (count <= 0) return;
+    const parentLabel = merged.get(value)?.label ?? label;
+    hierarchy.exact.get(value)?.forEach((unitValue) => {
+      if (merged.get(unitValue)?.label.trim() === parentLabel.trim()) merged.delete(unitValue);
+    });
+    merged.set(value, { value, label: parentLabel, count });
   });
   return [...merged.values()].sort((a, b) => a.label.localeCompare(b.label));
 }

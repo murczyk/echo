@@ -57,6 +57,15 @@ fn enrich_options(
             Some(option) => option.label.clone(),
             None => group_label(hierarchy, index).c(h!())?,
         };
+        for id in &totals.unit_ids {
+            let unit_value = format!("unit-id:{id}");
+            if options
+                .get(&unit_value)
+                .is_some_and(|option| option.label.trim() == label.trim())
+            {
+                options.remove(&unit_value);
+            }
+        }
         options.insert(
             value.clone(),
             UnitStatsOption {
