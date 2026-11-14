@@ -1085,6 +1085,211 @@ mod tests {
         }
     }
 
+    type SavedLinkRows = (
+        Vec<(i64, i64, NaiveDateTime, Option<uuid::Uuid>)>,
+        Vec<(i64, i64, NaiveDateTime)>,
+    );
+
+    async fn saved_link_rows_4202<C: ConnectionTrait>(
+        db: &C,
+        inbox_item_id: i64,
+    ) -> SavedLinkRows {
+        let network_rows = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(inbox_item_id),
+            )
+            .order_by_asc(sigint_inbox_item_network::Column::Id)
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|link| {
+                (
+                    link.id,
+                    link.sigint_network_id,
+                    link.created_at,
+                    link.sigint_inbox_item_uuid,
+                )
+            })
+            .collect();
+        let unit_rows = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item_id))
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Network),
+            )
+            .order_by_asc(sigint_inbox_item_unit::Column::Id)
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|link| (link.id, link.unit_id, link.created_at))
+            .collect();
+        (network_rows, unit_rows)
+    }
+
+    // ECHO-4202: nightly invalidation recalculated whole networks by deleting
+    // and inserting every link, millions of unchanged rows a day.
+    #[serial]
+    #[tokio::test]
+    async fn recalculation_rewrites_only_changed_links_4202() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let db = &env.dbx;
+        let timestamp = Utc::now().naive_utc();
+        let group_aor = signal_group_aor::Entity::find()
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut units = Vec::new();
+        for name in ["42021 омсбр", "42022 омсбр"] {
+            units.push(
+                mk_sigint_unit(
+                    db,
+                    sigint_unit::ActiveModel {
+                        name: Set(name.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let networks = networks_for_parsed_unit_filter(
+            db,
+            &units,
+            &[vec![0], vec![1]],
+            group_aor.aor_id,
+            timestamp,
+        )
+        .await;
+        let inbox_item = mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                freq: Set(Some("146.4500".to_string())),
+                datetime: Set(Some(timestamp)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            db,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(inbox_item.id),
+                group_master_key: Set(Some(group_aor.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let calculate = || {
+            super::super::calculate_sigint_inbox_item_networks(
+                vec![inbox_item.clone()],
+                db,
+            )
+        };
+
+        calculate().await.unwrap();
+        let (network_rows, unit_rows) =
+            saved_link_rows_4202(db, inbox_item.id).await;
+        assert_eq!(
+            network_rows
+                .iter()
+                .map(|row| row.1)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([networks[0].id, networks[1].id])
+        );
+        assert_eq!(
+            unit_rows.iter().map(|row| row.1).collect::<BTreeSet<_>>(),
+            BTreeSet::from([units[0].id, units[1].id])
+        );
+        let kept_network_row = *network_rows
+            .iter()
+            .find(|row| row.1 == networks[0].id)
+            .unwrap();
+        let kept_unit_row =
+            *unit_rows.iter().find(|row| row.1 == units[0].id).unwrap();
+        // Both networks last saw this message. A recalculation that keeps a
+        // link must not clear that: the activity cache only falls back to
+        // recently created links, and kept links are no longer recreated.
+        sigint_network_freq::Entity::update_many()
+            .col_expr(
+                sigint_network_freq::Column::LastSeenDt,
+                Expr::value(inbox_item.datetime),
+            )
+            .filter(
+                sigint_network_freq::Column::NetworkId
+                    .is_in([networks[0].id, networks[1].id]),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+        let last_seen = || async {
+            let mut rows = sigint_network_freq::Entity::find()
+                .filter(
+                    sigint_network_freq::Column::NetworkId
+                        .is_in([networks[0].id, networks[1].id]),
+                )
+                .all(db)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|freq| (freq.network_id, freq.last_seen_dt.is_some()))
+                .collect::<Vec<_>>();
+            rows.sort();
+            rows
+        };
+
+        let calculated = calculate().await.unwrap();
+        assert_eq!(calculated[&inbox_item.id].len(), 2);
+        assert_eq!(
+            saved_link_rows_4202(db, inbox_item.id).await,
+            (network_rows.clone(), unit_rows.clone()),
+            "an unchanged recalculation must not rewrite link rows"
+        );
+        assert_eq!(
+            last_seen().await,
+            vec![(networks[0].id, true), (networks[1].id, true)]
+        );
+
+        sigint_inbox_item_network::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item_network::Column::SigintInboxItemUuid,
+                Expr::value(Some(uuid::Uuid::new_v4())),
+            )
+            .filter(
+                sigint_inbox_item_network::Column::Id.eq(kept_network_row.0),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(inbox_item.id),
+            item_uuid: Set(inbox_item.id_uuid),
+            unit_id: Set(units[0].id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        calculate().await.unwrap();
+
+        assert_eq!(
+            saved_link_rows_4202(db, inbox_item.id).await,
+            (vec![kept_network_row], vec![kept_unit_row]),
+            "only the link that is no longer calculated may change, and an \
+             outdated item uuid is fixed in place"
+        );
+        assert_eq!(
+            last_seen().await,
+            vec![(networks[0].id, true), (networks[1].id, false)],
+            "only the removed link's network loses its last-seen time"
+        );
+    }
+
     #[serial]
     #[tokio::test]
     async fn parsed_unit_recovery_and_removal_reconcile_networks_3842() {
@@ -1128,7 +1333,16 @@ mod tests {
             .all(db)
             .await
             .unwrap();
-        assert!(frequencies.iter().all(|freq| freq.last_seen_dt.is_none()));
+        // Only the removed link's network loses its last-seen time. The kept
+        // link to networks[0] still supplies it, so its last activity is not
+        // blanked while the queued recalculation is pending (ECHO-4202).
+        assert!(
+            frequencies.iter().all(|freq| {
+                freq.last_seen_dt.is_none()
+                    == (freq.network_id == networks[1].id)
+            }),
+            "{frequencies:?}"
+        );
         let queued_frequency_ids = network_recalculation_task::Entity::find()
             .select_only()
             .column(network_recalculation_task::Column::NetworkFreqId)
