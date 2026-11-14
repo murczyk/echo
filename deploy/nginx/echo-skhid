@@ -1,3 +1,6 @@
+# Response status only, counted in memory by echo-vector (deploy/signoz/vector.yaml).
+log_format echo_status '$status';
+
 server {
     server_name echo-skhid.serengeti-porbeagle.ts.net skhid.echoua.info;
 
@@ -21,7 +24,7 @@ server {
 		image/x-icon
 		application/rss+xml
 		application/atom_xml;
-    access_log  off;
+    access_log syslog:server=127.0.0.1:5140,tag=nginx_access,nohostname echo_status;
 
     client_header_buffer_size 16k;
     large_client_header_buffers 16 64k;

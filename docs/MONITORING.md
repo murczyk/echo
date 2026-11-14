@@ -221,6 +221,22 @@ request after transport retries. Count one `Internal server error` row per
 failure; do not downgrade these rows to warnings or count nested error text as
 another failure.
 
+### nginx response counts
+
+nginx doesn't write access logs; there are too many requests to store them
+on the hosts. Each Echo site sends only its response status as a UDP syslog
+datagram to `echo-vector` on `127.0.0.1:5140`. Vector counts the statuses in
+memory and sends one row per host per minute: `service.name=nginx`,
+`source_type=nginx_status`, with the numbers `nginx_responses`, `nginx_2xx`,
+`nginx_3xx`, `nginx_4xx` and `nginx_5xx`. The ERRORS dashboard's
+**NGINX NON-2XX** panel plots `sum(nginx_responses) - sum(nginx_2xx)` per
+5 minutes, one line per host. Paths and clients are not recorded.
+
+While `echo-vector` is stopped, the datagrams are lost and nginx writes a
+`send() failed (111: ...)` line to its `error.log` for most requests. Keep
+Vector restarts short. On a new host, start Vector with this config before
+enabling the nginx directive.
+
 ### Troubleshooting
 
 - No expected host: increase the discovery window, then check
