@@ -230,9 +230,12 @@ memory and sends one row per host per minute: `service.name=nginx`,
 `source_type=nginx_status`, with the numbers `nginx_responses`, `nginx_2xx`,
 `nginx_3xx`, `nginx_4xx` and `nginx_5xx`. The ERRORS dashboard's
 **NGINX NON-2XX** panel stacks `sum(nginx_responses) - sum(nginx_2xx)` per
-host in 5-minute bars. Paths and
-clients are not recorded. While `echo-vector` is stopped, the datagrams are
-dropped and nginx is unaffected.
+host in 5-minute bars. Paths and clients are not recorded.
+
+While `echo-vector` is stopped, the datagrams are lost and nginx writes a
+`send() failed (111: ...)` line to its `error.log` for most requests. Keep
+Vector restarts short. On a new host, start Vector with this config before
+enabling the nginx directive.
 
 ### Troubleshooting
 
