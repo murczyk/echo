@@ -25,8 +25,16 @@ use tokio_util::sync::CancellationToken;
 struct ObservedHarness {
     namespace: String,
     ai_enabled: bool,
-    template: Option<String>,
+    template: Template,
     containers: Vec<Option<String>>,
+}
+
+#[derive(Debug)]
+enum Template {
+    Release(Option<String>),
+    /// The dispatcher refused the template, for example because it belongs
+    /// to another harness release; new containers can't be cloned from it.
+    Rejected(String),
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation: CancellationToken) {
@@ -51,13 +59,13 @@ async fn check(env: &Env) {
         Ok(Some(observed)) => observed,
         Ok(None) => return,
         Err(err) => {
-            warn!("AI harness check failed: {err:#}");
+            warn!("AI harness check failed: {err:?}");
             return;
         }
     };
     if let Some(mismatch) = describe_mismatch(
         AI_AGENT_HARNESS_RELEASE,
-        observed.template.as_deref(),
+        &observed.template,
         &observed.containers,
     ) {
         error!(
@@ -68,7 +76,7 @@ async fn check(env: &Env) {
 }
 
 /// `None` when this server has no AI dispatcher or settings to check.
-async fn observe(env: &Env) -> Result<Option<ObservedHarness>, AppError> {
+async fn observe(env: &Env) -> anyhow::Result<Option<ObservedHarness>> {
     let Some(dispatcher) =
         ai_agent_dispatcher::Entity::find_by_id(AI_AGENT_DISPATCHER_ID)
             .one(&env.dbx)
@@ -85,16 +93,23 @@ async fn observe(env: &Env) -> Result<Option<ObservedHarness>, AppError> {
     else {
         return Ok(None);
     };
-    let dispatcher = DispatcherClient::from_record(&dispatcher)?;
-    let template_id = access::template_login_id(&settings)?;
-    let preflight = dispatcher
+    let dispatcher = DispatcherClient::from_record(&dispatcher).c(h!())?;
+    let template_id = access::template_login_id(&settings).c(h!())?;
+    // Listing first shows the dispatcher is reachable, so a preflight
+    // business-logic error below is the dispatcher refusing the template.
+    let inventory = dispatcher.call("list", None, json!({})).await.c(h!())?;
+    let template = match dispatcher
         .call("preflight", None, json!({ "template_id": template_id }))
-        .await?;
-    let inventory = dispatcher.call("list", None, json!({})).await?;
+        .await
+    {
+        Ok(preflight) => Template::Release(release(&preflight.result)),
+        Err(AppError::BL { msg }) => Template::Rejected(msg),
+        Err(err) => return Err(err).c(h!()),
+    };
     Ok(Some(ObservedHarness {
         namespace: dispatcher.namespace().to_string(),
         ai_enabled: settings.feature_enabled,
-        template: release(&preflight.result),
+        template,
         containers: inventory
             .result
             .get("instances")
@@ -116,15 +131,18 @@ fn release(value: &Value) -> Option<String> {
 /// mismatch, because request validation refuses it too.
 fn describe_mismatch(
     required: &str,
-    template: Option<&str>,
+    template: &Template,
     containers: &[Option<String>],
 ) -> Option<String> {
     let mut parts = Vec::new();
-    if template != Some(required) {
-        parts.push(format!(
+    match template {
+        Template::Release(Some(release)) if release == required => {}
+        Template::Release(release) => parts.push(format!(
             "the namespace template has {}",
-            template.unwrap_or("no release")
-        ));
+            release.as_deref().unwrap_or("no release")
+        )),
+        Template::Rejected(reason) => parts
+            .push(format!("the dispatcher rejected the template ({reason})")),
     }
     let mut stale = BTreeMap::<&str, usize>::new();
     for container in containers {
@@ -154,6 +172,10 @@ mod tests {
 
     const REQUIRED: &str = "2026.11.13.2";
 
+    fn template(release: &str) -> Template {
+        Template::Release(Some(release.to_string()))
+    }
+
     fn containers(releases: &[Option<&str>]) -> Vec<Option<String>> {
         releases
             .iter()
@@ -164,8 +186,11 @@ mod tests {
     #[test]
     fn matching_template_and_containers_are_not_a_mismatch() {
         let all = containers(&[Some(REQUIRED), Some(REQUIRED)]);
-        assert_eq!(describe_mismatch(REQUIRED, Some(REQUIRED), &all), None);
-        assert_eq!(describe_mismatch(REQUIRED, Some(REQUIRED), &[]), None);
+        assert_eq!(
+            describe_mismatch(REQUIRED, &template(REQUIRED), &all),
+            None
+        );
+        assert_eq!(describe_mismatch(REQUIRED, &template(REQUIRED), &[]), None);
     }
 
     #[test]
@@ -176,7 +201,8 @@ mod tests {
             Some(REQUIRED),
         ]);
         assert_eq!(
-            describe_mismatch(REQUIRED, Some("2026.11.13.1"), &all).as_deref(),
+            describe_mismatch(REQUIRED, &template("2026.11.13.1"), &all)
+                .as_deref(),
             Some(
                 "the namespace template has 2026.11.13.1 and 2 of 3 containers have other releases (2026.11.13.1 ×2)"
             )
@@ -187,7 +213,7 @@ mod tests {
     fn stale_containers_alone_are_a_mismatch() {
         let all = containers(&[Some(REQUIRED), None, Some("2026.11.12.2")]);
         assert_eq!(
-            describe_mismatch(REQUIRED, Some(REQUIRED), &all).as_deref(),
+            describe_mismatch(REQUIRED, &template(REQUIRED), &all).as_deref(),
             Some(
                 "2 of 3 containers have other releases (2026.11.12.2 ×1, no release ×1)"
             )
@@ -197,8 +223,24 @@ mod tests {
     #[test]
     fn missing_template_release_is_a_mismatch() {
         assert_eq!(
-            describe_mismatch(REQUIRED, None, &[]).as_deref(),
+            describe_mismatch(REQUIRED, &Template::Release(None), &[])
+                .as_deref(),
             Some("the namespace template has no release")
+        );
+    }
+
+    #[test]
+    fn rejected_template_is_a_mismatch() {
+        let rejected = Template::Rejected(
+            "AI agent dispatcher: selected template belongs to another harness release"
+                .to_string(),
+        );
+        let all = containers(&[Some("2026.11.13.1")]);
+        assert_eq!(
+            describe_mismatch(REQUIRED, &rejected, &all).as_deref(),
+            Some(
+                "the dispatcher rejected the template (AI agent dispatcher: selected template belongs to another harness release) and 1 of 1 containers have other releases (2026.11.13.1 ×1)"
+            )
         );
     }
 
