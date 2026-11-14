@@ -432,21 +432,20 @@ where
     )
     .await
     .c(h!())?;
-    delete_sigint_inbox_item_networks(&sigint_inbox_item_ids, dbx)
-        .await
-        .c(h!())?;
     let sigint_inbox_items = filter_network_calc_items(sigint_inbox_items, dbx)
         .await
         .c(h!())?;
-    if !sigint_inbox_items.is_empty() {
-        insert_calculated_sigint_inbox_item_networks(
-            sigint_inbox_items,
-            dbx,
-            &mut result,
-        )
-        .await
-        .c(h!())?;
-    }
+    let calculated_links =
+        calculate_network_links(sigint_inbox_items, dbx, &mut result)
+            .await
+            .c(h!())?;
+    replace_sigint_inbox_item_networks(
+        &sigint_inbox_item_ids,
+        calculated_links,
+        dbx,
+    )
+    .await
+    .c(h!())?;
     crate::battle_line::settlement_queue::requeue_unresolved_item_settlements(
         dbx,
         &sigint_inbox_item_ids,
@@ -500,36 +499,40 @@ where
         .collect())
 }
 
-async fn delete_sigint_inbox_item_networks<'a, 'async_trait, C>(
-    sigint_inbox_item_ids: &[i64],
-    dbx: &'a C,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    for sigint_inbox_item_ids in
-        sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
-    {
-        sigint_inbox_item_network::Entity::delete_many()
-            .filter(
-                sigint_inbox_item_network::Column::SigintInboxItemId
-                    .is_in(sigint_inbox_item_ids.to_vec()),
-            )
-            .exec(dbx)
-            .await
-            .c(h!())?;
-    }
-    Ok(())
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct NetworkLink {
+    sigint_inbox_item_id: i64,
+    sigint_network_id: i64,
+    sigint_inbox_item_uuid: Option<uuid::Uuid>,
 }
 
-async fn insert_calculated_sigint_inbox_item_networks<'a, 'async_trait, C>(
+impl NetworkLink {
+    fn key(&self) -> (i64, i64) {
+        (self.sigint_inbox_item_id, self.sigint_network_id)
+    }
+
+    fn into_active_model(self) -> sigint_inbox_item_network::ActiveModel {
+        sigint_inbox_item_network::ActiveModel {
+            id: NotSet,
+            sigint_inbox_item_id: Set(self.sigint_inbox_item_id),
+            sigint_inbox_item_uuid: Set(self.sigint_inbox_item_uuid),
+            sigint_network_id: Set(self.sigint_network_id),
+            created_at: NotSet,
+        }
+    }
+}
+
+async fn calculate_network_links<C>(
     sigint_inbox_items: Vec<sigint_inbox_item::Model>,
-    dbx: &'a C,
+    dbx: &C,
     result: &mut HashMap<i64, Vec<i64>>,
-) -> anyhow::Result<()>
+) -> anyhow::Result<Vec<NetworkLink>>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait,
 {
+    if sigint_inbox_items.is_empty() {
+        return Ok(Vec::new());
+    }
     let item_uuids = sigint_inbox_items
         .iter()
         .map(|item| (item.id, item.id_uuid))
@@ -549,26 +552,139 @@ where
         consistency::load_networks_for_inbox_items(dbx, &items_to_process)
             .await
             .c(h!())?;
-    let mut networks_to_insert = Vec::new();
+    let mut links = Vec::new();
     for (item_id, network_ids) in network_ids_per_item {
         for network_id in network_ids {
-            let active_model = sigint_inbox_item_network::ActiveModel {
-                id: NotSet,
-                sigint_inbox_item_id: Set(item_id),
-                sigint_inbox_item_uuid: Set(item_uuids
+            links.push(NetworkLink {
+                sigint_inbox_item_id: item_id,
+                sigint_network_id: network_id,
+                sigint_inbox_item_uuid: item_uuids
                     .get(&item_id)
                     .copied()
-                    .flatten()),
-                sigint_network_id: Set(network_id),
-                created_at: NotSet,
-            };
-            networks_to_insert.push(active_model);
+                    .flatten(),
+            });
             result.entry(item_id).or_default().push(network_id);
         }
     }
-    insert_network_links(dbx, networks_to_insert)
-        .await
-        .c(h!())?;
+    Ok(links)
+}
+
+/// Makes the saved network links of `sigint_inbox_item_ids` equal to
+/// `calculated_links` without rewriting unchanged rows. Items missing from
+/// `calculated_links` lose all their links.
+///
+/// Network invalidation recalculates whole networks every night, and almost
+/// every link comes out the same. Deleting and inserting them all produced
+/// millions of no-op deletes a day in Postgres, WAL, CDC and ClickHouse.
+/// Only stale rows are deleted, by id. The whole calculated set is still
+/// inserted with `ON CONFLICT DO NOTHING`: a concurrent recalculation may
+/// delete a link after it was read here, and the last one must still leave
+/// its full set. Conflicting rows write nothing.
+async fn replace_sigint_inbox_item_networks<C>(
+    sigint_inbox_item_ids: &[i64],
+    calculated_links: Vec<NetworkLink>,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let calculated_by_key = calculated_links
+        .iter()
+        .map(|link| (link.key(), link.sigint_inbox_item_uuid))
+        .collect::<HashMap<_, _>>();
+    for sigint_inbox_item_ids in
+        sigint_inbox_item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE)
+    {
+        let saved_links = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .is_in(sigint_inbox_item_ids.to_vec()),
+            )
+            .all(dbx)
+            .await
+            .c(h!())?;
+        delete_stale_network_links(&saved_links, &calculated_by_key, dbx)
+            .await
+            .c(h!())?;
+        refresh_network_link_uuids(&saved_links, &calculated_by_key, dbx)
+            .await
+            .c(h!())?;
+    }
+    insert_network_links(
+        dbx,
+        calculated_links
+            .into_iter()
+            .map(NetworkLink::into_active_model)
+            .collect(),
+    )
+    .await
+    .c(h!())
+}
+
+async fn delete_stale_network_links<C>(
+    saved_links: &[sigint_inbox_item_network::Model],
+    calculated_by_key: &HashMap<(i64, i64), Option<uuid::Uuid>>,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let stale_ids = saved_links
+        .iter()
+        .filter(|link| {
+            !calculated_by_key.contains_key(&(
+                link.sigint_inbox_item_id,
+                link.sigint_network_id,
+            ))
+        })
+        .map(|link| link.id)
+        .collect::<Vec<_>>();
+    for stale_ids in stale_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
+        sigint_inbox_item_network::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_network::Column::Id.is_in(stale_ids.to_vec()),
+            )
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn refresh_network_link_uuids<C>(
+    saved_links: &[sigint_inbox_item_network::Model],
+    calculated_by_key: &HashMap<(i64, i64), Option<uuid::Uuid>>,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let mut outdated_ids_by_uuid: HashMap<Option<uuid::Uuid>, Vec<i64>> =
+        HashMap::new();
+    for link in saved_links {
+        let Some(item_uuid) = calculated_by_key
+            .get(&(link.sigint_inbox_item_id, link.sigint_network_id))
+        else {
+            continue;
+        };
+        if link.sigint_inbox_item_uuid != *item_uuid {
+            outdated_ids_by_uuid
+                .entry(*item_uuid)
+                .or_default()
+                .push(link.id);
+        }
+    }
+    for (item_uuid, link_ids) in outdated_ids_by_uuid {
+        sigint_inbox_item_network::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item_network::Column::SigintInboxItemUuid,
+                sea_orm::sea_query::Expr::value(item_uuid),
+            )
+            .filter(sigint_inbox_item_network::Column::Id.is_in(link_ids))
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
     Ok(())
 }
 
