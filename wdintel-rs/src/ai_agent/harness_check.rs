@@ -13,7 +13,7 @@ use crate::config::{
 use crate::entities::{ai_agent_dispatcher, ai_agent_settings};
 use crate::error::AppError;
 use crate::h;
-use crate::types::{error, warn, Env, ShortContext};
+use crate::types::{error, warn, Env, ShortContext, ShortContextErr};
 use sea_orm::EntityTrait;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -40,6 +40,9 @@ enum Template {
     /// The dispatcher refused the template because of its harness release;
     /// new containers can't be cloned from it.
     Rejected(String),
+    /// Preflight failed for another reason, such as a timeout; only the
+    /// containers are checked.
+    Unknown(String),
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation: CancellationToken) {
@@ -68,6 +71,9 @@ async fn check(env: &Env) {
             return;
         }
     };
+    if let Template::Unknown(err) = &observed.template {
+        warn!("AI harness check could not read the namespace template: {err}");
+    }
     if let Some(mismatch) = describe_mismatch(
         AI_AGENT_HARNESS_RELEASE,
         &observed.template,
@@ -111,7 +117,7 @@ async fn observe(env: &Env) -> anyhow::Result<Option<ObservedHarness>> {
         Err(AppError::BL { msg }) if is_release_rejection(&msg) => {
             Template::Rejected(msg)
         }
-        Err(err) => return Err(err).c(h!()),
+        Err(err) => Template::Unknown(format!("{:?}", err.c(h!()))),
     };
     Ok(Some(ObservedHarness {
         namespace: dispatcher.namespace().to_string(),
@@ -154,6 +160,7 @@ fn describe_mismatch(
         )),
         Template::Rejected(reason) => parts
             .push(format!("the dispatcher rejected the template ({reason})")),
+        Template::Unknown(_) => {}
     }
     let mut stale = BTreeMap::<&str, usize>::new();
     for container in containers {
@@ -252,6 +259,28 @@ mod tests {
             Some(
                 "the dispatcher rejected the template (AI agent dispatcher: selected template belongs to another harness release) and 1 of 1 containers have other releases (2026.11.13.1 ×1)"
             )
+        );
+    }
+
+    #[test]
+    fn unknown_template_still_reports_stale_containers() {
+        let unknown = Template::Unknown("timed out".to_string());
+        assert_eq!(
+            describe_mismatch(
+                REQUIRED,
+                &unknown,
+                &containers(&[Some(REQUIRED)])
+            ),
+            None
+        );
+        assert_eq!(
+            describe_mismatch(
+                REQUIRED,
+                &unknown,
+                &containers(&[Some("2026.11.13.1")])
+            )
+            .as_deref(),
+            Some("1 of 1 containers have other releases (2026.11.13.1 ×1)")
         );
     }
 
