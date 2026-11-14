@@ -4,8 +4,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import tempfile
+import threading
 
 
 INPUT = """
@@ -32,6 +34,30 @@ DROPPED = """
     no_outputs_from:
       - signoz_filter
 """
+NGINX_PARSE_TESTS = """
+tests:
+  - name: nginx-status-parse
+    inputs:
+      - insert_at: nginx_status_parse
+        type: raw
+        value: "<190>Nov 14 08:00:00 nginx_access: 502"
+    outputs:
+      - extract_from: nginx_status_parse
+        conditions:
+          - type: vrl
+            source: >-
+              .nginx_responses == 1 && .nginx_5xx == 1 && .nginx_2xx == 0 &&
+              .nginx_3xx == 0 && .nginx_4xx == 0
+  - name: nginx-status-malformed
+    inputs:
+      - insert_at: nginx_status_parse
+        type: raw
+        value: "<190>Nov 14 08:00:00 nginx_access: hello"
+    no_outputs_from:
+      - nginx_status_parse
+"""
+NGINX_ADDRESS = "address: 127.0.0.1:5140"
+NGINX_PERIOD = "end_every_period_ms: 60000"
 
 
 def vector_environment(enabled, endpoint):
@@ -70,15 +96,19 @@ class Receiver(BaseHTTPRequestHandler):
         pass
 
 
-def check_delivery(vector, config, directory):
+def delivery_config(config, directory):
     config = config.replace("enabled: true", "enabled: false", 1)
-    config = config.replace(
+    return config.replace(
         "type: journald\n    since_now: true",
         "type: stdin\n    decoding:\n      codec: json",
     ).replace(
         "/var/lib/postgresql/18/main/log/postgresql-*.log",
         str(directory / "no-logs.log"),
     )
+
+
+def check_delivery(vector, config, directory):
+    config = delivery_config(config, directory)
     path = directory / "delivery.yaml"
     path.write_text(f"data_dir: {json.dumps(str(directory))}\n" + config)
     with HTTPServer(("127.0.0.1", 0), Receiver) as receiver:
@@ -113,6 +143,81 @@ def check_delivery(vector, config, directory):
         print("HTTP delivery ... passed")
 
 
+def check_nginx_parse(vector, config, directory):
+    path = directory / "nginx-parse.yaml"
+    path.write_text(config + NGINX_PARSE_TESTS)
+    env = vector_environment("true", "http://127.0.0.1:8082")
+    subprocess.run([vector, "test", str(path)], env=env, check=True, timeout=30)
+
+
+def free_udp_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def check_nginx_delivery(vector, config, directory):
+    assert NGINX_ADDRESS in config and NGINX_PERIOD in config
+    port = free_udp_port()
+    config = delivery_config(config, directory).replace(
+        NGINX_ADDRESS, f"address: 127.0.0.1:{port}"
+    ).replace(NGINX_PERIOD, "end_every_period_ms: 1000")
+    path = directory / "nginx-delivery.yaml"
+    path.write_text(f"data_dir: {json.dumps(str(directory))}\n" + config)
+    with HTTPServer(("127.0.0.1", 0), Receiver) as receiver:
+        receiver.timeout = 15
+        receiver.received = []
+        env = vector_environment("true", f"http://127.0.0.1:{receiver.server_port}")
+        process = subprocess.Popen(
+            [vector, "--config", str(path)], env=env, text=True,
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        )
+        started = threading.Event()
+        stderr_lines = []
+
+        def read_stderr():
+            for line in process.stderr:
+                stderr_lines.append(line)
+                if "Vector has started" in line:
+                    started.set()
+
+        reader = threading.Thread(target=read_stderr, daemon=True)
+        reader.start()
+        try:
+            assert started.wait(30), "Vector did not start:\n" + "".join(stderr_lines)
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                for status in (200, 200, 404, 502, "bad"):
+                    sender.sendto(
+                        f"<190>Nov 14 08:00:00 nginx_access: {status}".encode(),
+                        ("127.0.0.1", port),
+                    )
+            receiver.handle_request()
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            reader.join(timeout=5)
+        assert receiver.received, "Vector did not deliver nginx counts:\n" + "".join(stderr_lines)
+        events = receiver.received[0]
+        assert isinstance(events, list) and len(events) == 1, events
+        event = events[0]
+        assert event["resources"]["service.name"] == "nginx"
+        assert event["resources"]["host.name"] == socket.gethostname()
+        assert event["source_type"] == "nginx_status"
+        counts = {key: event[key] for key in (
+            "nginx_responses", "nginx_2xx", "nginx_3xx", "nginx_4xx", "nginx_5xx",
+        )}
+        assert counts == {
+            "nginx_responses": 4, "nginx_2xx": 2, "nginx_3xx": 0,
+            "nginx_4xx": 1, "nginx_5xx": 1,
+        }, counts
+        assert event["message"] == "nginx responses total=4 2xx=2 3xx=0 4xx=1 5xx=1"
+        print("nginx status delivery ... passed")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--vector", default="vector")
@@ -129,6 +234,8 @@ def main():
         ):
             check(args.vector, config, Path(directory), name, enabled, endpoint)
         check_delivery(args.vector, config, Path(directory))
+        check_nginx_parse(args.vector, config, Path(directory))
+        check_nginx_delivery(args.vector, config, Path(directory))
 
 
 if __name__ == "__main__":
