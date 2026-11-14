@@ -12,7 +12,7 @@ export type UnitCountOption = {
 export type UnitHierarchyIndex = {
   children: Map<string, string[]>;
   exact: Map<string, string[]>;
-  parents: Array<{ value: string; label: string; descendants: string[] }>;
+  parents: Array<{ value: string; label: string; descendants: string[]; aliases: string[] }>;
 };
 
 const UNIT_PARENT_PREFIX = 'unit-parent:';
@@ -33,8 +33,10 @@ export function buildUnitHierarchyIndex(units: Unit[]): UnitHierarchyIndex {
 export function indexUnitHierarchyTree(
   tree: TreeNode[],
   units: Array<Pick<Unit, 'id' | 'name'>>,
+  selectionValues: readonly string[] = [],
 ): UnitHierarchyIndex {
   const index: UnitHierarchyIndex = { children: new Map(), exact: new Map(), parents: [] };
+  const selectedValues = new Set(selectionValues);
   const visit = (node: TreeNode): string[] => {
     if (node.kind === 'leaf') return [getUnitIdFilterValue(node.unitId)];
     const descendants = node.children.flatMap(visit);
@@ -67,8 +69,20 @@ export function indexUnitHierarchyTree(
     index.exact.set(parentValue, directUnits);
     index.children.set(value, descendants);
     index.exact.set(value, directUnits);
-    if (node.children.some((child) => child.kind === 'group') || directUnits.length > 1) {
-      index.parents.push({ value, label, descendants });
+    if (
+      node.children.some((child) => child.kind === 'group') ||
+      directUnits.length > 1 ||
+      selectedValues.has(parentValue) ||
+      directUnits.some((value) => selectedValues.has(value))
+    ) {
+      index.parents.push({
+        value,
+        label,
+        descendants,
+        aliases: [parentValue, ...matchingIds.map(getUnitIdFilterValue)].filter(
+          (alias) => alias !== value,
+        ),
+      });
     }
     return descendants;
   };
@@ -111,10 +125,11 @@ export function aggregateUnitParentOptions(
     (option.values ?? [option.value]).forEach((value) => counts.set(value, option.count));
   });
   const merged = new Map(options.map((option) => [option.value, option]));
-  hierarchy.parents.forEach(({ value, label, descendants }) => {
+  hierarchy.parents.forEach(({ value, label, descendants, aliases }) => {
     const count = descendants.reduce((total, child) => total + (counts.get(child) ?? 0), 0);
     if (count <= 0) return;
     const parentLabel = merged.get(value)?.label ?? label;
+    aliases.forEach((alias) => merged.delete(alias));
     hierarchy.exact.get(value)?.forEach((unitValue) => {
       if (merged.get(unitValue)?.label.trim() === parentLabel.trim()) merged.delete(unitValue);
     });

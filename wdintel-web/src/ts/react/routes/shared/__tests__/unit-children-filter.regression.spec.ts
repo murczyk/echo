@@ -30,45 +30,54 @@ const units = [
 const hierarchy = buildUnitHierarchyIndex(units);
 
 describe('unit descendants regression #3527', () => {
-  it('shows one computed army parent when matching catalog rows already have counts', () => {
-    const hierarchy = buildUnitHierarchyIndex([
-      unit(30, '22 А', { army: '22 А' }),
-      unit(31, '22 А', { army: '22 А' }),
-      unit(32, '72 мсд 22 А', { army: '22 А', division: '72 мсд' }),
-      unit(33, 'Army headquarters', { army: '22 А' }),
-    ]);
-    const options = aggregateUnitParentOptions(
-      [
-        { value: 'unit-id:30', label: '22 А', count: 2 },
-        { value: 'unit-id:31', label: '22 А', count: 3 },
-        { value: 'unit-id:32', label: '72 мсд 22 А', count: 5 },
-        { value: 'unit-id:33', label: 'Army headquarters', count: 7 },
-      ],
-      hierarchy,
-    );
-    const armies = options.filter((option) => option.label === '22 А');
-    expect(armies).toHaveLength(1);
-    expect(armies[0].value).toBe('unit-id:30');
-    expect(armies[0].count).toBe(17);
-    expect(options.find((option) => option.value === 'unit-id:33')?.count).toBe(7);
-    for (const value of [armies[0].value, 'unit-parent:group:0:Регіон|1:Округ|2:22 А']) {
-      const duty = buildInboxReq({
-        filter: { ...emptyFilter(), unitsSelected: [value], unitsDenied: [value] },
-        unitHierarchy: hierarchy,
-      });
-      expect(duty.selectedUnitIds?.sort()).toEqual([30, 31, 32, 33]);
-      expect(duty.deniedUnitIds?.sort()).toEqual([30, 31, 32, 33]);
-      expect(
-        buildAnalysisReq({
-          ...emptyQueryState(),
-          fromDateTimeStr: '2026-10-30T00:00',
-          toDateTimeStr: '2026-10-31T00:00',
-          unitsSelected: [value],
+  it.each([0, 2])(
+    'normalizes computed parents without crossing branches (own count: %s)',
+    (count) => {
+      const hierarchy = buildUnitHierarchyIndex([
+        unit(30, ' 22 А ', { army: '22 А' }),
+        unit(31, '22 А', { army: '22 А' }),
+        unit(32, '72 мсд 22 А', { army: '22 А', division: '72 мсд' }),
+        unit(33, 'Army headquarters', { army: '22 А' }),
+        unit(34, '22 А', { armyRegion: 'Інший регіон', army: '22 А' }),
+      ]);
+      const options = aggregateUnitParentOptions(
+        [
+          { value: 'unit-id:30', label: ' 22 А ', count },
+          { value: 'unit-id:31', label: '22 А', count: 3 },
+          { value: 'unit-id:32', label: '72 мсд 22 А', count: 5 },
+          { value: 'unit-id:33', label: 'Army headquarters', count: 7 },
+          { value: 'unit-id:34', label: '22 А', count: 11 },
+        ],
+        hierarchy,
+      );
+      const armies = options.filter((option) => option.label.trim() === '22 А');
+      expect(armies.map((option) => option.value).sort()).toEqual(['unit-id:30', 'unit-id:34']);
+      expect(options.find((option) => option.value === 'unit-id:30')?.count).toBe(15 + count);
+      expect(options.find((option) => option.value === 'unit-id:34')?.count).toBe(11);
+      expect(options.find((option) => option.value === 'unit-id:33')?.count).toBe(7);
+      for (const value of [
+        'unit-id:30',
+        'unit-id:31',
+        'unit-parent:group:0:Регіон|1:Округ|2:22 А',
+      ]) {
+        const duty = buildInboxReq({
+          filter: { ...emptyFilter(), unitsSelected: [value], unitsDenied: [value] },
           unitHierarchy: hierarchy,
-        })?.selectedUnitIds?.sort(),
-      ).toEqual([30, 31, 32, 33]);
-    }
-  });
+        });
+        expect(duty.selectedUnitIds?.sort()).toEqual([30, 31, 32, 33]);
+        expect(duty.deniedUnitIds?.sort()).toEqual([30, 31, 32, 33]);
+        expect(
+          buildAnalysisReq({
+            ...emptyQueryState(),
+            fromDateTimeStr: '2026-10-30T00:00',
+            toDateTimeStr: '2026-10-31T00:00',
+            unitsSelected: [value],
+            unitHierarchy: hierarchy,
+          })?.selectedUnitIds?.sort(),
+        ).toEqual([30, 31, 32, 33]);
+      }
+    },
+  );
 
   it('does not join unrelated armies whose names contain hierarchy path delimiters', () => {
     const unitHierarchy = buildUnitHierarchyIndex([

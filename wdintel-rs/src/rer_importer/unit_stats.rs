@@ -172,12 +172,19 @@ mod tests {
                     level: 4,
                     parent_index: Some(0),
                 },
+                UnitHierarchyGroup {
+                    id: "group:0:Інший регіон|1:__EMPTY__|2:22 А".to_string(),
+                    label: "22 А".to_string(),
+                    level: 2,
+                    parent_index: None,
+                },
             ],
             units: [
-                (30, "22 А", 0),
+                (30, " 22 А ", 0),
                 (31, "22 А", 0),
                 (32, "72 мсд 22 А", 1),
                 (33, "Army headquarters", 0),
+                (34, "22 А", 2),
             ]
             .into_iter()
             .map(|(id, name, group_index)| UnitHierarchyUnit {
@@ -188,32 +195,38 @@ mod tests {
             .collect(),
             selections: Vec::new(),
         };
-        let units = hierarchy
-            .units
-            .iter()
-            .zip([2, 3, 5, 7])
-            .map(|(unit, count)| AnalysisStatsUnit {
-                unit_id: unit.id,
-                name: unit.name.clone(),
-                count,
-            })
-            .collect::<Vec<_>>();
-        let options = enrich_options(&units, &hierarchy).unwrap();
-        let armies = options
-            .iter()
-            .filter(|option| option.label == "22 А")
-            .collect::<Vec<_>>();
-        assert_eq!(armies.len(), 1);
-        assert_eq!(armies[0].value, "unit-id:30");
-        assert_eq!(armies[0].count, 17);
-        assert_eq!(options.len(), 3);
-        assert_eq!(
-            options
+        for own_count in [0, 2] {
+            let units = hierarchy
+                .units
                 .iter()
-                .find(|option| option.value == "unit-id:33")
-                .unwrap()
-                .count,
-            7
-        );
+                .zip([own_count, 3, 5, 7, 11])
+                .map(|(unit, count)| AnalysisStatsUnit {
+                    unit_id: unit.id,
+                    name: unit.name.clone(),
+                    count,
+                })
+                .collect::<Vec<_>>();
+            let options = enrich_options(&units, &hierarchy).unwrap();
+            let armies = options
+                .iter()
+                .filter(|option| option.label.trim() == "22 А")
+                .collect::<Vec<_>>();
+            assert_eq!(armies.len(), 2);
+            assert_eq!(options.len(), 4);
+            for (value, count) in [
+                ("unit-id:30", 15 + own_count),
+                ("unit-id:33", 7),
+                ("unit-id:34", 11),
+            ] {
+                assert_eq!(
+                    options
+                        .iter()
+                        .find(|option| option.value == value)
+                        .unwrap()
+                        .count,
+                    count
+                );
+            }
+        }
     }
 }
