@@ -224,6 +224,7 @@ type MessengersChatItem = {
   oldest_read_at: number | null         // epoch ms, the caller's read span; null until read
   newest_read_at: number | null         // epoch ms
   unread_count: number                  // messages outside the read span
+  total_count: number                   // every message of the chat
 }
 ```
 
@@ -274,7 +275,8 @@ consequence: history backfilled before `oldest_read_at` after the chat was read
 counts as unread.
 
 `chats/list` returns the same `oldest_read_at`, `newest_read_at` and
-`unread_count` for every chat, so the list needs no extra request.
+`unread_count` for every chat, so the list needs no extra request, plus the
+chat's `total_count`.
 
 ### `POST /chats/read-state/get`
 
@@ -369,7 +371,7 @@ not change.
 
 Semantics of the counts:
 
-- `unread_count` counts every stored message of the chat, including messages
+- `unread_count` and `total_count` count every stored message of the chat, including messages
   deleted in Echo (`signal_message.deleted`), which `messages/list` leaves out.
   Messenger ingest does not delete messages, so the two agree in practice, and
   skipping the check keeps the counts cheap.

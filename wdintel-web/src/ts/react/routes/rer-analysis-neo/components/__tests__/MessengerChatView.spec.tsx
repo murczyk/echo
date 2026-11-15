@@ -59,6 +59,7 @@ const chat = {
   oldestReadAt: null,
   newestReadAt: null,
   unreadCount: 0,
+  totalCount: 0,
 };
 
 describe('MessengerChatView', () => {

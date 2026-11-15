@@ -2736,6 +2736,7 @@ type alias MessengersChatItem =
     , oldestReadAt : Maybe (Int)
     , newestReadAt : Maybe (Int)
     , unreadCount : Int
+    , totalCount : Int
     }
 
 
@@ -2755,6 +2756,7 @@ messengersChatItemEncoder struct =
         , ( "oldest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.oldestReadAt )
         , ( "newest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.newestReadAt )
         , ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        , ( "total_count", (Json.Encode.int) struct.totalCount )
         ]
 
 
@@ -24475,6 +24477,7 @@ messengersChatItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_read_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_read_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unread_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
 
 
 messengersChatsListRspDecoder : Json.Decode.Decoder MessengersChatsListRsp

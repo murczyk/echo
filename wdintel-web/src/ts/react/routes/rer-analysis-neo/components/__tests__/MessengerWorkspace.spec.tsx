@@ -101,6 +101,7 @@ describe('MessengerWorkspace', () => {
       oldestReadAt: null,
       newestReadAt: null,
       unreadCount: 0,
+      totalCount: 0,
     });
     vi.mocked(listMessengersChats).mockResolvedValue({
       items: [
@@ -166,6 +167,7 @@ describe('MessengerWorkspace', () => {
             oldestReadAt: null,
             newestReadAt: null,
             unreadCount: 0,
+            totalCount: 0,
           },
         ],
       });
@@ -207,6 +209,7 @@ describe('MessengerWorkspace', () => {
       oldestReadAt: null,
       newestReadAt: null,
       unreadCount: 0,
+      totalCount: 0,
     };
     vi.mocked(listMessengersChats).mockResolvedValue({ items: [chat] });
     vi.mocked(listMessengersChatMembers).mockResolvedValue({ items: [] });

@@ -1064,6 +1064,7 @@ export type MessengersChatItem = {
   oldestReadAt: number | null;
   newestReadAt: number | null;
   unreadCount: number;
+  totalCount: number;
 };
 
 export type MessengersChatsListRsp = {

@@ -31,6 +31,7 @@ use uuid::Uuid;
 pub(crate) const OLDEST_READ_AT: &str = "oldest_read_at";
 pub(crate) const NEWEST_READ_AT: &str = "newest_read_at";
 pub(crate) const UNREAD_COUNT: &str = "unread_count";
+pub(crate) const TOTAL_COUNT: &str = "total_count";
 
 #[derive(FromQueryResult)]
 struct ReadStateRow {
@@ -113,6 +114,12 @@ fn unread_count_expr() -> SimpleExpr {
             .add(count_messages(Some(after_newest))),
     )
     .into()
+}
+
+/// Every message of the chat in the enclosing `messenger_chat` row, one range
+/// scan of the timeline index over the whole chat.
+pub(crate) fn total_count_expr() -> SimpleExpr {
+    count_messages(None)
 }
 
 /// The messages of the chat in the enclosing `messenger_chat` row.

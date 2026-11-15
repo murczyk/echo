@@ -98,6 +98,8 @@ pub struct MessengersChatItem {
     pub newest_read_at: Option<i64>,
     /// Messages outside the read span; every message when there is none.
     pub unread_count: i64,
+    /// Every stored message of the chat.
+    pub total_count: i64,
 }
 
 #[derive(
