@@ -94,6 +94,7 @@ push_template_files() {
     "$BUNDLE_DIR/runner/sidc-resolver.ts" \
     "$BUNDLE_DIR/runner/group-scope.ts" \
     "$BUNDLE_DIR/runner/search-guidance.ts" \
+    "$BUNDLE_DIR/runner/refusal-rewrite.ts" \
     "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/"
   incus exec "$AGENT_TEMPLATE" -- mkdir -p \
     /var/tmp/echo-ai-agent-template/skills/echo-read-only
