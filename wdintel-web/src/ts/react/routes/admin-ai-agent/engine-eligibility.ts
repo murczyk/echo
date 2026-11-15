@@ -103,7 +103,7 @@ export function getAiAgentEngineCompatibility(
     if (transport === 'echo_gateway') {
       return {
         compatible: true,
-        explanation: 'Доступний через захищений шлюз Echo.',
+        explanation: 'Доступний через захищений шлюз ЕХО.',
       };
     }
     if (url.protocol !== 'http:') {
@@ -159,7 +159,7 @@ export function getAiAgentTokenNotice(engine: AiAgentEngineFields): AiAgentToken
     if (engine.enabled && isGovernmentAiUrl(new URL(engine.url))) {
       return {
         message:
-          'Шлюз Echo додає токен Azure на сервері; секрет і токен не передаються до контейнера агента.',
+          'Шлюз ЕХО додає токен Azure на сервері; секрет і токен не передаються до контейнера агента.',
         severity: 'info',
       };
     }
@@ -168,7 +168,7 @@ export function getAiAgentTokenNotice(engine: AiAgentEngineFields): AiAgentToken
     return engine.hasToken
       ? {
           message:
-            'Шлюз Echo додає ключ проксі державного шлюзу на сервері; ключ не передається до контейнера агента.',
+            'Шлюз ЕХО додає ключ проксі державного шлюзу на сервері; ключ не передається до контейнера агента.',
           severity: 'info',
         }
       : {

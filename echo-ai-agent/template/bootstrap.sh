@@ -125,6 +125,7 @@ install -m 0644 "$STAGE/documents.ts" "$PI_ROOT/documents.ts"
 install -m 0644 "$STAGE/sidc-resolver.ts" "$PI_ROOT/sidc-resolver.ts"
 install -m 0644 "$STAGE/group-scope.ts" "$PI_ROOT/group-scope.ts"
 install -m 0644 "$STAGE/search-guidance.ts" "$PI_ROOT/search-guidance.ts"
+install -m 0644 "$STAGE/refusal-rewrite.ts" "$PI_ROOT/refusal-rewrite.ts"
 node --experimental-strip-types --input-type=module \
   -e "await import('file://$PI_ROOT/runner.ts')"
 install -m 0755 "$STAGE/echo-ai-agent-runner" /usr/local/bin/echo-ai-agent-runner

@@ -134,7 +134,7 @@ pub async fn update_settings(
         if !access::refusal_rewrite_compatible(&rewrite_engine) {
             return Err(AppError::BL {
                 msg:
-                    "Провайдер перезапису відмов має працювати через Echo-шлюз"
+                    "Провайдер перезапису відмов має працювати через ЕХО-шлюз"
                         .to_string(),
             });
         }

@@ -89,9 +89,9 @@ test('#3985 a summary after a request that never searched Echo must not claim Ec
   const validated = validatePayload(payload, false);
   const searched = outputRetrySystemPrompt(validated, { retrieved: true });
   const unsearched = outputRetrySystemPrompt(validated, { retrieved: false });
-  assert.doesNotMatch(searched, /No Echo data was searched/);
-  assert.match(unsearched, /No Echo data was searched in this request/);
-  assert.match(unsearched, /Do not state or imply that Echo has no matching data/);
+  assert.doesNotMatch(searched, /No ECHO data was searched/);
+  assert.match(unsearched, /No ECHO data was searched in this request/);
+  assert.match(unsearched, /Do not state or imply that ECHO has no matching data/);
   // Tools are off in the summary, so a requested document cannot be replaced by text.
   assert.match(searched, /if the user asked for a document and none was saved, say it was not created/);
   // An attached report used as a template is a format, not evidence for the new period.
