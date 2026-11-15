@@ -2263,6 +2263,9 @@ pub const ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN: usize = 2;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_CONCURRENT: usize = 4;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_PER_LOGIN: usize = 2;
 pub const ANALYSIS_SOURCE_READ_LOGIN_QUEUE_MAX_ENTRIES: usize = 2_048;
+/// Largest message-id list whose source read skips the shared SQL slots
+/// (`read_query::id_bounded_connection`); equals the candidate hydration chunk.
+pub const ANALYSIS_SOURCE_ID_BOUNDED_READ_MAX_IDS: usize = 1_000;
 pub const ANALYSIS_SOURCE_READ_QUEUE_ERROR: &str =
     "analysis source read admission exhausted";
 pub const POSTGRES_READ_CANCEL_TIMEOUT_MS: u64 = 3_000;
