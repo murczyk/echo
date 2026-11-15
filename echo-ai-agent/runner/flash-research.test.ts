@@ -1116,7 +1116,7 @@ for (const [scenario, modelName] of [
       );
     }
     if (NO_EVIDENCE.includes(scenario))
-      assert.ok(synthesisBodies.at(-1)!.includes("No Echo data was searched"));
+      assert.ok(synthesisBodies.at(-1)!.includes("No ECHO data was searched"));
     const failures = events.filter(
       (event) => event.type === "tool_end" && event.is_error,
     );
@@ -1687,7 +1687,7 @@ test("#4031 synthesis never blames a limit that did not stop the work", () => {
   assert.match(deepTimedOut, /State remaining coverage limitations honestly/);
   // A translation of the previous answer searches nothing and hit no limit.
   const direct = outputRetrySystemPrompt(payload, { retrieved: false, limit: null });
-  assert.match(direct, /if the request needed Echo data, say that the search did not run/);
+  assert.match(direct, /if the request needed ECHO data, say that the search did not run/);
   assert.doesNotMatch(direct, /time budget ended|deep mode/);
   assert.match(direct, /No time, tool or budget limit stopped this work/);
   // An unknown outcome keeps saying nothing about limits.
