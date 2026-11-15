@@ -1,9 +1,10 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { IconButton } from '@mui/material';
+import { Button, IconButton } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react';
 
-import type { MessengersMessageItem } from '../../../../../Bindings';
+import type { MessengersChatReadState, MessengersMessageItem } from '../../../../../Bindings';
 import { copyTextToClipboard } from '../../../../copy-to-clipboard';
+import { formatCompactCount } from '../../../utils/format-compact-count';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import {
@@ -18,7 +19,14 @@ import {
   getSenderUiState,
   isPrivateChat,
 } from '../messenger-message-ui';
+import {
+  findUnreadMarks,
+  STOPPED_HERE_LABEL,
+  UNREAD_ABOVE_LABEL,
+  type ReadSpan,
+} from '../messenger-unread';
 import { senderName, useMessengerChat } from '../use-messenger-chat';
+import { useMessengerReadTracking } from '../use-messenger-read-tracking';
 import type { MessengerChat } from '../use-messenger-chats';
 import type { MessengerAccountItem } from './MessengerAccountList';
 import { MessengerMessageCard } from './MessengerMessageCard';
@@ -29,10 +37,14 @@ type Props = {
   title: string;
   // From the URL: the analysis messenger chat opens at this message instead of at its end.
   initialAnchorId: string | null;
+  // Opened by choosing it in the list (not from a link): a chat with unread messages opens at the first of them.
+  openAtUnread?: boolean;
   refreshToken?: number;
   // Reports whether this chat is loading or refreshing, for the header refresh button.
   onBusyChange?: (busy: boolean) => void;
   onBack: () => void;
+  // The read state the server answered after the reader moved, for the badge of the chat in the sidebar.
+  onReadState?: (chatId: string, state: MessengersChatReadState) => void;
   // The phone layout: no jump-to-start arrow, only the jump to the end while the reader is away from it.
   mobile?: boolean;
 };
@@ -56,6 +68,7 @@ const COPIED_NOTICE_MS = 2000;
 // How far from the bottom of the feed the reader still counts as being at the end of the chat.
 const AT_END_THRESHOLD_PX = 52;
 
+const noop = () => undefined;
 const getMessageId = (message: MessengersMessageItem) => message.id;
 
 // The open chat of the analysis messenger: header, date pill and message feed.
@@ -64,20 +77,41 @@ export function MessengerChatView({
   chat,
   title,
   initialAnchorId,
+  openAtUnread = false,
   refreshToken = 0,
   onBusyChange,
   onBack,
+  onReadState,
   mobile = false,
 }: Props) {
   const feedRef = useRef<MessageFeedHandle<string>>(null);
+  // The read span the chat had when it was opened, kept while it stays open: the writes of the reader move the stored
+  // bounds, and the dividers must not walk away from the reader. A chat never read has no span to stop at.
+  const [span] = useState<ReadSpan | null>(() =>
+    chat.oldestReadAt == null || chat.newestReadAt == null
+      ? null
+      : { oldest: chat.oldestReadAt, newest: chat.newestReadAt },
+  );
   const chatState = useMessengerChat({
     accountId: account.id,
     chatId: chat.id,
     anchorMessageId: initialAnchorId,
+    unreadSpan: openAtUnread && span != null && chat.unreadCount > 0 ? span : null,
     refreshToken,
   });
   const { messages, memberById, loading, hasMoreAbove, hasMoreBelow } = chatState;
   const busy = loading || chatState.refreshing;
+  const { onVisibleMessages } = useMessengerReadTracking({
+    accountId: account.id,
+    chatId: chat.id,
+    messages,
+    oldestReadAt: chat.oldestReadAt,
+    newestReadAt: chat.newestReadAt,
+    onReadState: onReadState ?? noop,
+  });
+  const marks = useMemo(() => findUnreadMarks(messages, span), [messages, span]);
+  // Primitives, so a page that arrives does not make every bubble render again.
+  const { afterId, beforeId } = marks;
   useEffect(() => {
     onBusyChange?.(busy);
     return () => onBusyChange?.(false);
@@ -113,19 +147,36 @@ export function MessengerChatView({
     }
   }, [anchorMissing, notify]);
 
+  // "Go to unread": the message to bring to the top. It waits for the message to be in the window and rendered, then aligns.
+  const [unreadTarget, setUnreadTarget] = useState<string | null>(null);
+  // A chat that opened at its first unread message lines it up once, when the first page is in.
+  const { landingId } = chatState;
+  const [landingAligned, setLandingAligned] = useState(false);
   const navigationTarget = useMemo(
     () =>
-      landedOnAnchor && alignPending && initialAnchorId != null
+      unreadTarget != null
         ? {
-            messageId: initialAnchorId,
+            messageId: unreadTarget,
             alignment: 'start' as const,
-            onAligned: () => {
-              setAlignPending(false);
-              feedRef.current?.highlightLinkedMessage(initialAnchorId);
-            },
+            onAligned: () => setUnreadTarget(null),
           }
-        : null,
-    [alignPending, initialAnchorId, landedOnAnchor],
+        : landingId != null && !landingAligned
+          ? {
+              messageId: landingId,
+              alignment: 'start' as const,
+              onAligned: () => setLandingAligned(true),
+            }
+          : landedOnAnchor && alignPending && initialAnchorId != null
+            ? {
+                messageId: initialAnchorId,
+                alignment: 'start' as const,
+                onAligned: () => {
+                  setAlignPending(false);
+                  feedRef.current?.highlightLinkedMessage(initialAnchorId);
+                },
+              }
+            : null,
+    [alignPending, initialAnchorId, landedOnAnchor, landingAligned, landingId, unreadTarget],
   );
 
   // The URL keeps the first visible analysis messenger message, so a refresh or a shared link reopens the same spot.
@@ -174,6 +225,35 @@ export function MessengerChatView({
     }
   }, [loadStart]);
 
+  // The unread messages are after the read span (new ones) or before it (history that was never read). It goes to the
+  // first unread message after the span, and failing that to the newest of those before it. What is loaded is checked
+  // first; otherwise the page around the bound is loaded.
+  const { loadAroundSentAt } = chatState;
+  const goToUnread = useCallback(async () => {
+    if (span == null) return;
+    let target = marks.afterId;
+    // A request replaces the window, so what was read from the old one (`marks`, `hasMoreAbove`) no longer holds.
+    let replaced = false;
+    const nothingAfter = !hasMoreBelow && (messages.at(-1)?.sentAt ?? 0) <= span.newest;
+    if (target == null && !nothingAfter) {
+      const items = await loadAroundSentAt(span.newest);
+      if (items == null) return;
+      replaced = true;
+      target = items.find((item) => item.sentAt > span.newest)?.id ?? null;
+    }
+    if (target == null) {
+      if (!replaced && marks.aboveId != null) {
+        target = marks.aboveId;
+      } else if (replaced || hasMoreAbove) {
+        const items = await loadAroundSentAt(span.oldest - 1);
+        if (items == null) return;
+        target = items.filter((item) => item.sentAt < span.oldest).at(-1)?.id ?? null;
+      }
+    }
+    if (target != null) setUnreadTarget(target);
+    else notify({ severity: 'info', message: 'Непрочитаних повідомлень не знайдено.' });
+  }, [hasMoreAbove, hasMoreBelow, loadAroundSentAt, marks, messages, notify, span]);
+
   const privateChat = isPrivateChat(chat.chatType);
   const handleCopy = (event: ClipboardEvent<HTMLElement>) => {
     if (!privateChat) return;
@@ -189,7 +269,9 @@ export function MessengerChatView({
   const lastDateLabelRef = useRef('');
   const landingMessage = landedOnAnchor
     ? messages.find((item) => item.id === initialAnchorId)
-    : messages[messages.length - 1];
+    : landingId != null
+      ? messages.find((item) => item.id === landingId)
+      : messages[messages.length - 1];
   const dateMessage =
     firstVisibleId == null ? landingMessage : messages.find((item) => item.id === firstVisibleId);
   // A first visible message that left the window keeps the label it had.
@@ -213,12 +295,19 @@ export function MessengerChatView({
           senderName={member == null ? null : senderName(member)}
           showSenderName={sender.showName}
           copyPrefix={sender.needsCopyPrefix ? sender.copyName : null}
+          unreadDivider={
+            message.id === afterId
+              ? STOPPED_HERE_LABEL
+              : message.id === beforeId
+                ? UNREAD_ABOVE_LABEL
+                : null
+          }
           onCopyLink={copyLink}
           onCopyText={copyText}
         />
       );
     },
-    [account.name, chat.chatType, copyLink, copyText, memberById],
+    [account.name, afterId, beforeId, chat.chatType, copyLink, copyText, memberById],
   );
 
   return (
@@ -242,6 +331,16 @@ export function MessengerChatView({
         >
           {title}
         </h2>
+        {span != null && chat.unreadCount > 0 ? (
+          <Button
+            size="small"
+            disabled={chatState.jumpingToUnread}
+            onClick={() => void goToUnread()}
+            data-messenger-go-to-unread
+          >
+            До непрочитаних ({formatCompactCount(chat.unreadCount)})
+          </Button>
+        ) : null}
         {copied ? (
           <span className="text-xs opacity-70" role="status">
             Посилання скопійовано
@@ -313,7 +412,7 @@ export function MessengerChatView({
             }}
             listProps={{ className: 'pb-echo-xl' }}
             scrollOptions={{
-              policy: landedOnAnchor ? ANCHOR_FEED_POLICY : FEED_POLICY,
+              policy: landedOnAnchor || landingId != null ? ANCHOR_FEED_POLICY : FEED_POLICY,
               navigationTarget,
               resetKey: chat.id,
               edgeLoadRetryKey: edgeRetryKey,
@@ -323,6 +422,7 @@ export function MessengerChatView({
               onLoadOlder: chatState.loadOlder,
               onLoadNewer: chatState.loadNewer,
               onFirstVisibleMessage,
+              onVisibleMessages,
             }}
             oldestNavigation={
               mobile

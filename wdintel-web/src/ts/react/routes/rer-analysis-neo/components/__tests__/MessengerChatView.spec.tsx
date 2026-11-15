@@ -11,6 +11,7 @@ import type { MessageFeedProps } from '../../../shared/message-feed';
 const apiMock = vi.hoisted(() => ({
   listMessengersChatMembers: vi.fn(),
   listMessengersMessages: vi.fn(),
+  updateMessengersChatReadState: vi.fn(),
 }));
 vi.mock('../../../../services/api/analysis-messengers', () => apiMock);
 const snackbar = vi.hoisted(() => ({ notify: vi.fn() }));
@@ -66,14 +67,19 @@ describe('MessengerChatView', () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  const mount = (initialAnchorId: string | null = null) =>
+  const mount = (
+    initialAnchorId: string | null = null,
+    openChat: typeof chat = chat,
+    openAtUnread = false,
+  ) =>
     act(async () =>
       root.render(
         <MessengerChatView
           account={{ id: 'a1', name: 'Me', phone: '' }}
-          chat={chat}
+          chat={openChat}
           title="Team"
           initialAnchorId={initialAnchorId}
+          openAtUnread={openAtUnread}
           onBack={() => undefined}
         />,
       ),
@@ -89,6 +95,7 @@ describe('MessengerChatView', () => {
     snackbar.notify.mockReset();
     apiMock.listMessengersChatMembers.mockReset().mockResolvedValue({ items: [] });
     apiMock.listMessengersMessages.mockReset();
+    apiMock.updateMessengersChatReadState.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -275,6 +282,251 @@ describe('MessengerChatView', () => {
       });
       await mount();
       expect(pill()).toBeNull();
+    });
+  });
+
+  describe('read state', () => {
+    const at = (id: string, sentAt: number) => message(id, sentAt);
+    // Newest first, as the API sends it: m1 and m2 were read, m3 and m4 were not.
+    const page = () => ({
+      items: [at('m4', 400), at('m3', 300), at('m2', 200), at('m1', 100)],
+      olderCursor: null,
+      newerCursor: null,
+    });
+    const readTo200 = { ...chat, oldestReadAt: 100, newestReadAt: 200, unreadCount: 2 };
+    const dividerOf = (id: string) => {
+      const item = latestFeed().items.find((entry) => entry.id === id)!;
+      return (latestFeed().renderMessage!(item) as { props: { unreadDivider: string | null } })
+        .props.unreadDivider;
+    };
+    const dividers = (...ids: string[]) => ids.map(dividerOf);
+    const goToUnreadButton = () =>
+      container.querySelector<HTMLButtonElement>('[data-messenger-go-to-unread]');
+    const clickGoToUnread = () =>
+      act(async () =>
+        goToUnreadButton()!.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+      );
+    const target = () => latestFeed().scrollOptions.navigationTarget?.messageId ?? null;
+
+    it('puts the divider above the first message sent after the read span', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue(page());
+      await mount(null, readTo200);
+      expect(dividers('m1', 'm2', 'm3', 'm4')).toEqual([null, null, 'Ви зупинились тут', null]);
+    });
+
+    it('puts a divider above the span when unread history lies before it', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue(page());
+      await mount(null, { ...chat, oldestReadAt: 300, newestReadAt: 400, unreadCount: 2 });
+      expect(dividers('m1', 'm2', 'm3', 'm4')).toEqual([null, null, 'Вище — непрочитані', null]);
+    });
+
+    it('keeps the divider where it was when the chat opened, whatever the reader writes meanwhile', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue(page());
+      await mount(null, readTo200);
+      await mount(null, { ...readTo200, newestReadAt: 400, unreadCount: 0 });
+      expect(dividerOf('m3')).toBe('Ви зупинились тут');
+    });
+
+    it('draws no divider for a chat never read, or fully read', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue(page());
+      await mount();
+      expect(dividers('m1', 'm2', 'm3', 'm4')).toEqual([null, null, null, null]);
+      expect(goToUnreadButton()).toBeNull();
+      await mount(null, { ...chat, oldestReadAt: 100, newestReadAt: 400, unreadCount: 0 });
+      expect(goToUnreadButton()).toBeNull();
+    });
+
+    it('draws no divider when the window begins with unread messages: the boundary is above it', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue({
+        items: [at('m4', 400), at('m3', 300)],
+        olderCursor: 'o',
+        newerCursor: null,
+      });
+      await mount(null, readTo200);
+      expect(dividers('m3', 'm4')).toEqual([null, null]);
+    });
+
+    it('goes to the divider without a request when the first unread message is loaded', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue(page());
+      await mount(null, readTo200);
+      await clickGoToUnread();
+      expect(target()).toBe('m3');
+      expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the page around the read bound when the first unread message is not loaded', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce({ items: [at('m9', 900)], olderCursor: 'o', newerCursor: null })
+        .mockResolvedValueOnce(page());
+      await mount(null, readTo200);
+      expect(goToUnreadButton()?.textContent).toContain('2');
+      await clickGoToUnread();
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ aroundSentAt: 200, cursor: null, direction: null }),
+        expect.anything(),
+      );
+      expect(latestFeed().items.map((item) => item.id)).toEqual(['m1', 'm2', 'm3', 'm4']);
+      expect(target()).toBe('m3');
+    });
+
+    it('goes to the newest unread history message when everything after the span is read', async () => {
+      // The span reaches the newest message; the history before it was never read.
+      const history = { ...chat, oldestReadAt: 300, newestReadAt: 400, unreadCount: 2 };
+      apiMock.listMessengersMessages.mockResolvedValueOnce({
+        items: [at('m4', 400), at('m3', 300)],
+        olderCursor: 'o',
+        newerCursor: null,
+      });
+      await mount(null, history);
+      apiMock.listMessengersMessages.mockResolvedValueOnce({
+        items: [at('m3', 300), at('m2', 200), at('m1', 100)],
+        olderCursor: null,
+        newerCursor: null,
+      });
+      await clickGoToUnread();
+      // Nothing newer than the span exists, so the only request is the one around its lower bound.
+      expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(2);
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ aroundSentAt: 299 }),
+        expect.anything(),
+      );
+      expect(target()).toBe('m2');
+    });
+
+    it('goes to the unread history message above the divider when it is loaded', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue(page());
+      await mount(null, { ...chat, oldestReadAt: 300, newestReadAt: 400, unreadCount: 2 });
+      await clickGoToUnread();
+      expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+      expect(target()).toBe('m2');
+    });
+
+    it('says so when there is nothing unread to go to', async () => {
+      apiMock.listMessengersMessages.mockResolvedValue({
+        items: [at('m2', 200), at('m1', 100)],
+        olderCursor: null,
+        newerCursor: null,
+      });
+      await mount(null, { ...chat, oldestReadAt: 100, newestReadAt: 200, unreadCount: 5 });
+      await clickGoToUnread();
+      expect(target()).toBeNull();
+      expect(snackbar.notify).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
+    });
+
+    describe('opening at the first unread message', () => {
+      const newestFirst = (...items: ReturnType<typeof at>[]) => ({
+        items,
+        olderCursor: null,
+        newerCursor: null,
+      });
+      const lastRequest = () => apiMock.listMessengersMessages.mock.calls.at(-1)![0];
+      const landing = () => latestFeed().scrollOptions.navigationTarget?.messageId ?? null;
+
+      it('lands on the first message after the read span, with one request', async () => {
+        apiMock.listMessengersMessages.mockResolvedValue(
+          newestFirst(at('m4', 400), at('m3', 300), at('m2', 200), at('m1', 100)),
+        );
+        await mount(null, readTo200, true);
+        expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+        expect(lastRequest()).toMatchObject({ aroundSentAt: 200, cursor: null, direction: null });
+        expect(landing()).toBe('m3');
+        // The feed starts at the landing message, not at the end.
+        expect(latestFeed().scrollOptions.policy?.initialPosition).toBe('start');
+      });
+
+      it('lands on the newest unread history message when everything after the span is read', async () => {
+        apiMock.listMessengersMessages
+          .mockResolvedValueOnce(newestFirst(at('m4', 400), at('m3', 300)))
+          .mockResolvedValueOnce(newestFirst(at('m3', 300), at('m2', 200), at('m1', 100)));
+        await mount(null, { ...chat, oldestReadAt: 300, newestReadAt: 400, unreadCount: 2 }, true);
+        expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(2);
+        expect(lastRequest()).toMatchObject({ aroundSentAt: 299 });
+        expect(landing()).toBe('m2');
+      });
+
+      it('opens at the end when finding the first unread message fails', async () => {
+        apiMock.listMessengersMessages
+          .mockRejectedValueOnce(new Error('bad request'))
+          .mockResolvedValueOnce(newestFirst(at('m4', 400), at('m3', 300)));
+        await mount(null, readTo200, true);
+        // The second request is the newest page, no error screen.
+        expect(lastRequest()).toMatchObject({ aroundSentAt: null, aroundMessageId: null });
+        expect(container.textContent).not.toContain('bad request');
+        expect(latestFeed().items.map((item) => item.id)).toEqual(['m3', 'm4']);
+        expect(landing()).toBeNull();
+      });
+
+      it('opens at the end when the counts disagree with the messages', async () => {
+        apiMock.listMessengersMessages.mockResolvedValue(newestFirst(at('m2', 200), at('m1', 100)));
+        await mount(null, { ...chat, oldestReadAt: 100, newestReadAt: 200, unreadCount: 5 }, true);
+        expect(landing()).toBeNull();
+        expect(latestFeed().scrollOptions.policy?.initialPosition).toBe('end');
+      });
+
+      it('opens at the newest page for a link, a message anchor, a chat never read or one read to its end', async () => {
+        apiMock.listMessengersMessages.mockResolvedValue(
+          newestFirst(at('m4', 400), at('m3', 300), at('m2', 200), at('m1', 100)),
+        );
+        // Each case is a chat opened afresh, as choosing a chat is.
+        const open = async (...args: Parameters<typeof mount>) => {
+          act(() => root.unmount());
+          root = createRoot(container);
+          apiMock.listMessengersMessages.mockClear();
+          await mount(...args);
+        };
+        // Chosen in the list: an around request. From a link (the flag is off): the newest page, no `aroundSentAt`.
+        await open(null, readTo200, false);
+        expect(lastRequest()).toMatchObject({ aroundSentAt: null });
+        expect(landing()).toBeNull();
+        // A message anchor wins over the first unread.
+        await open('m1', readTo200, true);
+        expect(lastRequest()).toMatchObject({ aroundMessageId: 'm1', aroundSentAt: null });
+        // Never read, and read to the end.
+        await open(null, { ...chat, unreadCount: 4 }, true);
+        expect(lastRequest()).toMatchObject({ aroundSentAt: null, aroundMessageId: null });
+        await open(null, { ...chat, oldestReadAt: 100, newestReadAt: 400, unreadCount: 0 }, true);
+        expect(lastRequest()).toMatchObject({ aroundSentAt: null, aroundMessageId: null });
+      });
+    });
+
+    it('writes the read span once the reader settles on messages and reports the answer', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const onReadState = vi.fn();
+        apiMock.listMessengersMessages.mockResolvedValue(page());
+        apiMock.updateMessengersChatReadState.mockResolvedValue({
+          oldestReadAt: 100,
+          newestReadAt: 400,
+          unreadCount: 0,
+        });
+        await act(async () =>
+          root.render(
+            <MessengerChatView
+              account={{ id: 'a1', name: 'Me', phone: '' }}
+              chat={readTo200}
+              title="Team"
+              initialAnchorId={null}
+              onBack={() => undefined}
+              onReadState={onReadState}
+            />,
+          ),
+        );
+        await act(async () => latestFeed().scrollOptions.onVisibleMessages?.(['m3', 'm4']));
+        await act(async () => void (await vi.advanceTimersByTimeAsync(1500)));
+        expect(apiMock.updateMessengersChatReadState).toHaveBeenCalledWith({
+          accountId: 'a1',
+          chatId: 'c1',
+          oldestReadAt: 300,
+          newestReadAt: 400,
+        });
+        expect(onReadState).toHaveBeenCalledWith('c1', {
+          oldestReadAt: 100,
+          newestReadAt: 400,
+          unreadCount: 0,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
