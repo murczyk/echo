@@ -2519,6 +2519,18 @@ fn patch_backward_compatible_decoders(
             r#"Json.Decode.oneOf [ Json.Decode.field "analysisRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]"#,
         )
         .replace(
+            r#"Json.Decode.field "dutyHideCardHeader" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "dutyHideCardHeader" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "dutyHideCardFrequency" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "dutyHideCardFrequency" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "dutyHideCardUnit" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "dutyHideCardUnit" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )

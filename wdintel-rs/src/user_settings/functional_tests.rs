@@ -564,3 +564,99 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
         assert_eq!(loaded.analysis_remember_report_group, analysis);
     }
 }
+
+#[actix_web::test]
+#[serial]
+async fn issue_4219_duty_card_visibility_persists_and_survives_older_clients() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let login = crate::functest::tests::find_test_login(&env.dbx)
+        .await
+        .unwrap();
+    let sessions =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(sessions, Key::generate()))
+            .route("/test/login/{login}", web::post().to(sign_in))
+            .service(user_settings_get)
+            .service(user_settings_put),
+    )
+    .await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{}", login.id))
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    user_settings::Entity::insert(user_settings::ActiveModel {
+        login_id: Set(login.id),
+        ..Default::default()
+    })
+    .exec(&env.dbx)
+    .await
+    .unwrap();
+    let settings: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert!(!settings.duty_hide_card_header);
+    assert!(!settings.duty_hide_card_frequency);
+    assert!(!settings.duty_hide_card_unit);
+
+    let mut settings = serde_json::to_value(settings).unwrap();
+    settings["dutyHideCardHeader"] = true.into();
+    settings["dutyHideCardFrequency"] = false.into();
+    settings["dutyHideCardUnit"] = true.into();
+    let saved: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::put()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .set_json(&settings)
+            .to_request(),
+    )
+    .await;
+    assert!(saved.duty_hide_card_header);
+    assert!(!saved.duty_hide_card_frequency);
+    assert!(saved.duty_hide_card_unit);
+
+    for field in [
+        "dutyHideCardHeader",
+        "dutyHideCardFrequency",
+        "dutyHideCardUnit",
+    ] {
+        settings.as_object_mut().unwrap().remove(field);
+    }
+    settings["tagsLayout"] = "hidden".into();
+    let _: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::put()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .set_json(&settings)
+            .to_request(),
+    )
+    .await;
+    let loaded: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/user/settings")
+            .cookie(cookie)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(loaded.tags_layout, DutyTagsLayout::Hidden);
+    assert!(loaded.duty_hide_card_header);
+    assert!(!loaded.duty_hide_card_frequency);
+    assert!(loaded.duty_hide_card_unit);
+}

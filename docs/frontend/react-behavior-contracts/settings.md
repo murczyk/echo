@@ -16,6 +16,22 @@
 - Coverage: `wdintel-web/tests/e2e/manage-message-drawer.spec.ts` and
   `wdintel-rs/src/user_settings/functional_tests.rs`.
 
+## Duty card visibility
+
+- The Duty tab's «Картка повідомлення» block has «Показувати в Оперативному:»
+  switches for the card header, frequency and unit. All are on by default,
+  including missing values from older responses and unset database columns.
+  The frequency switch appears only for users with radio features.
+- `dutyHideCardHeader`, `dutyHideCardFrequency` and `dutyHideCardUnit` persist
+  through `/api/user/settings`; older clients that omit them preserve the stored
+  values. Analysis cards and the Analysis tab ignore them.
+- On the Duty tab the card preview reflects the three choices; the narrow-card
+  preview also shows the importance toggle beside the quick action.
+- Coverage: `wdintel-web/tests/e2e/rer-duty-card-visibility.spec.ts`,
+  `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
+  and `wdintel-rs/src/user_settings/functional_tests.rs`.
+- Original Echo issue: [#4219](https://github.com/echoua/echo/issues/4219)
+
 ## Analysis time-basis regression
 
 - **Behavior ID:** `react-settings-analysis-time-basis`
@@ -115,7 +131,7 @@
 - **Behavior ID:** `react-user-settings-compatibility-defaults`
 - **Status:** operational compatibility
 - **Affected route/component:** user-settings API boundary
-- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `importantOnlyMyOrganism: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
+- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `importantOnlyMyOrganism: false`, `dutyHideCardHeader: false`, `dutyHideCardFrequency: false`, `dutyHideCardUnit: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/user-settings.ts`
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 

@@ -535,8 +535,13 @@ function ActionIconsRow({
   const quickAction = mobileActions
     ? availableActions.find((item) => item.key === messageCardQuickAction)
     : undefined;
+  // Narrow cards keep the important toggle beside the quick action instead of in the menu.
   const overflowMenuItems = availableActions.filter(
-    (item) => item.key !== quickAction?.key && item.key !== 'copyText' && item.key !== 'copyLink',
+    (item) =>
+      item.key !== quickAction?.key &&
+      item.key !== 'important' &&
+      item.key !== 'copyText' &&
+      item.key !== 'copyLink',
   );
   const canShowOverflowMenu =
     overflowMenuItems.length > 0 ||
@@ -656,7 +661,7 @@ function ActionIconsRow({
         onClick={(event) => onReply(event.currentTarget)}
       />
     ) : null,
-    canShowPrimaryActions && !mobileActions ? (
+    canShowPrimaryActions && (!mobileActions || quickAction?.key !== 'important') ? (
       <ActionIconButton
         key="important"
         title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
@@ -1264,6 +1269,10 @@ export type MessageCardHeaderProps = {
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   metadata?: ReactNode;
+  /** Hides metadata and event time; actions and the important badge stay. */
+  hideIdentity?: boolean;
+  /** Hides the unit row shown when there is no header metadata. */
+  hideUnit?: boolean;
   mapHref?: string;
   analysisHref?: string;
   onBookmark?: () => void;
@@ -1291,6 +1300,8 @@ export function MessageCardMetadata({
   metadataTrigger,
   wrapText = false,
   hideExplicitUnit = false,
+  hideFrequency = false,
+  hideUnit = false,
   placement = MessageCardMetadataPlacement.All,
 }: {
   msg: InboxMessage;
@@ -1300,6 +1311,8 @@ export function MessageCardMetadata({
   metadataTrigger?: ReactNode;
   wrapText?: boolean;
   hideExplicitUnit?: boolean;
+  hideFrequency?: boolean;
+  hideUnit?: boolean;
   placement?: MessageCardMetadataPlacement;
 }) {
   const radioFeaturesAllowed = useRadioFeatures();
@@ -1344,7 +1357,7 @@ export function MessageCardMetadata({
             <AuthorLabel accountId={msg.sender} fallback={senderName} />
           </MetaLine>
         ) : null}
-        {showSecondaryMetadata && radioFeaturesAllowed && isPresent(msg.freq) ? (
+        {showSecondaryMetadata && !hideFrequency && radioFeaturesAllowed && isPresent(msg.freq) ? (
           <div className="message-card-header-meta" data-message-card-metadata-item="true">
             <span
               className="message-card-header-meta__icon"
@@ -1361,6 +1374,7 @@ export function MessageCardMetadata({
           <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} wrapText={wrapText} />
         ) : null}
         {placement === MessageCardMetadataPlacement.Content &&
+        !hideUnit &&
         isPresent(etalonDisplayModel.headerUnit) ? (
           <MetaLine
             icon={<SquareTwoToneIcon className="message-card-unit-icon" />}
@@ -1445,6 +1459,8 @@ function MessageCardHeaderComponent({
   copiedFeedbackId,
   etalonDisplayModel,
   metadata,
+  hideIdentity = false,
+  hideUnit = false,
   mapHref,
   analysisHref,
   onBookmark,
@@ -1497,21 +1513,25 @@ function MessageCardHeaderComponent({
       data-message-card-header-row="true"
       data-message-card-display-mode={displayMode}
       data-message-card-actions-compact={compactActions ? 'true' : undefined}
+      data-message-card-header-identity-hidden={hideIdentity ? 'true' : undefined}
       className="message-card-header-row w-full"
     >
-      <div className="message-card-header-identity">
-        <div data-message-card-header-left="true" className="min-w-0">
-          {metadata ?? (
-            <div className="message-card-header-unit" data-message-card-header-unit-row="true">
-              <span className="message-card-header-meta__icon">
-                <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
-              </span>
-              <HeaderText wrap>{explicitUnit}</HeaderText>
-            </div>
-          )}
-          {dateTimeBlock}
+      {hideIdentity ? null : (
+        <div className="message-card-header-identity">
+          <div data-message-card-header-left="true" className="min-w-0">
+            {metadata ??
+              (hideUnit ? null : (
+                <div className="message-card-header-unit" data-message-card-header-unit-row="true">
+                  <span className="message-card-header-meta__icon">
+                    <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
+                  </span>
+                  <HeaderText wrap>{explicitUnit}</HeaderText>
+                </div>
+              ))}
+            {dateTimeBlock}
+          </div>
         </div>
-      </div>
+      )}
       {msg.important || !readOnly || isPresent(attachmentArchiveDownload) ? (
         <div className="message-card-header-actions flex items-center justify-end gap-2 self-start">
           {msg.important ? (

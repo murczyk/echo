@@ -151,10 +151,17 @@ for (const host of ['duty', 'analysis'] as const) {
       const actions = card.locator('[aria-label="Дії повідомлення"]');
       const quickAction = actions.getByRole('button', { name: label, exact: true });
       await expect(quickAction).toBeVisible();
-      await expect(actions.getByRole('button')).toHaveCount(2);
+      // #4219: the important toggle stays beside the quick action on narrow cards.
+      await expect(
+        actions.getByRole('button', { name: 'Позначити як важливе', exact: true }),
+      ).toBeVisible();
+      await expect(actions.getByRole('button')).toHaveCount(value === 'important' ? 2 : 3);
       await actions.getByRole('button', { name: 'Більше дій', exact: true }).click();
       const menu = page.getByRole('menu', { name: 'Додаткові дії повідомлення' });
       await expect(menu.getByRole('menuitem', { name: label, exact: true })).toHaveCount(0);
+      await expect(
+        menu.getByRole('menuitem', { name: 'Позначити як важливе', exact: true }),
+      ).toHaveCount(0);
       if (value !== 'createReport')
         await expect(
           menu.getByRole('menuitem', { name: 'Створити розвіддонесення', exact: true }),
@@ -196,7 +203,11 @@ for (const host of ['duty', 'analysis'] as const) {
     const card = page.locator('.message-card-root').first();
     await expect(card).toBeVisible();
     const actions = card.locator('[aria-label="Дії повідомлення"]');
-    await expect(actions.getByRole('button')).toHaveCount(1);
+    await expect(actions.getByRole('button')).toHaveCount(2);
+    await expect(actions.getByRole('button', { name: 'Редагувати', exact: true })).toHaveCount(0);
+    await expect(
+      actions.getByRole('button', { name: 'Позначити як важливе', exact: true }),
+    ).toBeVisible();
     await expect(actions.getByRole('button', { name: 'Більше дій', exact: true })).toBeVisible();
     expect(fixture.settings().messageCardQuickAction).toBe('edit');
   });

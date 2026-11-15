@@ -9,6 +9,7 @@ import type {
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
+import type { SettingsDutyCardVisibilityProps } from './SettingsDutyCardVisibility';
 import { SettingsMessageCard } from './SettingsMessageCard';
 
 const cardSx = {
@@ -83,6 +84,7 @@ export type SettingsDutySectionProps = {
   largeMessageCardText: boolean;
   onLargeMessageCardTextChange: (value: boolean) => void;
   onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
+  dutyCardVisibility: SettingsDutyCardVisibilityProps;
 };
 
 export function SettingsDutySection({
@@ -120,6 +122,7 @@ export function SettingsDutySection({
   largeMessageCardText,
   onLargeMessageCardTextChange,
   onAttachmentPreviewModeChange,
+  dutyCardVisibility,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -172,6 +175,7 @@ export function SettingsDutySection({
             onLargeMessageCardTextChange={onLargeMessageCardTextChange}
             onAttachmentPreviewModeChange={onAttachmentPreviewModeChange}
             loadInProgress={loadInProgress}
+            dutyCardVisibility={dutyCardVisibility}
           />
 
           {showAudioTranscriptionSettings ? (

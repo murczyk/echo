@@ -27,6 +27,8 @@ import {
 import { MessageCardQuickActionContext } from '../MessageCardQuickAction';
 import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
 import { DutyExcludeMenuContext } from '../DutyExcludeMenu.ts';
+import { DutyMessageCardVisibilityContext } from '../DutyMessageCardVisibility.ts';
+import { RadioFeaturesProvider } from '../../RadioFeatures.tsx';
 import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../MessageWriteAccess.tsx';
 import {
   hideMessageCardNetworks,
@@ -578,7 +580,7 @@ describe('MessageCard', () => {
     { displayMode: 'duty' as const, hasExcludeSection: true },
     { displayMode: 'analysis' as const, hasExcludeSection: false },
   ])(
-    'keeps report creation direct and moves the remaining actions into the menu on narrow $displayMode cards',
+    'keeps report creation and importance direct and moves the remaining actions into the menu on narrow $displayMode cards (#4219)',
     async ({ displayMode, hasExcludeSection }) => {
       const clientWidth = vi
         .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
@@ -595,7 +597,11 @@ describe('MessageCard', () => {
         view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
       ).map((action) => action.getAttribute('aria-label'));
 
-      expect(visibleActions).toEqual(['Створити розвіддонесення', 'Більше дій']);
+      expect(visibleActions).toEqual([
+        'Створити розвіддонесення',
+        'Позначити як не важливе',
+        'Більше дій',
+      ]);
       const overflowAction = view.container.querySelector('button[aria-label="Більше дій"]');
 
       const importantStatus = view.container.querySelector(
@@ -617,7 +623,9 @@ describe('MessageCard', () => {
       );
 
       await openOverflowMenu(view.container);
-      expect(document.body.textContent).toContain('Позначити як не важливе');
+      expect(document.body.querySelector('[role="menu"]')?.textContent).not.toContain(
+        'Позначити як не важливе',
+      );
       expect(document.body.textContent).toContain('Додати в закладки');
       expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
       expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
@@ -647,6 +655,41 @@ describe('MessageCard', () => {
 
       clientWidth.mockRestore();
       scrollWidth.mockRestore();
+    },
+  );
+
+  it.each(['duty', 'analysis'] as const)(
+    '#4219 applies the Duty card visibility settings only to Duty cards (%s)',
+    async (displayMode) => {
+      const view = await renderCard({
+        displayMode,
+        msg: buildMessage({ unit: 'Unit A', createdAt: 1_709_999_940_000 }),
+      });
+      await act(async () =>
+        view.root.render(
+          <RadioFeaturesProvider allowed>
+            <DutyMessageCardVisibilityContext.Provider
+              value={{ hideHeader: true, hideFrequency: true, hideUnit: true }}
+            >
+              <MessageCard {...view.props} />
+            </DutyMessageCardVisibilityContext.Provider>
+          </RadioFeaturesProvider>,
+        ),
+      );
+      const hidden = displayMode === 'duty';
+      const text = view.container.textContent ?? '';
+      expect(view.container.querySelector('[data-message-card-header-left="true"]') == null).toBe(
+        hidden,
+      );
+      expect(text.includes('р/м Alpha')).toBe(!hidden);
+      expect(text.includes('153.6250')).toBe(!hidden);
+      expect(text.includes('Unit A')).toBe(!hidden);
+      expect(
+        view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
+      ).not.toBeNull();
+      expect(
+        view.container.querySelector('[data-message-card-timestamp-footer="true"]'),
+      ).not.toBeNull();
     },
   );
 

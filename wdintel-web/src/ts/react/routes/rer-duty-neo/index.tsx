@@ -11,6 +11,7 @@ import {
 } from '../shared/message-card/MessageWriteAccess';
 import { canWriteMessages, hasRole } from '../../utils/roles';
 import { DutyExcludeMenuContext } from '../shared/message-card/DutyExcludeMenu';
+import { DutyMessageCardVisibilityContext } from '../shared/message-card/DutyMessageCardVisibility';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { canUseRadioFeatures } from '../../utils/roles';
 import { Box, useMediaQuery, useTheme } from '@mui/material';
@@ -138,6 +139,7 @@ export function RerDutyNeoPage({
     minimalReportWindowEnabled,
     rememberReportGroup,
     importantOnlyMyOrganism,
+    cardVisibility,
   } = useRerDutyPageSettings();
   const requestEditorIntent = useCallback(
     (
@@ -968,7 +970,9 @@ export function RerDutyNeoPage({
           currentUser={currentUser}
         >
           <MessageCardQuickActionContext.Provider value={messageCardQuickAction}>
-            {content}
+            <DutyMessageCardVisibilityContext.Provider value={cardVisibility}>
+              {content}
+            </DutyMessageCardVisibilityContext.Provider>
           </MessageCardQuickActionContext.Provider>
         </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>

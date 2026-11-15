@@ -2,6 +2,10 @@ import { useMessageReplies } from '../message-replies/MessageRepliesProvider';
 import { MessageReplyChain } from '../message-replies/MessageReplyChain';
 import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
 import { DutyExcludeMenuContext } from './DutyExcludeMenu';
+import {
+  DEFAULT_DUTY_MESSAGE_CARD_VISIBILITY,
+  DutyMessageCardVisibilityContext,
+} from './DutyMessageCardVisibility';
 import { useRadioFeatures } from '../RadioFeatures';
 import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
@@ -285,6 +289,9 @@ function MessageCardComponent({
   const radioFeaturesAllowed = useRadioFeatures();
   const canUseMessageDevices = useMessageDeviceAccess();
   const dutyExcludeMenuEnabled = useContext(DutyExcludeMenuContext);
+  const dutyCardVisibility = useContext(DutyMessageCardVisibilityContext);
+  const { hideHeader, hideFrequency, hideUnit } =
+    displayMode === 'duty' ? dutyCardVisibility : DEFAULT_DUTY_MESSAGE_CARD_VISIBILITY;
   const excludeSources = useMemo(
     () => ({
       group: { value: msg.groupMasterKey, label: groupName },
@@ -339,8 +346,8 @@ function MessageCardComponent({
     ) : undefined;
   const showContentMetadata =
     hideNetworks ||
-    isPresent(visibleEtalonDisplayModel.headerUnit) ||
-    (radioFeaturesAllowed && isPresent(msg.freq)) ||
+    (!hideUnit && isPresent(visibleEtalonDisplayModel.headerUnit)) ||
+    (!hideFrequency && radioFeaturesAllowed && isPresent(msg.freq)) ||
     (canUseMessageDevices && Boolean(msg.deviceName?.trim())) ||
     metadataTrigger != null;
   const headerMetadata = useMemo(
@@ -386,6 +393,8 @@ function MessageCardComponent({
     copiedFeedbackId,
     etalonDisplayModel: visibleEtalonDisplayModel,
     metadata: headerMetadata,
+    hideIdentity: hideHeader,
+    hideUnit,
     mapHref,
     analysisHref,
     onReply:
@@ -451,6 +460,8 @@ function MessageCardComponent({
                     : MessageCardMetadataPlacement.Content
                 }
                 hideExplicitUnit
+                hideFrequency={hideFrequency}
+                hideUnit={hideUnit}
               />
             ) : undefined
           }

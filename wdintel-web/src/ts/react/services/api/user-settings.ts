@@ -67,6 +67,9 @@ export type UserDutySettings = {
   dutyRememberReportGroup: boolean;
   analysisRememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
+  dutyHideCardHeader: boolean;
+  dutyHideCardFrequency: boolean;
+  dutyHideCardUnit: boolean;
 };
 
 export type UserDutySettingsUpdate = Omit<UserDutySettings, 'messageCardQuickAction'> & {
@@ -99,6 +102,9 @@ type UserDutySettingsWire = Omit<
   | 'dutyRememberReportGroup'
   | 'analysisRememberReportGroup'
   | 'importantOnlyMyOrganism'
+  | 'dutyHideCardHeader'
+  | 'dutyHideCardFrequency'
+  | 'dutyHideCardUnit'
 > & {
   messageCardQuickAction?: MessageCardQuickAction | null;
   messageTextPreviewLines?: string | null;
@@ -120,6 +126,9 @@ type UserDutySettingsWire = Omit<
   dutyRememberReportGroup?: boolean | null;
   analysisRememberReportGroup?: boolean | null;
   importantOnlyMyOrganism?: boolean | null;
+  dutyHideCardHeader?: boolean | null;
+  dutyHideCardFrequency?: boolean | null;
+  dutyHideCardUnit?: boolean | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -199,6 +208,9 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     analysisRememberReportGroup:
       raw.analysisRememberReportGroup ?? DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
     importantOnlyMyOrganism: raw.importantOnlyMyOrganism ?? false,
+    dutyHideCardHeader: raw.dutyHideCardHeader ?? false,
+    dutyHideCardFrequency: raw.dutyHideCardFrequency ?? false,
+    dutyHideCardUnit: raw.dutyHideCardUnit ?? false,
   };
 }
 
@@ -235,6 +247,9 @@ export async function saveUserSettings(
       dutyRememberReportGroup: body.dutyRememberReportGroup,
       analysisRememberReportGroup: body.analysisRememberReportGroup,
       importantOnlyMyOrganism: body.importantOnlyMyOrganism,
+      dutyHideCardHeader: body.dutyHideCardHeader,
+      dutyHideCardFrequency: body.dutyHideCardFrequency,
+      dutyHideCardUnit: body.dutyHideCardUnit,
     },
     { signal },
   );

@@ -23,6 +23,11 @@ type DutySettingsValue = UserDutySettings;
 
 type DutySettingsSaveRequest = UserDutySettingsUpdate;
 
+export type DutyCardVisibilitySettings = Pick<
+  UserDutySettings,
+  'dutyHideCardHeader' | 'dutyHideCardFrequency' | 'dutyHideCardUnit'
+>;
+
 export type DutySettingsHook = DutySettingsValue & {
   loadInProgress: boolean;
   loadError: string | null;
@@ -49,6 +54,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setDutyRememberReportGroup: (value: boolean) => void;
   setAnalysisRememberReportGroup: (value: boolean) => void;
   setImportantOnlyMyOrganism: (value: boolean) => void;
+  setDutyCardVisibility: (value: Partial<DutyCardVisibilitySettings>) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
   retryLoad: () => void;
 };
@@ -84,6 +90,9 @@ function normalizeDutySettings(
     analysisRememberReportGroup:
       settings?.analysisRememberReportGroup ?? DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
     importantOnlyMyOrganism: settings?.importantOnlyMyOrganism ?? false,
+    dutyHideCardHeader: settings?.dutyHideCardHeader ?? false,
+    dutyHideCardFrequency: settings?.dutyHideCardFrequency ?? false,
+    dutyHideCardUnit: settings?.dutyHideCardUnit ?? false,
   };
 }
 
@@ -237,6 +246,7 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, analysisRememberReportGroup: value })),
     setImportantOnlyMyOrganism: (value) =>
       setSettings((current) => ({ ...current, importantOnlyMyOrganism: value })),
+    setDutyCardVisibility: (value) => setSettings((current) => ({ ...current, ...value })),
     scheduleSave,
     retryLoad,
   };

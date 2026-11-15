@@ -100,6 +100,9 @@ fn model_to_dto(
         important_only_my_organism: m
             .important_only_my_organism
             .unwrap_or(false),
+        duty_hide_card_header: m.duty_hide_card_header.unwrap_or(false),
+        duty_hide_card_frequency: m.duty_hide_card_frequency.unwrap_or(false),
+        duty_hide_card_unit: m.duty_hide_card_unit.unwrap_or(false),
     }
 }
 
@@ -143,6 +146,15 @@ fn preserve_omitted_compatibility_fields(
     if body.get("analysisRememberReportGroup").is_none() {
         incoming.analysis_remember_report_group =
             existing.analysis_remember_report_group;
+    }
+    if body.get("dutyHideCardHeader").is_none() {
+        incoming.duty_hide_card_header = existing.duty_hide_card_header;
+    }
+    if body.get("dutyHideCardFrequency").is_none() {
+        incoming.duty_hide_card_frequency = existing.duty_hide_card_frequency;
+    }
+    if body.get("dutyHideCardUnit").is_none() {
+        incoming.duty_hide_card_unit = existing.duty_hide_card_unit;
     }
 }
 
@@ -189,7 +201,10 @@ pub async fn user_settings_put(
         || body.get("minimalReportWindowEnabled").is_none()
         || body.get("importantOnlyMyOrganism").is_none()
         || body.get("dutyRememberReportGroup").is_none()
-        || body.get("analysisRememberReportGroup").is_none();
+        || body.get("analysisRememberReportGroup").is_none()
+        || body.get("dutyHideCardHeader").is_none()
+        || body.get("dutyHideCardFrequency").is_none()
+        || body.get("dutyHideCardUnit").is_none();
     let mut dto: UserDutySettingsDto =
         serde_json::from_value(body.clone()).c(h!())?;
     if needs_existing {
@@ -264,6 +279,9 @@ pub async fn user_settings_put(
         analysis_remember_report_group: Set(Some(
             dto.analysis_remember_report_group,
         )),
+        duty_hide_card_header: Set(Some(dto.duty_hide_card_header)),
+        duty_hide_card_frequency: Set(Some(dto.duty_hide_card_frequency)),
+        duty_hide_card_unit: Set(Some(dto.duty_hide_card_unit)),
         receive_alerts_in_messenger: NotSet,
         updated_at: Set(now),
     })
@@ -290,6 +308,9 @@ pub async fn user_settings_put(
                 user_settings::Column::ImportantOnlyMyOrganism,
                 user_settings::Column::DutyRememberReportGroup,
                 user_settings::Column::AnalysisRememberReportGroup,
+                user_settings::Column::DutyHideCardHeader,
+                user_settings::Column::DutyHideCardFrequency,
+                user_settings::Column::DutyHideCardUnit,
                 user_settings::Column::UpdatedAt,
             ])
             .update_columns(

@@ -39,6 +39,9 @@ pub struct Model {
     pub important_only_my_organism: Option<bool>,
     pub duty_remember_report_group: Option<bool>,
     pub analysis_remember_report_group: Option<bool>,
+    pub duty_hide_card_header: Option<bool>,
+    pub duty_hide_card_frequency: Option<bool>,
+    pub duty_hide_card_unit: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -36366,6 +36366,9 @@ type alias UserDutySettingsDto =
     , dutyRememberReportGroup : Bool
     , analysisRememberReportGroup : Bool
     , importantOnlyMyOrganism : Bool
+    , dutyHideCardHeader : Bool
+    , dutyHideCardFrequency : Bool
+    , dutyHideCardUnit : Bool
     }
 
 
@@ -36393,3 +36396,6 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "analysisRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardHeader" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardFrequency" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardUnit" (Json.Decode.bool), Json.Decode.succeed False ]))

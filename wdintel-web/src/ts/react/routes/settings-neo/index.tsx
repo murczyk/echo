@@ -15,7 +15,9 @@ import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard
 import { SettingsMessageCard } from './SettingsMessageCard';
 import { SettingsAnalysisTimeBasisCard } from './SettingsAnalysisTimeBasisCard';
 import { useGlobalSetting } from './use-global-settings';
-import { useDutySettings } from '../../hooks/use-duty-settings';
+import { useDutySettings, type DutyCardVisibilitySettings } from '../../hooks/use-duty-settings';
+import { canUseRadioFeatures } from '../../utils/roles';
+import type { DutyMessageCardVisibility } from '../shared/message-card/DutyMessageCardVisibility';
 import {
   MessageAttachmentPreviewMode,
   type UserDutySettings,
@@ -126,6 +128,9 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       dutyRememberReportGroup: dutySettings.dutyRememberReportGroup,
       analysisRememberReportGroup: dutySettings.analysisRememberReportGroup,
       importantOnlyMyOrganism: dutySettings.importantOnlyMyOrganism,
+      dutyHideCardHeader: dutySettings.dutyHideCardHeader,
+      dutyHideCardFrequency: dutySettings.dutyHideCardFrequency,
+      dutyHideCardUnit: dutySettings.dutyHideCardUnit,
       ...overrides,
     });
   };
@@ -152,6 +157,23 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     scheduleDutySettingsSave({ dutyCollapseMediaPreviews, largeMediaPreviews });
   };
   const globalSettings = useGlobalSetting();
+  const dutyCardVisibility = {
+    value: {
+      hideHeader: dutySettings.dutyHideCardHeader,
+      hideFrequency: dutySettings.dutyHideCardFrequency,
+      hideUnit: dutySettings.dutyHideCardUnit,
+    },
+    showFrequency: canUseRadioFeatures(globalSettings.userRoles),
+    onChange: (patch: Partial<DutyMessageCardVisibility>) => {
+      const next: DutyCardVisibilitySettings = {
+        dutyHideCardHeader: patch.hideHeader ?? dutySettings.dutyHideCardHeader,
+        dutyHideCardFrequency: patch.hideFrequency ?? dutySettings.dutyHideCardFrequency,
+        dutyHideCardUnit: patch.hideUnit ?? dutySettings.dutyHideCardUnit,
+      };
+      dutySettings.setDutyCardVisibility(next);
+      scheduleDutySettingsSave(next);
+    },
+  };
   const [myGroupsStatus, setMyGroupsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(
     'idle',
   );
@@ -372,6 +394,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onAttachmentPreviewModeChange={handleAttachmentPreviewModeChange}
               largeMessageCardText={dutySettings.largeMessageCardText}
               onLargeMessageCardTextChange={handleLargeMessageCardTextChange}
+              dutyCardVisibility={dutyCardVisibility}
             />
           ) : null}
 

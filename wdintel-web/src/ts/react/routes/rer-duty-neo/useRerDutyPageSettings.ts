@@ -14,6 +14,10 @@ import {
   type MessageCardQuickAction,
 } from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
+import {
+  DEFAULT_DUTY_MESSAGE_CARD_VISIBILITY,
+  type DutyMessageCardVisibility,
+} from '../shared/message-card/DutyMessageCardVisibility';
 import { canUseMessageDevices } from '../../utils/roles';
 
 export type RerDutyPageSettings = {
@@ -37,6 +41,7 @@ export type RerDutyPageSettings = {
   minimalReportWindowEnabled: boolean;
   rememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
+  cardVisibility: DutyMessageCardVisibility;
 };
 
 export type DeviceAccess =
@@ -78,6 +83,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
   );
   const [importantOnlyMyOrganism, setImportantOnlyMyOrganism] = useState(false);
+  const [cardVisibility, setCardVisibility] = useState(DEFAULT_DUTY_MESSAGE_CARD_VISIBILITY);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +104,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMinimalReportWindowEnabled(prefs.minimalReportWindowEnabled ?? false);
         setRememberReportGroup(prefs.dutyRememberReportGroup ?? DEFAULT_DUTY_REMEMBER_REPORT_GROUP);
         setImportantOnlyMyOrganism(prefs.importantOnlyMyOrganism ?? false);
+        setCardVisibility((current) => mergeCardVisibility(current, prefs));
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
@@ -111,6 +118,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMinimalReportWindowEnabled(false);
         setRememberReportGroup(DEFAULT_DUTY_REMEMBER_REPORT_GROUP);
         setImportantOnlyMyOrganism(false);
+        setCardVisibility(DEFAULT_DUTY_MESSAGE_CARD_VISIBILITY);
       }
     };
     loadLayout();
@@ -134,6 +142,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           minimalReportWindowEnabled?: boolean;
           dutyRememberReportGroup?: boolean;
           importantOnlyMyOrganism?: boolean;
+          dutyHideCardHeader?: boolean;
+          dutyHideCardFrequency?: boolean;
+          dutyHideCardUnit?: boolean;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -173,6 +184,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       if (typeof detail?.importantOnlyMyOrganism === 'boolean') {
         setImportantOnlyMyOrganism(detail.importantOnlyMyOrganism);
       }
+      if (detail) setCardVisibility((current) => mergeCardVisibility(current, detail));
     };
 
     window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
@@ -264,5 +276,27 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     minimalReportWindowEnabled,
     rememberReportGroup,
     importantOnlyMyOrganism,
+    cardVisibility,
   };
+}
+
+/** Applies the stored Duty card choices, keeping the object stable when nothing changed. */
+function mergeCardVisibility(
+  current: DutyMessageCardVisibility,
+  settings: {
+    dutyHideCardHeader?: boolean;
+    dutyHideCardFrequency?: boolean;
+    dutyHideCardUnit?: boolean;
+  },
+): DutyMessageCardVisibility {
+  const next = {
+    hideHeader: settings.dutyHideCardHeader ?? current.hideHeader,
+    hideFrequency: settings.dutyHideCardFrequency ?? current.hideFrequency,
+    hideUnit: settings.dutyHideCardUnit ?? current.hideUnit,
+  };
+  return next.hideHeader === current.hideHeader &&
+    next.hideFrequency === current.hideFrequency &&
+    next.hideUnit === current.hideUnit
+    ? current
+    : next;
 }

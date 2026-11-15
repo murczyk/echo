@@ -150,6 +150,12 @@ pub struct UserDutySettingsDto {
     pub analysis_remember_report_group: bool,
     #[serde(default)]
     pub important_only_my_organism: bool,
+    #[serde(default)]
+    pub duty_hide_card_header: bool,
+    #[serde(default)]
+    pub duty_hide_card_frequency: bool,
+    #[serde(default)]
+    pub duty_hide_card_unit: bool,
 }
 
 fn default_remember_report_group() -> bool {
@@ -192,6 +198,9 @@ impl Default for UserDutySettingsDto {
             duty_remember_report_group: default_remember_report_group(),
             analysis_remember_report_group: default_remember_report_group(),
             important_only_my_organism: false,
+            duty_hide_card_header: false,
+            duty_hide_card_frequency: false,
+            duty_hide_card_unit: false,
         }
     }
 }

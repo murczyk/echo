@@ -21,6 +21,10 @@ import {
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { MESSAGE_CARD_QUICK_ACTION_ICONS } from '../shared/message-card/MessageCardQuickAction';
+import {
+  SettingsDutyCardVisibility,
+  type SettingsDutyCardVisibilityProps,
+} from './SettingsDutyCardVisibility';
 import { SettingsMessageCardPreview } from './SettingsMessageCardPreview';
 
 const cardSx = {
@@ -48,6 +52,8 @@ export type SettingsMessageCardProps = {
   onLargeMessageCardTextChange: (value: boolean) => void;
   onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
   loadInProgress: boolean;
+  /** Duty-only card parts; omitted on the Analysis tab. */
+  dutyCardVisibility?: SettingsDutyCardVisibilityProps;
 };
 
 export function SettingsMessageCard({
@@ -67,6 +73,7 @@ export function SettingsMessageCard({
   onLargeMessageCardTextChange,
   onAttachmentPreviewModeChange,
   loadInProgress,
+  dutyCardVisibility,
 }: SettingsMessageCardProps) {
   return (
     <Box sx={cardSx}>
@@ -257,7 +264,12 @@ export function SettingsMessageCard({
           </Typography>
         </fieldset>
 
+        {dutyCardVisibility ? (
+          <SettingsDutyCardVisibility {...dutyCardVisibility} loadInProgress={loadInProgress} />
+        ) : null}
+
         <SettingsMessageCardPreview
+          dutyCardVisibility={dutyCardVisibility?.value}
           messageCardQuickAction={messageCardQuickAction}
           largeMessageCardText={largeMessageCardText}
           tagsLayout={tagsLayout}
@@ -310,7 +322,9 @@ export function SettingsMessageCard({
         <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Спільні налаштування для Оперативного та Аналізу.
+            {dutyCardVisibility
+              ? 'Крім «Показувати в Оперативному», налаштування спільні для Оперативного та Аналізу.'
+              : 'Спільні налаштування для Оперативного та Аналізу.'}
           </Typography>
         </Stack>
       </div>

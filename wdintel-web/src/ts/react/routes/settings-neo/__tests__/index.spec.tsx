@@ -599,6 +599,9 @@ describe('SettingsNeoPage', () => {
       dutyRememberReportGroup: true,
       analysisRememberReportGroup: true,
       importantOnlyMyOrganism: false,
+      dutyHideCardHeader: false,
+      dutyHideCardFrequency: false,
+      dutyHideCardUnit: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });
