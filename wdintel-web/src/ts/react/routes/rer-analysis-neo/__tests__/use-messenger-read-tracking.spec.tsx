@@ -29,14 +29,16 @@ type Props = {
   oldestReadAt: number | null;
   newestReadAt: number | null;
   chatId?: string;
+  windowKey?: number;
 };
 let seen: (ids: readonly string[]) => void;
 const onReadState = vi.fn<(chatId: string, state: MessengersChatReadState) => void>();
 
-function Probe({ chatId = 'c1', ...props }: Props) {
+function Probe({ chatId = 'c1', windowKey = 0, ...props }: Props) {
   seen = useMessengerReadTracking({
     accountId: 'a1',
     chatId,
+    windowKey,
     onReadState,
     ...props,
   }).onVisibleMessages;
@@ -134,6 +136,116 @@ describe('useMessengerReadTracking', () => {
       expect.objectContaining({ oldestReadAt: 100, newestReadAt: 100 }),
     );
     root = createRoot(container);
+  });
+
+  describe('a jump that replaces the window', () => {
+    const newestWindow = [message('n1', 700), message('n2', 800), message('n3', 900)];
+    const oldestWindow = [message('o1', 100), message('o2', 200), message('o3', 300)];
+    const calls = () =>
+      apiMock.updateMessengersChatReadState.mock.calls.map(([req]) => [
+        req.oldestReadAt,
+        req.newestReadAt,
+      ]);
+    const never = { oldestReadAt: null, newestReadAt: null };
+
+    it('sends what was seen before the jump as it is, and never merges it with the new window (never read chat)', async () => {
+      await render({ messages: newestWindow, ...never });
+      await see('n1', 'n3');
+      // "Go to the start" within the delay: the oldest page replaces the window.
+      await render({ messages: oldestWindow, windowKey: 1, ...never });
+      await see('o1', 'o3');
+      await settle();
+      // One write for the newest page; the oldest page is not next to it, so it is not written, and nothing between is read.
+      expect(calls()).toEqual([[700, 900]]);
+    });
+
+    it('judges the new window against what was just written, before the server has answered', async () => {
+      await render({ messages: newestWindow, ...never });
+      await see('n1');
+      await render({ messages: oldestWindow, windowKey: 1, ...never });
+      await see('o2');
+      await settle();
+      expect(calls()).toEqual([[700, 700]]);
+    });
+
+    it('writes a new window that reaches the written range, separately from the one before it', async () => {
+      await render({ messages: newestWindow, ...never });
+      await see('n3');
+      // The jump lands on a window that overlaps what was written (it holds the message at 900).
+      await render({
+        messages: [message('x1', 850), message('n3', 900), message('x2', 950)],
+        windowKey: 1,
+        ...never,
+      });
+      await see('x2');
+      await settle();
+      expect(calls()).toEqual([
+        [900, 900],
+        [950, 950],
+      ]);
+    });
+
+    it('keeps an earlier write when a later one fails, even though the earlier answer was not shown', async () => {
+      let first!: (state: MessengersChatReadState) => void;
+      let second!: (reason: Error) => void;
+      apiMock.updateMessengersChatReadState
+        .mockReset()
+        .mockReturnValueOnce(new Promise<MessengersChatReadState>((resolve) => (first = resolve)))
+        .mockReturnValueOnce(
+          new Promise<MessengersChatReadState>((_, reject) => (second = reject)),
+        );
+      await render({ messages: newestWindow, ...never });
+      await see('n1');
+      await settle();
+      // The second write goes out while the first is still on its way: only the newest answer is ever shown.
+      await see('n3');
+      await settle();
+      expect(calls()).toEqual([
+        [700, 700],
+        [900, 900],
+      ]);
+      await act(async () => second(new Error('offline')));
+      await act(async () => first({ oldestReadAt: 700, newestReadAt: 700, unreadCount: 2 }));
+      // The first write is stored, the stored span (the props) has not been told: the oldest page is still not next to it.
+      await render({ messages: oldestWindow, windowKey: 1, ...never });
+      await see('o2');
+      await settle();
+      expect(calls()).toEqual([
+        [700, 700],
+        [900, 900],
+      ]);
+    });
+
+    it('still merges what is seen while the same window only grows', async () => {
+      await render({ messages: newestWindow, ...never });
+      await see('n3');
+      // An older page was loaded above: the same window, the same key.
+      await render({ messages: [...oldestWindow, ...newestWindow], ...never });
+      await see('o3', 'n1');
+      await settle();
+      expect(calls()).toEqual([[300, 900]]);
+    });
+
+    it('forgets what it wrote when the write failed, so the next scroll of the new window is not blocked by it', async () => {
+      apiMock.updateMessengersChatReadState
+        .mockReset()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValue({ oldestReadAt: 1, newestReadAt: 2, unreadCount: 0 });
+      await render({ messages: newestWindow, ...never });
+      await see('n2');
+      await render({ messages: oldestWindow, windowKey: 1, ...never });
+      // While the first write is in flight the new window is judged against it, and held back.
+      await see('o2');
+      await settle();
+      expect(calls()).toEqual([[800, 800]]);
+      // The write failed, so nothing is stored: the next scroll of the oldest page is a fresh start.
+      await see('o2');
+      await settle();
+      expect(calls()).toEqual([
+        [800, 800],
+        [200, 200],
+      ]);
+    });
   });
 
   describe('a hidden tab', () => {

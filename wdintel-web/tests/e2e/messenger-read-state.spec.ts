@@ -707,3 +707,31 @@ test('@regression messenger rail badges sit low enough on a phone to leave the l
     expect(badge.x + badge.width).toBeLessThanOrEqual(railBox.x + railBox.width + 1);
   }
 });
+
+test('@regression messenger a jump within the debounce never marks the unseen messages between two windows read', async ({
+  page,
+}) => {
+  // A chat never read, 300 messages: the newest page is shown, then "go to start" replaces the window before the 1.5 s delay is over.
+  const calls = await openMessenger(page, [chat('c1', 'Команда', 300)], '&messengerChat=c1', 300);
+  const view = page.locator('[data-messenger-chat-view]');
+  await expect(view.getByText('Повідомлення 299', { exact: true })).toBeVisible();
+  await view.getByRole('button', { name: 'На початок чату' }).click();
+  await expect(view.getByText('Повідомлення 0', { exact: true })).toBeVisible();
+  await expect.poll(() => calls.updates.length, { timeout: 6000 }).toBeGreaterThan(0);
+  await page.waitForTimeout(2500);
+
+  // What was seen on the newest page is written, what was seen on the oldest page is not next to it, so it is not: no write spans both.
+  for (const update of calls.updates) {
+    const span = Number(update.newest_read_at) - Number(update.oldest_read_at);
+    expect(span).toBeLessThan(100 * 60_000);
+  }
+  expect(calls.updates.some((update) => Number(update.oldest_read_at) === T0)).toBe(false);
+  // The messages in between are still unread: the badge shows far more than the 50 of one page.
+  const badge = Number(
+    await page
+      .getByRole('complementary', { name: 'Навігація акаунту', exact: true })
+      .locator('[data-messenger-unread-badge]')
+      .textContent(),
+  );
+  expect(badge).toBeGreaterThan(200);
+});

@@ -105,6 +105,7 @@ export function MessengerChatView({
     accountId: account.id,
     chatId: chat.id,
     messages,
+    windowKey: chatState.windowKey,
     oldestReadAt: chat.oldestReadAt,
     newestReadAt: chat.newestReadAt,
     onReadState: onReadState ?? noop,

@@ -11,6 +11,8 @@ type Args = {
   chatId: string;
   // The loaded window, oldest first.
   messages: readonly MessengersMessageItem[];
+  // Identifies that window: a new key is a window that replaced the old one (a jump), not one that grew by a page.
+  windowKey: number;
   // The stored read span of the chat (the chat list item), which follows the answers of the writes.
   oldestReadAt: number | null;
   newestReadAt: number | null;
@@ -21,17 +23,27 @@ type Args = {
 // next to it would also mark every message between them read. The window is contiguous: it is safe to write only
 // when it reaches into the stored span (or there is none yet), because everything between a seen message and
 // the span is then loaded, and was scrolled through on the way.
+//
+// Two things keep that true across a jump (to the start, to the end, to the unread): what was seen in one window is
+// sent as it is and never merged with what is seen in the next one, and what was just sent counts as part of the
+// stored span at once, without waiting for the answer, so the next window is judged against it.
 export function useMessengerReadTracking({
   accountId,
   chatId,
   messages,
+  windowKey,
   oldestReadAt,
   newestReadAt,
   onReadState,
 }: Args) {
-  const latest = useRef({ messages, oldestReadAt, newestReadAt, onReadState });
-  latest.current = { messages, oldestReadAt, newestReadAt, onReadState };
+  const latest = useRef({ messages, windowKey, oldestReadAt, newestReadAt, onReadState });
+  latest.current = { messages, windowKey, oldestReadAt, newestReadAt, onReadState };
   const pending = useRef<{ from: number; to: number } | null>(null);
+  // The window `pending` was collected in.
+  const pendingWindow = useRef(windowKey);
+  // The writes that went out and did not fail, by number: what this hook has written counts as part of the stored span
+  // until the stored span (the props) has caught up with it. One per write, so a failed one takes out only itself.
+  const writes = useRef(new Map<number, { from: number; to: number }>());
   const timer = useRef<number | null>(null);
   // Only the newest answer is shown: the server widens the span, so an older answer would show an older count.
   const sequence = useRef(0);
@@ -43,6 +55,7 @@ export function useMessengerReadTracking({
     pending.current = null;
     if (range == null) return;
     const mine = ++sequence.current;
+    writes.current.set(mine, range);
     updateMessengersChatReadState({
       accountId,
       chatId,
@@ -53,7 +66,9 @@ export function useMessengerReadTracking({
         if (mine === sequence.current) latest.current.onReadState(chatId, state);
       })
       // The next scroll sends it again, and a failed write only leaves the badge as it was.
-      .catch(() => undefined);
+      .catch(() => {
+        writes.current.delete(mine);
+      });
   }, [accountId, chatId]);
 
   // The reader leaves the chat: what was seen is not lost to the delay.
@@ -70,7 +85,7 @@ export function useMessengerReadTracking({
         deferred.current = ids;
         return;
       }
-      const { messages: loaded, oldestReadAt: oldest, newestReadAt: newest } = latest.current;
+      const { messages: loaded, windowKey: key, oldestReadAt, newestReadAt } = latest.current;
       if (ids.length === 0 || loaded.length === 0) return;
       const seen = new Set(ids);
       let from = Infinity;
@@ -81,13 +96,23 @@ export function useMessengerReadTracking({
         to = Math.max(to, message.sentAt);
       }
       if (from > to) return;
-      if (oldest != null && newest != null) {
-        if (from >= oldest && to <= newest) return;
+      // A jump replaced the window: what was seen before it goes out as it is, and starts nothing in common with this one.
+      if (pending.current != null && pendingWindow.current !== key) flush();
+      // The stored span, plus what was written and not answered yet.
+      let spanFrom = oldestReadAt ?? Infinity;
+      let spanTo = newestReadAt ?? -Infinity;
+      for (const written of writes.current.values()) {
+        spanFrom = Math.min(spanFrom, written.from);
+        spanTo = Math.max(spanTo, written.to);
+      }
+      if (spanFrom !== Infinity) {
+        if (from >= spanFrom && to <= spanTo) return;
         const reachesSpan =
-          loaded[0].sentAt <= newest && loaded[loaded.length - 1].sentAt >= oldest;
+          loaded[0].sentAt <= spanTo && loaded[loaded.length - 1].sentAt >= spanFrom;
         if (!reachesSpan) return;
       }
       const range = pending.current;
+      if (range == null) pendingWindow.current = key;
       pending.current = {
         from: range == null ? from : Math.min(range.from, from),
         to: range == null ? to : Math.max(range.to, to),

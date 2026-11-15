@@ -103,6 +103,9 @@ export function useMessengerChat(args: Args) {
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState<(Loaded & { attempt: number }) | null>(null);
   const [landingId, setLandingId] = useState<string | null>(null);
+  // Changes whenever a jump replaces the loaded window (to the start, to the end, to the unread, a refresh): a window that only
+  // grew by a page keeps its key. What is tracked as seen must not be carried from one window into another.
+  const [windowKey, setWindowKey] = useState(0);
   const [members, setMembers] = useState<readonly MessengersChatMemberItem[]>([]);
   const [loadingAbove, setLoadingAbove] = useState(false);
   const [loadingBelow, setLoadingBelow] = useState(false);
@@ -226,6 +229,7 @@ export function useMessengerChat(args: Args) {
         { signal },
       );
       epochRef.current += 1;
+      setWindowKey((key) => key + 1);
       setPages([newestPage(rsp)]);
       setPagingError(null);
       return true;
@@ -253,6 +257,7 @@ export function useMessengerChat(args: Args) {
         { signal },
       );
       epochRef.current += 1;
+      setWindowKey((key) => key + 1);
       setPages([oldestPage(rsp, MESSENGER_PAGE_SIZE)]);
       setPagingError(null);
       return true;
@@ -312,6 +317,7 @@ export function useMessengerChat(args: Args) {
         );
         const page = aroundSentAtPage(rsp, sentAt, MESSENGER_PAGE_SIZE);
         epochRef.current += 1;
+        setWindowKey((key) => key + 1);
         setPages([page]);
         setPagingError(null);
         return page.items;
@@ -381,6 +387,7 @@ export function useMessengerChat(args: Args) {
     goToStart,
     jumpingToStart,
     landingId,
+    windowKey,
     loadAroundSentAt,
     jumpingToUnread,
     retry,
