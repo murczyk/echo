@@ -894,9 +894,21 @@ html[data-bs-theme='dark'] .message-card-root {
   column-gap: 16px;
 }
 
+/* Narrow headers wrap the actions onto their own top line instead of overlapping the identity. */
 .message-card-header-row[data-message-card-actions-compact='true'] {
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap-reverse;
   column-gap: 8px;
+  row-gap: 4px;
+}
+
+.message-card-header-row[data-message-card-actions-compact='true'] > .message-card-header-identity {
+  flex: 1 1 0;
+  min-width: min-content;
+}
+
+.message-card-header-row[data-message-card-actions-compact='true'] > .message-card-header-actions {
+  margin-left: auto;
 }
 
 .message-card-header-row[data-message-card-header-identity-hidden='true'] {

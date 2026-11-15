@@ -693,6 +693,32 @@ describe('MessageCard', () => {
     },
   );
 
+  it('#4219 a hidden Duty header also hides identity metadata when networks are hidden', async () => {
+    const view = await renderCard({
+      displayMode: 'duty',
+      hideNetworks: true,
+      msg: buildMessage({ unit: 'Unit A', location: 'Location A' }),
+    });
+    await act(async () =>
+      view.root.render(
+        <RadioFeaturesProvider allowed>
+          <DutyMessageCardVisibilityContext.Provider
+            value={{ hideHeader: true, hideFrequency: false, hideUnit: false }}
+          >
+            <MessageCard {...view.props} />
+          </DutyMessageCardVisibilityContext.Provider>
+        </RadioFeaturesProvider>,
+      ),
+    );
+    const text = view.container.textContent ?? '';
+    expect(view.container.querySelector('[data-message-card-header-left="true"]')).toBeNull();
+    expect(text).not.toContain('Group');
+    expect(text).not.toContain('Sender');
+    expect(text).not.toContain('Location A');
+    expect(text).toContain('Unit A');
+    expect(text).toContain('153.6250');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3569
   it('does not expose deletion without independent delete access', async () => {
     const view = await renderCard(

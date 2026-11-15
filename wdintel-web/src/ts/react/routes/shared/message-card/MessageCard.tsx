@@ -344,8 +344,13 @@ function MessageCardComponent({
     radioFeaturesAllowed && displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
     ) : undefined;
+  // With networks hidden, the identity metadata sits in the body; a hidden Duty header hides it there too.
+  const contentMetadataPlacement =
+    hideNetworks && !hideHeader
+      ? MessageCardMetadataPlacement.All
+      : MessageCardMetadataPlacement.Content;
   const showContentMetadata =
-    hideNetworks ||
+    contentMetadataPlacement === MessageCardMetadataPlacement.All ||
     (!hideUnit && isPresent(visibleEtalonDisplayModel.headerUnit)) ||
     (!hideFrequency && radioFeaturesAllowed && isPresent(msg.freq)) ||
     (canUseMessageDevices && Boolean(msg.deviceName?.trim())) ||
@@ -454,11 +459,7 @@ function MessageCardComponent({
                 senderName={senderName}
                 etalonDisplayModel={visibleEtalonDisplayModel}
                 metadataTrigger={metadataTrigger}
-                placement={
-                  hideNetworks
-                    ? MessageCardMetadataPlacement.All
-                    : MessageCardMetadataPlacement.Content
-                }
+                placement={contentMetadataPlacement}
                 hideExplicitUnit
                 hideFrequency={hideFrequency}
                 hideUnit={hideUnit}

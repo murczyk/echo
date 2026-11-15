@@ -278,7 +278,7 @@ criteria. No direct default-suite test; behavior is preserved by this contract.
 - **User role or permission:** any Duty user; the frequency choice is shown only with radio features.
 - **Preconditions:** the user turned off «Заголовок», «Частота» or «Підрозділ» under «Показувати в Оперативному:».
 - **User action or external event:** a Duty feed renders a message card.
-- **Expected observable result:** a hidden header drops the card's networks, group, sender, location and event date/time; the action toolbar and «Важливе» badge stay right-aligned, and the creation-time footer stays. Hidden frequency and unit drop those metadata items wherever the card shows them. Copy, exclusion and report actions keep their values.
+- **Expected observable result:** a hidden header drops the card's networks, group, sender, location and event date/time, including where a server with hidden networks shows them in the card body; the action toolbar and «Важливе» badge stay right-aligned, and the creation-time footer stays. The unit then shows in the body unless its own switch is off. Hidden frequency and unit drop those metadata items wherever the card shows them. Copy, exclusion and report actions keep their values.
 - **Loading/empty/error/success behavior:** changes made in Settings reach mounted Duty cards without a refetch.
 - **URL, localStorage, or user-settings persistence:** `dutyHideCardHeader`, `dutyHideCardFrequency`, `dutyHideCardUnit`, all off by default. Older clients that omit them preserve the stored values.
 - **API endpoint and compatibility requirements:** `/api/user/settings`.
