@@ -233,6 +233,8 @@ export type AiAgentSettings = {
   templateLoginId: string | null;
   reviewerProviderId: string | null;
   reviewEnabled: boolean;
+  refusalRewriteEnabled: boolean;
+  refusalRewriteProviderId: string | null;
   mattermostChatEnabled: boolean;
   mattermostWebhookConfigured: boolean;
   mattermostWebhookUrl: string;
@@ -605,6 +607,8 @@ function normalizeSettings(value: AiAgentAdminSettingsItem): AiAgentSettings {
     templateLoginId: value.templateLoginId,
     reviewerProviderId: value.reviewerAiEngineId,
     reviewEnabled: value.securityReviewEnabled,
+    refusalRewriteEnabled: value.refusalRewriteEnabled,
+    refusalRewriteProviderId: value.refusalRewriteAiEngineId,
     mattermostChatEnabled: value.mattermostChatEnabled,
     mattermostWebhookConfigured: value.hasMattermostWebhook,
     mattermostWebhookUrl: '',
@@ -1079,6 +1083,8 @@ export async function saveAiAgentSettings(settings: AiAgentSettings): Promise<Ai
     templateLoginId: settings.templateLoginId,
     reviewerAiEngineId: settings.reviewerProviderId,
     securityReviewEnabled: settings.reviewEnabled,
+    refusalRewriteEnabled: settings.refusalRewriteEnabled,
+    refusalRewriteAiEngineId: settings.refusalRewriteProviderId,
     mattermostChatEnabled: settings.mattermostChatEnabled,
     mattermostWebhookUrl: settings.mattermostWebhookUrl.trim() || null,
     clearMattermostWebhook: settings.clearMattermostWebhook,

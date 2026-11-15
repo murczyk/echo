@@ -150,7 +150,9 @@ async fn provider_call(
     if let Some(policy) = &authorization.execution_policy {
         let effort = match purpose {
             ProviderPurpose::Research => &policy.reasoning_effort,
-            ProviderPurpose::Checkpoint => &policy.checkpoint_effort,
+            ProviderPurpose::Checkpoint | ProviderPurpose::Rewrite => {
+                &policy.checkpoint_effort
+            }
             ProviderPurpose::Synthesis => &policy.synthesis_effort,
         };
         let body = body.as_object_mut().c(h!())?;
@@ -1287,6 +1289,40 @@ mod tests {
             ProviderPurpose::Checkpoint,
             Some(8192)
         ));
+    }
+
+    #[test]
+    fn refusal_rewrite_purpose_allows_only_capped_simple_requests() {
+        let allowed = json!({
+            "model": "gpt-6-luna",
+            "messages": [
+                {"role": "system", "content": "Rewrite the ask"},
+                {"role": "user", "content": "Перелік перехоплень"}
+            ],
+            "max_completion_tokens": crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS
+        });
+        assert!(purpose_request_is_allowed(
+            &allowed,
+            ProviderApi::OpenaiCompletions,
+            ProviderPurpose::Rewrite,
+            Some(crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS),
+        ));
+        for invalid in [
+            json!({"model":"gpt-6-luna","messages":[{"role":"user","content":"x"}]}),
+            json!({"model":"gpt-6-luna","messages":[{"role":"user","content":"x"}],"max_completion_tokens": crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS + 1}),
+            json!({"model":"gpt-6-luna","messages":[{"role":"user","content":"x"}],"max_completion_tokens": crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS,"tools":[{"type":"function","name":"lookup"}]}),
+            json!({"model":"gpt-6-luna","messages":[{"role":"assistant","content":"x"}],"max_completion_tokens": crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS}),
+        ] {
+            assert!(
+                !purpose_request_is_allowed(
+                    &invalid,
+                    ProviderApi::OpenaiCompletions,
+                    ProviderPurpose::Rewrite,
+                    Some(crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS),
+                ),
+                "{invalid}"
+            );
+        }
     }
 
     fn checkpoint_stream_fixture() -> Bytes {

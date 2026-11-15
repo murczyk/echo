@@ -1121,6 +1121,11 @@
       "changes": [
         { "table": "public.organism_message_stats_exclusion", "strategy": "excluded" }
       ]
+    },
+    "echo:m20261114_170500_ai_agent_refusal_rewrite": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

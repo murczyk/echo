@@ -1843,6 +1843,59 @@ function SettingsPage() {
             <FormControlLabel
               control={
                 <Switch
+                  checked={settings.refusalRewriteEnabled}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current
+                        ? { ...current, refusalRewriteEnabled: event.target.checked }
+                        : current,
+                    )
+                  }
+                />
+              }
+              label="Перезапис відмов моделі (OpenAI)"
+            />
+            <FormControl fullWidth>
+              <InputLabel id="ai-agent-refusal-rewrite-provider-label">
+                Провайдер перезапису відмов
+              </InputLabel>
+              <Select
+                labelId="ai-agent-refusal-rewrite-provider-label"
+                label="Провайдер перезапису відмов"
+                value={settings.refusalRewriteProviderId ?? ''}
+                renderValue={(selected) =>
+                  selected
+                    ? providerName(engines, selected as string)
+                    : 'gpt-6-luna (за замовчуванням)'
+                }
+                onChange={(event) =>
+                  setSettings((current) =>
+                    current
+                      ? { ...current, refusalRewriteProviderId: event.target.value || null }
+                      : current,
+                  )
+                }
+              >
+                <MenuItem value="">gpt-6-luna (за замовчуванням)</MenuItem>
+                {engines.map((engine) =>
+                  providerMenuItem(engine, {
+                    disabledReason: settings.allowedProviderIds.includes(engine.id)
+                      ? undefined
+                      : 'Спочатку додайте провайдера до дозволених.',
+                  }),
+                )}
+              </Select>
+            </FormControl>
+            {settings.refusalRewriteEnabled ? (
+              <Typography variant="body2" color="text.secondary">
+                Коли модель OpenAI відмовляє в оперативному запиті, запит переписується у форму
+                зведення доказів і надсилається повторно. Якщо провайдер не вибрано, буде
+                використано gpt-6-luna з дозволених.
+              </Typography>
+            ) : null}
+            <FormControlLabel
+              control={
+                <Switch
                   checked={settings.mattermostChatEnabled}
                   disabled={settings.clearMattermostChatWebhook}
                   onChange={(event) =>

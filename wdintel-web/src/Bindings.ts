@@ -7179,6 +7179,8 @@ export type AiAgentAdminSettingsItem = {
   defaultAiEngineId: string | null;
   reviewerAiEngineId: string | null;
   securityReviewEnabled: boolean;
+  refusalRewriteEnabled: boolean;
+  refusalRewriteAiEngineId: string | null;
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
   hasMattermostChatWebhook: boolean;
@@ -7192,6 +7194,8 @@ export type AiAgentAdminSettingsUpdateReq = {
   defaultAiEngineId: string | null;
   reviewerAiEngineId: string | null;
   securityReviewEnabled: boolean;
+  refusalRewriteEnabled: boolean;
+  refusalRewriteAiEngineId: string | null;
   mattermostChatEnabled: boolean;
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;

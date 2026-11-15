@@ -266,6 +266,51 @@ test("rejects unsupported gateway transports and missing capabilities", () => {
   );
 });
 
+test("registers the refusal rewrite engine only for gateway models", async () => {
+  const gatewayRewrite = {
+    ...normalPayload,
+    modelName: "gpt-6.1-sol",
+    providerTransport: "echo_gateway",
+    providerApiKey: "A".repeat(43),
+    rewriteModelName: "gpt-6-luna",
+    rewriteMaxTokens: 2_048,
+  };
+  const payload = validatePayload(gatewayRewrite, false);
+  assert.equal(payload.rewriteModelName, "gpt-6-luna");
+  assert.equal(payload.rewriteMaxTokens, 2_048);
+  assert.ok(systemPrompt(payload).includes("Role and authorization context"));
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Role and authorization context/);
+  const directory = await mkdtemp(join(tmpdir(), "echo-ai-agent-test-"));
+  try {
+    const modelsPath = await writeModelsFile(directory, payload);
+    const models = JSON.parse(await readFile(modelsPath, "utf8"));
+    const rewrite = models.providers["echo-vllm"].models.find(
+      (model: { id: string }) => model.id === "gpt-6-luna",
+    );
+    assert.equal(rewrite.reasoning, false);
+    assert.equal(rewrite.maxTokens, 2_048);
+    assert.deepEqual(rewrite.input, ["text"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  assert.throws(
+    () =>
+      validatePayload(
+        { ...normalPayload, rewriteModelName: "gpt-6-luna" },
+        false,
+      ),
+    /refusal rewrite provider requires a gateway model/,
+  );
+  assert.throws(
+    () =>
+      validatePayload(
+        { ...normalPayload, rewriteMaxTokens: 2_048 },
+        false,
+      ),
+    /rewriteMaxTokens requires rewriteModelName/,
+  );
+});
+
 test("rejects provider API keys containing header control characters", () => {
   assert.throws(
     () =>
@@ -1285,7 +1330,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.14.1",
+    harnessRelease: "2026.11.14.2",
   });
 });
 
