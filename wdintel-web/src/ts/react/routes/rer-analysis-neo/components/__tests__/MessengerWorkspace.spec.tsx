@@ -136,6 +136,9 @@ describe('MessengerWorkspace', () => {
       title: 'Ivan',
       messengerType: 'Telegram',
       externalId: '1',
+      oldestReadAt: null,
+      newestReadAt: null,
+      unreadCount: 0,
     };
     vi.mocked(listMessengersChats).mockResolvedValueOnce({ items: [item as never] });
     const render = (id: string) =>

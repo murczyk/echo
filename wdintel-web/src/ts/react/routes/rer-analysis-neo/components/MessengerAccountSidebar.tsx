@@ -12,9 +12,12 @@ import { Collapse, IconButton, Switch, Tooltip } from '@mui/material';
 import { Fragment, useRef, useState, type ElementType, type ReactNode } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 
+import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { SidePanelToggleButton } from '../../../components/SidePanelToggleButton';
 import '../../../components/selectable-list.css';
 import { useLocalStorage } from '../../../hooks/use-local-storage';
+import { formatCompactCount } from '../../../utils/format-compact-count';
 import { formatDate } from '../../../utils/misc';
 import {
   chatSectionOf,
@@ -47,6 +50,36 @@ const CHAT_SECTIONS: ReadonlyArray<{
 const DIVIDER = 'border-black/12 dark:border-white/12';
 const UNREAD_ONLY_LABEL = 'Лише непрочитані';
 const READ_ALL_LABEL = 'Прочитати всі';
+const READ_ALL_FAILED = 'Не вдалося позначити чати прочитаними.';
+// The unread filter keeps the open chat in the list, so it does not vanish from under the reader as it gets read.
+const matchesUnreadFilter = (
+  chat: MessengerChat,
+  onlyUnread: boolean,
+  selectedChatId: string | null,
+) => !onlyUnread || chat.unreadCount > 0 || chat.id === selectedChatId;
+
+// The number of unread messages of a chat, as a badge: in the row of the full sidebar, or on the corner of the avatar in the rail.
+function UnreadBadge({ count, className = 'ml-auto' }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={`shrink-0 rounded-full bg-[var(--echo-color-primary,var(--color-action,#3b82f6))] px-1.5 text-[11px] leading-5 font-semibold whitespace-nowrap text-[var(--echo-color-on-primary,#fff)] ${className}`}
+      title={count.toLocaleString('uk-UA')}
+      data-messenger-unread-badge
+    >
+      {formatCompactCount(count)}
+    </span>
+  );
+}
+// What a screen reader says for a chat: its name and the two counts, which are bare numbers on screen.
+const chatCountsLabel = (chat: MessengerChat) =>
+  [
+    chatLabel(chat),
+    chat.totalCount > 0 ? `усього повідомлень: ${chat.totalCount}` : null,
+    chat.unreadCount > 0 ? `непрочитаних: ${chat.unreadCount}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 // The look of an open chat row (`.echo-selectable-list-item[data-selected]`), for the other items that can be open.
 const SELECTED_LOOK =
   'hover:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_6%,transparent)] data-[selected=true]:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_8%,transparent)] data-[selected=true]:hover:bg-[color-mix(in_srgb,var(--echo-color-text,#fff)_10%,transparent)]';
@@ -203,6 +236,7 @@ function ChatSection({
                 type="button"
                 className="group-navigation-list-item echo-selectable-list-item !px-2"
                 data-messenger-chat
+                aria-label={chatCountsLabel(chat)}
                 data-selected={chat.id === selectedChatId ? 'true' : 'false'}
                 aria-current={chat.id === selectedChatId ? 'true' : undefined}
                 onClick={() => onSelectChat(chat.id)}
@@ -219,6 +253,23 @@ function ChatSection({
                       {formatChatDate(chat.lastMessageDate)}
                     </span>
                   ) : null}
+                </span>
+                {/* The counts stand one under the other, on the lines of the name and of the date: the total, plain and muted,
+                    and the unread ones in the badge. */}
+                <span
+                  className="ml-auto flex shrink-0 flex-col items-end gap-0.5"
+                  data-messenger-chat-counts
+                >
+                  {chat.totalCount > 0 ? (
+                    <span
+                      className="text-xs whitespace-nowrap opacity-60"
+                      title={`Усього повідомлень: ${chat.totalCount.toLocaleString('uk-UA')}`}
+                      data-messenger-total-count
+                    >
+                      {formatCompactCount(chat.totalCount)}
+                    </span>
+                  ) : null}
+                  <UnreadBadge count={chat.unreadCount} className="" />
                 </span>
               </button>
             )}
@@ -239,6 +290,11 @@ type SidebarProps = {
   onOpenContacts: () => void;
   onOpenGallery: () => void;
   onOpenAccount: () => void;
+  onlyUnread: boolean;
+  onOnlyUnreadChange: (onlyUnread: boolean) => void;
+  // Marks every chat read; false while it runs or when no chat has unread messages.
+  onReadAll: () => void;
+  canReadAll: boolean;
 };
 
 function ExpandedSidebar({
@@ -251,6 +307,10 @@ function ExpandedSidebar({
   onOpenContacts,
   onOpenGallery,
   onOpenAccount,
+  onlyUnread,
+  onOnlyUnreadChange,
+  onReadAll,
+  canReadAll,
   className,
   hidden,
 }: SidebarProps & { className: string; hidden: boolean }) {
@@ -258,13 +318,14 @@ function ExpandedSidebar({
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const accountOpen = selectedChatId == null && !contactsOpen && !galleryOpen;
   const needle = query.trim().toLowerCase();
-  const visible = needle
-    ? chats.filter((chat) =>
+  const visible = chats.filter(
+    (chat) =>
+      matchesUnreadFilter(chat, onlyUnread, selectedChatId) &&
+      (!needle ||
         [chat.title, chat.username, chat.externalId].some((field) =>
           (field ?? '').toLowerCase().includes(needle),
-        ),
-      )
-    : chats;
+        )),
+  );
   return (
     <aside
       ref={setScroller}
@@ -354,23 +415,27 @@ function ExpandedSidebar({
       <div className="px-4">
         <MessengerSearchField value={query} onChange={setQuery} ariaLabel="Пошук чату" />
       </div>
-      {/* shortcut: the unread filter and "read all" take their place but do nothing until read state exists (plan, section B). */}
       <div
         className="flex items-center justify-between gap-2 px-4 text-xs"
         data-messenger-unread-row
       >
-        <label className="flex items-center gap-1 opacity-60">
+        <label className="flex items-center gap-1 opacity-80">
           {UNREAD_ONLY_LABEL}
           <Switch
             size="small"
-            disabled
-            checked={false}
+            checked={onlyUnread}
+            onChange={(_, checked) => onOnlyUnreadChange(checked)}
             slotProps={{ input: { 'aria-label': UNREAD_ONLY_LABEL } }}
           />
         </label>
         <Tooltip title={READ_ALL_LABEL}>
           <span>
-            <IconButton size="small" disabled aria-label={READ_ALL_LABEL}>
+            <IconButton
+              size="small"
+              disabled={!canReadAll}
+              aria-label={READ_ALL_LABEL}
+              onClick={onReadAll}
+            >
               <DoneAllIcon fontSize="small" />
             </IconButton>
           </span>
@@ -415,6 +480,7 @@ function ExpandedSidebar({
 function RailButton({
   label,
   selected = false,
+  pressed,
   disabled = false,
   avatar = false,
   href,
@@ -424,6 +490,8 @@ function RailButton({
 }: {
   label: string;
   selected?: boolean;
+  // A switch rather than a place: it says whether it is on (`aria-pressed`) instead of being the current item.
+  pressed?: boolean;
   disabled?: boolean;
   // An avatar button: a small rounded frame round the avatar, grey on hover, green when the chat is open.
   avatar?: boolean;
@@ -461,7 +529,8 @@ function RailButton({
             <button
               type="button"
               aria-label={label}
-              aria-current={selected ? 'true' : undefined}
+              aria-current={pressed === undefined && selected ? 'true' : undefined}
+              aria-pressed={pressed}
               data-selected={selected ? 'true' : 'false'}
               disabled={disabled}
               className={look}
@@ -490,6 +559,10 @@ function CollapsedSidebar({
   onOpenContacts,
   onOpenGallery,
   onOpenAccount,
+  onlyUnread,
+  onOnlyUnreadChange,
+  onReadAll,
+  canReadAll,
   className,
   hidden,
 }: SidebarProps & { className: string; hidden: boolean }) {
@@ -573,17 +646,31 @@ function CollapsedSidebar({
         <ContactsOutlinedIcon fontSize="small" />
       </RailButton>
       <Separator name="pages-search" />
-      {/* shortcut: like in the full sidebar, they take their place and do nothing until read state exists. */}
-      <RailButton label={UNREAD_ONLY_LABEL} disabled data-messenger-rail-unread>
+      <RailButton
+        label={UNREAD_ONLY_LABEL}
+        selected={onlyUnread}
+        pressed={onlyUnread}
+        onClick={() => onOnlyUnreadChange(!onlyUnread)}
+        data-messenger-rail-unread
+      >
         <MarkChatUnreadOutlinedIcon fontSize="small" />
       </RailButton>
-      <RailButton label={READ_ALL_LABEL} disabled data-messenger-rail-read-all>
+      <RailButton
+        label={READ_ALL_LABEL}
+        disabled={!canReadAll}
+        onClick={onReadAll}
+        data-messenger-rail-read-all
+      >
         <DoneAllIcon fontSize="small" />
       </RailButton>
       {loading || (error != null && chats.length === 0) ? null : (
         <>
           {CHAT_SECTIONS.map(({ key, title, Icon }) => {
-            const sectionChats = chats.filter((chat) => chatSectionOf(chat) === key);
+            const sectionChats = chats.filter(
+              (chat) =>
+                chatSectionOf(chat) === key &&
+                matchesUnreadFilter(chat, onlyUnread, selectedChatId),
+            );
             // A kind with no chats has nothing to open: it stays folded, and a click does nothing.
             const empty = sectionChats.length === 0;
             const open = openSections.has(key) && !empty;
@@ -643,19 +730,36 @@ function CollapsedSidebar({
                     render={(chat) => (
                       <RailButton
                         avatar
-                        label={chatLabel(chat)}
+                        label={
+                          chat.unreadCount > 0
+                            ? `${chatLabel(chat)}, непрочитаних: ${chat.unreadCount}`
+                            : chatLabel(chat)
+                        }
                         selected={chat.id === selectedChatId}
                         onClick={() => onSelectChat(chat.id)}
                         data-messenger-rail-chat={chat.id}
                       >
-                        <MessengerAccountAvatar
-                          account={{
-                            id: chat.id,
-                            name: chatLabel(chat),
-                            phone: '',
-                          }}
-                          className={RAIL_AVATAR_SIZE}
-                        />
+                        {/* The badge sits on the bottom right corner of the avatar and reaches at most 6 px past it, which
+                            the rail has room for on both sides; a count of 5 characters (12.3k) grows to the left. */}
+                        <span className="relative inline-flex">
+                          <MessengerAccountAvatar
+                            account={{
+                              id: chat.id,
+                              name: chatLabel(chat),
+                              phone: '',
+                            }}
+                            className={RAIL_AVATAR_SIZE}
+                          />
+                          <UnreadBadge
+                            count={chat.unreadCount}
+                            className={`pointer-events-none absolute !px-1 !leading-4 ring-2 ring-[var(--echo-color-background,#1f1f1f)] ${
+                              // One character is a small circle: it sits further in, so it overlaps the avatar like the wider ones.
+                              formatCompactCount(chat.unreadCount).length === 1
+                                ? 'right-0.5 bottom-0 min-w-4 text-center'
+                                : '-right-1.5 -bottom-1'
+                            }`}
+                          />
+                        </span>
                       </RailButton>
                     )}
                   />
@@ -678,8 +782,29 @@ function CollapsedSidebar({
 // On a phone (below the `sm` breakpoint, like the rest of the page) the open sidebar takes the whole width and hides the
 // page beside it, and whatever leads somewhere (a chat, the contacts, the gallery, the account cards) closes it to show the place.
 // That state is not remembered: it starts closed and does not touch the choice made on a wide screen.
-export function MessengerAccountSidebar({ mobile, ...props }: SidebarProps & { mobile: boolean }) {
+export function MessengerAccountSidebar({
+  mobile,
+  ...props
+}: Omit<SidebarProps, 'onlyUnread' | 'onOnlyUnreadChange' | 'onReadAll' | 'canReadAll'> & {
+  mobile: boolean;
+}) {
   const [desktopOpen, setDesktopOpen] = useAccountSidebarOpen();
+  // Shared by the full sidebar and the rail, which stay mounted side by side.
+  const [onlyUnread, setOnlyUnread] = useState(false);
+  const [readingAll, setReadingAll] = useState(false);
+  const { notify } = useOptionalPowerSnackbar();
+  const { markAllRead, chats } = props.chatsState;
+  // "Read all" cannot be undone (there is no way to mark messages unread), so it asks first.
+  const [confirmReadAll, setConfirmReadAll] = useState(false);
+  const readAll = () => {
+    setReadingAll(true);
+    markAllRead()
+      .catch(() => notify({ severity: 'error', message: READ_ALL_FAILED }))
+      .finally(() => {
+        setReadingAll(false);
+        setConfirmReadAll(false);
+      });
+  };
   const [mobileOpen, setMobileOpen] = useState(false);
   const open = mobile ? mobileOpen : desktopOpen;
   const setOpen = mobile ? setMobileOpen : setDesktopOpen;
@@ -688,6 +813,10 @@ export function MessengerAccountSidebar({ mobile, ...props }: SidebarProps & { m
   };
   const sidebarProps: SidebarProps = {
     ...props,
+    onlyUnread,
+    onOnlyUnreadChange: setOnlyUnread,
+    onReadAll: () => setConfirmReadAll(true),
+    canReadAll: !readingAll && chats.some((chat) => chat.unreadCount > 0),
     onSelectChat: (chatId) => {
       props.onSelectChat(chatId);
       closeOnPhone();
@@ -748,6 +877,16 @@ export function MessengerAccountSidebar({ mobile, ...props }: SidebarProps & { m
         // The rail starts below the toggle, so its buttons scroll under the edge of the box, not under the toggle.
         className={layer(!open, railWidth, 'top-12')}
         hidden={open}
+      />
+      <ConfirmDangerDialog
+        open={confirmReadAll}
+        onClose={() => setConfirmReadAll(false)}
+        onConfirm={readAll}
+        title="Прочитати всі чати?"
+        description="Усі повідомлення в чатах цього акаунту буде позначено прочитаними. Скасувати це не можна. Ви впевнені?"
+        confirmLabel="Так"
+        cancelLabel="Ні"
+        submitting={readingAll}
       />
     </div>
   );

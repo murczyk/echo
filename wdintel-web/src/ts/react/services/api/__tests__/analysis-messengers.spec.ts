@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { postJson } from '../client';
+import { postJson, postVoid } from '../client';
 import {
   listMessengersChatMembers,
   listMessengersContacts,
   listMessengersMessages,
+  markAllMessengersChatsRead,
+  updateMessengersChatReadState,
 } from '../analysis-messengers';
 
 vi.mock('../client', () => ({
@@ -13,8 +15,41 @@ vi.mock('../client', () => ({
 }));
 
 const postJsonMock = vi.mocked(postJson);
+const postVoidMock = vi.mocked(postVoid);
 
 describe('analysis messengers API', () => {
+  it('writes the read span with snake_case fields and reads the merged state back', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      oldest_read_at: 10,
+      newest_read_at: 30,
+      unread_count: 2,
+    });
+
+    const rsp = await updateMessengersChatReadState({
+      accountId: 'a1',
+      chatId: 'c1',
+      oldestReadAt: 10,
+      newestReadAt: 20,
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/messengers/chats/read-state/update',
+      { account_id: 'a1', chat_id: 'c1', oldest_read_at: 10, newest_read_at: 20 },
+      undefined,
+    );
+    expect(rsp).toEqual({ oldestReadAt: 10, newestReadAt: 30, unreadCount: 2 });
+  });
+
+  it('marks all chats of an account read', async () => {
+    postVoidMock.mockResolvedValueOnce(undefined);
+    await markAllMessengersChatsRead({ accountId: 'a1' });
+    expect(postVoidMock).toHaveBeenCalledWith(
+      '/api/messengers/chats/mark-all-read',
+      { account_id: 'a1' },
+      undefined,
+    );
+  });
+
   it('lists chat members with snake_case request and camelCase response', async () => {
     postJsonMock.mockResolvedValueOnce({
       items: [{ id: 'm1', external_id: '7', first_name: 'Ivan', is_bot: false, deleted: true }],

@@ -5,7 +5,10 @@ import type {
   MessengersAttachmentsListReq,
   MessengersAttachmentsListRsp,
   MessengersAccountsListRsp,
+  MessengersChatReadState,
+  MessengersChatReadStateUpdateReq,
   MessengersChatsListReq,
+  MessengersChatsMarkAllReadReq,
   MessengersChatMembersListReq,
   MessengersChatMembersListRsp,
   MessengersChatsListRsp,
@@ -43,6 +46,29 @@ export async function listMessengersChats(
   return transformSnakeToCamel<MessengersChatsListRsp>(
     await postJson<unknown>('/api/messengers/chats/list', transformCamelToSnake(req), options),
   );
+}
+
+// Marks the messages sent within `[oldestReadAt, newestReadAt]` (epoch ms) as read for this login. The stored span only
+// widens, and the answer is the merged state with the new unread count.
+export async function updateMessengersChatReadState(
+  req: MessengersChatReadStateUpdateReq,
+  options?: RequestOptions,
+): Promise<MessengersChatReadState> {
+  return transformSnakeToCamel<MessengersChatReadState>(
+    await postJson<unknown>(
+      '/api/messengers/chats/read-state/update',
+      transformCamelToSnake(req),
+      options,
+    ),
+  );
+}
+
+// Marks every chat of the account read for this login; read the counts again with `listMessengersChats`.
+export async function markAllMessengersChatsRead(
+  req: MessengersChatsMarkAllReadReq,
+  options?: RequestOptions,
+): Promise<void> {
+  await postVoid('/api/messengers/chats/mark-all-read', transformCamelToSnake(req), options);
 }
 
 export async function listMessengersChatMembers(
