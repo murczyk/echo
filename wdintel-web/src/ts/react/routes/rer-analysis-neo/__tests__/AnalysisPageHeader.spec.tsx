@@ -169,7 +169,7 @@ vi.mock('.././components/AnalysisPaginationControl', () => ({
 }));
 
 import { AnalysisPageHeader } from '.././AnalysisPageHeader';
-import type { AnalysisPageViewModel } from '.././types';
+import { LeftPanelTab, type AnalysisPageViewModel } from '.././types';
 
 function buildPage(): AnalysisPageViewModel {
   return {
@@ -187,6 +187,7 @@ function buildPage(): AnalysisPageViewModel {
     queryState: {} as AnalysisPageViewModel['queryState'],
     openReport: vi.fn(),
     reload: vi.fn(),
+    refreshMessenger: vi.fn(),
     toggleLeftPanel: vi.fn(),
     toggleRightPanel: vi.fn(),
     newestFirst: false,
@@ -259,6 +260,34 @@ describe('AnalysisPageHeader', () => {
     });
     expect(view.container.querySelector('[aria-label="Розгорнути праву панель"]')).toBeNull();
     expect(view.container.querySelector('[aria-label="Згорнути праву панель"]')).not.toBeNull();
+  });
+
+  it('has no right panel toggle while the right panel is not available', () => {
+    const wide = renderHeader(buildPage(), false, false);
+    rendered.push(wide);
+    expect(wide.container.querySelector('[data-side="right"]')).not.toBeNull();
+
+    for (const isNarrowLayout of [false, true]) {
+      useMediaQueryMock.mockReturnValue(isNarrowLayout);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      rendered.push({ container, root });
+      act(() =>
+        root.render(
+          <AnalysisPageHeader
+            page={buildPage()}
+            centerTab="messages"
+            isNarrowLayout={isNarrowLayout}
+            leftPanelVisible
+            rightPanelVisible={false}
+            rightPanelAvailable={false}
+          />,
+        ),
+      );
+      expect(container.querySelector('[data-side="left"]')).not.toBeNull();
+      expect(container.querySelector('[data-side="right"]')).toBeNull();
+    }
   });
 
   it('moves actions into the settings menu as soon as the layout is narrow', () => {
@@ -357,6 +386,37 @@ describe('AnalysisPageHeader', () => {
     expect(refreshButton?.disabled).toBe(true);
     expect(refreshButton?.querySelector('[data-testid="refresh-icon"]')).not.toBeNull();
     expect(refreshButton?.querySelector('[data-testid="loading-placeholder"]')).toBeNull();
+  });
+
+  it('refreshes only the messenger entities and hides reports in messenger mode', () => {
+    const page = buildPage();
+    page.leftPanelTab = LeftPanelTab.Messenger;
+    page.messageViewportPreserving = true;
+    const view = renderHeader(page, false, false, 'messages', false);
+    rendered.push(view);
+
+    const refreshButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Оновити"]',
+    );
+    expect(refreshButton?.disabled).toBe(false);
+    act(() => refreshButton?.click());
+
+    expect(page.refreshMessenger).toHaveBeenCalledTimes(1);
+    expect(page.reload).not.toHaveBeenCalled();
+    expect(view.container.querySelector('button[title="Відкрити звіти"]')).toBeNull();
+  });
+
+  it('keeps refresh disabled in messenger mode while a messenger request is running', () => {
+    const page = buildPage();
+    page.leftPanelTab = LeftPanelTab.Messenger;
+    page.messengerRefreshing = true;
+    const view = renderHeader(page, false, false, 'messages', false);
+    rendered.push(view);
+
+    const refreshButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Оновити"]',
+    );
+    expect(refreshButton?.disabled).toBe(true);
   });
 
   it('captures the desktop launcher and narrow settings trigger for report focus return', () => {

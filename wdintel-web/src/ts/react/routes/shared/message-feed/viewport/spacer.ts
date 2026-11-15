@@ -1,3 +1,4 @@
+import type { MessageFeedId } from '../message-feed.types';
 import { useCallback, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 
 export function useMessageFeedSpacer({
@@ -6,8 +7,8 @@ export function useMessageFeedSpacer({
   itemIds,
 }: {
   scrollerRef: MutableRefObject<HTMLDivElement | null>;
-  directItemTargetIdRef: MutableRefObject<number | null>;
-  itemIds: readonly number[];
+  directItemTargetIdRef: MutableRefObject<MessageFeedId | null>;
+  itemIds: readonly MessageFeedId[];
 }) {
   const [bottomSpacerPx, setBottomSpacerPx] = useState(0);
   const bottomSpacerRef = useRef(0);

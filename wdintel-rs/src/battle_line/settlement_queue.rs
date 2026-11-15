@@ -1074,9 +1074,8 @@ pub async fn oneoff_recalculate_historic_settlements(
     let mut written_total = 0usize;
     let mut skipped_total = 0usize;
     loop {
-        let remaining = ps
-            .limit
-            .map(|limit| limit.saturating_sub(scanned_total));
+        let remaining =
+            ps.limit.map(|limit| limit.saturating_sub(scanned_total));
         if remaining == Some(0) {
             break;
         }
@@ -1127,10 +1126,9 @@ async fn recalculate_historic_settlement_page<C>(
 where
     C: ConnectionTrait + TransactionSession,
 {
-    let items =
-        missing_settlement_items(db, after_id, limit, only_item_ids)
-            .await
-            .c(h!())?;
+    let items = missing_settlement_items(db, after_id, limit, only_item_ids)
+        .await
+        .c(h!())?;
     let last_id = items.last().map(|(item_id, _, _)| *item_id);
     let mut written = 0;
     let mut skipped = 0;
@@ -1206,10 +1204,7 @@ fn settlement_row_exists_query() -> sea_orm::sea_query::SelectStatement {
                 sigint_inbox_item_settlement::Entity,
                 sigint_inbox_item_settlement::Column::ItemId,
             ))
-            .equals((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Id,
-            )),
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .to_owned()
 }
@@ -3258,42 +3253,31 @@ returning id
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
-        let missing_id = insert_historic_location_item(
-            &txn,
-            Some("|КРАСНОЄ|ОХРІМІВКА|"),
-        )
-        .await
-        .unwrap();
-        let already_id =
-            insert_historic_location_item(&txn, Some("|ALREADY|"))
+        let missing_id =
+            insert_historic_location_item(&txn, Some("|КРАСНОЄ|ОХРІМІВКА|"))
                 .await
                 .unwrap();
-        reconcile_item_locations(
-            &txn,
-            already_id,
-            None,
-            Some("|ALREADY|"),
-        )
-        .await
-        .unwrap();
-        let empty_id =
-            insert_historic_location_item(&txn, Some("||")).await.unwrap();
-        let null_id =
-            insert_historic_location_item(&txn, None).await.unwrap();
+        let already_id = insert_historic_location_item(&txn, Some("|ALREADY|"))
+            .await
+            .unwrap();
+        reconcile_item_locations(&txn, already_id, None, Some("|ALREADY|"))
+            .await
+            .unwrap();
+        let empty_id = insert_historic_location_item(&txn, Some("||"))
+            .await
+            .unwrap();
+        let null_id = insert_historic_location_item(&txn, None).await.unwrap();
         let only_ids = [missing_id, already_id, empty_id, null_id];
 
-        let page = recalculate_historic_settlement_page(
-            &txn, 0, 10, Some(&only_ids),
-        )
-        .await
-        .unwrap();
+        let page =
+            recalculate_historic_settlement_page(&txn, 0, 10, Some(&only_ids))
+                .await
+                .unwrap();
         assert_eq!(page.scanned, 2);
         assert_eq!(page.written, 1);
         assert_eq!(page.skipped, 1);
         let texts = sigint_inbox_item_settlement::Entity::find()
-            .filter(
-                sigint_inbox_item_settlement::Column::ItemId.eq(missing_id),
-            )
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(missing_id))
             .order_by_asc(sigint_inbox_item_settlement::Column::SettlementText)
             .all(&txn)
             .await
@@ -3306,11 +3290,10 @@ returning id
             vec!["КРАСНОЄ", "ОХРІМІВКА"]
         );
 
-        let again = recalculate_historic_settlement_page(
-            &txn, 0, 10, Some(&only_ids),
-        )
-        .await
-        .unwrap();
+        let again =
+            recalculate_historic_settlement_page(&txn, 0, 10, Some(&only_ids))
+                .await
+                .unwrap();
         assert_eq!(again.scanned, 1);
         assert_eq!(again.written, 0);
         assert_eq!(again.skipped, 1);

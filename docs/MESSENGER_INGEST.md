@@ -262,11 +262,18 @@ type MessengerIngestAccountInput = {
   is_active: boolean | null
   is_paused: boolean | null
   notes: string | null
+  external_url: string | null           // link to the account's page in the collector, see below
   created_at: number | null             // when the collector added the account
   last_sync: number | null              // collector's last successful sync
   telegram: MessengerIngestTelegramAccountId | null
 }
 ```
+
+`external_url` is optional: `null`, an omitted field and a blank string all
+store no link. A non-blank value must be an absolute `http` or `https` URL
+without credentials, at most 2048 bytes; Echo stores its normalized form
+(trimmed, lowercase scheme and host). Any other value fails the whole batch
+with `400`, since the batch is one transaction.
 
 Response:
 
@@ -303,6 +310,7 @@ account deleted:
       "is_active": true,
       "is_paused": false,
       "notes": null,
+      "external_url": null,
       "created_at": 1759000000000,
       "last_sync": 1760430000000,
       "telegram": { "user_id": "7012345678" }
@@ -323,6 +331,7 @@ account deleted:
       "is_active": false,
       "is_paused": true,
       "notes": "re-login required",
+      "external_url": "https://example.com/accounts/18",
       "created_at": 1759100000000,
       "last_sync": 1760420000000,
       "telegram": null
@@ -352,6 +361,7 @@ Example response:
       "is_active": true,
       "is_paused": false,
       "notes": null,
+      "external_url": null,
       "created_at": 1759000000000,
       "last_sync": 1760430000000,
       "telegram": { "user_id": "7012345678" }
@@ -373,6 +383,7 @@ Example response:
       "is_active": false,
       "is_paused": true,
       "notes": "re-login required",
+      "external_url": "https://example.com/accounts/18",
       "created_at": 1759100000000,
       "last_sync": 1760420000000,
       "telegram": null

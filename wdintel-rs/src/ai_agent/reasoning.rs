@@ -81,6 +81,7 @@ pub enum ProviderPurpose {
     Research,
     Checkpoint,
     Synthesis,
+    Rewrite,
 }
 
 impl ProviderPurpose {
@@ -89,6 +90,7 @@ impl ProviderPurpose {
             None | Some("research") => Some(Self::Research),
             Some("checkpoint") => Some(Self::Checkpoint),
             Some("synthesis") => Some(Self::Synthesis),
+            Some("rewrite") => Some(Self::Rewrite),
             _ => None,
         }
     }
@@ -105,7 +107,7 @@ pub fn reasoning_available(config: &Config, engine: &ai_engine::Model) -> bool {
             .as_ref()
             .is_some_and(|ids| ids.contains(&engine.id))
         && matches!(
-            engine.model_name.as_str(),
+            crate::ai_engine::client::model_id(engine),
             config::AI_AGENT_GLM_5_3
                 | config::AI_AGENT_OPENAI_GPT_6_SOL
                 | config::AI_AGENT_OPENAI_GPT_6_1_SOL
@@ -148,49 +150,53 @@ pub fn resolve(
     document_task: bool,
 ) -> ExecutionPolicy {
     let verified = reasoning_available(config, engine);
-    let name = engine.model_name.as_str();
-    let (api, effort, lowest) =
-        if verified && name == config::AI_AGENT_GLM_5_3 {
-            (
-                ProviderApi::OpenaiCompletions,
-                Some(match preset {
-                    AiAgentReasoningPreset::Fast => "low",
-                    AiAgentReasoningPreset::Balanced => "high",
-                    AiAgentReasoningPreset::Deep => "max",
-                }),
-                Some("low"),
-            )
-        } else if verified {
-            let lowest = if name == config::AI_AGENT_OPENAI_GPT_6_SOL {
-                "none"
-            } else {
-                "low"
-            };
-            (
-                ProviderApi::OpenaiResponses,
-                Some(match preset {
-                    AiAgentReasoningPreset::Fast => lowest,
-                    AiAgentReasoningPreset::Balanced => "medium",
-                    AiAgentReasoningPreset::Deep => "max",
-                }),
-                Some(lowest),
-            )
+    let name = crate::ai_engine::client::model_id(engine);
+    let (api, effort, lowest) = if verified && name == config::AI_AGENT_GLM_5_3
+    {
+        (
+            ProviderApi::OpenaiCompletions,
+            Some(match preset {
+                AiAgentReasoningPreset::Fast => "low",
+                AiAgentReasoningPreset::Balanced => "high",
+                AiAgentReasoningPreset::Deep => "max",
+            }),
+            Some("low"),
+        )
+    } else if verified {
+        let lowest = if name == config::AI_AGENT_OPENAI_GPT_6_SOL {
+            "none"
         } else {
-            let effort = if name == config::AI_AGENT_GLM_5_3 {
-                Some("max")
-            } else if name.starts_with(
-                config::AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
-            ) || matches!(
-                name,
-                config::AI_AGENT_OPENAI_GPT_6_SOL
-                    | config::AI_AGENT_OPENAI_GPT_6_LUNA
-            ) {
-                Some("none")
-            } else {
-                None
-            };
-            (ProviderApi::OpenaiCompletions, effort, effort)
+            "low"
         };
+        (
+            ProviderApi::OpenaiResponses,
+            Some(match preset {
+                AiAgentReasoningPreset::Fast => lowest,
+                AiAgentReasoningPreset::Balanced => "medium",
+                AiAgentReasoningPreset::Deep => "max",
+            }),
+            Some(lowest),
+        )
+    } else if name == config::AI_AGENT_GLM_FLASH {
+        // Research keeps Flash's default thinking. Synthesis and checkpoints
+        // run at GLM-5.3's lowest effort: by default, Flash's hidden
+        // reasoning used the whole output allowance of a third of them
+        // (incident 01a1d9d0).
+        (ProviderApi::OpenaiCompletions, None, Some("low"))
+    } else {
+        let effort = if name == config::AI_AGENT_GLM_5_3 {
+            Some("max")
+        } else if name
+            .starts_with(config::AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX)
+            || name == config::AI_AGENT_OPENAI_GPT_6_SOL
+            || crate::ai_engine::client::is_gpt_luna(name)
+        {
+            Some("none")
+        } else {
+            None
+        };
+        (ProviderApi::OpenaiCompletions, effort, effort)
+    };
     let document_task = document_task && preset != AiAgentReasoningPreset::Deep;
     let (max_runtime_seconds, finalization_seconds) = match preset {
         _ if document_task => (
@@ -234,7 +240,13 @@ pub fn resolve(
 /// Every non-OpenAI engine (GLM, Gemma) runs the runner's bounded research
 /// harness, which reserves twice the base finalization time for synthesis.
 fn bounded_research(model_name: &str) -> bool {
-    !config::AI_AGENT_OPENAI_MODEL_PREFIXES
+    !openai_model(model_name)
+}
+
+/// OpenAI-family engines are the ones the refusal rewrite layer serves: only
+/// they produce the policy refusals the layer retries.
+pub fn openai_model(model_name: &str) -> bool {
+    config::AI_AGENT_OPENAI_MODEL_PREFIXES
         .iter()
         .any(|prefix| model_name.starts_with(prefix))
 }
@@ -258,4 +270,39 @@ pub fn deadline_millis(
         started.and_utc().timestamp_millis()
             + policy.max_runtime_seconds as i64 * 1000
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_every_provider_purpose() {
+        assert_eq!(
+            ProviderPurpose::parse(None),
+            Some(ProviderPurpose::Research)
+        );
+        for (value, expected) in [
+            ("research", ProviderPurpose::Research),
+            ("checkpoint", ProviderPurpose::Checkpoint),
+            ("synthesis", ProviderPurpose::Synthesis),
+            ("rewrite", ProviderPurpose::Rewrite),
+        ] {
+            assert_eq!(
+                ProviderPurpose::parse(Some(value)),
+                Some(expected),
+                "{value}"
+            );
+        }
+        assert_eq!(ProviderPurpose::parse(Some("other")), None);
+    }
+
+    #[test]
+    fn openai_model_prefixes_select_the_refusal_rewrite_layer() {
+        assert!(openai_model("gpt-6.1-sol"));
+        assert!(openai_model("gpt-6-luna"));
+        assert!(openai_model("o3-mini"));
+        assert!(!openai_model(crate::config::AI_AGENT_GLM_5_3));
+        assert!(!openai_model("gemma-4"));
+    }
 }

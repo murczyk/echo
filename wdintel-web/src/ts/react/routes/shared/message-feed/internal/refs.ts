@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import type { MessageFeedId } from '../message-feed.types';
 import type {
   TopStatus,
   WindowedFeedScrollCallbacks,
@@ -24,8 +25,8 @@ export function useWindowedFeedScrollRefs(args: {
   const diagnosticsRef = useRef<WindowedFeedScrollRefs['diagnosticsRef']['current']>(undefined);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLElement | null>(null);
-  const itemRefsRef = useRef(new Map<number, HTMLElement>());
-  const itemIdsRef = useRef<readonly number[]>([]);
+  const itemRefsRef = useRef(new Map<MessageFeedId, HTMLElement>());
+  const itemIdsRef = useRef<readonly MessageFeedId[]>([]);
   const anchorSnapshotRef = useRef<WindowedFeedScrollRefs['anchorSnapshotRef']['current']>(null);
   const restoredScrollTopRef = useRef<number | null>(null);
   const callbacksRef = useRef<WindowedFeedScrollCallbacks>({ onLoadOlder: () => undefined });
@@ -55,7 +56,7 @@ export function useWindowedFeedScrollRefs(args: {
   const scheduleFollowScrollWhenStableRef =
     useRef<WindowedFeedScrollRefs['scheduleFollowScrollWhenStableRef']['current']>(null);
   const isRestoringAnchorRef = useRef(false);
-  const previousItemIdsRef = useRef<readonly number[]>([]);
+  const previousItemIdsRef = useRef<readonly MessageFeedId[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(args.resetKey);
   const previousTopStatusRef = useRef<TopStatus>(args.topStatus);
   const isWatchModeRef = useRef(args.isWatchMode);

@@ -47,6 +47,10 @@ pub struct Model {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub avatar_id: Option<Uuid>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub internal_notes: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub external_url: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -79,6 +83,8 @@ pub enum Relation {
     MessengerChat,
     #[sea_orm(has_many = "super::messenger_contact::Entity")]
     MessengerContact,
+    #[sea_orm(has_many = "super::messenger_media_meta::Entity")]
+    MessengerMediaMeta,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -108,6 +114,12 @@ impl Related<super::messenger_chat::Entity> for Entity {
 impl Related<super::messenger_contact::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::MessengerContact.def()
+    }
+}
+
+impl Related<super::messenger_media_meta::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerMediaMeta.def()
     }
 }
 

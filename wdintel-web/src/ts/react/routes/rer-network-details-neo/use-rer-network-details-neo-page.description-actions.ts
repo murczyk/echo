@@ -149,110 +149,117 @@ export function useRerNetworkDetailsNeoPageDescriptionActions({ state, setState 
     }));
   }, [setState]);
 
-  const saveDescription = useCallback(async (formArg?: NetworkDescriptionForm) => {
-    const network = state.network;
-    const form = formArg ?? state.descriptionDrawerForm;
-    const descriptionId = state.descriptionDrawerDescriptionId;
-    const descrType = state.descriptionDrawerDescrType;
-    if (!network || state.descriptionDrawerSaving) return;
+  const saveDescription = useCallback(
+    async (formArg?: NetworkDescriptionForm) => {
+      const network = state.network;
+      const form = formArg ?? state.descriptionDrawerForm;
+      const descriptionId = state.descriptionDrawerDescriptionId;
+      const descrType = state.descriptionDrawerDescrType;
+      if (!network || state.descriptionDrawerSaving) return;
 
-    const topic = form.topic.trim();
-    const description = form.description.trim();
-    if (description === '') {
-      setState((current) => ({
-        ...current,
-        descriptionDrawerError: getDescriptionValidationError(),
-      }));
-      return;
-    }
+      const topic = form.topic.trim();
+      const description = form.description.trim();
+      if (description === '') {
+        setState((current) => ({
+          ...current,
+          descriptionDrawerError: getDescriptionValidationError(),
+        }));
+        return;
+      }
 
-    const selectedFreq = resolveNetworkDescriptionFrequency(network, form.networkFreqId);
-    if (state.descriptionDrawerMode === 'create' && form.networkFreqId !== null && !selectedFreq) {
-      setState((current) => ({
-        ...current,
-        descriptionDrawerError: 'Не вдалося знайти вибрану частоту',
-      }));
-      return;
-    }
-
-    setState((current) => ({
-      ...current,
-      descriptionDrawerSaving: true,
-      descriptionDrawerError: null,
-    }));
-
-    try {
-      let updatedNetwork: Network;
-
-      if (state.descriptionDrawerMode === 'create') {
-        updatedNetwork = await addNetworkDescriptions({
-          networkId: network.id,
-          networkDescriptions:
-            selectedFreq === null
-              ? [
-                  {
-                    descrType,
-                    topic: topic === '' ? null : topic,
-                    description,
-                  },
-                ]
-              : [],
-          frequencyDescriptions:
-            selectedFreq === null
-              ? []
-              : [
-                  {
-                    descrType,
-                    topic: topic === '' ? null : topic,
-                    description,
-                    freq: selectedFreq.freq,
-                  },
-                ],
-        });
-      } else {
-        if (descriptionId === null) {
-          setState((current) => ({
-            ...current,
-            descriptionDrawerSaving: false,
-            descriptionDrawerError: 'Не вдалося знайти опис для редагування',
-          }));
-          return;
-        }
-
-        updatedNetwork = await updateNetworkDescription({
-          networkId: network.id,
-          descriptionId,
-          descrType,
-          topic: topic === '' ? null : topic,
-          description,
-          networkFreqId: form.networkFreqId,
-        });
+      const selectedFreq = resolveNetworkDescriptionFrequency(network, form.networkFreqId);
+      if (
+        state.descriptionDrawerMode === 'create' &&
+        form.networkFreqId !== null &&
+        !selectedFreq
+      ) {
+        setState((current) => ({
+          ...current,
+          descriptionDrawerError: 'Не вдалося знайти вибрану частоту',
+        }));
+        return;
       }
 
       setState((current) => ({
         ...current,
-        ...resetDescriptionDrawerState(current),
-        network: updatedNetwork,
-        expandedDescriptionIds: current.expandedDescriptionIds.filter((descriptionId) =>
-          updatedNetwork.descriptions.some((description) => description.id === descriptionId),
-        ),
+        descriptionDrawerSaving: true,
+        descriptionDrawerError: null,
       }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        descriptionDrawerSaving: false,
-        descriptionDrawerError: formatErrorMessage(error),
-      }));
-    }
-  }, [
-    state.descriptionDrawerDescrType,
-    state.descriptionDrawerDescriptionId,
-    state.descriptionDrawerForm,
-    state.descriptionDrawerMode,
-    state.descriptionDrawerSaving,
-    state.network,
-    setState,
-  ]);
+
+      try {
+        let updatedNetwork: Network;
+
+        if (state.descriptionDrawerMode === 'create') {
+          updatedNetwork = await addNetworkDescriptions({
+            networkId: network.id,
+            networkDescriptions:
+              selectedFreq === null
+                ? [
+                    {
+                      descrType,
+                      topic: topic === '' ? null : topic,
+                      description,
+                    },
+                  ]
+                : [],
+            frequencyDescriptions:
+              selectedFreq === null
+                ? []
+                : [
+                    {
+                      descrType,
+                      topic: topic === '' ? null : topic,
+                      description,
+                      freq: selectedFreq.freq,
+                    },
+                  ],
+          });
+        } else {
+          if (descriptionId === null) {
+            setState((current) => ({
+              ...current,
+              descriptionDrawerSaving: false,
+              descriptionDrawerError: 'Не вдалося знайти опис для редагування',
+            }));
+            return;
+          }
+
+          updatedNetwork = await updateNetworkDescription({
+            networkId: network.id,
+            descriptionId,
+            descrType,
+            topic: topic === '' ? null : topic,
+            description,
+            networkFreqId: form.networkFreqId,
+          });
+        }
+
+        setState((current) => ({
+          ...current,
+          ...resetDescriptionDrawerState(current),
+          network: updatedNetwork,
+          expandedDescriptionIds: current.expandedDescriptionIds.filter((descriptionId) =>
+            updatedNetwork.descriptions.some((description) => description.id === descriptionId),
+          ),
+        }));
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          descriptionDrawerSaving: false,
+          descriptionDrawerError: formatErrorMessage(error),
+        }));
+      }
+    },
+    [
+      state.descriptionDrawerDescrType,
+      state.descriptionDrawerDescriptionId,
+      state.descriptionDrawerForm,
+      state.descriptionDrawerMode,
+      state.descriptionDrawerSaving,
+      state.network,
+      setState,
+    ],
+  );
 
   const deleteDescription = useCallback(async () => {
     const network = state.network;

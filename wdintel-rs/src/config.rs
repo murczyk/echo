@@ -6,6 +6,10 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const ROLE_ORGANISM_ADMIN: &str = "OrganismAdmin";
+pub const USER_LABEL_UNASSIGNED_ID: i64 = -1;
+pub const USER_LABEL_NAME_MAX_CHARS: usize = 80;
+
 pub const DATASOURCE_ECHO_NATIVE_KIND: &str = "echo_native";
 pub const DATASOURCE_ECHO_NATIVE_GROUP_PREFIX: &str = "echo_native.";
 pub const DATASOURCE_NATIVE_VALIDATION_BATCH_SIZE: usize = 1000;
@@ -200,6 +204,13 @@ pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
 pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
 pub const AI_ENGINE_GOVERNMENT_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
+/// A proxy that holds the gateway's credentials (Bifrost or another one)
+/// names government models `<AI_GOV_UA_API_HOST>/<model>`.
+pub const AI_GOV_UA_PROXY_MODEL_PREFIX: &str = "inference.ai.mod.gov.ua/";
+/// Sent to that proxy so it forwards the gateway's extra request fields
+/// (`allowed_openai_params`, `thinking`); other proxies ignore it.
+pub const AI_GOV_UA_PROXY_HEADERS: &[(&str, &str)] =
+    &[("x-bf-passthrough-extra-params", "true")];
 pub const AI_PROVIDER_METRICS_OPENAI_HOST: &str = "api.openai.com";
 pub const AI_ENGINE_BLOCKED_OPENAI_DOMAIN: &str = "openai.com";
 pub const AI_PROVIDER_METRICS_PROCESS_ONEOFF: &str = "echo-oneoff";
@@ -234,7 +245,7 @@ pub const AI_ENGINE_HEALTH_PROBE_TIMEOUT_SECS: u64 = 60;
 pub const AI_ENGINE_HEALTH_PROBE_MAX_TOKENS: u32 = 16;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
 pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
-    &["gpt-5", "gpt-6", "o1", "o3", "o4"];
+    &["gpt-5", "gpt-6", "gpt-luna", "o1", "o3", "o4"];
 pub const AI_ENGINE_OPENAI_REASONING_NONE_MODELS: &[&str] = &[
     "gpt-5.1",
     "gpt-5.2",
@@ -248,6 +259,7 @@ pub const AI_ENGINE_OPENAI_REASONING_NONE_MODELS: &[&str] = &[
     "gpt-5.6-luna",
     "gpt-6-sol",
     "gpt-6-luna",
+    "gpt-luna",
 ];
 pub const AI_CHAT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_CHAT_TITLE_MAX_CHARS: usize = 120;
@@ -743,11 +755,25 @@ pub const AI_AGENT_DEEP_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 30 * 60;
 pub const AI_AGENT_DEADLINE_CLEANUP_SEC: u64 = 5;
 pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
+/// Served next to `gpt-6-luna` and handled exactly like it.
+pub const AI_AGENT_OPENAI_GPT_LUNA: &str = "gpt-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
+/// Refusal rewrite layer: the engine model used to rewrite a declined ask into
+/// evidence-inventory form when no engine is configured explicitly.
+pub const AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL: &str = "gpt-6-luna";
+/// Output budget of one rewrite call: the rewritten ask is a short paragraph.
+pub const AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS: i32 = 2_048;
+/// Rewrite input cap: only the user's ask is rewritten, never pasted evidence.
+pub const AI_AGENT_REFUSAL_REWRITE_PROMPT_MAX_CHARS: usize = 8_192;
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.13.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.14.2";
+/// How often the bgworker compares the namespace harness with
+/// `AI_AGENT_HARNESS_RELEASE` (#4186). The first check waits longer, because a
+/// deploy restarts the bgworker before it upgrades the harness.
+pub const AI_AGENT_HARNESS_CHECK_INTERVAL_SEC: u64 = 5 * 60;
+pub const AI_AGENT_HARNESS_CHECK_STARTUP_DELAY_SEC: u64 = 15 * 60;
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -926,10 +952,21 @@ pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";
 pub const ROLE_NO2FA: &str = "No2FA";
 pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
+pub const ROLE_CYBER_MESSENGERS: &str = "CyberMessengers";
+pub const MESSENGERS_MESSAGES_DEFAULT_LIMIT: i64 = 50;
+pub const MESSENGERS_MESSAGES_MAX_LIMIT: i64 = 100;
+pub const MESSENGERS_ATTACHMENTS_DEFAULT_LIMIT: i64 = 50;
+pub const MESSENGERS_ATTACHMENTS_MAX_LIMIT: i64 = 100;
+pub const MESSENGERS_CONTACTS_DEFAULT_LIMIT: i64 = 100;
+pub const MESSENGERS_CONTACTS_MAX_LIMIT: i64 = 250;
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
+/// Master keys of messenger account groups are this prefix plus the account id.
+pub const MESSENGER_INGEST_GROUP_KEY_PREFIX: &str = "messenger_ingest.";
 pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
 pub const MESSENGER_INGEST_SYNC_MAX_ITEMS: usize = 200;
+/// Longest account link kept, the common practical limit of URL length.
+pub const MESSENGER_INGEST_EXTERNAL_URL_MAX_LEN: usize = 2048;
 /// Every ingest request, including each TUS chunk, resolves the ingest
 /// datasource; its `last_sync_at` is refreshed at most this often.
 pub const MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS: i64 = 300;
@@ -1186,6 +1223,13 @@ pub const IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT: bool = true;
 pub const DUTY_SELECTED_GROUPS_ENABLED_DEFAULT: bool = true;
 pub const ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT: u64 = 200;
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT: u64 = 50;
+pub const DAILY_MESSAGE_STATS_MAX_DAYS: i64 = 90;
+pub const DAILY_MESSAGE_STATS_FACET_CACHE_TTL_MS: u64 = 5_000;
+pub const DAILY_MESSAGE_STATS_FACET_CACHE_MAX_ENTRIES: usize = 128;
+pub const DAILY_MESSAGE_STATS_FACET_CACHE_MAX_BYTES: usize = 256 * 1024;
+pub const DAILY_MESSAGE_STATS_SERIES_PAGE_SIZE: i64 = 10;
+pub const DAILY_MESSAGE_STATS_OPTIONS_PAGE_SIZE: i64 = 50;
+
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_MAX: u64 = 100;
 pub const ANALYSIS_CALLSIGN_GRAPH_MAX_DAYS: i64 = 31;
 pub const ANALYSIS_CALLSIGN_GRAPH_MESSAGE_LIMIT: u64 = 100_000;

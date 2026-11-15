@@ -30,17 +30,23 @@ Undo? [§10](CLICKHOUSE_COLLECTOR_COMMANDS.md#10-rollback)
 
 ## Stop if
 
-- **3** — checksum differs
+- **3** — checksum differs (patched build, §3.0)
 - **5** — more than one grant line
 - **6** — wrong `host.name`, or filter missing from the pipeline list
-- **9** — a `QueryStart` row, or any duration under 1000 ms
+- **9** — a `QueryStart` row, any duration under 1000 ms, or a missing
+  `ExceptionWhileProcessing` marker
 
 ---
 
 ## Expect
 
-Only `QueryFinish` at 1000 ms or more is exported, so a quiet host sends
-nothing for days. Step 9's `sleep(1.6)` marker is the only liveness signal.
+Only `QueryFinish` and `ExceptionWhileProcessing` at 1000 ms or more are
+exported, so a quiet host sends nothing for days. Step 9's markers are the only
+liveness signal.
+
+After every ClickHouse upgrade, check the collector journal for
+`scrape attempt failed`. The service stays `active` while every scrape fails
+([§12](CLICKHOUSE_COLLECTOR_COMMANDS.md#12-troubleshooting)).
 
 The filter is inverted: conditions list what to **drop**.
 

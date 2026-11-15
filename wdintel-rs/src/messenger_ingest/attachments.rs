@@ -115,6 +115,7 @@ pub(crate) async fn submit_attachments(
     // 3. Write: lock the message, re-check, store the media and metadata.
     let persisted = persist_staged(
         env,
+        account.id,
         chat.id,
         &req.message_external_id,
         &new_items,
@@ -288,6 +289,7 @@ async fn resolve_uploads(
 /// message id and the media id per attachment `external_id`.
 async fn persist_staged(
     env: &Env,
+    account_id: Uuid,
     chat_id: Uuid,
     message_external_id: &str,
     items: &[&MessengerIngestAttachmentInput],
@@ -357,6 +359,9 @@ async fn persist_staged(
             telegram_media_type: Set(item_meta.telegram_media_type.clone()),
             external_created_at: Set(item_meta.external_created_at),
             created_at: Set(now),
+            messenger_account_id: Set(account_id),
+            messenger_chat_id: Set(chat_id),
+            messenger_sent_at: Set(chat_message.messenger_sent_at),
         }
         .insert(&txn)
         .await
@@ -496,6 +501,7 @@ mod tests {
                     is_active: Some(true),
                     is_paused: None,
                     notes: None,
+                    external_url: None,
                     created_at: None,
                     last_sync: None,
                     telegram: is_telegram.then(|| {
@@ -675,6 +681,19 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(link.sigint_chat_message_id, fixture.chat_message_id);
+        // The message's timeline is copied for attachment paging.
+        assert_eq!(
+            link.messenger_account_id,
+            Uuid::parse_str(&fixture.account.id).unwrap()
+        );
+        assert_eq!(
+            link.messenger_chat_id,
+            Uuid::parse_str(&fixture.chat.id).unwrap()
+        );
+        assert_eq!(
+            link.messenger_sent_at.and_utc().timestamp_millis(),
+            1_760_431_100_000
+        );
         // The upload is consumed after commit.
         assert!(handler
             .open_completed_url(&fixture.scope.login_id, &upload_url)
@@ -884,6 +903,7 @@ mod tests {
         .unwrap();
         let error = persist_staged(
             &fixture.env,
+            Uuid::parse_str(&fixture.account.id).unwrap(),
             Uuid::parse_str(&fixture.chat.id).unwrap(),
             "m-1",
             &[&item],

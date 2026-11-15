@@ -997,6 +997,214 @@ export type SignalGroupsRsp = {
   data: Array<SignalGroupEntry>;
 };
 
+export type MessengersTelegramAccountId = {
+  userId: string;
+};
+
+export type MessengersDatasourceGroup = {
+  id: number;
+  groupMasterKey: string;
+  datasourceId: number;
+  name: string;
+  lastSyncAt: number;
+  createdAt: number;
+};
+
+export type MessengersAccountItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  displayName: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  status: string | null;
+  statusError: string | null;
+  statusChangedAt: number | null;
+  isActive: boolean | null;
+  isPaused: boolean | null;
+  createdAt: number | null;
+  lastSync: number | null;
+  notes: string | null;
+  internalNotes: string | null;
+  externalUrl: string | null;
+  telegram: MessengersTelegramAccountId | null;
+  datasourceGroup: MessengersDatasourceGroup;
+};
+
+export type MessengersAccountsListRsp = {
+  items: Array<MessengersAccountItem>;
+};
+
+export type MessengersAccountUpdateReq = {
+  accountId: string;
+  internalNotes: string | null;
+};
+
+export type MessengersTelegramChatId = {
+  chatId: string;
+};
+
+export type MessengersChatsListReq = {
+  accountId: string;
+};
+
+export type MessengersChatItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  chatType: string | null;
+  title: string | null;
+  username: string | null;
+  membersCount: number | null;
+  accountMemberStatus: string | null;
+  lastMessageDate: number | null;
+  telegram: MessengersTelegramChatId | null;
+};
+
+export type MessengersChatsListRsp = {
+  items: Array<MessengersChatItem>;
+};
+
+export type MessengersChatMembersListReq = {
+  accountId: string;
+  chatId: string;
+};
+
+export type MessengersChatMemberItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  isBot: boolean | null;
+  role: string | null;
+  joinedDate: number | null;
+  deleted: boolean;
+  telegram: MessengersTelegramAccountId | null;
+};
+
+export type MessengersChatMembersListRsp = {
+  items: Array<MessengersChatMemberItem>;
+};
+
+export type MessengersContactsListReq = {
+  accountId: string;
+  page: number | null;
+  limit: number | null;
+};
+
+export type MessengersContactItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  isMutual: boolean | null;
+  isCloseFriend: boolean | null;
+  createdAt: number;
+  updatedAt: number;
+  telegram: MessengersTelegramAccountId | null;
+};
+
+export type MessengersContactsListRsp = {
+  items: Array<MessengersContactItem>;
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type MessengersMessagesDirection =
+  | 'Older'
+  | 'Newer'
+  | 'Oldest'
+;
+
+export type MessengersMessagesListReq = {
+  accountId: string;
+  chatId: string;
+  cursor: string | null;
+  limit: number | null;
+  direction: MessengersMessagesDirection | null;
+  aroundMessageId: string | null;
+};
+
+export type MessengersTelegramMessageId = {
+  messageId: string;
+};
+
+export type MessengersTelegramMedia = {
+  fileId: string;
+  mediaType: string | null;
+};
+
+export type MessengersAttachment = {
+  media: MessageMediaInfo;
+  externalId: string;
+  createdAt: number | null;
+  telegram: MessengersTelegramMedia | null;
+};
+
+export type MessengersMessageItem = {
+  id: string;
+  externalId: string;
+  sentAt: number;
+  text: string;
+  isOutgoing: boolean | null;
+  hasMedia: boolean | null;
+  senderChatMemberId: string | null;
+  attachments: Array<MessengersAttachment>;
+  telegram: MessengersTelegramMessageId | null;
+};
+
+export type MessengersMessagesListRsp = {
+  items: Array<MessengersMessageItem>;
+  olderCursor: string | null;
+  newerCursor: string | null;
+};
+
+export type MessengersAttachmentsListReq = {
+  accountId: string;
+  chatId: string | null;
+  cursor: string | null;
+  limit: number | null;
+  direction: MessengersMessagesDirection | null;
+  telegramMediaTypes: Array<string> | null;
+};
+
+export type MessengersAttachmentItem = {
+  chatId: string;
+  messageId: string;
+  sentAt: number;
+  senderChatMemberId: string | null;
+  attachment: MessengersAttachment;
+};
+
+export type MessengersAttachmentsListRsp = {
+  items: Array<MessengersAttachmentItem>;
+  olderCursor: string | null;
+  newerCursor: string | null;
+};
+
+export type MessengersAttachmentsCountsReq = {
+  accountId: string;
+  chatId: string | null;
+};
+
+export type MessengersAttachmentTypeCount = {
+  telegramMediaType: string | null;
+  count: number;
+};
+
+export type MessengersAttachmentsCountsRsp = {
+  items: Array<MessengersAttachmentTypeCount>;
+};
+
 export type BatchMessageCommentsReq = {
   messages: Array<MessageCommentsReq>;
 };
@@ -1079,6 +1287,135 @@ export type AnalysisStatsReq = {
   withoutModelTags: boolean | null;
   reportTagsOnlyThisUnit: boolean | null;
   messageTimeBasis: MessageTimeBasis | null;
+};
+
+export type DailyMessageStatsGrouping =
+  | 'Groups'
+  | 'Senders'
+;
+
+export type DailyMessageSenderKey = {
+  sender: string | null;
+};
+
+export type DailyMessageStatsReq = {
+  userLabelId: number | null;
+  fromDate: string;
+  toDate: string;
+  grouping: DailyMessageStatsGrouping;
+  selectedGroups: Array<string> | null;
+  selectedSenders: Array<DailyMessageSenderKey> | null;
+  selectedUnitIds: Array<number> | null;
+  cursor: string | null;
+};
+
+export type DailyMessageStatsPoint = {
+  messages: number;
+  counterparts: number;
+};
+
+export type DailyMessageStatsSeries = {
+  key: string | null;
+  label: string;
+  points: Array<DailyMessageStatsPoint>;
+};
+
+export type DailyMessageStatsRsp = {
+  days: Array<string>;
+  series: Array<DailyMessageStatsSeries>;
+  totalSeries: number;
+  nextCursor: string | null;
+  generatedAtMs: number;
+};
+
+export type DailyMessageStatsOptionsReq = {
+  filter: DailyMessageStatsReq;
+  search: string | null;
+  includeChildren: boolean | null;
+};
+
+export type DailyMessageStatsOption = {
+  key: string | null;
+  label: string;
+  count: number;
+};
+
+export type DailyMessageStatsOptionsRsp = {
+  options: Array<DailyMessageStatsOption>;
+  nextCursor: string | null;
+  total: number;
+  unitOptions: Array<UnitStatsOption>;
+};
+
+export type DailyMessageStatsCatalogReq = {
+  knownHierarchyRevision: string | null;
+  selectedSenders: Array<DailyMessageSenderKey>;
+};
+
+export type DailyMessageStatsGroupLabel = {
+  key: string;
+  label: string;
+};
+
+export type DailyMessageStatsSenderLabel = {
+  key: string | null;
+  label: string;
+};
+
+export type DailyMessageStatsCatalogRsp = {
+  accessRevision: string;
+  groups: Array<DailyMessageStatsGroupLabel>;
+  unitHierarchy: UnitHierarchyRsp | null;
+  senderLabels: Array<DailyMessageStatsSenderLabel>;
+};
+
+export type DailyMessageStatsPanel = {
+  labelId: number;
+  name: string;
+  color: string;
+  organismName: string | null;
+};
+
+export type DailyMessageStatsPanelsRsp = {
+  panels: Array<DailyMessageStatsPanel>;
+  accessRevision: string;
+};
+
+export type DailyMessageStatsFacet =
+  | 'Groups'
+  | 'Units'
+;
+
+export type DailyMessageStatsFacetReq = {
+  facet: DailyMessageStatsFacet;
+  filter: DailyMessageStatsReq;
+  includeChildren: boolean;
+};
+
+export type DailyMessageStatsFacetCount = {
+  value: string;
+  count: number;
+};
+
+export type DailyMessageStatsFacetRsp = {
+  counts: Array<DailyMessageStatsFacetCount>;
+  accessRevision: string;
+  hierarchyRevision: string | null;
+  generatedAtMs: number;
+};
+
+export type DailyMessageStatsSendersReq = {
+  filter: DailyMessageStatsReq;
+  search: string | null;
+  cursor: string | null;
+};
+
+export type DailyMessageStatsSendersRsp = {
+  options: Array<DailyMessageStatsSenderLabel>;
+  nextCursor: string | null;
+  total: number;
+  accessRevision: string;
+  generatedAtMs: number;
 };
 
 export type AnalysisCallsignPageOrder =
@@ -3449,6 +3786,48 @@ export type DeviceSettingsReq = {
 export type DeviceSettingsItem = {
   hasMattermostWebhook: boolean;
   activitySplitFilesAudio: boolean;
+};
+
+export type OrganismUserLabel = {
+  id: number;
+  organismId: number;
+  name: string;
+  color: string;
+};
+
+export type OrganismUserLabelAssignment = {
+  loginId: string;
+  labelId: number;
+};
+
+export type OrganismUserLabelsRsp = {
+  labels: Array<OrganismUserLabel>;
+  assignments: Array<OrganismUserLabelAssignment>;
+  excludedLoginIds: Array<string>;
+};
+
+export type UpsertOrganismUserLabelReq = {
+  id: number | null;
+  organismId: number;
+  name: string;
+  color: string;
+};
+
+export type DeleteOrganismUserLabelReq = {
+  organismId: number;
+  labelId: number;
+};
+
+export type AssignOrganismUserLabelReq = {
+  organismId: number;
+  loginId: string;
+  labelId: number | null;
+};
+
+export type SetOrganismMessageStatsExclusionReq = {
+  organismId: number;
+  loginId: string;
+  excluded: boolean;
 };
 
 export type Organism = {
@@ -6802,6 +7181,8 @@ export type AiAgentAdminSettingsItem = {
   defaultAiEngineId: string | null;
   reviewerAiEngineId: string | null;
   securityReviewEnabled: boolean;
+  refusalRewriteEnabled: boolean;
+  refusalRewriteAiEngineId: string | null;
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
   hasMattermostChatWebhook: boolean;
@@ -6815,6 +7196,8 @@ export type AiAgentAdminSettingsUpdateReq = {
   defaultAiEngineId: string | null;
   reviewerAiEngineId: string | null;
   securityReviewEnabled: boolean;
+  refusalRewriteEnabled: boolean;
+  refusalRewriteAiEngineId: string | null;
   mattermostChatEnabled: boolean;
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;

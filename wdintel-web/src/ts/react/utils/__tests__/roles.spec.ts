@@ -10,6 +10,12 @@ import {
   resolveDevicesCapabilities,
 } from '../roles';
 describe('roles', () => {
+  it('keeps organism administration separate from global and message privileges', () => {
+    expect(hasRole(['Admin'], 'OrganismAdmin')).toBe(true);
+    expect(hasRole(['OrganismAdmin'], 'OrganismAdmin')).toBe(true);
+    expect(hasRole(['OrganismAdmin'], 'Admin')).toBe(false);
+    expect(hasRerOrCyber(['OrganismAdmin'])).toBe(false);
+  });
   it('keeps the frontend hierarchy aligned with backend role checks', () => {
     expect(hasRole(['Admin'], 'Rer')).toBe(true);
     expect(hasRole(['Full'], 'Rer')).toBe(true);

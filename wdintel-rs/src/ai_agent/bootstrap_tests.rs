@@ -572,6 +572,7 @@ async fn issue_test_provider(
             model_name: checkpoint.model_name.clone(),
             max_output_tokens: 8_192,
         }),
+        None,
     )
     .await
     .unwrap()
@@ -585,6 +586,75 @@ async fn authorize_test_provider(
     authorize_provider_capability(env, token, model_name)
         .await
         .unwrap()
+}
+
+/// A gateway-served OpenAI main engine with a rewrite engine in the allowlist.
+async fn refusal_rewrite_request_fixture(
+    env: &Env,
+    fixture: &AgentFixture,
+    correlation_id: Uuid,
+) -> (ai_agent_request::Model, ai_engine::Model) {
+    let request = running_request(env, fixture).await;
+    let mut ai_engine = ai_engine::Entity::find_by_id(request.ai_engine_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    let url = format!("https://{}/v1", crate::config::AI_GOV_UA_API_HOST);
+    ai_engine.url = Set(url.clone());
+    ai_engine.model_name = Set("gpt-6.1-sol".to_string());
+    ai_engine.enabled = Set(true);
+    ai_engine.update(&env.dbx).await.unwrap();
+    let rewrite_engine = ai_engine::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        name: Set(format!("rewrite-test-{}", Uuid::now_v7())),
+        url: Set(url),
+        model_name: Set(
+            crate::config::AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL.to_string()
+        ),
+        enabled: Set(true),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+    for ai_engine_id in [request.ai_engine_id, rewrite_engine.id] {
+        ai_agent_allowed_engine::ActiveModel {
+            ai_engine_id: Set(ai_engine_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+    }
+    let mut request = request.into_active_model();
+    request.correlation_id = Set(Some(correlation_id));
+    (request.update(&env.dbx).await.unwrap(), rewrite_engine)
+}
+
+async fn issue_rewrite_test_provider(
+    env: &Env,
+    request: &ai_agent_request::Model,
+    rewrite: Option<&ai_engine::Model>,
+) -> String {
+    issue_provider_capability(
+        env,
+        request.agent_login_id.unwrap(),
+        request.id,
+        request.correlation_id.unwrap(),
+        request.ai_engine_id,
+        "gpt-6.1-sol".to_string(),
+        None,
+        rewrite.map(|rewrite| RewriteProviderGrant {
+            ai_engine_id: rewrite.id,
+            model_name: rewrite.model_name.clone(),
+            max_output_tokens:
+                crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS,
+        }),
+    )
+    .await
+    .unwrap()
 }
 
 #[actix_web::test]
@@ -667,6 +737,71 @@ async fn issue_3724_checkpoint_capability_shared_limits_and_revocation() {
 
 #[actix_web::test]
 #[serial]
+async fn refusal_rewrite_grant_authorizes_only_the_rewrite_engine() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let settings = checkpoint_test_settings(&env).await;
+    let correlation_id = Uuid::now_v7();
+    let (request, rewrite_engine) =
+        refusal_rewrite_request_fixture(&env, &fixture, correlation_id).await;
+    // Without the grant the rewrite purpose cannot resolve the engine.
+    let token = issue_rewrite_test_provider(&env, &request, None).await;
+    assert!(authorize_provider_call(
+        &env,
+        &token,
+        &rewrite_engine.model_name,
+        ProviderPurpose::Rewrite
+    )
+    .await
+    .unwrap()
+    .is_none());
+    // With it, the rewrite purpose resolves the engine and caps its output.
+    let token =
+        issue_rewrite_test_provider(&env, &request, Some(&rewrite_engine))
+            .await;
+    let authorization = authorize_provider_call(
+        &env,
+        &token,
+        &rewrite_engine.model_name,
+        ProviderPurpose::Rewrite,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(authorization.ai_engine.id, rewrite_engine.id);
+    assert_eq!(
+        authorization.checkpoint_max_tokens,
+        Some(crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS)
+    );
+    // The main engine keeps its research authorization.
+    let research = authorize_provider_call(
+        &env,
+        &token,
+        "gpt-6.1-sol",
+        ProviderPurpose::Research,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(research.ai_engine.id, request.ai_engine_id);
+    assert!(authorize_provider_call(
+        &env,
+        &token,
+        "ungranted-provider",
+        ProviderPurpose::Rewrite
+    )
+    .await
+    .unwrap()
+    .is_none());
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    restore_checkpoint_test_settings(&env, settings).await;
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
 async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
 {
     let (env, _guard) = cleanup_locked().await.unwrap();
@@ -732,6 +867,10 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
             );
         }
         assert!(flash_policy.reasoning_effort.is_none());
+        // #4203: Flash's default thinking used the whole output allowance
+        // of synthesis and checkpoints.
+        assert_eq!(flash_policy.checkpoint_effort.as_deref(), Some("low"));
+        assert_eq!(flash_policy.synthesis_effort.as_deref(), Some("low"));
     }
     // #4031: Balanced runs longer on non-OpenAI engines only.
     let balanced_runtime = |engine| {

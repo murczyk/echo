@@ -161,9 +161,10 @@ pub async fn chat_member_avatar_submit(
     req: Json<MessengerIngestChatMemberAvatarSubmitReq>,
 ) -> Result<Json<MessengerIngestAvatarSubmitRsp>, AppError> {
     let scope = enabled_scope(&env, &user).await.c(h!())?;
-    let rsp = avatars::submit_chat_member_avatar(&env, &scope, req.into_inner())
-        .await
-        .c(h!())?;
+    let rsp =
+        avatars::submit_chat_member_avatar(&env, &scope, req.into_inner())
+            .await
+            .c(h!())?;
     Ok(Json(rsp))
 }
 

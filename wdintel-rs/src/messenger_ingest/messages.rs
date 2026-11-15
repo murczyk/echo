@@ -394,6 +394,7 @@ mod tests {
                 is_active: Some(true),
                 is_paused: None,
                 notes: None,
+                external_url: None,
                 created_at: None,
                 last_sync: None,
                 telegram: is_telegram.then(|| {

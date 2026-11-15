@@ -171,6 +171,433 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     );
   });
 
+  it('hosts string ids, including numeric-looking ones, without registering stray number keys', async () => {
+    const feedRef = createRef<MessageFeedHandle<string>>();
+    const ids = ['0199-a', '123'];
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          ref={feedRef}
+          items={ids}
+          getMessageId={(id: string) => id}
+          parseId={String}
+          scrollOptions={{
+            hasReachedStart: true,
+            onLoadOlder: () => undefined,
+            autoScrollAllowed: false,
+          }}
+        >
+          {ids.map((id) => (
+            <MessageFeedItem key={id} id={id} data-message-id={id}>
+              message {id}
+            </MessageFeedItem>
+          ))}
+        </MessageFeed>,
+      ),
+    );
+    expect(feedRef.current?.getItemElement('123')).toBe(
+      container.querySelector('[data-message-id="123"]'),
+    );
+    expect(feedRef.current?.scrollToMessage('0199-a')).toBe(
+      container.querySelector('[data-message-id="0199-a"]'),
+    );
+    expect(feedRef.current?.highlightLinkedMessage('123')).toBe(true);
+  });
+
+  describe('jump-to-oldest control', () => {
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const renderFeed = (
+      oldestNavigation: React.ComponentProps<typeof MessageFeed>['oldestNavigation'],
+      extra: Partial<React.ComponentProps<typeof MessageFeed>> = {},
+    ) =>
+      act(async () =>
+        root.render(
+          <MessageFeed
+            items={[1, 2]}
+            getMessageId={getId}
+            scrollOptions={scrollOptions}
+            oldestNavigation={oldestNavigation}
+            {...extra}
+          >
+            <div data-message-id="1">first</div>
+            <div data-message-id="2">second</div>
+          </MessageFeed>,
+        ),
+      );
+    const labels = () =>
+      [...container.querySelectorAll('[data-message-feed-floating-controls] button')].map(
+        (button) => button.getAttribute('aria-label'),
+      );
+
+    it('is absent unless a host asks for it', async () => {
+      await renderFeed(undefined, {
+        newestNavigation: { edge: 'bottom', newestLoaded: false, onClick: () => undefined },
+      });
+      expect(labels()).toEqual(['До найновіших повідомлень']);
+    });
+
+    it('shows an up arrow while the start is not loaded and calls the handler', async () => {
+      const onClick = vi.fn();
+      await renderFeed({ onClick, oldestLoaded: false, label: 'To the start' });
+      expect(labels()).toEqual(['To the start']);
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[data-message-feed-scroll-fab]')?.click(),
+      );
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides when the start is loaded and the feed is at its top', async () => {
+      await renderFeed({ onClick: () => undefined, oldestLoaded: true });
+      const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+      await act(async () => {
+        scroller.scrollTop = 0;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+      expect(labels()).toEqual([]);
+
+      // Scrolled away from the top, the arrow is back even though the start is loaded.
+      await act(async () => {
+        scroller.scrollTop = 150;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+      expect(labels()).toEqual(['До найстаріших повідомлень']);
+    });
+
+    it('stacks create, up and down in that order when all three are present', async () => {
+      await renderFeed(
+        { onClick: () => undefined, oldestLoaded: false },
+        {
+          newestNavigation: { edge: 'bottom', newestLoaded: false, onClick: () => undefined },
+          onCreateMessage: () => undefined,
+        },
+      );
+      expect(labels()).toEqual([
+        'Додати повідомлення',
+        'До найстаріших повідомлень',
+        'До найновіших повідомлень',
+      ]);
+    });
+  });
+
+  describe('default jump-to-newest control', () => {
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const renderFeed = (
+      newestNavigation: React.ComponentProps<typeof MessageFeed>['newestNavigation'],
+      onCreateMessage?: () => void,
+    ) =>
+      act(async () =>
+        root.render(
+          <MessageFeed
+            items={[1, 2]}
+            getMessageId={getId}
+            scrollOptions={scrollOptions}
+            newestNavigation={newestNavigation}
+            onCreateMessage={onCreateMessage}
+          >
+            <div data-message-id="1">first</div>
+            <div data-message-id="2">second</div>
+          </MessageFeed>,
+        ),
+      );
+    const fab = () => container.querySelector<HTMLButtonElement>('[data-message-feed-scroll-fab]');
+
+    it('shows the shared arrow while the newest message is not loaded and calls the handler', async () => {
+      const onClick = vi.fn();
+      await renderFeed({ edge: 'bottom', newestLoaded: false, onClick, label: 'To the end' });
+      expect(fab()?.getAttribute('aria-label')).toBe('To the end');
+      await act(async () => fab()?.click());
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the host class names next to the default placement class', async () => {
+      await renderFeed({
+        edge: 'bottom',
+        newestLoaded: false,
+        onClick: () => undefined,
+        className: '[--message-feed-fab-right:32px]',
+      });
+      const wrapper = container.querySelector<HTMLElement>('[data-message-feed-floating-controls]');
+      expect(wrapper?.className).toContain('[--message-feed-fab-right:32px]');
+      expect(wrapper?.className).toContain('message-feed-floating-controls');
+      expect(wrapper?.dataset.edge).toBe('bottom');
+    });
+
+    it('stacks the create button under the arrow and leaves it alone when the arrow is hidden', async () => {
+      const onCreateMessage = vi.fn();
+      await renderFeed(
+        { edge: 'bottom', newestLoaded: false, onClick: () => undefined },
+        onCreateMessage,
+      );
+      const stack = container.querySelector(
+        '[data-message-feed-floating-controls][data-edge="bottom"]',
+      );
+      const buttons = [...(stack?.querySelectorAll('button') ?? [])];
+      expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+        'До найновіших повідомлень',
+        'Додати повідомлення',
+      ]);
+
+      await renderFeed(
+        { edge: 'bottom', newestLoaded: true, onClick: () => undefined },
+        onCreateMessage,
+      );
+      expect(fab()).toBeNull();
+      expect(
+        container.querySelector(
+          '[data-message-feed-floating-controls] button[aria-label="Додати повідомлення"]',
+        ),
+      ).not.toBeNull();
+    });
+
+    it('passes the clicked create button to the handler and shows no button without a handler', async () => {
+      const onCreateMessage = vi.fn();
+      await renderFeed(
+        { edge: 'bottom', newestLoaded: true, onClick: () => undefined },
+        onCreateMessage,
+      );
+      const create = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Додати повідомлення"]',
+      );
+      await act(async () => create?.click());
+      expect(onCreateMessage).toHaveBeenCalledTimes(1);
+      expect(onCreateMessage.mock.calls[0][0]).toBe(create);
+
+      await renderFeed({ edge: 'bottom', newestLoaded: true, onClick: () => undefined });
+      expect(container.querySelector('button[aria-label="Додати повідомлення"]')).toBeNull();
+      expect(container.querySelector('[data-message-feed-floating-controls]')).toBeNull();
+    });
+
+    it('works with a create button and no arrow', async () => {
+      await renderFeed(undefined, vi.fn());
+      expect(container.querySelector('button[aria-label="Додати повідомлення"]')).not.toBeNull();
+      expect(fab()).toBeNull();
+    });
+
+    it('shows nothing without a handler', async () => {
+      await renderFeed({ edge: 'bottom', newestLoaded: false });
+      expect(fab()).toBeNull();
+    });
+
+    it('hides the arrow when the newest message is loaded and the reader is at that edge', async () => {
+      await renderFeed({ edge: 'bottom', newestLoaded: true, onClick: () => undefined });
+      expect(fab()).toBeNull();
+    });
+
+    it('disables the arrow while it is loading', async () => {
+      await renderFeed({
+        edge: 'bottom',
+        newestLoaded: false,
+        onClick: () => undefined,
+        loading: true,
+      });
+      expect(fab()?.disabled).toBe(true);
+    });
+
+    it('still renders a host control passed as renderControl', async () => {
+      await renderFeed({
+        edge: 'bottom',
+        renderControl: () => <button data-host-control>host</button>,
+      });
+      expect(container.querySelector('[data-host-control]')).not.toBeNull();
+      expect(fab()).toBeNull();
+    });
+  });
+
+  describe('data-message-id registration fallback', () => {
+    // Analysis renders its cards as plain children, so this fallback is the only thing that
+    // registers them for scrolling, anchors and highlighting.
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+
+    function renderFallbackFeed<Id extends number | string>(
+      feedRef: React.RefObject<MessageFeedHandle<Id>>,
+      ids: Id[],
+      children: React.ReactNode,
+      extra: { itemSelector?: string; parseId?: (raw: string) => Id } = {},
+    ) {
+      return act(async () =>
+        root.render(
+          <MessageFeed
+            ref={feedRef}
+            items={ids}
+            getMessageId={(id: Id) => id}
+            scrollOptions={scrollOptions}
+            {...extra}
+          >
+            {children}
+          </MessageFeed>,
+        ),
+      );
+    }
+
+    const byId = (id: string) => container.querySelector(`[data-message-id="${id}"]`);
+
+    it('registers plain data-message-id cards under numeric ids by default', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(
+        feedRef,
+        [1, 2],
+        <>
+          <li data-message-id="1">one</li>
+          <li data-message-id="2">two</li>
+        </>,
+      );
+      expect(feedRef.current?.getItemElement(1)).toBe(byId('1'));
+      expect(feedRef.current?.getItemElement(2)).toBe(byId('2'));
+      expect(feedRef.current?.scrollToMessage(2)).toBe(byId('2'));
+    });
+
+    it('registers cards nested inside wrappers', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(
+        feedRef,
+        [5],
+        <section>
+          <div>
+            <li data-message-id="5">nested</li>
+          </div>
+        </section>,
+      );
+      expect(feedRef.current?.getItemElement(5)).toBe(byId('5'));
+    });
+
+    it('reads data-duty-message-id when the host selects it', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(feedRef, [7], <div data-duty-message-id="7">duty</div>, {
+        itemSelector: '[data-duty-message-id]',
+      });
+      expect(feedRef.current?.getItemElement(7)).toBe(
+        container.querySelector('[data-duty-message-id="7"]'),
+      );
+    });
+
+    it('prefers data-message-id over data-duty-message-id on the same element', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(
+        feedRef,
+        [1, 2],
+        <div data-message-id="1" data-duty-message-id="2">
+          both
+        </div>,
+        { itemSelector: '[data-message-id]' },
+      );
+      expect(feedRef.current?.getItemElement(1)).toBe(byId('1'));
+      expect(feedRef.current?.getItemElement(2)).toBeNull();
+    });
+
+    it('skips elements whose id does not parse to a finite number', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(
+        feedRef,
+        [1],
+        <>
+          <div data-message-id="abc">text</div>
+          <div data-message-id="Infinity">infinity</div>
+          <div data-message-id="NaN">nan</div>
+          <div data-message-id="1">valid</div>
+        </>,
+      );
+      expect(feedRef.current?.getItemElement(1)).toBe(byId('1'));
+      expect(feedRef.current?.getItemElement(Number.NaN)).toBeNull();
+      expect(feedRef.current?.getItemElement(Number.POSITIVE_INFINITY)).toBeNull();
+    });
+
+    it('skips selected elements that carry neither id attribute', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(feedRef, [1], <div data-custom-card>no id</div>, {
+        itemSelector: '[data-custom-card]',
+      });
+      expect(feedRef.current?.getItemElement(Number.NaN)).toBeNull();
+      expect(feedRef.current?.getItemElement(0)).toBeNull();
+    });
+
+    it('registers cards added later and unregisters removed ones', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(
+        feedRef,
+        [1, 2],
+        <>
+          <li data-message-id="1">one</li>
+          <li data-message-id="2">two</li>
+        </>,
+      );
+      await renderFallbackFeed(
+        feedRef,
+        [2, 3],
+        <>
+          <li data-message-id="2">two</li>
+          <li data-message-id="3">three</li>
+        </>,
+      );
+      expect(feedRef.current?.getItemElement(1)).toBeNull();
+      expect(feedRef.current?.getItemElement(2)).toBe(byId('2'));
+      expect(feedRef.current?.getItemElement(3)).toBe(byId('3'));
+    });
+
+    it('does not break when MessageFeedItem and the fallback register the same card', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(
+        feedRef,
+        [4],
+        <MessageFeedItem id={4} data-message-id="4">
+          both ways
+        </MessageFeedItem>,
+      );
+      expect(feedRef.current?.getItemElement(4)).toBe(byId('4'));
+    });
+
+    it('registers string ids with parseId=String and never under the numeric key', async () => {
+      const feedRef = createRef<MessageFeedHandle<string>>();
+      await renderFallbackFeed(
+        feedRef,
+        ['0199-a', '123'],
+        <>
+          <li data-message-id="0199-a">uuid-like</li>
+          <li data-message-id="123">numeric-looking</li>
+        </>,
+        { parseId: String },
+      );
+      expect(feedRef.current?.getItemElement('0199-a')).toBe(byId('0199-a'));
+      expect(feedRef.current?.getItemElement('123')).toBe(byId('123'));
+      // A stray number key would make this lookup succeed.
+      expect(feedRef.current?.getItemElement(123 as unknown as string)).toBeNull();
+    });
+
+    it('with the default numeric parser a string host cannot find numeric-looking cards', async () => {
+      const feedRef = createRef<MessageFeedHandle<string>>();
+      await renderFallbackFeed(feedRef, ['123'], <li data-message-id="123">numeric-looking</li>);
+      expect(feedRef.current?.getItemElement('123')).toBeNull();
+    });
+
+    it('lets a host map custom attribute formats and skip unparseable ones', async () => {
+      const feedRef = createRef<MessageFeedHandle>();
+      await renderFallbackFeed(
+        feedRef,
+        [7],
+        <>
+          <li data-message-id="msg-7">prefixed</li>
+          <li data-message-id="other">unmapped</li>
+        </>,
+        {
+          parseId: (raw) => (raw.startsWith('msg-') ? Number(raw.slice(4)) : Number.NaN),
+        },
+      );
+      expect(feedRef.current?.getItemElement(7)).toBe(byId('msg-7'));
+      expect(feedRef.current?.getItemElement(Number.NaN)).toBeNull();
+    });
+  });
+
   it('keeps a linked card highlighted through scrolling until a new chunk commits', async () => {
     const feedRef = createRef<MessageFeedHandle>();
     const scrollOptions = {
@@ -395,7 +822,10 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(control?.dataset.atNewestEdge).toBe('false');
 
     await act(async () => root.render(renderFeed('bottom')));
-    expect(control?.dataset.atNewestEdge).toBe('true');
+    // The arrow moves to the other floating container when the edge changes, so it is a new node.
+    expect(
+      container.querySelector<HTMLElement>('[data-newest-navigation]')?.dataset.atNewestEdge,
+    ).toBe('true');
   });
 
   it('navigates to a composed child without a host-owned scroll hook', async () => {

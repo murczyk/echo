@@ -1374,7 +1374,7 @@ async fn rer_duty_neo_adaptive_lower_bound(
         return Some(log_rer_duty_neo_fallback_cutoff(now, "unit_filter"));
     }
     let accessible_groups =
-        match crate::messenger::group::get_identity_sigint_groups(
+        match crate::messenger::group::get_rer_feed_sigint_groups(
             &env.dbx, login,
         )
         .await
@@ -1570,7 +1570,7 @@ async fn inbox_group_stats(
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let group_names = signal_group::Entity::find()
@@ -2396,13 +2396,49 @@ pub(crate) async fn invalidate_messages_network_frequency_last_seen<C>(
 where
     C: ConnectionTrait,
 {
-    if message_ids.is_empty() {
+    invalidate_network_frequency_last_seen(
+        txn,
+        "signal_message.id",
+        message_ids,
+    )
+    .await
+}
+
+/// Clears the cached last-seen time that these network links may have
+/// supplied, before the links are deleted. Links that stay keep a valid
+/// last-seen time, so recalculating unchanged links does not blank a
+/// network's last activity (ECHO-4202).
+pub(crate) async fn invalidate_network_links_frequency_last_seen<C>(
+    txn: &C,
+    network_link_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    invalidate_network_frequency_last_seen(
+        txn,
+        "network_link.id",
+        network_link_ids,
+    )
+    .await
+}
+
+async fn invalidate_network_frequency_last_seen<C>(
+    txn: &C,
+    id_column: &'static str,
+    ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if ids.is_empty() {
         return Ok(());
     }
     let affected = txn
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            r#"
+            format!(
+                r#"
             update sigint_network_freq as network_freq
             set last_seen_dt = null
             from sigint_inbox_item as inbox_item
@@ -2410,7 +2446,7 @@ where
               on signal_message.id = inbox_item.id
             join sigint_inbox_item_network as network_link
               on network_link.sigint_inbox_item_id = inbox_item.id
-            where signal_message.id = any($1::bigint[])
+            where {id_column} = any($1::bigint[])
               and network_freq.network_id = network_link.sigint_network_id
               and network_freq.freq = inbox_item.freq
               and network_freq.deleted = false
@@ -2420,8 +2456,9 @@ where
                   signal_message.created_at
               )
             returning network_freq.id
-        "#,
-            [message_ids.to_vec().into()],
+        "#
+            ),
+            [ids.to_vec().into()],
         ))
         .await
         .c(h!())?;

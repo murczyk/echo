@@ -19,8 +19,8 @@ Run everything from your workstation unless noted.
 
 ```text
 ClickHouse system.query_log
-  → signoz-otel-collector          (on the ClickHouse host)
-  → filter: QueryFinish AND duration >= 1000 ms
+  → signoz-otel-collector          (on the ClickHouse host, patched build, §3.0)
+  → filter: (QueryFinish OR ExceptionWhileProcessing) AND duration >= 1000 ms
   → OTLP gRPC → signoz-echo.eagle-atria.ts.net:4317
   → SigNoz Logs → dashboard panel
 ```
@@ -82,7 +82,8 @@ SELECT count() AS completed,
        countIf(query_duration_ms >= 1000) AS slow,
        max(query_duration_ms) AS max_ms
 FROM system.query_log
-WHERE event_time >= now() - INTERVAL 24 HOUR AND type = 'QueryFinish'
+WHERE event_time >= now() - INTERVAL 24 HOUR
+  AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 FORMAT Vertical"
 EOF
 ```
@@ -96,7 +97,45 @@ means the panel will look empty — correct, not broken.
 
 The binary is host-agnostic; all per-host difference lives in `config.yaml`.
 
+### 3.0 Why a patched build
+
+The upstream v0.144.1 release can't read `system.query_log` from ClickHouse
+26.10. ClickHouse 26.10 turned `interface` and `http_method` into `Enum8`, and
+the receiver scans them into `uint8`. Every scrape then fails, and the service stays
+`active`:
+
+```text
+couldn't scan QueryLog row into a struct: clickhouse [ScanRow]: (interface) converting Enum8 to *uint8 is unsupported
+```
+
+The panel was empty on all hosts from the 2026-10-30 upgrade until 2026-11-14.
+Upstream `main` still had the bug on 2026-11-13.
+[`signoz-collector-query-log-enum8.patch`](signoz-collector-query-log-enum8.patch)
+selects both columns through `toUInt8()`. The exported values stay the same
+numbers as before. On older ClickHouse versions, where the columns are still
+`UInt8`, the cast does nothing.
+
+To rebuild it, run this on any Linux amd64 machine. Go 1.24.12 is the version
+the upstream release was built with:
+
+```bash
+git clone https://github.com/SigNoz/signoz-otel-collector.git
+cd signoz-otel-collector
+git checkout v0.144.1            # 6be2a31f1fd702537292f9153512d823d7bedc75
+git apply /path/to/echo/deploy/clickhouse/signoz-collector-query-log-enum8.patch
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOTOOLCHAIN=local \
+  go build -trimpath -ldflags "-s -w" \
+  -o /tmp/signoz-otel-collector ./cmd/signozotelcollector
+go test ./receiver/clickhousesystemtablesreceiver/...
+```
+
+`CGO_ENABLED=0` makes the binary static, so it doesn't depend on the host's
+glibc. After a ClickHouse upgrade, check the collector journal for this error
+(§12).
+
 ### 3.1 Get a local copy
+
+Build it as in §3.0, or copy it from a host that already runs it:
 
 ```bash
 scp SOURCE_HOST:/opt/signoz-clickhouse-collector/bin/signoz-otel-collector \
@@ -106,17 +145,20 @@ ls -l  /tmp/signoz-otel-collector
 shasum -a 256 /tmp/signoz-otel-collector
 ```
 
-Reference build:
+Reference build (v0.144.1 + patch, Go 1.24.12, static):
 
 ```text
-Size:   323448560
-SHA256: 633c07186c76d29ae8470e37a39084ad4cabc7b0ef79be0049797727ab1ed836
+Size:   321999032
+SHA256: be6d720ba05de4062f909ca2d2e3587f3255d1e2bba4ca9f95ce66446a476cea
 ```
+
+The unpatched upstream v0.144.1 binary (`633c0718…`, 323448560 bytes) fails
+against ClickHouse 26.10 or newer.
 
 ### 3.2 Compress and send
 
-323 MB over Tailscale is slow, and a dropped transfer leaves a truncated
-binary — this happened during the ZP2 rollout. Gzip cuts it to ~91 MB; the
+322 MB over Tailscale is slow, and a dropped transfer leaves a truncated
+binary — this happened during the ZP2 rollout. Gzip cuts it to ~95 MB; the
 checksum in 3.3 catches corruption.
 
 ```bash
@@ -279,7 +321,7 @@ processors:
     error_mode: ignore
     logs:
       log_record:
-        - 'attributes["clickhouse.query_log.type"] != "QueryFinish"'
+        - 'attributes["clickhouse.query_log.type"] != "QueryFinish" and attributes["clickhouse.query_log.type"] != "ExceptionWhileProcessing"'
         - 'attributes["clickhouse.query_log.query_duration_ms"] < 1000'
 
   resource/clickhouse:
@@ -324,12 +366,21 @@ Drop-on-match semantics. Each OTTL condition describes records to **throw
 away**, and they are OR'd:
 
 ```yaml
-- 'attributes["clickhouse.query_log.type"] != "QueryFinish"'      # drop QueryStart etc.
-- 'attributes["clickhouse.query_log.query_duration_ms"] < 1000'   # drop fast queries
+# drop QueryStart and ExceptionBeforeStart
+- 'attributes["clickhouse.query_log.type"] != "QueryFinish" and attributes["clickhouse.query_log.type"] != "ExceptionWhileProcessing"'
+# drop fast queries
+- 'attributes["clickhouse.query_log.query_duration_ms"] < 1000'
 ```
 
-Net effect: only `QueryFinish` **AND** `>= 1000 ms` survives. It reads
-backwards from intuition — double-check the sign if you edit it.
+The result: only `QueryFinish` or `ExceptionWhileProcessing` rows of
+`>= 1000 ms` are kept. The conditions say what to drop, which is the reverse of
+what you'd expect, so check the operators if you edit them.
+
+`ExceptionWhileProcessing` covers queries that ran and then failed: timeouts,
+memory limits, and cancellations. The gateway's `statement_timeout` shows up
+as `QUERY_WAS_CANCELLED_BY_CLIENT`. These are often the slowest queries, so
+dropping them would hide the worst cases. `ExceptionBeforeStart`, e.g. syntax
+errors, always has a duration of 0 and is dropped by the duration filter.
 
 Why filter here and not in the dashboard? The dashboard already filters on
 `>= 1000 ms`, so an unfiltered host still *displays* correctly — but every
@@ -439,6 +490,8 @@ set -a; . /etc/echo-analytics/clickhouse.env; set +a
 export CLICKHOUSE_USER=default CLICKHOUSE_PASSWORD="$CLICKHOUSE_ADMIN_PASSWORD"
 clickhouse-client --query "SELECT sleep(1.6) AS clickhouse_slowlog_MARKER"
 clickhouse-client --query "SELECT 1 AS clickhouse_fastlog_MARKER"
+clickhouse-client --query "SELECT count() AS clickhouse_failedlog_MARKER FROM numbers(1000000000000) \
+  SETTINGS max_threads=1, max_execution_time=1.2, timeout_overflow_mode='throw'" || true
 echo "markers issued"
 EOF
 ```
@@ -462,7 +515,7 @@ ORDER BY event_time FORMAT TSV"
 EOF
 ```
 
-Both markers appear here — `system.query_log` is unfiltered. Filtering happens
+All three markers appear here — `system.query_log` is unfiltered. Filtering happens
 downstream, in the collector.
 
 ### 9.3 Confirm it reached SigNoz
@@ -473,7 +526,7 @@ Wait 60–90 s (20 s scrape + 8 s delay + export + ingest), then use the SigNoz
 ```text
 resource.service.name = 'clickhouse'
   AND resource.host.name = 'HOST_NAME'
-  AND attribute.clickhouse.query_log.type = 'QueryFinish'
+  AND attribute.clickhouse.query_log.type IN ('QueryFinish', 'ExceptionWhileProcessing')
   AND attribute.clickhouse.query_log.query_duration_ms >= 1000
 ```
 
@@ -493,7 +546,8 @@ into this repo.
 | Check | Expected |
 |---|---|
 | Slow marker (`sleep(1.6)`) | **present**, `QueryFinish`, ~1601 ms |
-| Its `QueryStart` record | **absent** — filtered |
+| Failed marker (`max_execution_time=1.2`) | **present**, `ExceptionWhileProcessing`, ~1200 ms, code 159 |
+| Their `QueryStart` records | **absent** — filtered |
 | Fast control (`SELECT 1`) | **absent** — filtered |
 
 Slow marker missing but service healthy? It probably landed inside the first
@@ -506,9 +560,9 @@ In the Logs Explorer, filter `resource.service.name = 'clickhouse'` over the
 last 30 minutes and group by resource `host.name` plus
 `attribute.clickhouse.query_log.type`.
 
-Every host should show `QueryFinish` only, with no duration below 1000 ms. A
-`QueryStart` row or a sub-1000 ms duration means that host's filter is missing
-or misconfigured.
+Every host should show only `QueryFinish` and `ExceptionWhileProcessing`, with
+no duration below 1000 ms. A `QueryStart` row or a sub-1000 ms duration means
+that host's filter is missing or misconfigured.
 
 ---
 
@@ -552,6 +606,15 @@ is added.
   `host.name`**, not the plain `host` tag. Grouping by `host` yields
   `{host=""}` because ClickHouse telemetry carries the hostname as a resource
   attribute
+- The **CLICKHOUSE SLOW QUERIES** panel on the ERRORS dashboard counts both
+  exported types. Its filter is:
+
+  ```text
+  (resource.service.name = 'clickhouse'
+    AND attribute.clickhouse.query_log.type IN ('QueryFinish', 'ExceptionWhileProcessing')
+    AND attribute.clickhouse.query_log.query_duration_ms >= 1000)
+    AND resource.host.name NOT LIKE 'cl01-%'
+  ```
 - Optionally save a Logs Explorer view using the step 9.3 filter
 
 Sites with no ClickHouse deployed never appear in the panel. That is expected,
@@ -579,6 +642,19 @@ construction succeeded. Stop the service first for a clean foreground run.
 **`-- No entries --` from journalctl.** A healthy collector is silent after
 startup. Use `-n 30` instead of a narrow `--since` window.
 
+**Service `active`, but `scrape attempt failed` every 20 s.** For example:
+
+```text
+couldn't scan QueryLog row into a struct: clickhouse [ScanRow]: (interface) converting Enum8 to *uint8 is unsupported
+```
+
+A ClickHouse upgrade changed a `system.query_log` column type that the
+receiver scans into a fixed Go type. Nothing is exported until the binary is
+fixed: a failed scrape retries the same window and never moves forward. Compare
+the receiver's `QueryLog` struct with
+`SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'query_log'`,
+extend the patch (§3.0), rebuild and replace the binary (§13).
+
 **No data in SigNoz, service healthy.** Check in order: is `signoz-echo:4317`
 reachable; is there actually a query over 1000 ms in the window; is
 `host.name` spelled correctly in `config.yaml`.
@@ -587,6 +663,44 @@ reachable; is there actually a query over 1000 ms in the window; is
 pipeline. `filter/clickhouse-slow-queries` must appear in *both* the
 `processors:` block and the pipeline's `processors:` list — defining it
 without listing it silently does nothing.
+
+---
+
+## 13. Replace the binary or filter on a running host
+
+This is how the patched build and the wider filter were rolled out on
+2026-11-14. Copy the gzipped binary to `/tmp/signoz-otel-collector-echo1.gz` on
+the host (§3.2), then:
+
+```bash
+ssh HOST_ALIAS 'sudo bash -s' <<'EOF'
+set -euo pipefail
+EXPECT=be6d720ba05de4062f909ca2d2e3587f3255d1e2bba4ca9f95ce66446a476cea
+D=/opt/signoz-clickhouse-collector/bin
+C=/etc/signoz-clickhouse-collector/config.yaml
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+gzip -dc /tmp/signoz-otel-collector-echo1.gz > "$D/signoz-otel-collector.new"
+chmod 0755 "$D/signoz-otel-collector.new"
+test "$(sha256sum "$D/signoz-otel-collector.new" | cut -d' ' -f1)" = "$EXPECT"
+cp -p "$C" "$C.bak-$TS"
+# Edit the filter in $C as in §6 (in place, keeping owner and mode), then:
+diff "$C.bak-$TS" "$C" || true
+mv "$D/signoz-otel-collector" "$D/signoz-otel-collector.bak-$TS"
+mv "$D/signoz-otel-collector.new" "$D/signoz-otel-collector"
+systemctl restart signoz-clickhouse-collector.service
+sleep 50
+systemctl is-active signoz-clickhouse-collector.service
+journalctl -u signoz-clickhouse-collector.service -n 30 --no-pager -o cat \
+  | grep -E "Everything is ready|scrape attempt failed"
+rm -f /tmp/signoz-otel-collector-echo1.gz
+EOF
+```
+
+Then verify with §9. To roll back, move the `.bak-*` binary and config back
+and restart the service. The 2026-11-14 rollout kept the upstream binary as
+`signoz-otel-collector.v0.144.1` and the config as `config.yaml.bak-20261114T*`.
+After a restart the collector starts from the current time; it doesn't backfill
+the gap.
 
 ---
 

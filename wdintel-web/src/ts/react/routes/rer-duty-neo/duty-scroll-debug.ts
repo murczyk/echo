@@ -83,7 +83,6 @@ export type DutyScrollDebugViewSnapshotInput = {
   unreadCount?: number;
   unreadPrefetchNeeded?: boolean;
   pendingNewerFlushNeeded?: boolean;
-  workspaceFabAvoidance?: string;
   initialScrollAnchorSnapshot?: {
     anchors: readonly { id: number; index: number; offsetTop: number }[];
     itemIds: readonly number[];
@@ -355,9 +354,6 @@ function dutyViewSnapshotDetails(view: DutyScrollDebugViewSnapshotInput): Record
     unreadCount: view.unreadCount ?? null,
     unreadPrefetchNeeded: view.unreadPrefetchNeeded ?? null,
     pendingNewerFlushNeeded: view.pendingNewerFlushNeeded ?? null,
-    workspaceFabAvoidance: view.workspaceFabAvoidance
-      ? normalizedToken(view.workspaceFabAvoidance)
-      : null,
     documentVisibility: normalizedToken(globalThis.document?.visibilityState ?? 'unknown'),
     initialAnchors:
       initialAnchor?.anchors.map((anchor) => ({

@@ -5501,7 +5501,7 @@ fn build_units_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    let mut units = build_units_filtered_query(
+    let units = build_units_filtered_query(
         req,
         login_str,
         dt_since,
@@ -5509,25 +5509,18 @@ fn build_units_query(
         master_keys.clone(),
         scope,
     )
-    .c(h!())?
-    .join(
-        JoinType::InnerJoin,
-        sigint_inbox_item::Relation::SigintInboxItemUnit.def(),
-    )
-    .join(
-        JoinType::InnerJoin,
-        sigint_inbox_item_unit::Relation::SigintUnit.def(),
-    )
-    .filter(sigint_unit::Column::Deleted.eq(false))
-    .select_only()
-    .column_as(sigint_unit::Column::Id, "unit_id")
-    .column_as(sigint_unit::Column::Name, "name")
-    .column_as(
-        Expr::cust(r#"COUNT(DISTINCT "sigint_inbox_item"."id")"#),
-        "count",
-    )
-    .group_by(sigint_unit::Column::Id)
-    .group_by(sigint_unit::Column::Name);
+    .c(h!())?;
+    let mut units = join_counted_unit_links(units, scope)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .column_as(sigint_unit::Column::Id, "unit_id")
+        .column_as(sigint_unit::Column::Name, "name")
+        .column_as(
+            Expr::cust(r#"COUNT(DISTINCT "sigint_inbox_item"."id")"#),
+            "count",
+        )
+        .group_by(sigint_unit::Column::Id)
+        .group_by(sigint_unit::Column::Name);
     QueryTrait::query(&mut units).union(
         UnionType::All,
         build_undefined_unit_query(
@@ -5557,7 +5550,7 @@ fn build_undefined_unit_query(
     let mut linked_unit = Query::select();
     linked_unit
         .expr(Expr::value(1))
-        .from_as(sigint_inbox_item_unit::Entity, link_alias.clone())
+        .from_as(super::unit_link_table(scope), link_alias.clone())
         .join_as(
             JoinType::InnerJoin,
             sigint_unit::Entity,
@@ -5568,15 +5561,25 @@ fn build_undefined_unit_query(
             )),
         )
         .and_where(
-            Expr::col((link_alias, sigint_inbox_item_unit::Column::ItemId))
-                .equals((
-                    sigint_inbox_item::Entity,
-                    sigint_inbox_item::Column::Id,
-                )),
+            Expr::col((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::ItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .and_where(
             Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
         );
+    if let Some(scope) = scope {
+        // Inside the subquery, so the gateway pushes it into the anti-join's
+        // inner read and ClickHouse prunes the links by primary key.
+        linked_unit.and_where(
+            scope.condition((
+                link_alias,
+                sigint_inbox_item_unit::Column::ItemId,
+            )),
+        );
+    }
     Ok(build_units_filtered_query(
         req,
         login_str,
@@ -5607,7 +5610,7 @@ fn build_units_count_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    Ok(build_units_filtered_query(
+    let units = build_units_filtered_query(
         req,
         login_str,
         dt_since,
@@ -5615,16 +5618,53 @@ fn build_units_count_query(
         master_keys,
         scope,
     )
-    .c(h!())?
-    .join(
-        JoinType::InnerJoin,
-        sigint_inbox_item::Relation::SigintInboxItemUnit.def(),
+    .c(h!())?;
+    Ok(join_counted_unit_links(units, scope)
+        .filter(sigint_unit::Column::Deleted.eq(false)))
+}
+
+/// Joins each message to its unit links and units. With an analytics scope
+/// the links come from the message-ordered copy and carry the same message-ID
+/// scope, so ClickHouse reads only the links of the scoped messages.
+fn join_counted_unit_links(
+    query: Select<sigint_inbox_item::Entity>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Select<sigint_inbox_item::Entity> {
+    let Some(scope) = scope else {
+        return query
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SigintInboxItemUnit.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_unit::Relation::SigintUnit.def(),
+            );
+    };
+    let link_alias = Alias::new("analytics_unit_link");
+    let mut query = query;
+    QuerySelect::query(&mut query)
+        .join_as(
+            JoinType::InnerJoin,
+            super::unit_link_table(Some(scope)),
+            link_alias.clone(),
+            Expr::col((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::ItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)).equals((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::UnitId,
+            )),
+        );
+    query.filter(
+        scope.condition((link_alias, sigint_inbox_item_unit::Column::ItemId)),
     )
-    .join(
-        JoinType::InnerJoin,
-        sigint_inbox_item_unit::Relation::SigintUnit.def(),
-    )
-    .filter(sigint_unit::Column::Deleted.eq(false)))
 }
 
 fn build_units_filtered_query(
@@ -9357,6 +9397,77 @@ mod tests {
             "{sql}"
         );
         assert!(!sql.contains("UNION ALL"), "{sql}");
+    }
+
+    // ECHO-4202: PeerDB orders sigint_inbox_item_unit by its surrogate id, so
+    // a scope on the raw table pruned nothing and every units facet read the
+    // whole table.
+    #[test]
+    fn analytics_units_facet_reads_message_ordered_links_4202() {
+        let mut req = populated_analysis_stats_req();
+        req.without_network = Some(false);
+        let req_json = Json(req);
+        let req_ref = &req_json;
+        let dt_since = NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let dt_till = NaiveDate::from_ymd_opt(2026, 1, 2)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let scope = AnalyticsMessageIdScope::Inclusive {
+            min_id: 10,
+            max_id: 20,
+        };
+        let build = |scope| {
+            build_units_query(
+                &req_ref,
+                &uuid::Uuid::nil(),
+                dt_since,
+                dt_till,
+                vec!["group".to_string()],
+                scope,
+            )
+            .unwrap()
+            .build(DbBackend::Postgres)
+            .to_string()
+        };
+
+        let sql = build(Some(&scope));
+        let (linked, undefined) = sql.split_once(" UNION ALL ").unwrap();
+        for (arm, link_alias) in [
+            (linked, "analytics_unit_link"),
+            (undefined, "undefined_unit_link"),
+        ] {
+            assert!(
+                arm.contains(&format!(
+                    r#""echo_clickhouse_derived"."message_unit_link" AS "{link_alias}""#
+                )),
+                "{arm}"
+            );
+            assert!(
+                arm.contains(&format!(
+                    r#""{link_alias}"."item_id" BETWEEN 10 AND 20"#
+                )),
+                "{arm}"
+            );
+            assert!(
+                arm.contains(
+                    r#""echo_clickhouse_derived"."message_network_link" AS "analytics_network_filter_link""#
+                ),
+                "{arm}"
+            );
+        }
+        assert!(!sql.contains(r#""sigint_inbox_item_unit""#), "{sql}");
+        assert!(!sql.contains(r#""sigint_inbox_item_network""#), "{sql}");
+
+        let source_sql = build(None);
+        assert!(source_sql.contains(r#""sigint_inbox_item_unit""#));
+        assert!(
+            !source_sql.contains("echo_clickhouse_derived"),
+            "{source_sql}"
+        );
     }
 
     #[test]

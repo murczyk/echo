@@ -93,3 +93,16 @@ about 8 seconds either way on Skhid. A test pins the untyped constants. Do not
 merge the arms until the undefined arm's anti-join is narrowed to the scoped
 messages and per-scope peak memory is measured on every analytics host; see
 [the incident notes](../../archive/2026-11-09-3527-unit-stats-union-pushdown/README.md).
+
+## Message-ordered unit links
+
+On the analytics gateway both arms read
+`echo_clickhouse_derived.message_unit_link`, a copy of
+`sigint_inbox_item_unit` ordered by `(item_id, id)`, and bound it by the same
+message-ID scope as the messages (#4202). PeerDB orders the raw table by its
+surrogate `id`. A scope there pruned nothing, so every execution read the whole
+table `FINAL`: about 189 million rows on Pivnich, three quarters of them
+deletion markers. The derived copy prunes by primary key, so the anti-join's
+hash holds only the links of the scoped messages. The arms stay separate until
+their peak memory with the narrowed anti-join has been measured on every
+analytics host.

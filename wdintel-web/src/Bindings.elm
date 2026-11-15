@@ -2588,6 +2588,534 @@ signalGroupsRspEncoder struct =
         ]
 
 
+type alias MessengersTelegramAccountId =
+    { userId : String
+    }
+
+
+messengersTelegramAccountIdEncoder : MessengersTelegramAccountId -> Json.Encode.Value
+messengersTelegramAccountIdEncoder struct =
+    Json.Encode.object
+        [ ( "user_id", (Json.Encode.string) struct.userId )
+        ]
+
+
+type alias MessengersDatasourceGroup =
+    { id : Int
+    , groupMasterKey : String
+    , datasourceId : Int
+    , name : String
+    , lastSyncAt : Int
+    , createdAt : Int
+    }
+
+
+messengersDatasourceGroupEncoder : MessengersDatasourceGroup -> Json.Encode.Value
+messengersDatasourceGroupEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "group_master_key", (Json.Encode.string) struct.groupMasterKey )
+        , ( "datasource_id", (Json.Encode.int) struct.datasourceId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "last_sync_at", (Json.Encode.int) struct.lastSyncAt )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias MessengersAccountItem =
+    { id : String
+    , messengerType : String
+    , externalId : String
+    , displayName : String
+    , username : Maybe (String)
+    , firstName : Maybe (String)
+    , lastName : Maybe (String)
+    , phone : Maybe (String)
+    , status : Maybe (String)
+    , statusError : Maybe (String)
+    , statusChangedAt : Maybe (Int)
+    , isActive : Maybe (Bool)
+    , isPaused : Maybe (Bool)
+    , createdAt : Maybe (Int)
+    , lastSync : Maybe (Int)
+    , notes : Maybe (String)
+    , internalNotes : Maybe (String)
+    , externalUrl : Maybe (String)
+    , telegram : Maybe (MessengersTelegramAccountId)
+    , datasourceGroup : MessengersDatasourceGroup
+    }
+
+
+messengersAccountItemEncoder : MessengersAccountItem -> Json.Encode.Value
+messengersAccountItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "messenger_type", (Json.Encode.string) struct.messengerType )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "display_name", (Json.Encode.string) struct.displayName )
+        , ( "username", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.username )
+        , ( "first_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.firstName )
+        , ( "last_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastName )
+        , ( "phone", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.phone )
+        , ( "status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.status )
+        , ( "status_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.statusError )
+        , ( "status_changed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.statusChangedAt )
+        , ( "is_active", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isActive )
+        , ( "is_paused", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isPaused )
+        , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
+        , ( "last_sync", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastSync )
+        , ( "notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.notes )
+        , ( "internal_notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.internalNotes )
+        , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
+        , ( "datasource_group", (messengersDatasourceGroupEncoder) struct.datasourceGroup )
+        ]
+
+
+type alias MessengersAccountsListRsp =
+    { items : List (MessengersAccountItem)
+    }
+
+
+messengersAccountsListRspEncoder : MessengersAccountsListRsp -> Json.Encode.Value
+messengersAccountsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersAccountItemEncoder)) struct.items )
+        ]
+
+
+type alias MessengersAccountUpdateReq =
+    { accountId : String
+    , internalNotes : Maybe (String)
+    }
+
+
+messengersAccountUpdateReqEncoder : MessengersAccountUpdateReq -> Json.Encode.Value
+messengersAccountUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "internal_notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.internalNotes )
+        ]
+
+
+type alias MessengersTelegramChatId =
+    { chatId : String
+    }
+
+
+messengersTelegramChatIdEncoder : MessengersTelegramChatId -> Json.Encode.Value
+messengersTelegramChatIdEncoder struct =
+    Json.Encode.object
+        [ ( "chat_id", (Json.Encode.string) struct.chatId )
+        ]
+
+
+type alias MessengersChatsListReq =
+    { accountId : String
+    }
+
+
+messengersChatsListReqEncoder : MessengersChatsListReq -> Json.Encode.Value
+messengersChatsListReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        ]
+
+
+type alias MessengersChatItem =
+    { id : String
+    , messengerType : String
+    , externalId : String
+    , chatType : Maybe (String)
+    , title : Maybe (String)
+    , username : Maybe (String)
+    , membersCount : Maybe (Int)
+    , accountMemberStatus : Maybe (String)
+    , lastMessageDate : Maybe (Int)
+    , telegram : Maybe (MessengersTelegramChatId)
+    }
+
+
+messengersChatItemEncoder : MessengersChatItem -> Json.Encode.Value
+messengersChatItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "messenger_type", (Json.Encode.string) struct.messengerType )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "chat_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.chatType )
+        , ( "title", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.title )
+        , ( "username", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.username )
+        , ( "members_count", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.membersCount )
+        , ( "account_member_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.accountMemberStatus )
+        , ( "last_message_date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastMessageDate )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramChatIdEncoder)) struct.telegram )
+        ]
+
+
+type alias MessengersChatsListRsp =
+    { items : List (MessengersChatItem)
+    }
+
+
+messengersChatsListRspEncoder : MessengersChatsListRsp -> Json.Encode.Value
+messengersChatsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersChatItemEncoder)) struct.items )
+        ]
+
+
+type alias MessengersChatMembersListReq =
+    { accountId : String
+    , chatId : String
+    }
+
+
+messengersChatMembersListReqEncoder : MessengersChatMembersListReq -> Json.Encode.Value
+messengersChatMembersListReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Json.Encode.string) struct.chatId )
+        ]
+
+
+type alias MessengersChatMemberItem =
+    { id : String
+    , messengerType : String
+    , externalId : String
+    , username : Maybe (String)
+    , firstName : Maybe (String)
+    , lastName : Maybe (String)
+    , phone : Maybe (String)
+    , isBot : Maybe (Bool)
+    , role : Maybe (String)
+    , joinedDate : Maybe (Int)
+    , deleted : Bool
+    , telegram : Maybe (MessengersTelegramAccountId)
+    }
+
+
+messengersChatMemberItemEncoder : MessengersChatMemberItem -> Json.Encode.Value
+messengersChatMemberItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "messenger_type", (Json.Encode.string) struct.messengerType )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "username", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.username )
+        , ( "first_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.firstName )
+        , ( "last_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastName )
+        , ( "phone", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.phone )
+        , ( "is_bot", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isBot )
+        , ( "role", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.role )
+        , ( "joined_date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.joinedDate )
+        , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
+        ]
+
+
+type alias MessengersChatMembersListRsp =
+    { items : List (MessengersChatMemberItem)
+    }
+
+
+messengersChatMembersListRspEncoder : MessengersChatMembersListRsp -> Json.Encode.Value
+messengersChatMembersListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersChatMemberItemEncoder)) struct.items )
+        ]
+
+
+type alias MessengersContactsListReq =
+    { accountId : String
+    , page : Maybe (Int)
+    , limit : Maybe (Int)
+    }
+
+
+messengersContactsListReqEncoder : MessengersContactsListReq -> Json.Encode.Value
+messengersContactsListReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias MessengersContactItem =
+    { id : String
+    , messengerType : String
+    , externalId : String
+    , username : Maybe (String)
+    , firstName : Maybe (String)
+    , lastName : Maybe (String)
+    , phone : Maybe (String)
+    , isMutual : Maybe (Bool)
+    , isCloseFriend : Maybe (Bool)
+    , createdAt : Int
+    , updatedAt : Int
+    , telegram : Maybe (MessengersTelegramAccountId)
+    }
+
+
+messengersContactItemEncoder : MessengersContactItem -> Json.Encode.Value
+messengersContactItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "messenger_type", (Json.Encode.string) struct.messengerType )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "username", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.username )
+        , ( "first_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.firstName )
+        , ( "last_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastName )
+        , ( "phone", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.phone )
+        , ( "is_mutual", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isMutual )
+        , ( "is_close_friend", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isCloseFriend )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
+        ]
+
+
+type alias MessengersContactsListRsp =
+    { items : List (MessengersContactItem)
+    , total : Int
+    , page : Int
+    , pageSize : Int
+    }
+
+
+messengersContactsListRspEncoder : MessengersContactsListRsp -> Json.Encode.Value
+messengersContactsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersContactItemEncoder)) struct.items )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "page", (Json.Encode.int) struct.page )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
+type MessengersMessagesDirection
+    = Older
+    | Newer
+    | Oldest
+
+
+messengersMessagesDirectionEncoder : MessengersMessagesDirection -> Json.Encode.Value
+messengersMessagesDirectionEncoder enum =
+    case enum of
+        Older ->
+            Json.Encode.string "Older"
+        Newer ->
+            Json.Encode.string "Newer"
+        Oldest ->
+            Json.Encode.string "Oldest"
+
+type alias MessengersMessagesListReq =
+    { accountId : String
+    , chatId : String
+    , cursor : Maybe (String)
+    , limit : Maybe (Int)
+    , direction : Maybe (MessengersMessagesDirection)
+    , aroundMessageId : Maybe (String)
+    }
+
+
+messengersMessagesListReqEncoder : MessengersMessagesListReq -> Json.Encode.Value
+messengersMessagesListReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Json.Encode.string) struct.chatId )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "direction", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersMessagesDirectionEncoder)) struct.direction )
+        , ( "around_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aroundMessageId )
+        ]
+
+
+type alias MessengersTelegramMessageId =
+    { messageId : String
+    }
+
+
+messengersTelegramMessageIdEncoder : MessengersTelegramMessageId -> Json.Encode.Value
+messengersTelegramMessageIdEncoder struct =
+    Json.Encode.object
+        [ ( "message_id", (Json.Encode.string) struct.messageId )
+        ]
+
+
+type alias MessengersTelegramMedia =
+    { fileId : String
+    , mediaType : Maybe (String)
+    }
+
+
+messengersTelegramMediaEncoder : MessengersTelegramMedia -> Json.Encode.Value
+messengersTelegramMediaEncoder struct =
+    Json.Encode.object
+        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "media_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mediaType )
+        ]
+
+
+type alias MessengersAttachment =
+    { media : MessageMediaInfo
+    , externalId : String
+    , createdAt : Maybe (Int)
+    , telegram : Maybe (MessengersTelegramMedia)
+    }
+
+
+messengersAttachmentEncoder : MessengersAttachment -> Json.Encode.Value
+messengersAttachmentEncoder struct =
+    Json.Encode.object
+        [ ( "media", (messageMediaInfoEncoder) struct.media )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramMediaEncoder)) struct.telegram )
+        ]
+
+
+type alias MessengersMessageItem =
+    { id : String
+    , externalId : String
+    , sentAt : Int
+    , text : String
+    , isOutgoing : Maybe (Bool)
+    , hasMedia : Maybe (Bool)
+    , senderChatMemberId : Maybe (String)
+    , attachments : List (MessengersAttachment)
+    , telegram : Maybe (MessengersTelegramMessageId)
+    }
+
+
+messengersMessageItemEncoder : MessengersMessageItem -> Json.Encode.Value
+messengersMessageItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "sent_at", (Json.Encode.int) struct.sentAt )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "is_outgoing", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isOutgoing )
+        , ( "has_media", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.hasMedia )
+        , ( "sender_chat_member_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderChatMemberId )
+        , ( "attachments", (Json.Encode.list (messengersAttachmentEncoder)) struct.attachments )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramMessageIdEncoder)) struct.telegram )
+        ]
+
+
+type alias MessengersMessagesListRsp =
+    { items : List (MessengersMessageItem)
+    , olderCursor : Maybe (String)
+    , newerCursor : Maybe (String)
+    }
+
+
+messengersMessagesListRspEncoder : MessengersMessagesListRsp -> Json.Encode.Value
+messengersMessagesListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersMessageItemEncoder)) struct.items )
+        , ( "older_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.olderCursor )
+        , ( "newer_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.newerCursor )
+        ]
+
+
+type alias MessengersAttachmentsListReq =
+    { accountId : String
+    , chatId : Maybe (String)
+    , cursor : Maybe (String)
+    , limit : Maybe (Int)
+    , direction : Maybe (MessengersMessagesDirection)
+    , telegramMediaTypes : Maybe (List (String))
+    }
+
+
+messengersAttachmentsListReqEncoder : MessengersAttachmentsListReq -> Json.Encode.Value
+messengersAttachmentsListReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.chatId )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "direction", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersMessagesDirectionEncoder)) struct.direction )
+        , ( "telegram_media_types", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.telegramMediaTypes )
+        ]
+
+
+type alias MessengersAttachmentItem =
+    { chatId : String
+    , messageId : String
+    , sentAt : Int
+    , senderChatMemberId : Maybe (String)
+    , attachment : MessengersAttachment
+    }
+
+
+messengersAttachmentItemEncoder : MessengersAttachmentItem -> Json.Encode.Value
+messengersAttachmentItemEncoder struct =
+    Json.Encode.object
+        [ ( "chat_id", (Json.Encode.string) struct.chatId )
+        , ( "message_id", (Json.Encode.string) struct.messageId )
+        , ( "sent_at", (Json.Encode.int) struct.sentAt )
+        , ( "sender_chat_member_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderChatMemberId )
+        , ( "attachment", (messengersAttachmentEncoder) struct.attachment )
+        ]
+
+
+type alias MessengersAttachmentsListRsp =
+    { items : List (MessengersAttachmentItem)
+    , olderCursor : Maybe (String)
+    , newerCursor : Maybe (String)
+    }
+
+
+messengersAttachmentsListRspEncoder : MessengersAttachmentsListRsp -> Json.Encode.Value
+messengersAttachmentsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersAttachmentItemEncoder)) struct.items )
+        , ( "older_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.olderCursor )
+        , ( "newer_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.newerCursor )
+        ]
+
+
+type alias MessengersAttachmentsCountsReq =
+    { accountId : String
+    , chatId : Maybe (String)
+    }
+
+
+messengersAttachmentsCountsReqEncoder : MessengersAttachmentsCountsReq -> Json.Encode.Value
+messengersAttachmentsCountsReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.chatId )
+        ]
+
+
+type alias MessengersAttachmentTypeCount =
+    { telegramMediaType : Maybe (String)
+    , count : Int
+    }
+
+
+messengersAttachmentTypeCountEncoder : MessengersAttachmentTypeCount -> Json.Encode.Value
+messengersAttachmentTypeCountEncoder struct =
+    Json.Encode.object
+        [ ( "telegram_media_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.telegramMediaType )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias MessengersAttachmentsCountsRsp =
+    { items : List (MessengersAttachmentTypeCount)
+    }
+
+
+messengersAttachmentsCountsRspEncoder : MessengersAttachmentsCountsRsp -> Json.Encode.Value
+messengersAttachmentsCountsRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersAttachmentTypeCountEncoder)) struct.items )
+        ]
+
+
 type alias BatchMessageCommentsReq =
     { messages : List (MessageCommentsReq)
     }
@@ -2789,6 +3317,346 @@ analysisStatsReqEncoder struct =
         , ( "without_model_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutModelTags )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.reportTagsOnlyThisUnit )
         , ( "message_time_basis", (Maybe.withDefault Json.Encode.null << Maybe.map (messageTimeBasisEncoder)) struct.messageTimeBasis )
+        ]
+
+
+type DailyMessageStatsGrouping
+    = DailyStatsGroups
+    | DailyStatsSenders
+
+
+dailyMessageStatsGroupingEncoder : DailyMessageStatsGrouping -> Json.Encode.Value
+dailyMessageStatsGroupingEncoder enum =
+    case enum of
+        DailyStatsGroups ->
+            Json.Encode.string "Groups"
+        DailyStatsSenders ->
+            Json.Encode.string "Senders"
+
+type alias DailyMessageSenderKey =
+    { sender : Maybe (String)
+    }
+
+
+dailyMessageSenderKeyEncoder : DailyMessageSenderKey -> Json.Encode.Value
+dailyMessageSenderKeyEncoder struct =
+    Json.Encode.object
+        [ ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sender )
+        ]
+
+
+type alias DailyMessageStatsReq =
+    { userLabelId : Maybe (Int)
+    , fromDate : String
+    , toDate : String
+    , grouping : DailyMessageStatsGrouping
+    , selectedGroups : Maybe (List (String))
+    , selectedSenders : Maybe (List (DailyMessageSenderKey))
+    , selectedUnitIds : Maybe (List (Int))
+    , cursor : Maybe (String)
+    }
+
+
+dailyMessageStatsReqEncoder : DailyMessageStatsReq -> Json.Encode.Value
+dailyMessageStatsReqEncoder struct =
+    Json.Encode.object
+        [ ( "user_label_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.userLabelId )
+        , ( "from_date", (Json.Encode.string) struct.fromDate )
+        , ( "to_date", (Json.Encode.string) struct.toDate )
+        , ( "grouping", (dailyMessageStatsGroupingEncoder) struct.grouping )
+        , ( "selected_groups", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedGroups )
+        , ( "selected_senders", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (dailyMessageSenderKeyEncoder))) struct.selectedSenders )
+        , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias DailyMessageStatsPoint =
+    { messages : Int
+    , counterparts : Int
+    }
+
+
+dailyMessageStatsPointEncoder : DailyMessageStatsPoint -> Json.Encode.Value
+dailyMessageStatsPointEncoder struct =
+    Json.Encode.object
+        [ ( "messages", (Json.Encode.int) struct.messages )
+        , ( "counterparts", (Json.Encode.int) struct.counterparts )
+        ]
+
+
+type alias DailyMessageStatsSeries =
+    { key : Maybe (String)
+    , label : String
+    , points : List (DailyMessageStatsPoint)
+    }
+
+
+dailyMessageStatsSeriesEncoder : DailyMessageStatsSeries -> Json.Encode.Value
+dailyMessageStatsSeriesEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "points", (Json.Encode.list (dailyMessageStatsPointEncoder)) struct.points )
+        ]
+
+
+type alias DailyMessageStatsRsp =
+    { days : List (String)
+    , series : List (DailyMessageStatsSeries)
+    , totalSeries : Int
+    , nextCursor : Maybe (String)
+    , generatedAtMs : Int
+    }
+
+
+dailyMessageStatsRspEncoder : DailyMessageStatsRsp -> Json.Encode.Value
+dailyMessageStatsRspEncoder struct =
+    Json.Encode.object
+        [ ( "days", (Json.Encode.list (Json.Encode.string)) struct.days )
+        , ( "series", (Json.Encode.list (dailyMessageStatsSeriesEncoder)) struct.series )
+        , ( "total_series", (Json.Encode.int) struct.totalSeries )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        , ( "generated_at_ms", (Json.Encode.int) struct.generatedAtMs )
+        ]
+
+
+type alias DailyMessageStatsOptionsReq =
+    { filter : DailyMessageStatsReq
+    , search : Maybe (String)
+    , includeChildren : Maybe (Bool)
+    }
+
+
+dailyMessageStatsOptionsReqEncoder : DailyMessageStatsOptionsReq -> Json.Encode.Value
+dailyMessageStatsOptionsReqEncoder struct =
+    Json.Encode.object
+        [ ( "filter", (dailyMessageStatsReqEncoder) struct.filter )
+        , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "include_children", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeChildren )
+        ]
+
+
+type alias DailyMessageStatsOption =
+    { key : Maybe (String)
+    , label : String
+    , count : Int
+    }
+
+
+dailyMessageStatsOptionEncoder : DailyMessageStatsOption -> Json.Encode.Value
+dailyMessageStatsOptionEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias DailyMessageStatsOptionsRsp =
+    { options : List (DailyMessageStatsOption)
+    , nextCursor : Maybe (String)
+    , total : Int
+    , unitOptions : List (UnitStatsOption)
+    }
+
+
+dailyMessageStatsOptionsRspEncoder : DailyMessageStatsOptionsRsp -> Json.Encode.Value
+dailyMessageStatsOptionsRspEncoder struct =
+    Json.Encode.object
+        [ ( "options", (Json.Encode.list (dailyMessageStatsOptionEncoder)) struct.options )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "unit_options", (Json.Encode.list (unitStatsOptionEncoder)) struct.unitOptions )
+        ]
+
+
+type alias DailyMessageStatsCatalogReq =
+    { knownHierarchyRevision : Maybe (String)
+    , selectedSenders : List (DailyMessageSenderKey)
+    }
+
+
+dailyMessageStatsCatalogReqEncoder : DailyMessageStatsCatalogReq -> Json.Encode.Value
+dailyMessageStatsCatalogReqEncoder struct =
+    Json.Encode.object
+        [ ( "known_hierarchy_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownHierarchyRevision )
+        , ( "selected_senders", (Json.Encode.list (dailyMessageSenderKeyEncoder)) struct.selectedSenders )
+        ]
+
+
+type alias DailyMessageStatsGroupLabel =
+    { key : String
+    , label : String
+    }
+
+
+dailyMessageStatsGroupLabelEncoder : DailyMessageStatsGroupLabel -> Json.Encode.Value
+dailyMessageStatsGroupLabelEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Json.Encode.string) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias DailyMessageStatsSenderLabel =
+    { key : Maybe (String)
+    , label : String
+    }
+
+
+dailyMessageStatsSenderLabelEncoder : DailyMessageStatsSenderLabel -> Json.Encode.Value
+dailyMessageStatsSenderLabelEncoder struct =
+    Json.Encode.object
+        [ ( "key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.key )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias DailyMessageStatsCatalogRsp =
+    { accessRevision : String
+    , groups : List (DailyMessageStatsGroupLabel)
+    , unitHierarchy : Maybe (UnitHierarchyRsp)
+    , senderLabels : List (DailyMessageStatsSenderLabel)
+    }
+
+
+dailyMessageStatsCatalogRspEncoder : DailyMessageStatsCatalogRsp -> Json.Encode.Value
+dailyMessageStatsCatalogRspEncoder struct =
+    Json.Encode.object
+        [ ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        , ( "groups", (Json.Encode.list (dailyMessageStatsGroupLabelEncoder)) struct.groups )
+        , ( "unit_hierarchy", (Maybe.withDefault Json.Encode.null << Maybe.map (unitHierarchyRspEncoder)) struct.unitHierarchy )
+        , ( "sender_labels", (Json.Encode.list (dailyMessageStatsSenderLabelEncoder)) struct.senderLabels )
+        ]
+
+
+type alias DailyMessageStatsPanel =
+    { labelId : Int
+    , name : String
+    , color : String
+    , organismName : Maybe (String)
+    }
+
+
+dailyMessageStatsPanelEncoder : DailyMessageStatsPanel -> Json.Encode.Value
+dailyMessageStatsPanelEncoder struct =
+    Json.Encode.object
+        [ ( "label_id", (Json.Encode.int) struct.labelId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "color", (Json.Encode.string) struct.color )
+        , ( "organism_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.organismName )
+        ]
+
+
+type alias DailyMessageStatsPanelsRsp =
+    { panels : List (DailyMessageStatsPanel)
+    , accessRevision : String
+    }
+
+
+dailyMessageStatsPanelsRspEncoder : DailyMessageStatsPanelsRsp -> Json.Encode.Value
+dailyMessageStatsPanelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "panels", (Json.Encode.list (dailyMessageStatsPanelEncoder)) struct.panels )
+        , ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        ]
+
+
+type DailyMessageStatsFacet
+    = DailyGroupsFacet
+    | DailyUnitsFacet
+
+
+dailyMessageStatsFacetEncoder : DailyMessageStatsFacet -> Json.Encode.Value
+dailyMessageStatsFacetEncoder enum =
+    case enum of
+        DailyGroupsFacet ->
+            Json.Encode.string "Groups"
+        DailyUnitsFacet ->
+            Json.Encode.string "Units"
+
+type alias DailyMessageStatsFacetReq =
+    { facet : DailyMessageStatsFacet
+    , filter : DailyMessageStatsReq
+    , includeChildren : Bool
+    }
+
+
+dailyMessageStatsFacetReqEncoder : DailyMessageStatsFacetReq -> Json.Encode.Value
+dailyMessageStatsFacetReqEncoder struct =
+    Json.Encode.object
+        [ ( "facet", (dailyMessageStatsFacetEncoder) struct.facet )
+        , ( "filter", (dailyMessageStatsReqEncoder) struct.filter )
+        , ( "include_children", (Json.Encode.bool) struct.includeChildren )
+        ]
+
+
+type alias DailyMessageStatsFacetCount =
+    { value : String
+    , count : Int
+    }
+
+
+dailyMessageStatsFacetCountEncoder : DailyMessageStatsFacetCount -> Json.Encode.Value
+dailyMessageStatsFacetCountEncoder struct =
+    Json.Encode.object
+        [ ( "value", (Json.Encode.string) struct.value )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias DailyMessageStatsFacetRsp =
+    { counts : List (DailyMessageStatsFacetCount)
+    , accessRevision : String
+    , hierarchyRevision : Maybe (String)
+    , generatedAtMs : Int
+    }
+
+
+dailyMessageStatsFacetRspEncoder : DailyMessageStatsFacetRsp -> Json.Encode.Value
+dailyMessageStatsFacetRspEncoder struct =
+    Json.Encode.object
+        [ ( "counts", (Json.Encode.list (dailyMessageStatsFacetCountEncoder)) struct.counts )
+        , ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        , ( "hierarchy_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.hierarchyRevision )
+        , ( "generated_at_ms", (Json.Encode.int) struct.generatedAtMs )
+        ]
+
+
+type alias DailyMessageStatsSendersReq =
+    { filter : DailyMessageStatsReq
+    , search : Maybe (String)
+    , cursor : Maybe (String)
+    }
+
+
+dailyMessageStatsSendersReqEncoder : DailyMessageStatsSendersReq -> Json.Encode.Value
+dailyMessageStatsSendersReqEncoder struct =
+    Json.Encode.object
+        [ ( "filter", (dailyMessageStatsReqEncoder) struct.filter )
+        , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias DailyMessageStatsSendersRsp =
+    { options : List (DailyMessageStatsSenderLabel)
+    , nextCursor : Maybe (String)
+    , total : Int
+    , accessRevision : String
+    , generatedAtMs : Int
+    }
+
+
+dailyMessageStatsSendersRspEncoder : DailyMessageStatsSendersRsp -> Json.Encode.Value
+dailyMessageStatsSendersRspEncoder struct =
+    Json.Encode.object
+        [ ( "options", (Json.Encode.list (dailyMessageStatsSenderLabelEncoder)) struct.options )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "access_revision", (Json.Encode.string) struct.accessRevision )
+        , ( "generated_at_ms", (Json.Encode.int) struct.generatedAtMs )
         ]
 
 
@@ -8924,6 +9792,118 @@ deviceSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "has_mattermost_webhook", (Json.Encode.bool) struct.hasMattermostWebhook )
         , ( "activity_split_files_audio", (Json.Encode.bool) struct.activitySplitFilesAudio )
+        ]
+
+
+type alias OrganismUserLabel =
+    { id : Int
+    , organismId : Int
+    , name : String
+    , color : String
+    }
+
+
+organismUserLabelEncoder : OrganismUserLabel -> Json.Encode.Value
+organismUserLabelEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "color", (Json.Encode.string) struct.color )
+        ]
+
+
+type alias OrganismUserLabelAssignment =
+    { loginId : String
+    , labelId : Int
+    }
+
+
+organismUserLabelAssignmentEncoder : OrganismUserLabelAssignment -> Json.Encode.Value
+organismUserLabelAssignmentEncoder struct =
+    Json.Encode.object
+        [ ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "label_id", (Json.Encode.int) struct.labelId )
+        ]
+
+
+type alias OrganismUserLabelsRsp =
+    { labels : List (OrganismUserLabel)
+    , assignments : List (OrganismUserLabelAssignment)
+    , excludedLoginIds : List (String)
+    }
+
+
+organismUserLabelsRspEncoder : OrganismUserLabelsRsp -> Json.Encode.Value
+organismUserLabelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "labels", (Json.Encode.list (organismUserLabelEncoder)) struct.labels )
+        , ( "assignments", (Json.Encode.list (organismUserLabelAssignmentEncoder)) struct.assignments )
+        , ( "excluded_login_ids", (Json.Encode.list (Json.Encode.string)) struct.excludedLoginIds )
+        ]
+
+
+type alias UpsertOrganismUserLabelReq =
+    { id : Maybe (Int)
+    , organismId : Int
+    , name : String
+    , color : String
+    }
+
+
+upsertOrganismUserLabelReqEncoder : UpsertOrganismUserLabelReq -> Json.Encode.Value
+upsertOrganismUserLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.id )
+        , ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "color", (Json.Encode.string) struct.color )
+        ]
+
+
+type alias DeleteOrganismUserLabelReq =
+    { organismId : Int
+    , labelId : Int
+    }
+
+
+deleteOrganismUserLabelReqEncoder : DeleteOrganismUserLabelReq -> Json.Encode.Value
+deleteOrganismUserLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "label_id", (Json.Encode.int) struct.labelId )
+        ]
+
+
+type alias AssignOrganismUserLabelReq =
+    { organismId : Int
+    , loginId : String
+    , labelId : Maybe (Int)
+    }
+
+
+assignOrganismUserLabelReqEncoder : AssignOrganismUserLabelReq -> Json.Encode.Value
+assignOrganismUserLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "label_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.labelId )
+        ]
+
+
+type alias SetOrganismMessageStatsExclusionReq =
+    { organismId : Int
+    , loginId : String
+    , excluded : Bool
+    }
+
+
+setOrganismMessageStatsExclusionReqEncoder : SetOrganismMessageStatsExclusionReq -> Json.Encode.Value
+setOrganismMessageStatsExclusionReqEncoder struct =
+    Json.Encode.object
+        [ ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "excluded", (Json.Encode.bool) struct.excluded )
         ]
 
 
@@ -17458,6 +18438,8 @@ type alias AiAgentAdminSettingsItem =
     , defaultAiEngineId : Maybe (String)
     , reviewerAiEngineId : Maybe (String)
     , securityReviewEnabled : Bool
+    , refusalRewriteEnabled : Bool
+    , refusalRewriteAiEngineId : Maybe (String)
     , mattermostChatEnabled : Bool
     , hasMattermostWebhook : Bool
     , hasMattermostChatWebhook : Bool
@@ -17474,6 +18456,8 @@ aiAgentAdminSettingsItemEncoder struct =
         , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
         , ( "reviewerAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reviewerAiEngineId )
         , ( "securityReviewEnabled", (Json.Encode.bool) struct.securityReviewEnabled )
+        , ( "refusalRewriteEnabled", (Json.Encode.bool) struct.refusalRewriteEnabled )
+        , ( "refusalRewriteAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.refusalRewriteAiEngineId )
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "hasMattermostWebhook", (Json.Encode.bool) struct.hasMattermostWebhook )
         , ( "hasMattermostChatWebhook", (Json.Encode.bool) struct.hasMattermostChatWebhook )
@@ -17488,6 +18472,8 @@ type alias AiAgentAdminSettingsUpdateReq =
     , defaultAiEngineId : Maybe (String)
     , reviewerAiEngineId : Maybe (String)
     , securityReviewEnabled : Bool
+    , refusalRewriteEnabled : Bool
+    , refusalRewriteAiEngineId : Maybe (String)
     , mattermostChatEnabled : Bool
     , mattermostWebhookUrl : Maybe (String)
     , clearMattermostWebhook : Bool
@@ -17506,6 +18492,8 @@ aiAgentAdminSettingsUpdateReqEncoder struct =
         , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
         , ( "reviewerAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reviewerAiEngineId )
         , ( "securityReviewEnabled", (Json.Encode.bool) struct.securityReviewEnabled )
+        , ( "refusalRewriteEnabled", (Json.Encode.bool) struct.refusalRewriteEnabled )
+        , ( "refusalRewriteAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.refusalRewriteAiEngineId )
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "mattermostWebhookUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
         , ( "clearMattermostWebhook", (Json.Encode.bool) struct.clearMattermostWebhook )
@@ -22773,6 +23761,209 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_time_basis" (Json.Decode.nullable (messageTimeBasisDecoder))))
 
 
+dailyMessageStatsGroupingDecoder : Json.Decode.Decoder DailyMessageStatsGrouping
+dailyMessageStatsGroupingDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Groups" ->
+                            Json.Decode.succeed DailyStatsGroups
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Senders" ->
+                            Json.Decode.succeed DailyStatsSenders
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+dailyMessageSenderKeyDecoder : Json.Decode.Decoder DailyMessageSenderKey
+dailyMessageSenderKeyDecoder =
+    Json.Decode.succeed DailyMessageSenderKey
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsReqDecoder : Json.Decode.Decoder DailyMessageStatsReq
+dailyMessageStatsReqDecoder =
+    Json.Decode.succeed DailyMessageStatsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_label_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "from_date" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to_date" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grouping" (dailyMessageStatsGroupingDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_groups" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_senders" (Json.Decode.nullable (Json.Decode.list (dailyMessageSenderKeyDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsPointDecoder : Json.Decode.Decoder DailyMessageStatsPoint
+dailyMessageStatsPointDecoder =
+    Json.Decode.succeed DailyMessageStatsPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counterparts" (Json.Decode.int)))
+
+
+dailyMessageStatsSeriesDecoder : Json.Decode.Decoder DailyMessageStatsSeries
+dailyMessageStatsSeriesDecoder =
+    Json.Decode.succeed DailyMessageStatsSeries
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (dailyMessageStatsPointDecoder))))
+
+
+dailyMessageStatsRspDecoder : Json.Decode.Decoder DailyMessageStatsRsp
+dailyMessageStatsRspDecoder =
+    Json.Decode.succeed DailyMessageStatsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "days" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "series" (Json.Decode.list (dailyMessageStatsSeriesDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_series" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_at_ms" (Json.Decode.int)))
+
+
+dailyMessageStatsOptionsReqDecoder : Json.Decode.Decoder DailyMessageStatsOptionsReq
+dailyMessageStatsOptionsReqDecoder =
+    Json.Decode.succeed DailyMessageStatsOptionsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter" (dailyMessageStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_children" (Json.Decode.nullable (Json.Decode.bool))))
+
+
+dailyMessageStatsOptionDecoder : Json.Decode.Decoder DailyMessageStatsOption
+dailyMessageStatsOptionDecoder =
+    Json.Decode.succeed DailyMessageStatsOption
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+dailyMessageStatsOptionsRspDecoder : Json.Decode.Decoder DailyMessageStatsOptionsRsp
+dailyMessageStatsOptionsRspDecoder =
+    Json.Decode.succeed DailyMessageStatsOptionsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "options" (Json.Decode.list (dailyMessageStatsOptionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_options" (Json.Decode.list (unitStatsOptionDecoder))))
+
+
+dailyMessageStatsCatalogReqDecoder : Json.Decode.Decoder DailyMessageStatsCatalogReq
+dailyMessageStatsCatalogReqDecoder =
+    Json.Decode.succeed DailyMessageStatsCatalogReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_hierarchy_revision" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_senders" (Json.Decode.list (dailyMessageSenderKeyDecoder))))
+
+
+dailyMessageStatsGroupLabelDecoder : Json.Decode.Decoder DailyMessageStatsGroupLabel
+dailyMessageStatsGroupLabelDecoder =
+    Json.Decode.succeed DailyMessageStatsGroupLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+dailyMessageStatsSenderLabelDecoder : Json.Decode.Decoder DailyMessageStatsSenderLabel
+dailyMessageStatsSenderLabelDecoder =
+    Json.Decode.succeed DailyMessageStatsSenderLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+dailyMessageStatsCatalogRspDecoder : Json.Decode.Decoder DailyMessageStatsCatalogRsp
+dailyMessageStatsCatalogRspDecoder =
+    Json.Decode.succeed DailyMessageStatsCatalogRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (dailyMessageStatsGroupLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_hierarchy" (Json.Decode.nullable (unitHierarchyRspDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_labels" (Json.Decode.list (dailyMessageStatsSenderLabelDecoder))))
+
+
+dailyMessageStatsPanelDecoder : Json.Decode.Decoder DailyMessageStatsPanel
+dailyMessageStatsPanelDecoder =
+    Json.Decode.succeed DailyMessageStatsPanel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsPanelsRspDecoder : Json.Decode.Decoder DailyMessageStatsPanelsRsp
+dailyMessageStatsPanelsRspDecoder =
+    Json.Decode.succeed DailyMessageStatsPanelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "panels" (Json.Decode.list (dailyMessageStatsPanelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+
+
+dailyMessageStatsFacetDecoder : Json.Decode.Decoder DailyMessageStatsFacet
+dailyMessageStatsFacetDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Groups" ->
+                            Json.Decode.succeed DailyGroupsFacet
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Units" ->
+                            Json.Decode.succeed DailyUnitsFacet
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+dailyMessageStatsFacetReqDecoder : Json.Decode.Decoder DailyMessageStatsFacetReq
+dailyMessageStatsFacetReqDecoder =
+    Json.Decode.succeed DailyMessageStatsFacetReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "facet" (dailyMessageStatsFacetDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter" (dailyMessageStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_children" (Json.Decode.bool)))
+
+
+dailyMessageStatsFacetCountDecoder : Json.Decode.Decoder DailyMessageStatsFacetCount
+dailyMessageStatsFacetCountDecoder =
+    Json.Decode.succeed DailyMessageStatsFacetCount
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+dailyMessageStatsFacetRspDecoder : Json.Decode.Decoder DailyMessageStatsFacetRsp
+dailyMessageStatsFacetRspDecoder =
+    Json.Decode.succeed DailyMessageStatsFacetRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (Json.Decode.list (dailyMessageStatsFacetCountDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hierarchy_revision" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_at_ms" (Json.Decode.int)))
+
+
+dailyMessageStatsSendersReqDecoder : Json.Decode.Decoder DailyMessageStatsSendersReq
+dailyMessageStatsSendersReqDecoder =
+    Json.Decode.succeed DailyMessageStatsSendersReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter" (dailyMessageStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+dailyMessageStatsSendersRspDecoder : Json.Decode.Decoder DailyMessageStatsSendersRsp
+dailyMessageStatsSendersRspDecoder =
+    Json.Decode.succeed DailyMessageStatsSendersRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "options" (Json.Decode.list (dailyMessageStatsSenderLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_at_ms" (Json.Decode.int)))
+
+
 analysisCallsignFrequencyMatchesReqDecoder : Json.Decode.Decoder AnalysisCallsignFrequencyMatchesReq
 analysisCallsignFrequencyMatchesReqDecoder =
     Json.Decode.succeed AnalysisCallsignFrequencyMatchesReq
@@ -23143,6 +24334,294 @@ signalGroupsRspDecoder : Json.Decode.Decoder SignalGroupsRsp
 signalGroupsRspDecoder =
     Json.Decode.succeed SignalGroupsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "data" (Json.Decode.list (signalGroupEntryDecoder))))
+
+
+messengersTelegramAccountIdDecoder : Json.Decode.Decoder MessengersTelegramAccountId
+messengersTelegramAccountIdDecoder =
+    Json.Decode.succeed MessengersTelegramAccountId
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_id" (Json.Decode.string)))
+
+
+messengersDatasourceGroupDecoder : Json.Decode.Decoder MessengersDatasourceGroup
+messengersDatasourceGroupDecoder =
+    Json.Decode.succeed MessengersDatasourceGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_sync_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+
+
+messengersAccountItemDecoder : Json.Decode.Decoder MessengersAccountItem
+messengersAccountItemDecoder =
+    Json.Decode.succeed MessengersAccountItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_type" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "username" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_changed_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_paused" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_sync" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "notes" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "internal_notes" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_group" (messengersDatasourceGroupDecoder)))
+
+
+messengersAccountsListRspDecoder : Json.Decode.Decoder MessengersAccountsListRsp
+messengersAccountsListRspDecoder =
+    Json.Decode.succeed MessengersAccountsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAccountItemDecoder))))
+
+
+messengersAccountUpdateReqDecoder : Json.Decode.Decoder MessengersAccountUpdateReq
+messengersAccountUpdateReqDecoder =
+    Json.Decode.succeed MessengersAccountUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "internal_notes" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersTelegramChatIdDecoder : Json.Decode.Decoder MessengersTelegramChatId
+messengersTelegramChatIdDecoder =
+    Json.Decode.succeed MessengersTelegramChatId
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.string)))
+
+
+messengersChatsListReqDecoder : Json.Decode.Decoder MessengersChatsListReq
+messengersChatsListReqDecoder =
+    Json.Decode.succeed MessengersChatsListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+
+
+messengersChatItemDecoder : Json.Decode.Decoder MessengersChatItem
+messengersChatItemDecoder =
+    Json.Decode.succeed MessengersChatItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_type" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_type" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "username" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "members_count" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_member_status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_message_date" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramChatIdDecoder))))
+
+
+messengersChatsListRspDecoder : Json.Decode.Decoder MessengersChatsListRsp
+messengersChatsListRspDecoder =
+    Json.Decode.succeed MessengersChatsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersChatItemDecoder))))
+
+
+messengersChatMembersListReqDecoder : Json.Decode.Decoder MessengersChatMembersListReq
+messengersChatMembersListReqDecoder =
+    Json.Decode.succeed MessengersChatMembersListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.string)))
+
+
+messengersChatMemberItemDecoder : Json.Decode.Decoder MessengersChatMemberItem
+messengersChatMemberItemDecoder =
+    Json.Decode.succeed MessengersChatMemberItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_type" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "username" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_bot" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "joined_date" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
+
+
+messengersChatMembersListRspDecoder : Json.Decode.Decoder MessengersChatMembersListRsp
+messengersChatMembersListRspDecoder =
+    Json.Decode.succeed MessengersChatMembersListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersChatMemberItemDecoder))))
+
+
+messengersContactsListReqDecoder : Json.Decode.Decoder MessengersContactsListReq
+messengersContactsListReqDecoder =
+    Json.Decode.succeed MessengersContactsListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+messengersContactItemDecoder : Json.Decode.Decoder MessengersContactItem
+messengersContactItemDecoder =
+    Json.Decode.succeed MessengersContactItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_type" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "username" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_mutual" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_close_friend" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
+
+
+messengersContactsListRspDecoder : Json.Decode.Decoder MessengersContactsListRsp
+messengersContactsListRspDecoder =
+    Json.Decode.succeed MessengersContactsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersContactItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+messengersMessagesDirectionDecoder : Json.Decode.Decoder MessengersMessagesDirection
+messengersMessagesDirectionDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Older" ->
+                            Json.Decode.succeed Older
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Newer" ->
+                            Json.Decode.succeed Newer
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Oldest" ->
+                            Json.Decode.succeed Oldest
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+messengersMessagesListReqDecoder : Json.Decode.Decoder MessengersMessagesListReq
+messengersMessagesListReqDecoder =
+    Json.Decode.succeed MessengersMessagesListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.nullable (messengersMessagesDirectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_message_id" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersTelegramMessageIdDecoder : Json.Decode.Decoder MessengersTelegramMessageId
+messengersTelegramMessageIdDecoder =
+    Json.Decode.succeed MessengersTelegramMessageId
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.string)))
+
+
+messengersTelegramMediaDecoder : Json.Decode.Decoder MessengersTelegramMedia
+messengersTelegramMediaDecoder =
+    Json.Decode.succeed MessengersTelegramMedia
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_type" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersAttachmentDecoder : Json.Decode.Decoder MessengersAttachment
+messengersAttachmentDecoder =
+    Json.Decode.succeed MessengersAttachment
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media" (messageMediaInfoDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramMediaDecoder))))
+
+
+messengersMessageItemDecoder : Json.Decode.Decoder MessengersMessageItem
+messengersMessageItemDecoder =
+    Json.Decode.succeed MessengersMessageItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sent_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_outgoing" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_media" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_chat_member_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (messengersAttachmentDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramMessageIdDecoder))))
+
+
+messengersMessagesListRspDecoder : Json.Decode.Decoder MessengersMessagesListRsp
+messengersMessagesListRspDecoder =
+    Json.Decode.succeed MessengersMessagesListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersMessageItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "older_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newer_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersAttachmentsListReqDecoder : Json.Decode.Decoder MessengersAttachmentsListReq
+messengersAttachmentsListReqDecoder =
+    Json.Decode.succeed MessengersAttachmentsListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.nullable (messengersMessagesDirectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram_media_types" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+
+
+messengersAttachmentItemDecoder : Json.Decode.Decoder MessengersAttachmentItem
+messengersAttachmentItemDecoder =
+    Json.Decode.succeed MessengersAttachmentItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sent_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_chat_member_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachment" (messengersAttachmentDecoder)))
+
+
+messengersAttachmentsListRspDecoder : Json.Decode.Decoder MessengersAttachmentsListRsp
+messengersAttachmentsListRspDecoder =
+    Json.Decode.succeed MessengersAttachmentsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAttachmentItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "older_cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newer_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersAttachmentsCountsReqDecoder : Json.Decode.Decoder MessengersAttachmentsCountsReq
+messengersAttachmentsCountsReqDecoder =
+    Json.Decode.succeed MessengersAttachmentsCountsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengersAttachmentTypeCountDecoder : Json.Decode.Decoder MessengersAttachmentTypeCount
+messengersAttachmentTypeCountDecoder =
+    Json.Decode.succeed MessengersAttachmentTypeCount
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram_media_type" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+messengersAttachmentsCountsRspDecoder : Json.Decode.Decoder MessengersAttachmentsCountsRsp
+messengersAttachmentsCountsRspDecoder =
+    Json.Decode.succeed MessengersAttachmentsCountsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAttachmentTypeCountDecoder))))
 
 
 signalGroupEntryDecoder : Json.Decode.Decoder SignalGroupEntry
@@ -26976,6 +28455,62 @@ deviceSettingsItemDecoder =
     Json.Decode.succeed DeviceSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_mattermost_webhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_split_files_audio" (Json.Decode.bool)))
+
+
+organismUserLabelDecoder : Json.Decode.Decoder OrganismUserLabel
+organismUserLabelDecoder =
+    Json.Decode.succeed OrganismUserLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+
+
+organismUserLabelAssignmentDecoder : Json.Decode.Decoder OrganismUserLabelAssignment
+organismUserLabelAssignmentDecoder =
+    Json.Decode.succeed OrganismUserLabelAssignment
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+
+
+organismUserLabelsRspDecoder : Json.Decode.Decoder OrganismUserLabelsRsp
+organismUserLabelsRspDecoder =
+    Json.Decode.succeed OrganismUserLabelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (organismUserLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "assignments" (Json.Decode.list (organismUserLabelAssignmentDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "excluded_login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+upsertOrganismUserLabelReqDecoder : Json.Decode.Decoder UpsertOrganismUserLabelReq
+upsertOrganismUserLabelReqDecoder =
+    Json.Decode.succeed UpsertOrganismUserLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.string)))
+
+
+deleteOrganismUserLabelReqDecoder : Json.Decode.Decoder DeleteOrganismUserLabelReq
+deleteOrganismUserLabelReqDecoder =
+    Json.Decode.succeed DeleteOrganismUserLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+
+
+assignOrganismUserLabelReqDecoder : Json.Decode.Decoder AssignOrganismUserLabelReq
+assignOrganismUserLabelReqDecoder =
+    Json.Decode.succeed AssignOrganismUserLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.nullable (Json.Decode.int))))
+
+
+setOrganismMessageStatsExclusionReqDecoder : Json.Decode.Decoder SetOrganismMessageStatsExclusionReq
+setOrganismMessageStatsExclusionReqDecoder =
+    Json.Decode.succeed SetOrganismMessageStatsExclusionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "excluded" (Json.Decode.bool)))
 
 
 organismDecoder : Json.Decode.Decoder Organism
@@ -32499,6 +34034,8 @@ aiAgentAdminSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reviewerAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "securityReviewEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostChatWebhook" (Json.Decode.bool)))
@@ -32514,6 +34051,8 @@ aiAgentAdminSettingsUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reviewerAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "securityReviewEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostWebhookUrl" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearMattermostWebhook" (Json.Decode.bool)))

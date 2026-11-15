@@ -45,7 +45,7 @@ export function GroupList({
         </h2>
       )}
       <nav
-        className="group-navigation-list"
+        className="group-navigation-list slim-scrollbar"
         aria-labelledby={accessibleTitleId}
         aria-label={accessibleTitleId == null ? 'Групи' : undefined}
       >

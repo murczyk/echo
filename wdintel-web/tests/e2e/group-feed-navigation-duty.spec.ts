@@ -51,6 +51,9 @@ async function installGroupNavigationMocks(page: Page) {
       return inboxResponse(request.selected_groups ?? null);
     },
   });
+  await page.route('**/api/sigint/units/hierarchy', (route) =>
+    route.fulfill({ json: { revision: 'empty', groups: [], units: [] } }),
+  );
   await page.route('**/api/rer-importer/signal-group-batch', (route) =>
     route.fulfill({
       json: {

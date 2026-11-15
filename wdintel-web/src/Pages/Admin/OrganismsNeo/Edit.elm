@@ -18,7 +18,7 @@ page user _ route =
         { init = init
         , update = update
         , subscriptions = subscriptions
-        , view = view route
+        , view = view user route
         }
         |> Page.withLayout (toLayout user)
 
@@ -68,8 +68,8 @@ subscriptions _ =
 -- VIEW
 
 
-view : Route () -> Model -> View Msg
-view route _ =
+view : Auth.User -> Route () -> Model -> View Msg
+view user route _ =
     let
         organismIdAttrs =
             case Dict.get "id" route.query of
@@ -81,8 +81,8 @@ view route _ =
     in
     { title = "Адмін: організми (neo)"
     , body =
-        [ div [ class "pt-4 pb-6 w-full px-3" ]
-            [ node "organisms-neo-edit" organismIdAttrs [] ]
+        [ div [ class "box-border min-w-0 px-6 pt-6 pb-6 w-full" ]
+            [ node "organisms-neo-edit" (organismIdAttrs ++ [ attribute "data-auth-user-id" user.id, attribute "data-auth-user-roles" (String.join "," user.roles) ]) [] ]
         ]
     }
 

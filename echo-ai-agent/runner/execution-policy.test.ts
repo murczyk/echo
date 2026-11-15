@@ -220,6 +220,42 @@ test("incident 01a1d054: a cut-off synthesis hands over what it wrote, waiting o
   }
 });
 
+test("incident 01a1d9d0: a synthesis the output limit cut off hands over what it wrote", async () => {
+  const cases = [
+    ["length", "Written so far", true],
+    // Hidden reasoning used the whole allowance before any text.
+    ["length", "", false],
+    ["stop", "Finished", false],
+    ["error", "Written so far", false],
+  ] as const;
+  for (const [stopReason, text, handsOver] of cases) {
+    const partials: [string, boolean | undefined][] = [];
+    const answer = await synthesizeBudgetEvidence(
+      {
+        engine,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Report",
+        evidence,
+        maxTokens: 8192,
+        signal: new AbortController().signal,
+        onPartial: (written, outputLimit) => partials.push([written, outputLimit]),
+      },
+      async () =>
+        ({
+          stopReason,
+          content: [
+            { type: "thinking", thinking: "PRIVATE_THINKING" },
+            ...(text ? [{ type: "text", text }] : []),
+          ],
+        }) as any,
+    );
+    assert.equal(answer, stopReason === "stop" ? text : null);
+    assert.deepEqual(partials, handsOver ? [[text, true]] : []);
+  }
+});
+
 test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds context", async () => {
   const oversized = {
     ...evidence,

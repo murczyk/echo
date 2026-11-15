@@ -1,4 +1,4 @@
-set positional-arguments := true
+set positional-arguments
 
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
@@ -54,22 +54,35 @@ doc-extractor-verify:
     just --justfile echo-document-extractor/justfile verify
 
 # Send a Mattermost notification using the webhook configured in .env
-notify text:
+notify text: (_mattermost "MATTERMOST_NOTIFICATION_HOOK" text)
+
+# Post to the #DEV Mattermost channel using MATTERMOST_DEV from .env
+notify-dev text: (_mattermost "MATTERMOST_DEV" text)
+
+# Reads .env, or in a worktree also the main checkout's .env, which it overrides.
+_mattermost hook text:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    if [[ -f .env ]]; then
-        set -a
-        source .env
-        set +a
-    fi
+    main_env="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.env"
+    for env_file in "$main_env" .env; do
+        if [[ -f $env_file ]]; then
+            set -a
+            source "$env_file"
+            set +a
+        fi
+    done
 
-    : "${MATTERMOST_NOTIFICATION_HOOK:?MATTERMOST_NOTIFICATION_HOOK is not set in .env}"
-    jq -nc --arg text "$1" '{text: $text}' \
+    url="${!1:-}"
+    if [[ -z $url ]]; then
+        echo "$1 is not set in .env" >&2
+        exit 1
+    fi
+    jq -nc --arg text "$2" '{text: $text}' \
         | curl --fail-with-body --silent --show-error \
             --header 'Content-Type: application/json' \
             --data-binary @- \
-            "$MATTERMOST_NOTIFICATION_HOOK"
+            "$url"
     echo
 
 prepare-workspace:

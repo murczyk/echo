@@ -82,9 +82,13 @@ pub async fn list_admin_goi_integrations(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListGoiAdminIntegrationsRsp>, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?;
 
-    let items = load_integrations_with_owners_all(&env.dbx).await.c(h!())?;
+    let items = load_integrations_with_owners_all(&env.dbx, scope.organism_id)
+        .await
+        .c(h!())?;
     let mut integrations = Vec::with_capacity(items.len());
     for item in items {
         integrations
@@ -102,11 +106,16 @@ pub async fn get_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<GetGoiAdminIntegrationReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?;
 
     let item = load_integration_with_owner(&env.dbx, req.id)
         .await
         .c(h!())?;
+    scope
+        .ensure_organism(item.integration.owner_organism_id)
+        .context(h!())?;
     Ok(Json(
         load_goi_admin_integration(&env.dbx, item).await.c(h!())?,
     ))
@@ -118,9 +127,15 @@ pub async fn upsert_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<UpsertGoiAdminIntegrationReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?;
 
     let req = req.into_inner();
+    scope.ensure_organism(req.owner_organism_id).context(h!())?;
+    ensure_managed_integration_references(&env.dbx, &scope, &req)
+        .await
+        .context(h!())?;
     validate_goi_admin_integration_req(&req)?;
     ensure_goi_owner_exists(&env.dbx, req.owner_organism_id)
         .await
@@ -147,7 +162,16 @@ pub async fn upsert_admin_goi_integration(
 
     let tx = env.dbx.begin().await.c(h!())?;
     let integration = if let Some(id) = req.id {
-        let item = goi_find_integration(&tx, id).await.c(h!())?;
+        let item = goi_integration::Entity::find_by_id(id)
+            .lock_exclusive()
+            .one(&tx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .context(h!())?;
+        scope
+            .ensure_organism(item.owner_organism_id)
+            .context(h!())?;
         let previous_owner_organism_id = item.owner_organism_id;
         let mut item: goi_integration::ActiveModel = item.into();
         apply_goi_integration_patch(
@@ -230,9 +254,14 @@ pub async fn delete_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteGoiAdminIntegrationReq>,
 ) -> Result<Json<()>, AppError> {
-    ensure_admin(&env.dbx, &user).await?;
+    let scope = crate::organism::access::management_scope(&env.dbx, &user)
+        .await
+        .context(h!())?;
 
     goi_integration::Entity::delete_many()
+        .apply_if(scope.organism_id, |query, id| {
+            query.filter(goi_integration::Column::OwnerOrganismId.eq(id))
+        })
         .filter(goi_integration::Column::Id.eq(req.id))
         .exec(&env.dbx)
         .await
@@ -1287,8 +1316,12 @@ async fn load_goi_admin_integration(
 
 async fn load_integrations_with_owners_all(
     dbx: &DatabaseConnection,
+    organism_id: Option<i64>,
 ) -> Result<Vec<GoiIntegrationWithOwner>, AppError> {
     let items = goi_integration::Entity::find()
+        .apply_if(organism_id, |query, id| {
+            query.filter(goi_integration::Column::OwnerOrganismId.eq(id))
+        })
         .find_also_related(organism::Entity)
         .order_by_asc(goi_integration::Column::ServerLabel)
         .order_by_asc(goi_integration::Column::Id)
@@ -2348,6 +2381,76 @@ fn goi_integration_type_value(
             crate::config::ORGANISM_GOI_INTEGRATION_TYPE_FULL
         }
     }
+}
+
+async fn ensure_managed_integration_references(
+    db: &DatabaseConnection,
+    scope: &crate::organism::access::ManagementScope,
+    req: &UpsertGoiAdminIntegrationReq,
+) -> Result<(), AppError> {
+    let Some(own) = scope.organism_id else {
+        return Ok(());
+    };
+    let previous = if let Some(id) = req.id {
+        let item = load_integration_with_owner(db, id).await.context(h!())?;
+        scope
+            .ensure_organism(item.integration.owner_organism_id)
+            .context(h!())?;
+        Some(load_goi_admin_integration(db, item).await.context(h!())?)
+    } else {
+        None
+    };
+    for id in &req.access_organism_ids {
+        if *id != own
+            && !previous
+                .as_ref()
+                .is_some_and(|p| p.access_organism_ids.as_slice().contains(id))
+        {
+            return Err(AppError::Forbidden(
+                "Доступ лише до свого організму".into(),
+            ));
+        }
+    }
+    for name in &req.access_logins {
+        if previous
+            .as_ref()
+            .is_some_and(|p| p.access_logins.as_slice().contains(name))
+        {
+            continue;
+        }
+        let user = login::Entity::find()
+            .filter(login::Column::Login.eq(name))
+            .one(db)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .context(h!())?;
+        if user.organism_id != Some(own) {
+            return Err(AppError::Forbidden(
+                "Доступ лише до своїх користувачів".into(),
+            ));
+        }
+    }
+    if let Some(id) = &req.maintainer_login_id {
+        if previous
+            .as_ref()
+            .and_then(|p| p.maintainer_login_id.as_ref())
+            != Some(id)
+        {
+            let user = login::Entity::find_by_id(Uuid::parse_str(id).c(h!())?)
+                .one(db)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .context(h!())?;
+            if user.organism_id != Some(own) {
+                return Err(AppError::Forbidden(
+                    "Відповідальний має належати своєму організму".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

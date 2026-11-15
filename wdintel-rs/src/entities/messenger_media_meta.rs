@@ -24,10 +24,29 @@ pub struct Model {
     pub telegram_media_type: Option<String>,
     pub external_created_at: Option<DateTime>,
     pub created_at: DateTime,
+    pub messenger_account_id: Uuid,
+    pub messenger_chat_id: Uuid,
+    pub messenger_sent_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::messenger_account::Entity",
+        from = "Column::MessengerAccountId",
+        to = "super::messenger_account::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    MessengerAccount,
+    #[sea_orm(
+        belongs_to = "super::messenger_chat::Entity",
+        from = "Column::MessengerChatId",
+        to = "super::messenger_chat::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    MessengerChat,
     #[sea_orm(
         belongs_to = "super::sigint_chat_message::Entity",
         from = "Column::SigintChatMessageId",
@@ -44,6 +63,18 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SignalMessageMedia,
+}
+
+impl Related<super::messenger_account::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAccount.def()
+    }
+}
+
+impl Related<super::messenger_chat::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerChat.def()
+    }
 }
 
 impl Related<super::sigint_chat_message::Entity> for Entity {

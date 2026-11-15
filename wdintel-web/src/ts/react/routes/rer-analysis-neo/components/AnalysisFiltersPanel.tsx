@@ -118,8 +118,13 @@ export function AnalysisFiltersPanel({
 
   const unitOptions = useMemo(() => {
     const optionsByValue = new Map(derived.unitsOptions.map((option) => [option.value, option]));
+    const selectedValues = new Set(queryState.unitsSelected);
     queryState.unitHierarchy?.parents.forEach((parent) => {
-      if (queryState.unitsSelected.includes(parent.value) && !optionsByValue.has(parent.value)) {
+      if (
+        (selectedValues.has(parent.value) ||
+          parent.aliases.some((alias) => selectedValues.has(alias))) &&
+        !optionsByValue.has(parent.value)
+      ) {
         optionsByValue.set(parent.value, { value: parent.value, label: parent.label, count: 0 });
       }
     });
@@ -130,14 +135,31 @@ export function AnalysisFiltersPanel({
     unitOptions,
     queryState.unitHierarchy,
   );
-  const derivedWithParents = { ...derived, unitsOptions: localParents.options };
+  const selectedUnitOptions = useMemo(() => {
+    const selectedValues = new Set(queryState.unitsSelected);
+    const selectedAliases = new Map(
+      queryState.unitHierarchy?.parents.map((parent) => [
+        parent.value,
+        parent.aliases.filter((alias) => selectedValues.has(alias)),
+      ]),
+    );
+    return localParents.options.map((option) => {
+      const aliases = selectedAliases.get(option.value) ?? [];
+      return aliases.length === 0
+        ? option
+        : {
+            ...option,
+            values: [...new Set([...(option.values ?? [option.value]), ...aliases])],
+          };
+    });
+  }, [localParents.options, queryState.unitHierarchy, queryState.unitsSelected]);
+  const derivedWithParents = { ...derived, unitsOptions: selectedUnitOptions };
   const countsWithParents = useMemo(() => {
     if (counts?.unitsCount == null) return counts;
-    const leafValues = new Set(derived.unitsOptions.map((option) => option.value));
     const parentCount =
       options.unitParentCount ??
-      localParents.options.filter((option) => option.count > 0 && !leafValues.has(option.value))
-        .length;
+      localParents.options.filter((option) => option.count > 0).length -
+        derived.unitsOptions.filter((option) => option.count > 0).length;
     return { ...counts, unitsCount: counts.unitsCount + parentCount };
   }, [counts, derived.unitsOptions, options.unitParentCount, localParents.options]);
 

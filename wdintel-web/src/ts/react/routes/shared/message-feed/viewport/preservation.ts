@@ -1,12 +1,12 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { WindowedFeedScrollRefs } from '../internal/internal.types';
-import type { AnchorSnapshot } from '../message-feed.types';
+import type { AnchorSnapshot, MessageFeedId } from '../message-feed.types';
 import type { useWindowedFeedScrollAnchors } from './anchors';
 
 export type MessageViewportCapture =
   | { position: 'leading-edge' }
   | { position: 'trailing-edge' }
-  | { position: 'message-anchor'; snapshot: AnchorSnapshot };
+  | { position: 'message-anchor'; snapshot: AnchorSnapshot<MessageFeedId> };
 
 export function useMessageFeedViewport({
   refs,

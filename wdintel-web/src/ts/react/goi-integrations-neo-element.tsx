@@ -1,18 +1,43 @@
+import { OrganismManagementContext } from './routes/admin-organisms-neo/management-context';
+import { hasRole } from './utils/roles';
+import { PowerAlert } from './components/PowerAlert';
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
 import { AdminGoiIntegrationsNeoPage } from './routes/admin-goi-integrations-neo';
 
-function GoiIntegrationsNeoRoot() {
+function GoiIntegrationsNeoRoot({ roles }: { roles: string[] }) {
   return (
     <NeoMuiThemeProvider>
-      <AdminGoiIntegrationsNeoPage />
+      <OrganismManagementContext.Provider value={{ globalAdmin: hasRole(roles, 'Admin') }}>
+        {hasRole(roles, 'OrganismAdmin') ? (
+          <AdminGoiIntegrationsNeoPage />
+        ) : (
+          <PowerAlert severity="error">Немає доступу до ГОІ.</PowerAlert>
+        )}
+      </OrganismManagementContext.Provider>
     </NeoMuiThemeProvider>
   );
 }
 
 class GoiIntegrationsNeoElement extends HTMLElement {
   private root: Root | null = null;
+
+  static get observedAttributes() {
+    return ['data-auth-user-id', 'data-auth-user-roles'];
+  }
+  attributeChangedCallback() {
+    this.render();
+  }
+  private render() {
+    const roles = this.getAttribute('data-auth-user-roles')?.split(',') ?? [];
+    this.root?.render(
+      <GoiIntegrationsNeoRoot
+        key={`${this.getAttribute('data-auth-user-id')}:${roles.join(',')}`}
+        roles={roles}
+      />,
+    );
+  }
 
   connectedCallback() {
     if (!this.root) {
@@ -22,7 +47,7 @@ class GoiIntegrationsNeoElement extends HTMLElement {
       this.root = createRoot(this);
     }
 
-    this.root.render(<GoiIntegrationsNeoRoot />);
+    this.render();
   }
 
   disconnectedCallback() {

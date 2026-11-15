@@ -68,6 +68,10 @@ pub enum Relation {
     OrganismGroup,
     #[sea_orm(has_many = "super::organism_keyword_set::Entity")]
     OrganismKeywordSet,
+    #[sea_orm(has_many = "super::organism_message_stats_exclusion::Entity")]
+    OrganismMessageStatsExclusion,
+    #[sea_orm(has_many = "super::organism_user_label::Entity")]
+    OrganismUserLabel,
     #[sea_orm(has_many = "super::palitra_access_organism::Entity")]
     PalitraAccessOrganism,
     #[sea_orm(has_many = "super::secret_group_organism::Entity")]
@@ -137,6 +141,18 @@ impl Related<super::organism_group::Entity> for Entity {
 impl Related<super::organism_keyword_set::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::OrganismKeywordSet.def()
+    }
+}
+
+impl Related<super::organism_message_stats_exclusion::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrganismMessageStatsExclusion.def()
+    }
+}
+
+impl Related<super::organism_user_label::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrganismUserLabel.def()
     }
 }
 

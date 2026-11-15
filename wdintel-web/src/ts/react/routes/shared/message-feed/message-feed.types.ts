@@ -1,5 +1,8 @@
 import type { MutableRefObject, RefObject, UIEventHandler } from 'react';
 
+/** Opaque item key. The feed only compares ids, so a host may use numbers or strings, not both. */
+export type MessageFeedId = number | string;
+
 export type MessageFeedPolicy = {
   initialPosition: 'start' | 'end';
   followAtBottom: boolean;
@@ -13,16 +16,16 @@ export type MessageFeedPolicy = {
   deferResizeWhileLoadingBelow?: boolean;
 };
 
-export type MessageFeedFocus = {
-  messageId: number;
+export type MessageFeedFocus<Id extends MessageFeedId = number> = {
+  messageId: Id;
   active: boolean;
   constrainToContent?: boolean;
   behavior?: ScrollBehavior;
   onRelease?: () => void;
 };
 
-export type MessageFeedNavigationTarget = {
-  messageId: number;
+export type MessageFeedNavigationTarget<Id extends MessageFeedId = number> = {
+  messageId: Id;
   alignment: 'start';
   onAligned: () => void;
 };
@@ -47,13 +50,13 @@ export type FeedScrollMetrics = {
   loadOlderTriggered: boolean;
   loadNewerTriggered: boolean;
   visibleAnchorCount: number;
-  firstVisibleId: number | null;
-  lastVisibleId: number | null;
-  anchorId: number | null;
+  firstVisibleId: MessageFeedId | null;
+  lastVisibleId: MessageFeedId | null;
+  anchorId: MessageFeedId | null;
   anchorOffsetTop: number | null;
   itemCount: number;
-  firstItemId: number | null;
-  lastItemId: number | null;
+  firstItemId: MessageFeedId | null;
+  lastItemId: MessageFeedId | null;
   enabled: boolean;
   isWatchMode: boolean;
   overflowAnchor: string;
@@ -66,18 +69,18 @@ export type FeedScrollDiagnostics = {
   metrics: (feedId: string, metrics: FeedScrollMetrics) => void;
 };
 
-export type WindowedFeedScrollItem = { id: number };
+export type WindowedFeedScrollItem = { id: MessageFeedId };
 
-export type VisibleAnchor = {
-  id: number;
+export type VisibleAnchor<Id extends MessageFeedId = number> = {
+  id: Id;
   index: number;
   offsetTop: number;
 };
 
-export type AnchorSnapshot = {
-  anchors: VisibleAnchor[];
-  itemOffsets: Map<number, number>;
-  itemIds: readonly number[];
+export type AnchorSnapshot<Id extends MessageFeedId = number> = {
+  anchors: VisibleAnchor<Id>[];
+  itemOffsets: Map<Id, number>;
+  itemIds: readonly Id[];
   scrollTop: number;
   scrollHeight: number;
   clientWidth?: number;
@@ -94,7 +97,7 @@ export enum ScrollNavigationIntent {
 export type ExplicitScrollNavigation = {
   feedId: string;
   generation: number;
-  targetId: number;
+  targetId: MessageFeedId;
   isCurrent: () => boolean;
   onLanded: () => void;
   onUnavailable: () => void;
@@ -106,22 +109,22 @@ export type ReachedBottomContext = {
   navigationIntent: ScrollNavigationIntent | null;
 };
 
-export type UseWindowedFeedScrollOptions = {
+export type UseWindowedFeedScrollOptions<Id extends MessageFeedId = number> = {
   diagnostics?: FeedScrollDiagnostics;
   policy?: MessageFeedPolicy;
-  focus?: MessageFeedFocus | null;
-  navigationTarget?: MessageFeedNavigationTarget | null;
+  focus?: MessageFeedFocus<Id> | null;
+  navigationTarget?: MessageFeedNavigationTarget<Id> | null;
   viewportPreservationKey?: number;
   onViewportCaptureChange?: (capture: (() => void) | null) => void;
-  onFirstVisibleMessage?: (id: number, index: number) => void;
-  onVisibleMessages?: (ids: readonly number[]) => void;
+  onFirstVisibleMessage?: (id: Id, index: number) => void;
+  onVisibleMessages?: (ids: readonly Id[]) => void;
   loadEdgesOnLayout?: boolean;
   edgeLoadRetryKey?: string | number;
   positionResetKey?: string | number;
   preservePositionOnReset?: boolean;
-  itemIds: readonly number[];
-  initialAnchorSnapshot?: AnchorSnapshot | null;
-  onAnchorSnapshotChange?: (snapshot: AnchorSnapshot | null) => void;
+  itemIds: readonly Id[];
+  initialAnchorSnapshot?: AnchorSnapshot<Id> | null;
+  onAnchorSnapshotChange?: (snapshot: AnchorSnapshot<Id> | null) => void;
   loadingOlder: boolean;
   loadingNewer?: boolean;
   hasReachedStart: boolean;
@@ -133,7 +136,7 @@ export type UseWindowedFeedScrollOptions = {
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
   onPhysicalBottomChange?: (atBottom: boolean) => void;
-  onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
+  onVisibleMessageIds?: (lastVisibleId: Id, opts?: { atBottom?: boolean }) => void;
   topLoadBufferPx?: number;
   bottomLoadBufferPx?: number;
   atBottomThresholdPx?: number;
@@ -154,35 +157,35 @@ export type UseWindowedFeedScrollOptions = {
   pendingNewerFlushNeeded?: boolean;
   onFlushPendingNewer?: (context: {
     physicallyAtBottom: boolean;
-    visibleAnchorIds: readonly number[];
+    visibleAnchorIds: readonly Id[];
   }) => void | Promise<unknown>;
 };
 
-export type MessageFeedScrollOptions = Omit<
-  UseWindowedFeedScrollOptions,
+export type MessageFeedScrollOptions<Id extends MessageFeedId = number> = Omit<
+  UseWindowedFeedScrollOptions<Id>,
   'itemIds' | 'loadingOlder' | 'loadingNewer'
 >;
 
-export type WindowedFeedScrollHandle = {
+export type WindowedFeedScrollHandle<Id extends MessageFeedId = number> = {
   bottomSpacerPx: number;
-  getItemElement: (id: number) => HTMLElement | null;
+  getItemElement: (id: Id) => HTMLElement | null;
   scrollerRef: RefObject<HTMLDivElement>;
   listRef: MutableRefObject<HTMLElement | null>;
   handleScroll: UIEventHandler<HTMLDivElement>;
-  setItemRef: (id: number) => (node: HTMLElement | null) => void;
+  setItemRef: (id: Id) => (node: HTMLElement | null) => void;
   scrollToBottom: (
     behavior?: ScrollBehavior,
     intent?: ScrollNavigationIntent,
     navigation?: ExplicitScrollNavigation,
   ) => void;
-  scrollToItem: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
+  scrollToItem: (id: Id, behavior?: ScrollBehavior) => HTMLElement | null;
 };
 
-export type MessageFeedHandle = {
-  scrollToBottom: WindowedFeedScrollHandle['scrollToBottom'];
-  scrollToMessage: WindowedFeedScrollHandle['scrollToItem'];
-  highlightLinkedMessage: (id: number) => boolean;
-  getItemElement: WindowedFeedScrollHandle['getItemElement'];
+export type MessageFeedHandle<Id extends MessageFeedId = number> = {
+  scrollToBottom: WindowedFeedScrollHandle<Id>['scrollToBottom'];
+  scrollToMessage: WindowedFeedScrollHandle<Id>['scrollToItem'];
+  highlightLinkedMessage: (id: Id) => boolean;
+  getItemElement: WindowedFeedScrollHandle<Id>['getItemElement'];
   getScrollerElement: () => HTMLDivElement | null;
   getBottomSpacerPx: () => number;
 };

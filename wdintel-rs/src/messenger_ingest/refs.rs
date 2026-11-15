@@ -1,5 +1,6 @@
 use crate::config::{
-    MESSENGER_INGEST_MESSENGER_TYPES, MESSENGER_TYPE_TELEGRAM,
+    MESSENGER_INGEST_EXTERNAL_URL_MAX_LEN, MESSENGER_INGEST_MESSENGER_TYPES,
+    MESSENGER_TYPE_TELEGRAM,
 };
 use crate::entities::{
     messenger_account, messenger_chat, messenger_chat_member, messenger_contact,
@@ -89,6 +90,44 @@ pub(crate) fn ensure_provider_fields(
         });
     }
     Ok(())
+}
+
+/// An account link as stored: `None` for an absent or blank value,
+/// otherwise the normalized absolute http(s) URL. Anything else is
+/// rejected, since the UI renders the link as a clickable anchor.
+pub(crate) fn normalize_external_url(
+    external_url: Option<&str>,
+) -> Result<Option<String>, AppError> {
+    let Some(external_url) = external_url
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    let max_len = MESSENGER_INGEST_EXTERNAL_URL_MAX_LEN;
+    if external_url.len() > max_len {
+        return Err(AppError::BL {
+            msg: format!("external_url is longer than {max_len} bytes"),
+        });
+    }
+    let url = url::Url::parse(external_url).ok().filter(|url| {
+        matches!(url.scheme(), "http" | "https")
+            && url.username().is_empty()
+            && url.password().is_none()
+    });
+    let Some(url) = url else {
+        return Err(AppError::BL {
+            msg: format!(
+                "external_url must be an http(s) URL without credentials: {external_url}"
+            ),
+        });
+    };
+    if url.as_str().len() > max_len {
+        return Err(AppError::BL {
+            msg: format!("external_url is longer than {max_len} bytes"),
+        });
+    }
+    Ok(Some(String::from(url)))
 }
 
 /// Rejects a `created` collection that names one `external_id` twice: a
@@ -329,6 +368,46 @@ pub(crate) async fn find_scoped_account_by_external_id(
 mod tests {
     use super::*;
     use crate::config::MESSENGER_TYPE_MAX;
+
+    #[test]
+    fn external_url_is_blank_or_a_normalized_http_url() {
+        for blank in [None, Some(""), Some("  \n")] {
+            assert_eq!(normalize_external_url(blank).unwrap(), None);
+        }
+        for (input, stored) in [
+            (
+                "https://example.com/accounts/1",
+                "https://example.com/accounts/1",
+            ),
+            ("  HTTP://Example.COM/a?b=1 ", "http://example.com/a?b=1"),
+            ("https://example.com", "https://example.com/"),
+        ] {
+            assert_eq!(
+                normalize_external_url(Some(input)).unwrap().as_deref(),
+                Some(stored)
+            );
+        }
+        let too_long = format!(
+            "https://example.com/{}",
+            "a".repeat(MESSENGER_INGEST_EXTERNAL_URL_MAX_LEN)
+        );
+        for bad in [
+            "/accounts/1",
+            "example.com/accounts/1",
+            "javascript:alert(1)",
+            "ftp://example.com",
+            "https://user:pass@example.com",
+            too_long.as_str(),
+        ] {
+            assert!(
+                matches!(
+                    normalize_external_url(Some(bad)),
+                    Err(AppError::BL { .. })
+                ),
+                "{bad}"
+            );
+        }
+    }
 
     #[test]
     fn created_external_ids_must_be_unique() {

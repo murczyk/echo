@@ -1,22 +1,24 @@
+import type { MessageFeedId } from './message-feed.types';
+
 export type MessageWindowResult<T> = {
   items: T[];
   addedItems: T[];
   removedItems: T[];
 };
 
-type MessageWindowOptions<T> = {
+type MessageWindowOptions<T, Id extends MessageFeedId> = {
   limit: number;
-  getId: (item: T) => number;
+  getId: (item: T) => Id;
   order?: (items: T[]) => T[];
 };
 
-export function mergeMessageWindow<T>(
+export function mergeMessageWindow<T, Id extends MessageFeedId = number>(
   existing: readonly T[],
   incoming: readonly T[],
   edge: 'above' | 'below',
-  { limit, getId, order }: MessageWindowOptions<T>,
+  { limit, getId, order }: MessageWindowOptions<T, Id>,
 ): MessageWindowResult<T> {
-  const seen = new Set<number>();
+  const seen = new Set<Id>();
   const uniqueExisting = existing.filter((item) => {
     const id = getId(item);
     if (seen.has(id)) return false;

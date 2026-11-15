@@ -16,6 +16,13 @@ sources:
     ignore_older_secs: 3600
     glob_minimum_cooldown_ms: 10000
     rotate_wait_secs: 3600
+  # nginx sends only the response status here as one syslog datagram per response
+  # (deploy/nginx/*: `access_log syslog:server=127.0.0.1:5140,...`). Responses
+  # are counted in memory and never written to disk on the host.
+  nginx_status:
+    type: socket
+    mode: udp
+    address: 127.0.0.1:5140
 transforms:
   parse_logs:
     type: remap
@@ -80,11 +87,49 @@ transforms:
       - parse_postgresql_logs
     condition: |
       .postgresql_log_kind != "temp_file" || (to_int(.postgresql_temp_file_size_bytes) ?? 0) >= 104857600
+  nginx_status_parse:
+    type: remap
+    inputs:
+      - nginx_status
+    drop_on_error: true
+    drop_on_abort: true
+    source: |
+      # nginx sends "<190>Nov 14 08:00:00 nginx_access: 502".
+      parsed, err = parse_regex(to_string(.message) ?? "", r'nginx_access: (?P<status>\d{3})\s*$')
+      if err != null {
+        abort
+      }
+      status_class = slice!(parsed.status, 0, 1)
+      . = {}
+      .nginx_responses = 1
+      .nginx_2xx = to_int(status_class == "2")
+      .nginx_3xx = to_int(status_class == "3")
+      .nginx_4xx = to_int(status_class == "4")
+      .nginx_5xx = to_int(status_class == "5")
+  # One row per host per minute: every count in a row covers the same interval,
+  # so a rate computed from one row's fields is never split across buckets.
+  nginx_status_minute:
+    type: reduce
+    inputs:
+      - nginx_status_parse
+    end_every_period_ms: 60000
+  nginx_status_prepare:
+    type: remap
+    inputs:
+      - nginx_status_minute
+    source: |
+      .host = get_hostname!()
+      ._SYSTEMD_UNIT = "nginx.service"
+      .source_type = "nginx_status"
+      .message = "nginx responses total=" + (to_string(.nginx_responses) ?? "?") +
+        " 2xx=" + (to_string(.nginx_2xx) ?? "?") + " 3xx=" + (to_string(.nginx_3xx) ?? "?") +
+        " 4xx=" + (to_string(.nginx_4xx) ?? "?") + " 5xx=" + (to_string(.nginx_5xx) ?? "?")
   signoz_gate:
     type: remap
     inputs:
       - parse_logs
       - postgresql_filter
+      - nginx_status_prepare
     source: |
       ._send_to_signoz = downcase(get_env_var("SIGNOZ_LOGS_ENABLED") ?? "false") == "true"
       ._signoz_logs_endpoint = strip_whitespace(get_env_var("SIGNOZ_LOGS_ENDPOINT") ?? "")

@@ -1,5 +1,6 @@
 export type UserRole =
   | 'Admin'
+  | 'OrganismAdmin'
   | 'Api'
   | 'ApiAgent'
   | 'Full'
@@ -16,12 +17,15 @@ export type UserRole =
   | 'AdvancedReports'
   | 'NoAutoLogout'
   | 'No2FA'
-  | 'MessengerIngest';
+  | 'MessengerIngest'
+  | 'CyberMessengers';
 
 export function hasRole(roles: readonly string[] | null | undefined, role: UserRole): boolean {
   const has = (target: UserRole) => Boolean(roles?.includes(target));
 
   switch (role) {
+    case 'OrganismAdmin':
+      return has('Admin') || has('OrganismAdmin');
     case 'Admin':
       return has('Admin');
     case 'Api':
@@ -67,6 +71,8 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('No2FA');
     case 'MessengerIngest':
       return has('MessengerIngest');
+    case 'CyberMessengers':
+      return has('CyberMessengers'); // TODO: ADD ADMIN ONCE ANALYSIS MESSENGERS FEATURE IS FULLY COVERED
   }
 }
 

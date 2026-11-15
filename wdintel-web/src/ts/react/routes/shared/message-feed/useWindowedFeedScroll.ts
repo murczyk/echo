@@ -22,6 +22,7 @@ import {
 import type { ScrollStateOpts, TopStatus } from './internal/internal.types';
 import {
   ScrollNavigationIntent,
+  type MessageFeedId,
   type UseWindowedFeedScrollOptions,
   type WindowedFeedScrollHandle,
 } from './message-feed.types';
@@ -32,8 +33,8 @@ export type {
   WindowedFeedScrollItem,
 } from './message-feed.types';
 
-export function useWindowedFeedScroll({
-  itemIds,
+export function useWindowedFeedScroll<Id extends MessageFeedId = number>({
+  itemIds: itemIdsOfHost,
   diagnostics,
   policy,
   focus,
@@ -72,7 +73,9 @@ export function useWindowedFeedScroll({
   unreadPrefetchNeeded = true,
   pendingNewerFlushNeeded = false,
   onFlushPendingNewer,
-}: UseWindowedFeedScrollOptions): WindowedFeedScrollHandle {
+}: UseWindowedFeedScrollOptions<Id>): WindowedFeedScrollHandle<Id> {
+  // The feed only compares ids, so internally they are plain `MessageFeedId`s.
+  const itemIds: readonly MessageFeedId[] = itemIdsOfHost;
   autoScrollAllowed = autoScrollAllowed && (policy?.followAtBottom ?? true);
   const initialPosition = policy?.initialPosition ?? 'end';
   const underfilledEdgeLoading = policy?.underfilledEdgeLoading ?? true;
@@ -82,7 +85,7 @@ export function useWindowedFeedScroll({
   const debugEnabled = diagnostics?.enabled ?? false;
   const focusRef = useRef(focus);
   focusRef.current = focus;
-  const releasedFocusRef = useRef<number | null>(null);
+  const releasedFocusRef = useRef<MessageFeedId | null>(null);
   const topStatus: TopStatus = loadingOlder
     ? 'loading'
     : hasReachedStart
@@ -130,7 +133,7 @@ export function useWindowedFeedScroll({
     };
   });
 
-  const refCacheRef = useRef<Map<number, (node: HTMLElement | null) => void>>(new Map());
+  const refCacheRef = useRef<Map<MessageFeedId, (node: HTMLElement | null) => void>>(new Map());
   useLayoutEffect(() => {
     const activeIds = new Set(itemIds);
     for (const id of refCacheRef.current.keys()) {
@@ -239,7 +242,7 @@ export function useWindowedFeedScroll({
       debugFeedId,
     });
 
-  const directItemTargetIdRef = useRef<number | null>(null);
+  const directItemTargetIdRef = useRef<MessageFeedId | null>(null);
   const directItemCenterRafRef = useRef<number | null>(null);
   const itemMotionRef = useRef<{ from: number; startedAt: number } | null>(null);
   const { bottomSpacerPx, bottomSpacerRef, setBottomSpacerPx, reconcileBottomSpacer } =
@@ -355,7 +358,7 @@ export function useWindowedFeedScroll({
   );
 
   const scrollToItem = useCallback(
-    (id: number, behavior: ScrollBehavior = 'auto') => {
+    (id: MessageFeedId, behavior: ScrollBehavior = 'auto') => {
       if (!refs.enabledRef.current) return null;
       const scroller = refs.scrollerRef.current;
       const target = refs.itemRefsRef.current.get(id);
@@ -544,7 +547,7 @@ export function useWindowedFeedScroll({
   });
 
   const setItemRef = useCallback(
-    (id: number) => {
+    (id: MessageFeedId) => {
       let cb = refCacheRef.current.get(id);
       if (!cb) {
         cb = (node: HTMLElement | null) => {
@@ -561,7 +564,7 @@ export function useWindowedFeedScroll({
     [refs],
   );
 
-  const scrollToBottom = useCallback<WindowedFeedScrollHandle['scrollToBottom']>(
+  const scrollToBottom = useCallback<WindowedFeedScrollHandle<Id>['scrollToBottom']>(
     (behavior, intent = ScrollNavigationIntent.Explicit, navigation) => {
       if (intent === ScrollNavigationIntent.Explicit) releaseMessageFocus();
       stopDirectItemTracking();
@@ -573,7 +576,7 @@ export function useWindowedFeedScroll({
     [follow, refs, releaseMessageFocus, stopDirectItemTracking, stopPendingAnchorRestore, viewport],
   );
   const getItemElement = useCallback(
-    (id: number) => refs.itemRefsRef.current.get(id) ?? null,
+    (id: MessageFeedId) => refs.itemRefsRef.current.get(id) ?? null,
     [refs],
   );
 

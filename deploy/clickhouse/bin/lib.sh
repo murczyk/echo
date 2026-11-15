@@ -571,7 +571,9 @@ analytics_desired_state_id() {
         'signal_message',
         'signal_message_group',
         'sigint_inbox_item_tag',
-        'sigint_inbox_item_network'
+        'sigint_inbox_item_network',
+        'sigint_inbox_item_unit',
+        'sigint_inbox_item_callsign'
       )
     ORDER BY name
   ")

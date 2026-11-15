@@ -28,7 +28,9 @@ function safeDecodeURIComponent(value: string): string | null {
   }
 }
 
-export function collectMessageImages(msg: InboxMessage): MessageCardImage[] {
+export function collectMessageImages(
+  msg: Pick<InboxMessage, 'images' | 'media'>,
+): MessageCardImage[] {
   const imagesByHref = new Map<string, MessageCardImage>();
 
   const add = (image: MessageCardImage) => {

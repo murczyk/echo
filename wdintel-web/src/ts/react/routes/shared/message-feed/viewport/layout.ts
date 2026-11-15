@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
-import { areNumberArraysEqual, hasViewportSizeChanged, nowMs } from '../internal/scroll-math';
+import { areIdArraysEqual, hasViewportSizeChanged, nowMs } from '../internal/scroll-math';
 import type { FeedLayoutOptions } from '../internal/internal.types';
 import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import { ScrollNavigationIntent } from '../message-feed.types';
@@ -163,7 +163,7 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
       return;
     }
 
-    const itemsChanged = !areNumberArraysEqual(refs.previousItemIdsRef.current, currentItemIds);
+    const itemsChanged = !areIdArraysEqual(refs.previousItemIdsRef.current, currentItemIds);
     if (itemsChanged || topStatusChanged) {
       stopPendingAnchorRestore();
       if (directItemTargetIdRef.current !== null) {

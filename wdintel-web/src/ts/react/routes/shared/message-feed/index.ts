@@ -1,6 +1,16 @@
-export { MessageFeed, MessageFeedRows, shouldShowNewestNavigation } from './MessageFeed';
-export type { MessageFeedNewestNavigation, MessageFeedProps } from './MessageFeed';
+export {
+  MessageFeed,
+  MessageFeedRows,
+  shouldShowNewestNavigation,
+  shouldShowOldestNavigation,
+} from './MessageFeed';
+export type {
+  MessageFeedNewestNavigation,
+  MessageFeedOldestNavigation,
+  MessageFeedProps,
+} from './MessageFeed';
 export { MessageFeedItem } from './MessageFeedItem';
+export { MessageFeedScrollFab } from './MessageFeedScrollFab';
 export { MessageFeedSkeletons } from './MessageFeedSkeletons';
 export {
   FEED_FOLLOW_LAYOUT_STABLE_FRAMES,
@@ -14,6 +24,7 @@ export { ScrollNavigationIntent } from './message-feed.types';
 export type {
   AnchorSnapshot,
   MessageFeedHandle,
+  MessageFeedId,
   MessageFeedScrollOptions,
   ExplicitScrollNavigation,
   ReachedBottomContext,

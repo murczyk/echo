@@ -1,0 +1,61 @@
+SeaORM 2.0 drops index expressions and mistakes the remaining organism_id
+for a unique key. Preserve the real composite key and many-label relation,
+and retain the existing organism-to-group relation after regeneration.
+
+diff --git a/wdintel-rs/src/entities/organism_user_label.rs b/wdintel-rs/src/entities/organism_user_label.rs
+--- a/wdintel-rs/src/entities/organism_user_label.rs
++++ b/wdintel-rs/src/entities/organism_user_label.rs
+@@ -13,7 +13,7 @@
+         unique_key = "organism_user_label_id_organism_id_key"
+     )]
+     pub id: i64,
+-    #[sea_orm(unique)]
++    #[sea_orm(unique_key = "organism_user_label_id_organism_id_key")]
+     pub organism_id: i64,
+     #[sea_orm(column_type = "Text")]
+     pub name: String,
+diff --git a/wdintel-rs/src/entities/organism.rs b/wdintel-rs/src/entities/organism.rs
+--- a/wdintel-rs/src/entities/organism.rs
++++ b/wdintel-rs/src/entities/organism.rs
+@@ -70,7 +70,7 @@
+     OrganismKeywordSet,
+     #[sea_orm(has_many = "super::organism_message_stats_exclusion::Entity")]
+     OrganismMessageStatsExclusion,
+-    #[sea_orm(has_one = "super::organism_user_label::Entity")]
++    #[sea_orm(has_many = "super::organism_user_label::Entity")]
+     OrganismUserLabel,
+     #[sea_orm(has_many = "super::palitra_access_organism::Entity")]
+     PalitraAccessOrganism,
+@@ -168,12 +168,6 @@
+     }
+ }
+ 
+-impl Related<super::sigint_group_sender_organism::Entity> for Entity {
+-    fn to() -> RelationDef {
+-        Relation::SigintGroupSenderOrganism.def()
+-    }
+-}
+-
+ impl Related<super::sigint_network_encryption_key::Entity> for Entity {
+     fn to() -> RelationDef {
+         Relation::SigintNetworkEncryptionKey.def()
+@@ -186,4 +180,19 @@
+     }
+ }
+ 
++impl Related<super::signal_group::Entity> for Entity {
++    fn to() -> RelationDef {
++        super::organism_group::Relation::SignalGroup.def()
++    }
++    fn via() -> Option<RelationDef> {
++        Some(super::organism_group::Relation::Organism.def().rev())
++    }
++}
++
++impl Related<super::sigint_group_sender_organism::Entity> for Entity {
++    fn to() -> RelationDef {
++        Relation::SigintGroupSenderOrganism.def()
++    }
++}
++
+ impl ActiveModelBehavior for ActiveModel {}

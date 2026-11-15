@@ -1,4 +1,4 @@
-import type { AnchorSnapshot } from '../message-feed.types';
+import type { AnchorSnapshot, MessageFeedId } from '../message-feed.types';
 
 export const DEFAULT_TOP_LOAD_BUFFER_PX = 160;
 export const DEFAULT_BOTTOM_LOAD_BUFFER_PX = 320;
@@ -11,7 +11,10 @@ export const LOAD_NEWER_SCROLL_IDLE_MS = 140;
 /** Same idle gate: push buffered newer pages into the DOM only when the finger stops. */
 export const FLUSH_PENDING_SCROLL_IDLE_MS = LOAD_NEWER_SCROLL_IDLE_MS;
 
-export function areNumberArraysEqual(a: readonly number[], b: readonly number[]): boolean {
+export function areIdArraysEqual(
+  a: readonly MessageFeedId[],
+  b: readonly MessageFeedId[],
+): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   if (a.length === 0) return true;
@@ -28,7 +31,7 @@ export function distanceToBottom(el: HTMLElement): number {
 
 export function hasViewportSizeChanged(
   scroller: HTMLElement,
-  snapshot: AnchorSnapshot | null,
+  snapshot: AnchorSnapshot<MessageFeedId> | null,
 ): boolean {
   return (
     snapshot !== null &&

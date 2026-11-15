@@ -19,8 +19,21 @@ import traceback
 
 AGENT_HOST = 'echo@echo-ai-agent-vm.eagle-atria.ts.net'
 AGENT_HOSTNAME = 'echo-ai-agent-vm.eagle-atria.ts.net'
+AGENT_HOSTNAME_RE = re.compile(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$')
+
+
+def extra_agent_hostnames(value):
+    """Operator-owned agent VMs from ECHO_AI_AGENT_HOSTS (comma or space separated)."""
+    hostnames = [item.strip().lower() for item in re.split(r'[\s,]+', value or '') if item.strip()]
+    invalid = [hostname for hostname in hostnames if not AGENT_HOSTNAME_RE.fullmatch(hostname)]
+    if invalid:
+        raise ValueError('ECHO_AI_AGENT_HOSTS must list bare hostnames: ' + ', '.join(invalid))
+    return hostnames
+
+
 AGENT_CONNECTIONS = {hostname: 'echo@' + hostname for hostname in (
-    AGENT_HOSTNAME, 'echo-ai-agents-ua.eagle-atria.ts.net')}
+    AGENT_HOSTNAME, 'echo-ai-agents-ua.eagle-atria.ts.net',
+    *extra_agent_hostnames(os.environ.get('ECHO_AI_AGENT_HOSTS')))}
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=yes']
 HOST_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,252}$')
 SCAN_TIMEOUT = 35
