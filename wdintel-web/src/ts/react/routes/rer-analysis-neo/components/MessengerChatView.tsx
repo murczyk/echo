@@ -334,6 +334,8 @@ export function MessengerChatView({
         {span != null && chat.unreadCount > 0 ? (
           <Button
             size="small"
+            // On a phone the title is what gives way: the button is smaller (font, padding) and never wraps.
+            className="shrink-0 !whitespace-nowrap group-data-[mobile=true]/messenger:!min-w-0 group-data-[mobile=true]/messenger:!px-1 group-data-[mobile=true]/messenger:!text-[11px] group-data-[mobile=true]/messenger:!leading-4"
             disabled={chatState.jumpingToUnread}
             onClick={() => void goToUnread()}
             data-messenger-go-to-unread

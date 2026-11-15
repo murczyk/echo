@@ -754,9 +754,10 @@ function CollapsedSidebar({
                             count={chat.unreadCount}
                             className={`pointer-events-none absolute !px-1 !leading-4 ring-2 ring-[var(--echo-color-background,#1f1f1f)] ${
                               // One character is a small circle: it sits further in, so it overlaps the avatar like the wider ones.
+                              // (`bottom-[0px]`, not `bottom-0`: Bootstrap's `.bottom-0` is `!important` and would beat the phone offset.)
                               formatCompactCount(chat.unreadCount).length === 1
-                                ? 'right-0.5 bottom-0 min-w-4 text-center'
-                                : '-right-1.5 -bottom-1'
+                                ? 'right-0.5 bottom-[0px] min-w-4 text-center group-data-[mobile=true]/sidebar:-bottom-[0.4rem]'
+                                : '-right-1.5 -bottom-1 group-data-[mobile=true]/sidebar:-bottom-2'
                             }`}
                           />
                         </span>
