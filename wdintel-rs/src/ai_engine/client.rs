@@ -5,9 +5,10 @@ use super::metrics::{
 use super::{cooldown::ProviderCooldown, gov};
 use crate::config::{
     AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_ENGINE_BLOCKED_OPENAI_DOMAIN, AI_ENGINE_GLM_5_3_MODEL,
-    AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE, AI_GOV_UA_API_HOST,
-    AI_GOV_UA_AUTH_BASE, AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC,
+    AI_AGENT_OPENAI_GPT_LUNA, AI_ENGINE_BLOCKED_OPENAI_DOMAIN,
+    AI_ENGINE_GLM_5_3_MODEL, AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE,
+    AI_GOV_UA_API_HOST, AI_GOV_UA_AUTH_BASE, AI_GOV_UA_PROXY_HEADERS,
+    AI_GOV_UA_PROXY_MODEL_PREFIX, AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC,
     AI_GOV_UA_TOKEN_REQUEST_TIMEOUT_SEC,
 };
 use crate::entities::{ai_engine, ai_gov_ua_settings};
@@ -182,14 +183,14 @@ impl AiEngineClient {
         responses: bool,
         attempt: &mut ProviderCallAttempt,
     ) -> anyhow::Result<reqwest::Response> {
-        if !is_government_url(&engine.url) {
+        let Some(model) = government_model(engine) else {
             attempt.mark_provider_start();
             return self
                 .send_agent_request_inner(engine, body, timeout, responses)
                 .await
                 .c(h!());
-        }
-        let cooldown = self.government_cooldown(&engine.model_name).await;
+        };
+        let cooldown = self.government_cooldown(model).await;
         let deadline = tokio::time::Instant::now() + timeout;
         tokio::time::timeout_at(deadline, async {
             cooldown.wait().await;
@@ -257,12 +258,37 @@ impl AiEngineClient {
             endpoint.host_str() != Some(AI_GOV_UA_API_HOST),
             "Некоректний URL державного шлюзу ШІ"
         );
+        let proxy = is_government_proxy(engine);
+        if proxy {
+            anyhow::ensure!(
+                engine.token.is_some(),
+                gov::GovernmentCheckError(
+                    "Вкажіть ключ проксі державного шлюзу ШІ як токен движка"
+                        .into()
+                )
+            );
+            if !responses {
+                adapt_government_request(model_id(engine), &mut body);
+            }
+            // The agent runner sends the model without the proxy prefix.
+            if let Some(body) = body.as_object_mut() {
+                body.insert(
+                    "model".to_string(),
+                    Value::String(engine.model_name.clone()),
+                );
+            }
+        }
         let mut request = self
             .http
             .post(endpoint)
             .timeout(timeout)
             .header(reqwest::header::ACCEPT, response_content_type(Some(&body)))
             .json(&body);
+        if proxy {
+            for (name, value) in AI_GOV_UA_PROXY_HEADERS {
+                request = request.header(*name, *value);
+            }
+        }
         if let Some(token) = engine.token.as_deref() {
             request = request.bearer_auth(token);
         }
@@ -468,8 +494,91 @@ fn response_content_type(body: Option<&Value>) -> &'static str {
 }
 
 pub(super) fn is_government_glm(engine: &ai_engine::Model) -> bool {
-    engine.model_name == AI_ENGINE_GLM_5_3_MODEL
-        && is_government_url(&engine.url)
+    government_model(engine) == Some(AI_ENGINE_GLM_5_3_MODEL)
+}
+
+/// The government gateway's model an engine serves: the stored name on the
+/// gateway itself, or the name after the proxy prefix on an engine that
+/// reaches the gateway through a proxy holding its credentials.
+pub fn government_model(engine: &ai_engine::Model) -> Option<&str> {
+    if is_government_url(&engine.url) {
+        return Some(&engine.model_name);
+    }
+    proxied_government_model(engine)
+}
+
+/// The model name provider quirks and the agent runner see: the government
+/// model without the proxy prefix, otherwise the stored name.
+pub fn model_id(engine: &ai_engine::Model) -> &str {
+    government_model(engine).unwrap_or(&engine.model_name)
+}
+
+pub fn is_government_proxy(engine: &ai_engine::Model) -> bool {
+    proxied_government_model(engine).is_some()
+}
+
+/// Whether a government engine can serve requests now: through a proxy it
+/// needs the proxy's key, directly it needs the enabled Azure gateway.
+pub fn government_route_available(
+    engine: &ai_engine::Model,
+    gateway_enabled: bool,
+) -> bool {
+    if is_government_proxy(engine) {
+        engine.token.is_some()
+    } else {
+        gateway_enabled && is_government_url(&engine.url)
+    }
+}
+
+fn proxied_government_model(engine: &ai_engine::Model) -> Option<&str> {
+    let model = engine
+        .model_name
+        .strip_prefix(AI_GOV_UA_PROXY_MODEL_PREFIX)
+        .filter(|model| !model.is_empty())?;
+    let url = Url::parse(&engine.url).ok()?;
+    let host = url.host_str()?.trim_end_matches('.');
+    (matches!(url.scheme(), "http" | "https")
+        && host != AI_GOV_UA_API_HOST
+        && !is_direct_openai_url(&url))
+    .then_some(model)
+}
+
+/// An enabled engine for tests of model and route decisions.
+#[cfg(test)]
+pub(crate) fn test_engine(
+    url: &str,
+    model_name: &str,
+    token: Option<&str>,
+) -> ai_engine::Model {
+    let now = chrono::Utc::now().naive_utc();
+    ai_engine::Model {
+        id: uuid::Uuid::now_v7(),
+        name: model_name.to_string(),
+        url: url.to_string(),
+        token: token.map(str::to_string),
+        model_name: model_name.to_string(),
+        created_at: now,
+        updated_at: now,
+        enabled: true,
+        callsign_enabled: false,
+        ocr_enabled: false,
+        ocr_request_profile: String::new(),
+        unhealthy: None,
+        health_message: None,
+        health_updated_at: None,
+        health_updated_by_login_id: None,
+    }
+}
+
+/// A model name that starts with a host other than the government gateway's,
+/// e.g. a mistyped proxy prefix. Such an engine must not reach the agent
+/// harness, which would otherwise receive its token.
+pub fn has_unknown_host_prefix(engine: &ai_engine::Model) -> bool {
+    government_model(engine).is_none()
+        && engine
+            .model_name
+            .split_once('/')
+            .is_some_and(|(prefix, _)| prefix.contains('.'))
 }
 
 /// OpenAI models are reached only through the government gateway, so direct
@@ -501,8 +610,13 @@ pub fn is_government_url(value: &str) -> bool {
         )
 }
 
+/// `gpt-6-luna` and `gpt-luna`, which share every Luna quirk.
+pub fn is_gpt_luna(model: &str) -> bool {
+    matches!(model, AI_AGENT_OPENAI_GPT_6_LUNA | AI_AGENT_OPENAI_GPT_LUNA)
+}
+
 fn adapt_government_request(name: &str, body: &mut Value) {
-    if !matches!(name, AI_AGENT_OPENAI_GPT_6_SOL | AI_AGENT_OPENAI_GPT_6_LUNA) {
+    if name != AI_AGENT_OPENAI_GPT_6_SOL && !is_gpt_luna(name) {
         return;
     }
     let Some(body) = body.as_object_mut() else {

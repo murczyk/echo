@@ -382,7 +382,11 @@ fn government_compatibility_preserves_legacy_and_tool_image_schema_payloads() {
         "tools": [{"type": "function", "function": {"name": "lookup"}}],
         "response_format": {"type": "json_schema"}
     });
-    for name in [AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_GPT_6_LUNA] {
+    for name in [
+        AI_AGENT_OPENAI_GPT_6_SOL,
+        AI_AGENT_OPENAI_GPT_6_LUNA,
+        AI_AGENT_OPENAI_GPT_LUNA,
+    ] {
         let mut request = payload.clone();
         adapt_government_request(name, &mut request);
         assert!(request.get("max_tokens").is_none());
@@ -701,4 +705,221 @@ async fn issue_4029_request_builder_failure_has_no_provider_time() {
         Some(1)
     );
     assert_eq!(response_start_samples(&recorder, "local_error"), None);
+}
+
+const PROXY_URL: &str = "http://proxy.internal:8080/v1";
+
+#[test]
+fn government_proxy_engines_keep_the_gateway_model_and_route() {
+    let direct = test_engine(AI_GOV_UA_API_BASE, "glm-5.3", None);
+    assert_eq!(government_model(&direct), Some("glm-5.3"));
+    assert_eq!(model_id(&direct), "glm-5.3");
+    assert!(!is_government_proxy(&direct));
+
+    let prefixed_direct = test_engine(
+        AI_GOV_UA_API_BASE,
+        "inference.ai.mod.gov.ua/glm-5.3",
+        None,
+    );
+    assert_eq!(
+        model_id(&prefixed_direct),
+        "inference.ai.mod.gov.ua/glm-5.3",
+        "the direct gateway keeps its stored name"
+    );
+
+    for url in [PROXY_URL, "https://proxy.example.ts.net/v1"] {
+        let proxied =
+            test_engine(url, "inference.ai.mod.gov.ua/gpt-6-sol", Some("key"));
+        assert_eq!(government_model(&proxied), Some("gpt-6-sol"));
+        assert_eq!(model_id(&proxied), "gpt-6-sol");
+        assert!(is_government_proxy(&proxied));
+        assert!(!has_unknown_host_prefix(&proxied));
+    }
+
+    let generic = test_engine(PROXY_URL, "google/gemma-3-27b-it", None);
+    assert_eq!(government_model(&generic), None);
+    assert_eq!(model_id(&generic), "google/gemma-3-27b-it");
+    assert!(!has_unknown_host_prefix(&generic));
+
+    for model in [
+        "inference.ai.mod.gov.au/glm-5.3",
+        "inference.ai.mod.gov.ua/",
+    ] {
+        let mistyped = test_engine(PROXY_URL, model, Some("key"));
+        assert_eq!(government_model(&mistyped), None, "{model}");
+        assert!(has_unknown_host_prefix(&mistyped), "{model}");
+    }
+    assert_eq!(
+        government_model(&test_engine(
+            "https://api.openai.com/v1",
+            "inference.ai.mod.gov.ua/gpt-6-sol",
+            Some("key"),
+        )),
+        None,
+        "a direct OpenAI host is never a government proxy"
+    );
+}
+
+async fn recording_server(
+) -> (String, tokio::task::JoinHandle<(String, serde_json::Value)>) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let (headers, body) = loop {
+            let mut chunk = [0; 4096];
+            let read = stream.read(&mut chunk).await.unwrap();
+            assert_ne!(read, 0);
+            request.extend_from_slice(&chunk[..read]);
+            let Some(end) = request
+                .windows(4)
+                .position(|chunk| chunk == b"\r\n\r\n")
+                .map(|end| end + 4)
+            else {
+                continue;
+            };
+            let headers = String::from_utf8(request[..end].to_vec()).unwrap();
+            let length: usize = headers
+                .lines()
+                .filter_map(|line| line.split_once(':'))
+                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                .unwrap()
+                .1
+                .trim()
+                .parse()
+                .unwrap();
+            if request.len() >= end + length {
+                break (headers, request[end..end + length].to_vec());
+            }
+        };
+        let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
+        stream.write_all(response.as_bytes()).await.unwrap();
+        (
+            headers.to_ascii_lowercase(),
+            serde_json::from_slice(&body).unwrap(),
+        )
+    });
+    (url, task)
+}
+
+#[tokio::test]
+async fn government_proxy_request_uses_its_key_and_gateway_compatibility() {
+    let (url, server) = recording_server().await;
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let engine = test_engine(
+        &url,
+        "inference.ai.mod.gov.ua/gpt-6-sol",
+        Some("sk-bf-test"),
+    );
+    let response = client
+        .send(
+            &engine,
+            json!({
+                // As the agent runner sends it, without the proxy prefix.
+                "model": "gpt-6-sol",
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 16,
+                "temperature": 0.2,
+            }),
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let (headers, body) = server.await.unwrap();
+    assert!(
+        headers.contains("authorization: bearer sk-bf-test"),
+        "{headers}"
+    );
+    assert!(
+        headers.contains("x-bf-passthrough-extra-params: true"),
+        "{headers}"
+    );
+    assert_eq!(body["model"], "inference.ai.mod.gov.ua/gpt-6-sol");
+    assert_eq!(body["max_completion_tokens"], 16);
+    assert!(body.get("max_tokens").is_none());
+    assert!(body.get("temperature").is_none());
+    assert_eq!(body["reasoning_effort"], "none");
+    assert_eq!(body["allowed_openai_params"], json!(["reasoning_effort"]));
+}
+
+#[tokio::test]
+async fn government_proxy_without_a_key_is_refused_before_any_request() {
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let engine = test_engine(
+        "http://127.0.0.1:9/v1",
+        "inference.ai.mod.gov.ua/glm-5.3",
+        None,
+    );
+    let error = client
+        .send(&engine, json!({}), Duration::from_secs(10))
+        .await
+        .unwrap_err();
+    assert!(
+        error.downcast_ref::<gov::GovernmentCheckError>().is_some(),
+        "{error:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn government_proxy_shares_the_gateway_model_cooldown() {
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let direct = test_engine(AI_GOV_UA_API_BASE, AI_ENGINE_GLM_5_3_MODEL, None);
+    rate_limit_government_model(&client, &direct).await;
+    let proxied = test_engine(
+        "http://127.0.0.1:9/v1",
+        "inference.ai.mod.gov.ua/glm-5.3",
+        Some("key"),
+    );
+    let error = client
+        .send(&proxied, json!({}), Duration::from_secs(10))
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{error:?}")
+            .contains("deadline elapsed during provider cooldown")
+            || error
+                .downcast_ref::<tokio::time::error::Elapsed>()
+                .is_some(),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn government_proxy_gpt_luna_gets_the_luna_compatibility() {
+    let (url, server) = recording_server().await;
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let engine = test_engine(
+        &url,
+        "inference.ai.mod.gov.ua/gpt-luna",
+        Some("sk-bf-test"),
+    );
+    assert_eq!(model_id(&engine), AI_AGENT_OPENAI_GPT_LUNA);
+    assert!(is_gpt_luna(model_id(&engine)));
+    client
+        .send(
+            &engine,
+            json!({
+                "model": AI_AGENT_OPENAI_GPT_LUNA,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 32,
+                "temperature": 0,
+            }),
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+    let (_, body) = server.await.unwrap();
+    assert_eq!(body["model"], "inference.ai.mod.gov.ua/gpt-luna");
+    assert_eq!(body["max_completion_tokens"], 32);
+    assert!(body.get("temperature").is_none());
+    assert_eq!(body["reasoning_effort"], "none");
+    assert_eq!(body["allowed_openai_params"], json!(["reasoning_effort"]));
 }

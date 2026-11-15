@@ -268,6 +268,14 @@ pub fn agent_provider_transport(
         return crate::ai_engine::client::is_government_url(&ai_engine.url)
             .then_some(AgentProviderTransport::EchoGateway);
     }
+    // A proxy holding the government gateway's credentials is reached only
+    // by Echo, so its key never enters an agent container.
+    if crate::ai_engine::client::is_government_proxy(ai_engine) {
+        return Some(AgentProviderTransport::EchoGateway);
+    }
+    if crate::ai_engine::client::has_unknown_host_prefix(ai_engine) {
+        return None;
+    }
     if url.scheme() == "http"
         && url.host_str().is_some_and(is_dispatcher_upstream_host)
         && url.port_or_known_default().is_some()
@@ -421,6 +429,49 @@ mod tests {
             health_updated_at: None,
             health_updated_by_login_id: None,
         }
+    }
+
+    #[test]
+    fn government_proxy_engines_use_the_echo_gateway_only() {
+        let proxied = |url: &str, model_name: &str| ai_engine::Model {
+            model_name: model_name.to_string(),
+            ..engine(url, Some("sk-bf-key"), true)
+        };
+        for url in [
+            "http://proxy.internal:8080/v1",
+            "https://proxy.example.ts.net/v1",
+        ] {
+            assert_eq!(
+                agent_provider_transport(&proxied(
+                    url,
+                    "inference.ai.mod.gov.ua/glm-5.3"
+                )),
+                Some(AgentProviderTransport::EchoGateway),
+                "{url}: the proxy key must stay on the server"
+            );
+        }
+        assert_eq!(
+            agent_provider_transport(&proxied(
+                "http://proxy.internal:8080/v1",
+                "inference.ai.mod.gov.au/glm-5.3"
+            )),
+            None,
+            "a mistyped proxy prefix never hands its key to a container"
+        );
+        assert_eq!(
+            agent_provider_transport(&proxied(
+                "http://vllm.example:8000/v1",
+                "google/gemma-3-27b-it"
+            )),
+            Some(AgentProviderTransport::DirectHttp)
+        );
+        assert_eq!(
+            agent_provider_transport(&proxied(
+                "http://proxy.internal:8080/v1?key=secret",
+                "inference.ai.mod.gov.ua/glm-5.3"
+            )),
+            None
+        );
     }
 
     #[test]
