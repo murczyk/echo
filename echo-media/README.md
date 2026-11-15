@@ -212,9 +212,14 @@ The sandbox is off unless the admin system settings enable «Пісочниця 
   `CAP_SYS_ADMIN` (and logs a warning once).
 - When enabled, startup first probes and fully decodes a generated silent WAV
   in the sandbox. If that fails (no Landlock or `CAP_SYS_ADMIN`, a missing
-  library, a broken ffmpeg), the process refuses to start and logs the
-  decoder's stderr. Otherwise a broken sandbox would fail every job as a
-  terminal error, and device audio would reject each upload as `InvalidAudio`.
+  library, a broken ffmpeg), the process still starts: it logs the error with
+  the decoder's stderr, runs jobs in `SandboxMode::Disabled`, and sets
+  `media_sandbox_enabled` to `false` with the reason in
+  `media_sandbox_error`. The admin system settings then show «Пісочниця не
+  запустилася» until an admin chooses again; enabling it and restarting
+  retries the check. Running a broken sandbox would instead fail every job as
+  a terminal error, and device audio would reject each upload as
+  `InvalidAudio`.
 
 ### Thumbnails
 

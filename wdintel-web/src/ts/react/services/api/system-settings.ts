@@ -57,6 +57,7 @@ type SystemSettingsItemRaw = {
   signoz_metrics_enabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
   signoz_metrics_endpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
   media_sandbox_enabled?: BackendSystemSettingsItem['mediaSandboxEnabled'];
+  media_sandbox_error?: BackendSystemSettingsItem['mediaSandboxError'];
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -211,6 +212,7 @@ export type SystemSettingsItem = {
   signozMetricsEnabled: BackendSystemSettingsItem['signozMetricsEnabled'];
   signozMetricsEndpoint: BackendSystemSettingsItem['signozMetricsEndpoint'];
   mediaSandboxEnabled: BackendSystemSettingsItem['mediaSandboxEnabled'];
+  mediaSandboxError: BackendSystemSettingsItem['mediaSandboxError'];
 };
 
 export type SystemSettingsCurrent = {
@@ -358,6 +360,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     signozMetricsEnabled: raw.signoz_metrics_enabled ?? false,
     signozMetricsEndpoint: raw.signoz_metrics_endpoint ?? null,
     mediaSandboxEnabled: raw.media_sandbox_enabled ?? null,
+    mediaSandboxError: raw.media_sandbox_error ?? null,
   };
 }
 

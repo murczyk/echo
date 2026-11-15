@@ -16366,6 +16366,7 @@ type alias SystemSettingsItem =
     , signozMetricsEnabled : Bool
     , signozMetricsEndpoint : Maybe (String)
     , mediaSandboxEnabled : Maybe (Bool)
+    , mediaSandboxError : Maybe (String)
     }
 
 
@@ -16424,6 +16425,7 @@ systemSettingsItemEncoder struct =
         , ( "signoz_metrics_enabled", (Json.Encode.bool) struct.signozMetricsEnabled )
         , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
         , ( "media_sandbox_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.mediaSandboxEnabled )
+        , ( "media_sandbox_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mediaSandboxError )
         ]
 
 
@@ -32894,6 +32896,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_error" (Json.Decode.nullable (Json.Decode.string))))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp

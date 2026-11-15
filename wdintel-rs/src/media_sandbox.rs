@@ -1,7 +1,7 @@
 //! Whether echo-media jobs run sandboxed, from `media_sandbox_enabled` in
 //! the active system settings, read once at startup: changing it needs a
-//! restart. Off unless enabled. Every wdintel-rs media job takes its
-//! `Ffmpeg` from [`ffmpeg`].
+//! restart. Off unless enabled and its self-check passes. Every wdintel-rs
+//! media job takes its `Ffmpeg` from [`ffmpeg`].
 
 use crate::h;
 use crate::types::ShortContext;
@@ -13,6 +13,7 @@ const SELF_CHECK_RATE: u32 = 8000;
 const SELF_CHECK_SAMPLES: u32 = 800;
 const WAV_HEADER_BYTES: u32 = 44;
 const WAV_SAMPLE_BYTES: u32 = 2;
+const FAILURE_REASON_MAX_CHARS: usize = 2000;
 
 static MODE: OnceLock<SandboxMode> = OnceLock::new();
 
@@ -24,34 +25,92 @@ fn mode_for(enabled: bool) -> SandboxMode {
     }
 }
 
-/// Sets the mode for the life of the process; later calls are ignored.
-/// `configured` is the system setting `media_sandbox_enabled`; never chosen
-/// keeps the sandbox off and warns, so existing deployments notice they
-/// decode media unisolated.
-/// With the sandbox enabled, a failed self-check stops startup: otherwise a
-/// broken sandbox would fail every media job, and device audio would reject
-/// each upload as invalid.
-pub async fn init(configured: Option<bool>) -> anyhow::Result<()> {
-    let enabled = configured.unwrap_or(false);
-    if MODE.set(mode_for(enabled)).is_err() {
+/// Reads `media_sandbox_enabled` from the active settings and sets the mode
+/// for the life of the process; later calls are ignored. Never chosen keeps
+/// the sandbox off and warns, so existing deployments notice they decode
+/// media unisolated.
+/// With the sandbox enabled, a failed self-check does not stop startup: it
+/// logs the error, keeps the sandbox off and records the failure in the
+/// settings, so the admin UI shows it. Otherwise a broken sandbox would fail
+/// every media job, and device audio would reject each upload as invalid.
+pub async fn init<C>(dbx: &C) -> anyhow::Result<()>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    if MODE.get().is_some() {
         return Ok(());
     }
-    match configured {
-        None => log::warn!(
-            "media_sandbox_enabled is not set in system settings: echo-media \
-             sandbox is disabled, ffmpeg and ffprobe decode media without \
-             isolation; enable «Пісочниця для обробки медіа» in admin system \
-             settings and restart to apply it"
-        ),
-        Some(enabled) => {
-            log::info!("echo-media sandbox enabled: {enabled}")
+    let settings = crate::system_settings::get_active_system_settings(dbx)
+        .await
+        .c(h!())?;
+    let enabled = match settings.as_ref().and_then(|s| s.media_sandbox_enabled)
+    {
+        None => {
+            log::warn!(
+                "media_sandbox_enabled is not set in system settings: \
+                 echo-media sandbox is disabled, ffmpeg and ffprobe decode \
+                 media without isolation; enable «Пісочниця для обробки \
+                 медіа» in admin system settings and restart to apply it"
+            );
+            false
         }
-    }
-    if enabled {
-        self_check(&ffmpeg().c(h!())?).await.c(h!())?;
-        log::info!("echo-media sandbox self-check passed");
-    }
+        Some(false) => {
+            log::info!("echo-media sandbox enabled: false");
+            false
+        }
+        Some(true) => {
+            log::info!("echo-media sandbox enabled: true");
+            let settings_id = settings.as_ref().map(|s| s.id);
+            start_sandbox(dbx, settings_id).await
+        }
+    };
+    let _ = MODE.set(mode_for(enabled));
     Ok(())
+}
+
+/// Whether the sandbox passed its self-check; a failure is recorded in
+/// settings row `settings_id`.
+async fn start_sandbox<C>(dbx: &C, settings_id: Option<i64>) -> bool
+where
+    C: sea_orm::ConnectionTrait,
+{
+    let checked = match Ffmpeg::shared() {
+        Ok(media) => self_check(&media.with_sandbox_mode(mode_for(true))).await,
+        Err(error) => Err(failure(error)),
+    };
+    let Err(error) = checked else {
+        log::info!("echo-media sandbox self-check passed");
+        return true;
+    };
+    log::error!(
+        "echo-media sandbox failed to start, media jobs run without \
+         isolation and media_sandbox_enabled is set to false: {error:?}"
+    );
+    let Some(settings_id) = settings_id else {
+        return false;
+    };
+    let reason = failure_reason(&error);
+    if let Err(error) = crate::system_settings::record_media_sandbox_failure(
+        dbx,
+        settings_id,
+        &reason,
+    )
+    .await
+    {
+        log::error!("failed to record echo-media sandbox failure: {error:?}");
+    }
+    false
+}
+
+/// The root cause for the admin UI, bounded so decoder stderr cannot bloat
+/// the settings row.
+fn failure_reason(error: &anyhow::Error) -> String {
+    error
+        .root_cause()
+        .to_string()
+        .chars()
+        .take(FAILURE_REASON_MAX_CHARS)
+        .collect()
 }
 
 /// The process-wide `Ffmpeg` in the configured sandbox mode.

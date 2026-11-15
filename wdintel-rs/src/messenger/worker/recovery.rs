@@ -3148,6 +3148,7 @@ mod tests {
             signoz_metrics_enabled: Set(None),
             signoz_metrics_endpoint: Set(None),
             media_sandbox_enabled: Set(None),
+            media_sandbox_error: Set(None),
         }
         .insert(dbx)
         .await

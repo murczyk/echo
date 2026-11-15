@@ -6377,6 +6377,7 @@ export type SystemSettingsItem = {
   signozMetricsEnabled: boolean;
   signozMetricsEndpoint: string | null;
   mediaSandboxEnabled: boolean | null;
+  mediaSandboxError: string | null;
 };
 
 export type SystemSettingsListRsp = {
