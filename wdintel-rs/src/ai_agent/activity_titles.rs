@@ -1,7 +1,7 @@
 use super::types::AiAgentActivityPresentation;
 use super::{access, events};
 use crate::ai_engine::client::{
-    government_model, is_government_proxy, is_gpt_luna,
+    government_model, government_route_available, is_gpt_luna,
 };
 use crate::ai_engine::{request_structured_ai_response, AiEngineMessage};
 use crate::config::{
@@ -197,11 +197,7 @@ async fn government_luna_engine(
         .into_iter()
         .filter(|engine| {
             government_model(engine).is_some_and(is_gpt_luna)
-                && if is_government_proxy(engine) {
-                    engine.token.is_some()
-                } else {
-                    gateway_enabled
-                }
+                && government_route_available(engine, gateway_enabled)
         })
         .min_by(|left, right| {
             (&left.name, left.id).cmp(&(&right.name, right.id))

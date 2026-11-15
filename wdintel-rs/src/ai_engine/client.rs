@@ -517,6 +517,19 @@ pub fn is_government_proxy(engine: &ai_engine::Model) -> bool {
     proxied_government_model(engine).is_some()
 }
 
+/// Whether a government engine can serve requests now: through a proxy it
+/// needs the proxy's key, directly it needs the enabled Azure gateway.
+pub fn government_route_available(
+    engine: &ai_engine::Model,
+    gateway_enabled: bool,
+) -> bool {
+    if is_government_proxy(engine) {
+        engine.token.is_some()
+    } else {
+        gateway_enabled && is_government_url(&engine.url)
+    }
+}
+
 fn proxied_government_model(engine: &ai_engine::Model) -> Option<&str> {
     let model = engine
         .model_name
