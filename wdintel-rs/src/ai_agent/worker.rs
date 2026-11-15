@@ -2,6 +2,7 @@ use super::{
     access, activity_titles::ActivityTitles, auth, chat_monitoring,
     dispatcher::DispatcherClient, events, lifecycle, review,
 };
+use crate::ai_engine::client::{government_model, model_id};
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
@@ -482,9 +483,7 @@ async fn run_request(
                     crate::config::AI_AGENT_DEADLINE_CLEANUP_SEC,
                 )
         })
-        .unwrap_or_else(|| {
-            request_execution_timeout(&ai_engine.model_name, &ai_engine.url)
-        });
+        .unwrap_or_else(|| request_execution_timeout(&ai_engine));
     match tokio::time::timeout(
         timeout,
         run_request_inner(env, request, cancellation, ai_engine, model_failure),
@@ -576,9 +575,11 @@ impl EnvironmentTimings {
     }
 }
 
-fn request_execution_timeout(model_name: &str, url: &str) -> StdDuration {
-    let seconds = if model_name == crate::config::AI_AGENT_GLM_5_3
-        && crate::ai_engine::client::is_government_url(url)
+fn request_execution_timeout(
+    ai_engine: &crate::entities::ai_engine::Model,
+) -> StdDuration {
+    let seconds = if government_model(ai_engine)
+        == Some(crate::config::AI_AGENT_GLM_5_3)
     {
         crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
     } else {
@@ -768,7 +769,7 @@ async fn run_request_inner(
     {
         checkpoint = Some(CheckpointProvider {
             ai_engine_id: ai_engine.id,
-            model_name: ai_engine.model_name.clone(),
+            model_name: model_id(&ai_engine).to_string(),
             context_window: runtime_profile.context_window_tokens,
             max_tokens: checkpoint_output_tokens(&ai_engine, &runtime_profile),
         });
@@ -790,12 +791,12 @@ async fn run_request_inner(
                     request.id,
                     correlation_id,
                     ai_engine.id,
-                    ai_engine.model_name.clone(),
+                    model_id(&ai_engine).to_string(),
                     checkpoint
                         .as_ref()
                         .filter(|checkpoint| {
                             execution_policy.is_some()
-                                || checkpoint.model_name != ai_engine.model_name
+                                || checkpoint.model_name != model_id(&ai_engine)
                         })
                         .map(|checkpoint| auth::CheckpointProviderGrant {
                             ai_engine_id: checkpoint.ai_engine_id,
@@ -818,7 +819,8 @@ async fn run_request_inner(
     let mut runner_payload = runner_payload_for_provider(
         json!({
             "echoPublicHost": env.config.public_host,
-            "modelName": ai_engine.model_name,
+            // The runner sees model names without a proxy prefix.
+            "modelName": model_id(&ai_engine),
             "contextWindow": runtime_profile.context_window_tokens,
             "providerRequestMaxBytes": (provider_transport == access::AgentProviderTransport::EchoGateway).then_some(crate::config::AI_AGENT_PROVIDER_REQUEST_MAX_BYTES),
             "maxTokens": runtime_profile.max_output_tokens,
@@ -1190,9 +1192,7 @@ async fn checkpoint_provider(
     ai_engine: &crate::entities::ai_engine::Model,
     runtime_profile: &ai_agent_engine_runtime_profile::Model,
 ) -> anyhow::Result<Option<CheckpointProvider>> {
-    if ai_engine.model_name != crate::config::AI_AGENT_GLM_5_3
-        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
-    {
+    if government_model(ai_engine) != Some(crate::config::AI_AGENT_GLM_5_3) {
         return Ok(None);
     }
     if env.config.ai_agent_glm_checkpoint_provider
@@ -1200,18 +1200,27 @@ async fn checkpoint_provider(
     {
         return Ok(Some(CheckpointProvider {
             ai_engine_id: ai_engine.id,
-            model_name: ai_engine.model_name.clone(),
+            model_name: model_id(ai_engine).to_string(),
             context_window: runtime_profile.context_window_tokens,
             max_tokens: checkpoint_output_tokens(ai_engine, runtime_profile),
         }));
     }
+    // A Luna the request cannot reach (a direct one while the Azure gateway
+    // is disabled, a proxied one without its key) would fail the checkpoint.
+    let gateway_enabled = crate::ai_engine::gov::gateway_enabled(&env.dbx)
+        .await
+        .c(h!())?;
     let ai_engine = access::allowed_engines(&env.dbx)
         .await
         .c(h!())?
         .into_iter()
         .filter(|ai_engine| {
-            ai_engine.model_name == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
-                && crate::ai_engine::client::is_government_url(&ai_engine.url)
+            government_model(ai_engine)
+                .is_some_and(crate::ai_engine::client::is_gpt_luna)
+                && crate::ai_engine::client::government_route_available(
+                    ai_engine,
+                    gateway_enabled,
+                )
         })
         .min_by_key(|ai_engine| ai_engine.id);
     let Some(ai_engine) = ai_engine else {
@@ -1239,7 +1248,7 @@ async fn checkpoint_provider(
     );
     Ok(Some(CheckpointProvider {
         ai_engine_id: ai_engine.id,
-        model_name: ai_engine.model_name,
+        model_name: model_id(&ai_engine).to_string(),
         context_window: checkpoint_profile.context_window_tokens,
         max_tokens,
     }))
@@ -1256,7 +1265,7 @@ async fn refusal_rewrite_provider(
     provider_transport: access::AgentProviderTransport,
 ) -> anyhow::Result<Option<auth::RewriteProviderGrant>> {
     if provider_transport != access::AgentProviderTransport::EchoGateway
-        || !super::reasoning::openai_model(&ai_engine.model_name)
+        || !super::reasoning::openai_model(model_id(ai_engine))
     {
         return Ok(None);
     }
@@ -1272,7 +1281,7 @@ async fn refusal_rewrite_provider(
             .into_iter()
             .find(|engine| engine.id == configured_id),
         None => allowed.into_iter().find(|engine| {
-            engine.model_name
+            model_id(engine)
                 == crate::config::AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL
         }),
     };
@@ -1287,7 +1296,7 @@ async fn refusal_rewrite_provider(
     };
     Ok(Some(auth::RewriteProviderGrant {
         ai_engine_id: rewrite_engine.id,
-        model_name: rewrite_engine.model_name,
+        model_name: model_id(&rewrite_engine).to_string(),
         max_output_tokens: crate::config::AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS,
     }))
 }
@@ -1296,9 +1305,7 @@ fn checkpoint_output_tokens(
     ai_engine: &crate::entities::ai_engine::Model,
     runtime_profile: &ai_agent_engine_runtime_profile::Model,
 ) -> i32 {
-    if ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
-        && crate::ai_engine::client::is_government_url(&ai_engine.url)
-    {
+    if government_model(ai_engine) == Some(crate::config::AI_AGENT_GLM_5_3) {
         std::cmp::max(
             runtime_profile.max_output_tokens,
             std::cmp::min(
@@ -2079,6 +2086,7 @@ mod tests {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let mut env = env.as_ref().clone();
+        let gateway = set_government_gateway(&env.dbx, true).await;
         let allowed_engines = ai_agent_allowed_engine::Entity::find()
             .all(&env.dbx)
             .await
@@ -2154,34 +2162,185 @@ mod tests {
         for engine in allowed_engines {
             engine.into_active_model().insert(&env.dbx).await.unwrap();
         }
+        gateway
+            .into_active_model()
+            .reset_all()
+            .update(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    async fn set_government_gateway(
+        dbx: &sea_orm::DatabaseConnection,
+        enabled: bool,
+    ) -> crate::entities::ai_gov_ua_settings::Model {
+        let gateway = crate::entities::ai_gov_ua_settings::Entity::find_by_id(
+            crate::config::AI_GOV_UA_SETTINGS_ID,
+        )
+        .one(dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        let mut active = gateway.clone().into_active_model();
+        active.enabled = Set(Some(enabled));
+        active.update(dbx).await.unwrap();
+        gateway
+    }
+
+    async fn allowed_checkpoint_engine(
+        dbx: &sea_orm::DatabaseConnection,
+        url: &str,
+        model_name: &str,
+        token: Option<&str>,
+        output_tokens: i32,
+    ) -> (ai_engine::Model, ai_agent_engine_runtime_profile::Model) {
+        let engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("checkpoint-{model_name}-{}", Uuid::now_v7())),
+            model_name: Set(model_name.to_string()),
+            url: Set(url.to_string()),
+            token: Set(token.map(str::to_string)),
+            enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        ai_agent_allowed_engine::ActiveModel {
+            ai_engine_id: Set(engine.id),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let profile = ai_agent_engine_runtime_profile::ActiveModel {
+            ai_engine_id: Set(engine.id),
+            context_window_tokens: Set(65_536),
+            max_output_tokens: Set(output_tokens),
+            compaction_reserve_tokens: Set(16_384),
+            compaction_keep_recent_tokens: Set(8_192),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        (engine, profile)
+    }
+
+    // A proxied GLM must not checkpoint on a direct Luna the disabled Azure
+    // gateway cannot reach, or on a proxied Luna without its key.
+    #[actix_web::test]
+    #[serial]
+    async fn proxied_glm_checkpoints_only_on_a_reachable_luna() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let mut env = env.as_ref().clone();
+        env.config.ai_agent_glm_checkpoint_provider = None;
+        let gateway = set_government_gateway(&env.dbx, false).await;
+        let allowed_engines = ai_agent_allowed_engine::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        ai_agent_allowed_engine::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let proxy = "http://proxy.internal:8080/v1";
+        let government = crate::config::AI_GOV_UA_API_BASE;
+        // Created first, so it has the lowest id among the Luna engines.
+        let (direct_luna, _) = allowed_checkpoint_engine(
+            &env.dbx,
+            government,
+            crate::config::AI_AGENT_OPENAI_GPT_6_LUNA,
+            None,
+            8_192,
+        )
+        .await;
+        let (proxied_luna, _) = allowed_checkpoint_engine(
+            &env.dbx,
+            proxy,
+            "inference.ai.mod.gov.ua/gpt-6-luna",
+            Some("sk-bf-test"),
+            8_192,
+        )
+        .await;
+        let (glm, glm_profile) = allowed_checkpoint_engine(
+            &env.dbx,
+            proxy,
+            "inference.ai.mod.gov.ua/glm-5.3",
+            Some("sk-bf-test"),
+            16_384,
+        )
+        .await;
+
+        let checkpoint = checkpoint_provider(&env, &glm, &glm_profile)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(checkpoint.ai_engine_id, proxied_luna.id);
+        assert_eq!(
+            checkpoint.model_name,
+            crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
+        );
+
+        let mut keyless = proxied_luna.clone().into_active_model();
+        keyless.token = Set(None);
+        keyless.update(&env.dbx).await.unwrap();
+        assert!(checkpoint_provider(&env, &glm, &glm_profile)
+            .await
+            .unwrap()
+            .is_none());
+
+        set_government_gateway(&env.dbx, true).await;
+        let checkpoint = checkpoint_provider(&env, &glm, &glm_profile)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(checkpoint.ai_engine_id, direct_luna.id);
+
+        for engine in [direct_luna, proxied_luna, glm] {
+            ai_engine::Entity::delete_by_id(engine.id)
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+        for engine in allowed_engines {
+            engine.into_active_model().insert(&env.dbx).await.unwrap();
+        }
+        gateway
+            .into_active_model()
+            .reset_all()
+            .update(&env.dbx)
+            .await
+            .unwrap();
     }
 
     #[test]
     fn issue_3724_scoped_long_execution_to_government_glm() {
         let regular = StdDuration::from_secs(AI_AGENT_DISPATCHER_TIMEOUT_SEC);
+        let long = StdDuration::from_secs(
+            crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC,
+        );
+        let timeout = |url: &str, model_name: &str| {
+            request_execution_timeout(&crate::ai_engine::client::test_engine(
+                url, model_name, None,
+            ))
+        };
         let government = crate::config::AI_GOV_UA_API_BASE;
+        let glm = crate::config::AI_AGENT_GLM_5_3;
+        assert_eq!(timeout(government, glm), long);
+        assert_eq!(timeout("https://example.invalid/v1", glm), regular);
         assert_eq!(
-            request_execution_timeout(
-                crate::config::AI_AGENT_GLM_5_3,
-                government,
-            ),
-            StdDuration::from_secs(
-                crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
-            )
-        );
-        assert_eq!(
-            request_execution_timeout(
-                crate::config::AI_AGENT_GLM_5_3,
-                "https://example.invalid/v1",
-            ),
+            timeout(government, crate::config::AI_AGENT_OPENAI_GPT_6_LUNA),
             regular
         );
         assert_eq!(
-            request_execution_timeout(
-                crate::config::AI_AGENT_OPENAI_GPT_6_LUNA,
-                government,
+            timeout(
+                "http://proxy.internal:8080/v1",
+                "inference.ai.mod.gov.ua/glm-5.3"
             ),
-            regular
+            long,
+            "a proxied government GLM keeps the long execution"
         );
     }
 

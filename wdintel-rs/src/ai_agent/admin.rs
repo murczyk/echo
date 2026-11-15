@@ -145,7 +145,7 @@ pub async fn update_settings(
             .context(h!())?
             .into_iter()
             .any(|ai_engine| {
-                ai_engine.model_name
+                crate::ai_engine::client::model_id(&ai_engine)
                     == crate::config::AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL
                     && access::refusal_rewrite_compatible(&ai_engine)
             });
