@@ -799,7 +799,7 @@ test("incident 01a1a1d8: tells the agent that mentioned frequencies equal their 
       false,
     ),
   );
-  assert.match(prompt, /stored Echo form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
+  assert.match(prompt, /stored ECHO form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
   assert.match(prompt, /only the frequencies the current request is about/);
   assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Frequencies named in this conversation/);
 });
@@ -821,7 +821,7 @@ test("#3998 reads СС3 in a user query as the DMR color code", () => {
   const prompt = systemPrompt(
     validatePayload({ ...normalPayload, history: [], prompt: "144.8450 Мишаня Якудза, СС3" }, false),
   );
-  assert.match(prompt, /stored Echo form: 144\.8450\./);
+  assert.match(prompt, /stored ECHO form: 144\.8450\./);
   assert.match(prompt, /DMR color codes named in this conversation: СС3 = color code 3\. They are radio network metadata, not callsigns/);
   assert.match(prompt, /is the DMR color code \(0–15\) of a radio network/);
   assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /DMR color codes named/);
