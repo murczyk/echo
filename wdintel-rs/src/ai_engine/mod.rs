@@ -988,7 +988,7 @@ async fn request_ai_response_with_options(
     let structured_output = response_format.is_some();
     let openai_reasoning = AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES
         .iter()
-        .any(|prefix| ai_engine.model_name.starts_with(prefix));
+        .any(|prefix| client::model_id(ai_engine).starts_with(prefix));
     let body = serde_json::to_value(OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
@@ -996,7 +996,7 @@ async fn request_ai_response_with_options(
         max_tokens: if openai_reasoning { None } else { max_tokens },
         max_completion_tokens: if openai_reasoning { max_tokens } else { None },
         reasoning_effort: structured_output
-            .then(|| structured_reasoning_effort(&ai_engine.model_name))
+            .then(|| structured_reasoning_effort(client::model_id(ai_engine)))
             .flatten(),
         response_format,
     })

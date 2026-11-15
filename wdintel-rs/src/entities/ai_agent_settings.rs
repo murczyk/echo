@@ -21,6 +21,8 @@ pub struct Model {
     pub mattermost_chat_enabled: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub mattermost_chat_webhook_url: Option<String>,
+    pub refusal_rewrite_enabled: Option<bool>,
+    pub refusal_rewrite_ai_engine_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -28,6 +30,14 @@ pub enum Relation {
     #[sea_orm(
         belongs_to = "super::ai_engine::Entity",
         from = "Column::DefaultAiEngineId",
+        to = "super::ai_engine::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    AiEngine3,
+    #[sea_orm(
+        belongs_to = "super::ai_engine::Entity",
+        from = "Column::RefusalRewriteAiEngineId",
         to = "super::ai_engine::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"

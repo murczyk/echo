@@ -71,6 +71,8 @@ const SETTINGS = {
   templateLoginId: '019fc7f7-9770-7f83-9c1a-211af29b02e6',
   reviewerProviderId: ENGINE.id,
   reviewEnabled: false,
+  refusalRewriteEnabled: false,
+  refusalRewriteProviderId: null,
   mattermostChatEnabled: false,
   mattermostWebhookConfigured: false,
   mattermostWebhookUrl: '',
@@ -283,6 +285,23 @@ describe('AdminAiAgentPage settings', () => {
       ...settings,
       reviewerProviderId: INCOMPATIBLE_ENGINE.id,
       reviewEnabled: true,
+    });
+  });
+
+  it('enables the refusal rewrite layer with the default rewrite provider', async () => {
+    await act(async () =>
+      controlLabel('Перезапис відмов моделі (OpenAI)').querySelector('input')?.click(),
+    );
+    const rewriteSelect = container.querySelector(
+      '[aria-labelledby="ai-agent-refusal-rewrite-provider-label"]',
+    );
+    expect(rewriteSelect).not.toBeNull();
+    await act(async () => clickSave());
+    await flush();
+
+    expect(mocks.saveSettings).toHaveBeenCalledWith({
+      ...SETTINGS,
+      refusalRewriteEnabled: true,
     });
   });
 

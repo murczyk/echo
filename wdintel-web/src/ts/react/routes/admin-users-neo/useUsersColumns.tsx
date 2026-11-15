@@ -13,6 +13,7 @@ import {
 } from '../../components/mui-customized/table/get-default-table-options';
 import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import { UserUuidValue } from './UserUuidValue';
+import { type AorColumnLookup, organismAorLabels } from './aor-column';
 
 import {
   CopyUuidButton,
@@ -23,7 +24,11 @@ import {
   matchesStatusFilter,
 } from './user-display';
 import { ROLE_OPTIONS, STATUS_FILTER_OPTIONS } from './user-types';
-export function useUsersColumns(onEdit: (login: Login) => void): AppMrtColumnDef<Login>[] {
+/** The AOR column is shown only when `aorLookup` is given (the all-users table). */
+export function useUsersColumns(
+  onEdit: (login: Login) => void,
+  aorLookup?: AorColumnLookup,
+): AppMrtColumnDef<Login>[] {
   const organism = useUserManagementScope();
   return useMemo(
     () => [
@@ -131,6 +136,27 @@ export function useUsersColumns(onEdit: (login: Login) => void): AppMrtColumnDef
         }),
         size: 220,
       },
+      ...(aorLookup
+        ? [
+            {
+              header: 'Смуги',
+              id: 'aors',
+              accessorFn: (row: Login) => organismAorLabels(row, aorLookup),
+              meta: { overflowMode: 'items' as const },
+              Cell: mrtItemsCell<Login, string>({
+                items: ({ row }) => organismAorLabels(row.original, aorLookup),
+                renderItem: (label) => <EchoChip label={label} tone="neutral" />,
+                measurementScope: 'admin-users:aors',
+                getItemText: (label) => label,
+              }),
+              filterVariant: 'multi-select' as const,
+              filterSelectOptions: aorLookup.filterOptions,
+              filterFn: 'arrIncludesSome' as const,
+              enableSorting: false,
+              size: 240,
+            },
+          ]
+        : []),
       {
         header: 'Напрямок',
         id: 'zone',
@@ -208,6 +234,6 @@ export function useUsersColumns(onEdit: (login: Login) => void): AppMrtColumnDef
         size: 260,
       },
     ],
-    [organism, onEdit],
+    [organism, onEdit, aorLookup],
   );
 }

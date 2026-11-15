@@ -1,5 +1,6 @@
 use super::reasoning::{self, ExecutionPolicy, ProviderPurpose};
 use super::types::{AiAgentBootstrapExchangeReq, AiAgentBootstrapExchangeRsp};
+use crate::ai_engine::client::{government_model, model_id};
 use crate::config::{
     AI_AGENT_API_CALL_COUNT_REDIS_PREFIX, AI_AGENT_BOOTSTRAP_REDIS_PREFIX,
     AI_AGENT_BOOTSTRAP_TTL_SEC, AI_AGENT_CORRELATION_SESSION_REDIS_PREFIX,
@@ -19,6 +20,7 @@ use crate::h;
 use crate::types::{warn, Deserialize, Env, Serialize, ShortContext};
 use actix_session::SessionExt;
 use actix_web::{post, web::Json, HttpRequest};
+use anyhow::Context;
 use base64::Engine;
 use rand::Rng;
 use redis::AsyncCommands;
@@ -63,6 +65,8 @@ struct ProviderCapabilityGrant {
     #[serde(default)]
     checkpoint: Option<CheckpointProviderGrant>,
     #[serde(default)]
+    rewrite: Option<RewriteProviderGrant>,
+    #[serde(default)]
     execution_policy: Option<ExecutionPolicy>,
     #[serde(default)]
     deadline_at: Option<i64>,
@@ -74,6 +78,14 @@ struct ProviderCapabilityGrant {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckpointProviderGrant {
+    pub ai_engine_id: Uuid,
+    pub model_name: String,
+    pub max_output_tokens: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewriteProviderGrant {
     pub ai_engine_id: Uuid,
     pub model_name: String,
     pub max_output_tokens: i32,
@@ -136,6 +148,7 @@ pub async fn issue_provider_capability(
     ai_engine_id: Uuid,
     model_name: String,
     checkpoint: Option<CheckpointProviderGrant>,
+    rewrite: Option<RewriteProviderGrant>,
 ) -> Result<String, AppError> {
     let mut random = [0_u8; 32];
     rand::rng().fill(&mut random);
@@ -163,6 +176,7 @@ pub async fn issue_provider_capability(
         ai_engine_id,
         model_name,
         checkpoint,
+        rewrite,
         execution_policy,
         deadline_at,
         call_limit: Some(call_limit),
@@ -270,10 +284,13 @@ pub async fn authorize_provider_call(
             now >= deadline - policy.finalization_seconds as i64 * 1000;
         if requested_model_name != grant.model_name
             && purpose != ProviderPurpose::Checkpoint
+            && purpose != ProviderPurpose::Rewrite
         {
             return Ok(None);
         }
-    } else if purpose != ProviderPurpose::Research {
+    } else if purpose != ProviderPurpose::Research
+        && purpose != ProviderPurpose::Rewrite
+    {
         return Ok(None);
     }
     if !super::access::settings(&env.dbx).await?.feature_enabled {
@@ -320,7 +337,7 @@ pub async fn authorize_provider_call(
             .await?;
     if super::access::agent_provider_transport(&ai_engine)
         != Some(super::access::AgentProviderTransport::EchoGateway)
-        || ai_engine.model_name != grant.model_name
+        || model_id(&ai_engine) != grant.model_name
     {
         return Ok(None);
     }
@@ -338,8 +355,17 @@ pub async fn authorize_provider_call(
         authorization.checkpoint_max_tokens =
             Some(checkpoint.max_output_tokens);
     }
+    if purpose == ProviderPurpose::Rewrite {
+        let Some(rewrite) = grant.rewrite.as_ref() else {
+            return Ok(None);
+        };
+        authorization.checkpoint_max_tokens = Some(rewrite.max_output_tokens);
+    }
+    // The rewrite call is part of finalization, like synthesis: a refusal
+    // retry legitimately runs inside the finalization window.
     authorization.research_limit_reached = grant.execution_policy.is_some()
         && purpose != ProviderPurpose::Synthesis
+        && purpose != ProviderPurpose::Rewrite
         && (research_deadline_reached || calls == call_limit);
     authorization.execution_policy = grant.execution_policy;
     authorization.deadline_at = grant.deadline_at;
@@ -352,7 +378,7 @@ async fn resolve_provider_engine(
     requested_model_name: &str,
     ai_engine: ai_engine::Model,
 ) -> anyhow::Result<Option<AuthorizedProvider>> {
-    if requested_model_name == ai_engine.model_name {
+    if requested_model_name == model_id(&ai_engine) {
         return Ok(Some(AuthorizedProvider {
             ai_engine,
             checkpoint_max_tokens: None,
@@ -362,15 +388,36 @@ async fn resolve_provider_engine(
             request_id: grant.request_id,
         }));
     }
-    if ai_engine.model_name != crate::config::AI_AGENT_GLM_5_3
-        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+    if let Some(rewrite) = grant
+        .rewrite
+        .as_ref()
+        .filter(|rewrite| rewrite.model_name == requested_model_name)
     {
+        let rewrite_engine =
+            super::access::allowed_engine_by_id(&env.dbx, rewrite.ai_engine_id)
+                .await
+                .context(h!())?;
+        if government_model(&rewrite_engine)
+            != Some(rewrite.model_name.as_str())
+            || !super::access::refusal_rewrite_compatible(&rewrite_engine)
+        {
+            return Ok(None);
+        }
+        return Ok(Some(AuthorizedProvider {
+            ai_engine: rewrite_engine,
+            checkpoint_max_tokens: Some(rewrite.max_output_tokens),
+            execution_policy: None,
+            deadline_at: None,
+            research_limit_reached: false,
+            request_id: grant.request_id,
+        }));
+    }
+    if government_model(&ai_engine) != Some(crate::config::AI_AGENT_GLM_5_3) {
         return Ok(None);
     }
     let Some(checkpoint) = grant.checkpoint.as_ref().filter(|checkpoint| {
         checkpoint.model_name == requested_model_name
-            && checkpoint.model_name
-                == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
+            && crate::ai_engine::client::is_gpt_luna(&checkpoint.model_name)
             && checkpoint.max_output_tokens >= 256
     }) else {
         return Ok(None);
@@ -379,8 +426,7 @@ async fn resolve_provider_engine(
         super::access::allowed_engine_by_id(&env.dbx, checkpoint.ai_engine_id)
             .await
             .c(h!())?;
-    if ai_engine.model_name != checkpoint.model_name
-        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+    if government_model(&ai_engine) != Some(checkpoint.model_name.as_str())
         || super::access::agent_provider_transport(&ai_engine)
             != Some(super::access::AgentProviderTransport::EchoGateway)
     {

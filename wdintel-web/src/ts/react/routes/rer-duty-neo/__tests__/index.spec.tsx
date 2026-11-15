@@ -428,6 +428,7 @@ function buildFeedsState() {
     reloadFeeds: vi.fn(),
     flushPendingNewerMessages: vi.fn(),
     reloadEditedFeeds: vi.fn(),
+    refreshChangedMessages: vi.fn(async () => {}),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
     setFeedInitialTarget: vi.fn(),
@@ -748,7 +749,8 @@ describe('RerDutyNeoPage creation workflow', () => {
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
     expect(state.handleEditedMessage).not.toHaveBeenCalled();
-    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
+    expect(state.refreshChangedMessages).toHaveBeenCalledWith([91, 42]);
+    expect(state.reloadFeeds).not.toHaveBeenCalled();
     expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
 
     await act(async () => {

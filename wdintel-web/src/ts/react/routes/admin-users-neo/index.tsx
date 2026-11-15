@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { Login, Organism } from '../../../../Bindings';
+import { AreaOfResponsibility, Login, Organism } from '../../../../Bindings';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { TableContentState } from '../../components/TableContentState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { listAors } from '../../services/api/aor';
 import { listLogins } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
 
 import { AddUserDialog } from './AddUserDialog';
+import { buildAorColumnLookup } from './aor-column';
 import { EditUserDialog } from './EditUserDialog';
 import { debugLog, formatErrorMessage } from './user-display';
 import {
@@ -32,6 +35,9 @@ export function AdminUsersNeoPageBody() {
   const [zonesError, setZonesError] = useState<string | null>(null);
   const [organismsStatus, setOrganismsStatus] = useState<LoadingStatus>('idle');
   const [organismsError, setOrganismsError] = useState<string | null>(null);
+  const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [aorsStatus, setAorsStatus] = useState<LoadingStatus>('idle');
+  const [aorsError, setAorsError] = useState<string | null>(null);
 
   async function loadLogins() {
     debugLog('loadLogins:start');
@@ -84,11 +90,29 @@ export function AdminUsersNeoPageBody() {
     }
   }
 
+  async function loadAors() {
+    setAorsStatus('loading');
+    setAorsError(null);
+    try {
+      setAors(await listAors({ sortBy: null }));
+      setAorsStatus('success');
+    } catch (err) {
+      setAorsStatus('error');
+      setAorsError(formatErrorMessage(err));
+    }
+  }
+
   useEffect(() => {
     loadLogins();
     void loadZones();
     void loadOrganisms();
+    void loadAors();
   }, []);
+
+  const aorLookup = useMemo(
+    () => buildAorColumnLookup(organisms, aors, aorsStatus === 'success' || aorsStatus === 'error'),
+    [organisms, aors, aorsStatus],
+  );
 
   const lookups: UserLookups = {
     zones,
@@ -109,6 +133,7 @@ export function AdminUsersNeoPageBody() {
             <UsersTable
               data={logins}
               loading
+              aorLookup={aorLookup}
               onEdit={(login) => setEditingLogin(login)}
               onUserUpdated={(login) =>
                 setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
@@ -121,6 +146,7 @@ export function AdminUsersNeoPageBody() {
           <UsersTable
             data={logins}
             loading={false}
+            aorLookup={aorLookup}
             onEdit={(login) => setEditingLogin(login)}
             onUserUpdated={(login) =>
               setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
@@ -148,6 +174,17 @@ export function AdminUsersNeoPageBody() {
           }
         />
       </div>
+
+      {organismsError ? (
+        <div className="shrink-0">
+          <PowerAlert severity="error">{`Не вдалося завантажити організми: ${organismsError}`}</PowerAlert>
+        </div>
+      ) : null}
+      {aorsError ? (
+        <div className="shrink-0">
+          <PowerAlert severity="error">{`Не вдалося завантажити смуги: ${aorsError}`}</PowerAlert>
+        </div>
+      ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1">{renderTable()}</div>
 

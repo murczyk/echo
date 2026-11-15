@@ -512,5 +512,17 @@ class ContainerReplacementTests(unittest.TestCase):
         self.assertEqual(json.loads((HOST.SELECTIONS / 'echo-cbr.json').read_text())['release'], OLD)
 
 
+class TemplatePackagingTests(unittest.TestCase):
+    def test_every_runner_module_is_pushed_and_installed(self):
+        build = (ROOT / 'echo-ai-agent/bin/build-template-host.sh').read_text()
+        bootstrap = (ROOT / 'echo-ai-agent/template/bootstrap.sh').read_text()
+        modules = [p.name for p in (ROOT / 'echo-ai-agent/runner').glob('*.ts')
+                   if not p.name.endswith('.test.ts')]
+        self.assertGreater(len(modules), 0)
+        for name in modules:
+            self.assertIn(f'"$BUNDLE_DIR/runner/{name}"', build)
+            self.assertIn(f'"$STAGE/{name}" "$PI_ROOT/{name}"', bootstrap)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -3,6 +3,13 @@ import type { AiEngineItem } from '../../../../Bindings';
 const DISPATCHER_HOSTNAME_RE =
   /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
+const GOVERNMENT_AI_HOST = 'inference.ai.mod.gov.ua';
+// Mirrors AI_GOV_UA_PROXY_MODEL_PREFIX in wdintel-rs/src/config.rs.
+const GOVERNMENT_AI_PROXY_MODEL_PREFIX = `${GOVERNMENT_AI_HOST}/`;
+
+type AiAgentEngineFields = Pick<AiEngineItem, 'enabled' | 'hasToken' | 'url'> &
+  Partial<Pick<AiEngineItem, 'modelName'>>;
+
 export const AI_AGENT_TOKEN_WARNING =
   'Увага: використання цього провайдера ШІ агентом передає токен до ізольованого контейнера.';
 
@@ -21,9 +28,7 @@ function isDispatcherUpstreamHost(hostname: string): boolean {
   );
 }
 
-export function isAiAgentEligibleEngine(
-  engine: Pick<AiEngineItem, 'enabled' | 'hasToken' | 'url'>,
-): boolean {
+export function isAiAgentEligibleEngine(engine: AiAgentEngineFields): boolean {
   return getAiAgentEngineCompatibility(engine).compatible;
 }
 
@@ -57,7 +62,7 @@ export function getAiReviewerEngineCompatibility(
 }
 
 export function getAiAgentEngineCompatibility(
-  engine: Pick<AiEngineItem, 'enabled' | 'hasToken' | 'url'>,
+  engine: AiAgentEngineFields,
 ): AiAgentEngineCompatibility {
   if (!engine.enabled) {
     return { compatible: false, explanation: 'Провайдер вимкнений.' };
@@ -82,6 +87,12 @@ export function getAiAgentEngineCompatibility(
         explanation: 'Base URL має завершуватися шляхом /v1.',
       };
     }
+    if (hasUnknownHostPrefix(engine)) {
+      return {
+        compatible: false,
+        explanation: `Префікс моделі схожий на хост, але не є ${GOVERNMENT_AI_PROXY_MODEL_PREFIX}`,
+      };
+    }
     const transport = getAiAgentEngineTransport(engine);
     if (transport === 'direct_http') {
       return {
@@ -92,7 +103,7 @@ export function getAiAgentEngineCompatibility(
     if (transport === 'echo_gateway') {
       return {
         compatible: true,
-        explanation: 'Доступний через захищений шлюз Echo.',
+        explanation: 'Доступний через захищений шлюз ЕХО.',
       };
     }
     if (url.protocol !== 'http:') {
@@ -114,7 +125,7 @@ export function getAiAgentEngineCompatibility(
 }
 
 export function getAiAgentEngineTransport(
-  engine: Pick<AiEngineItem, 'enabled' | 'hasToken' | 'url'>,
+  engine: AiAgentEngineFields,
 ): AiAgentEngineTransport | null {
   if (!engine.enabled) {
     return null;
@@ -124,8 +135,15 @@ export function getAiAgentEngineTransport(
     if (!isCleanProviderUrl(url)) {
       return null;
     }
-    if (url.hostname.toLowerCase() === 'inference.ai.mod.gov.ua') {
+    if (url.hostname.toLowerCase() === GOVERNMENT_AI_HOST) {
       return isGovernmentAiUrl(url) ? 'echo_gateway' : null;
+    }
+    // Echo adds the proxy key on the server; it never reaches a container.
+    if (isGovernmentAiProxyEngine(engine)) {
+      return 'echo_gateway';
+    }
+    if (hasUnknownHostPrefix(engine)) {
+      return null;
     }
     if (url.protocol === 'http:' && isDispatcherUpstreamHost(url.hostname)) {
       return 'direct_http';
@@ -136,18 +154,28 @@ export function getAiAgentEngineTransport(
   return null;
 }
 
-export function getAiAgentTokenNotice(
-  engine: Pick<AiEngineItem, 'enabled' | 'hasToken' | 'url'>,
-): AiAgentTokenNotice | null {
+export function getAiAgentTokenNotice(engine: AiAgentEngineFields): AiAgentTokenNotice | null {
   try {
     if (engine.enabled && isGovernmentAiUrl(new URL(engine.url))) {
       return {
         message:
-          'Шлюз Echo додає токен Azure на сервері; секрет і токен не передаються до контейнера агента.',
+          'Шлюз ЕХО додає токен Azure на сервері; секрет і токен не передаються до контейнера агента.',
         severity: 'info',
       };
     }
   } catch {}
+  if (engine.enabled && isGovernmentAiProxyEngine(engine)) {
+    return engine.hasToken
+      ? {
+          message:
+            'Шлюз ЕХО додає ключ проксі державного шлюзу на сервері; ключ не передається до контейнера агента.',
+          severity: 'info',
+        }
+      : {
+          message: 'Вкажіть ключ проксі державного шлюзу ШІ як токен движка.',
+          severity: 'warning',
+        };
+  }
   if (!engine.hasToken) {
     return null;
   }
@@ -166,11 +194,72 @@ function isCleanProviderUrl(url: URL): boolean {
   );
 }
 
+function isDirectOpenAiHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.+$/, '');
+  return host === 'openai.com' || host.endsWith('.openai.com');
+}
+
+/**
+ * The model name Echo's model quirks see: without the proxy prefix on a
+ * proxied government engine. Mirrors `model_id` in
+ * wdintel-rs/src/ai_engine/client.rs.
+ */
+export function getAiEngineModelId(engine: Pick<AiEngineItem, 'url' | 'modelName'>): string {
+  return isGovernmentAiProxyEngine(engine)
+    ? engine.modelName.slice(GOVERNMENT_AI_PROXY_MODEL_PREFIX.length)
+    : engine.modelName;
+}
+
+/**
+ * The government gateway reached through a proxy that holds its credentials
+ * (Bifrost or another one). Mirrors `is_government_proxy` in
+ * wdintel-rs/src/ai_engine/client.rs.
+ */
+export function isGovernmentAiProxyEngine(
+  engine: Pick<AiEngineItem, 'url'> & Partial<Pick<AiEngineItem, 'modelName'>>,
+): boolean {
+  const modelName = engine.modelName ?? '';
+  if (
+    !modelName.startsWith(GOVERNMENT_AI_PROXY_MODEL_PREFIX) ||
+    modelName.length === GOVERNMENT_AI_PROXY_MODEL_PREFIX.length
+  ) {
+    return false;
+  }
+  try {
+    const url = new URL(engine.url);
+    const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      host !== GOVERNMENT_AI_HOST &&
+      !isDirectOpenAiHost(host)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** A model name starting with a host other than the government gateway's. */
+function hasUnknownHostPrefix(
+  engine: Pick<AiEngineItem, 'url'> & Partial<Pick<AiEngineItem, 'modelName'>>,
+): boolean {
+  const modelName = engine.modelName ?? '';
+  const slash = modelName.indexOf('/');
+  if (slash < 0 || !modelName.slice(0, slash).includes('.')) {
+    return false;
+  }
+  try {
+    if (isGovernmentAiUrl(new URL(engine.url))) {
+      return false;
+    }
+  } catch {}
+  return !isGovernmentAiProxyEngine(engine);
+}
+
 export function isGovernmentAiUrl(url: URL): boolean {
   return (
     isCleanProviderUrl(url) &&
     url.protocol === 'https:' &&
-    url.hostname.toLowerCase() === 'inference.ai.mod.gov.ua' &&
+    url.hostname.toLowerCase() === GOVERNMENT_AI_HOST &&
     (url.port || '443') === '443'
   );
 }

@@ -18504,6 +18504,8 @@ type alias AiAgentAdminSettingsItem =
     , defaultAiEngineId : Maybe (String)
     , reviewerAiEngineId : Maybe (String)
     , securityReviewEnabled : Bool
+    , refusalRewriteEnabled : Bool
+    , refusalRewriteAiEngineId : Maybe (String)
     , mattermostChatEnabled : Bool
     , hasMattermostWebhook : Bool
     , hasMattermostChatWebhook : Bool
@@ -18520,6 +18522,8 @@ aiAgentAdminSettingsItemEncoder struct =
         , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
         , ( "reviewerAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reviewerAiEngineId )
         , ( "securityReviewEnabled", (Json.Encode.bool) struct.securityReviewEnabled )
+        , ( "refusalRewriteEnabled", (Json.Encode.bool) struct.refusalRewriteEnabled )
+        , ( "refusalRewriteAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.refusalRewriteAiEngineId )
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "hasMattermostWebhook", (Json.Encode.bool) struct.hasMattermostWebhook )
         , ( "hasMattermostChatWebhook", (Json.Encode.bool) struct.hasMattermostChatWebhook )
@@ -18534,6 +18538,8 @@ type alias AiAgentAdminSettingsUpdateReq =
     , defaultAiEngineId : Maybe (String)
     , reviewerAiEngineId : Maybe (String)
     , securityReviewEnabled : Bool
+    , refusalRewriteEnabled : Bool
+    , refusalRewriteAiEngineId : Maybe (String)
     , mattermostChatEnabled : Bool
     , mattermostWebhookUrl : Maybe (String)
     , clearMattermostWebhook : Bool
@@ -18552,6 +18558,8 @@ aiAgentAdminSettingsUpdateReqEncoder struct =
         , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
         , ( "reviewerAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reviewerAiEngineId )
         , ( "securityReviewEnabled", (Json.Encode.bool) struct.securityReviewEnabled )
+        , ( "refusalRewriteEnabled", (Json.Encode.bool) struct.refusalRewriteEnabled )
+        , ( "refusalRewriteAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.refusalRewriteAiEngineId )
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "mattermostWebhookUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
         , ( "clearMattermostWebhook", (Json.Encode.bool) struct.clearMattermostWebhook )
@@ -34125,6 +34133,8 @@ aiAgentAdminSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reviewerAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "securityReviewEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostChatWebhook" (Json.Decode.bool)))
@@ -34140,6 +34150,8 @@ aiAgentAdminSettingsUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reviewerAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "securityReviewEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "refusalRewriteAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostWebhookUrl" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearMattermostWebhook" (Json.Decode.bool)))

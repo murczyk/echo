@@ -266,6 +266,51 @@ test("rejects unsupported gateway transports and missing capabilities", () => {
   );
 });
 
+test("registers the refusal rewrite engine only for gateway models", async () => {
+  const gatewayRewrite = {
+    ...normalPayload,
+    modelName: "gpt-6.1-sol",
+    providerTransport: "echo_gateway",
+    providerApiKey: "A".repeat(43),
+    rewriteModelName: "gpt-6-luna",
+    rewriteMaxTokens: 2_048,
+  };
+  const payload = validatePayload(gatewayRewrite, false);
+  assert.equal(payload.rewriteModelName, "gpt-6-luna");
+  assert.equal(payload.rewriteMaxTokens, 2_048);
+  assert.ok(systemPrompt(payload).includes("Role and authorization context"));
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Role and authorization context/);
+  const directory = await mkdtemp(join(tmpdir(), "echo-ai-agent-test-"));
+  try {
+    const modelsPath = await writeModelsFile(directory, payload);
+    const models = JSON.parse(await readFile(modelsPath, "utf8"));
+    const rewrite = models.providers["echo-vllm"].models.find(
+      (model: { id: string }) => model.id === "gpt-6-luna",
+    );
+    assert.equal(rewrite.reasoning, false);
+    assert.equal(rewrite.maxTokens, 2_048);
+    assert.deepEqual(rewrite.input, ["text"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  assert.throws(
+    () =>
+      validatePayload(
+        { ...normalPayload, rewriteModelName: "gpt-6-luna" },
+        false,
+      ),
+    /refusal rewrite provider requires a gateway model/,
+  );
+  assert.throws(
+    () =>
+      validatePayload(
+        { ...normalPayload, rewriteMaxTokens: 2_048 },
+        false,
+      ),
+    /rewriteMaxTokens requires rewriteModelName/,
+  );
+});
+
 test("rejects provider API keys containing header control characters", () => {
   assert.throws(
     () =>
@@ -754,7 +799,7 @@ test("incident 01a1a1d8: tells the agent that mentioned frequencies equal their 
       false,
     ),
   );
-  assert.match(prompt, /stored Echo form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
+  assert.match(prompt, /stored ECHO form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
   assert.match(prompt, /only the frequencies the current request is about/);
   assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Frequencies named in this conversation/);
 });
@@ -776,7 +821,7 @@ test("#3998 reads СС3 in a user query as the DMR color code", () => {
   const prompt = systemPrompt(
     validatePayload({ ...normalPayload, history: [], prompt: "144.8450 Мишаня Якудза, СС3" }, false),
   );
-  assert.match(prompt, /stored Echo form: 144\.8450\./);
+  assert.match(prompt, /stored ECHO form: 144\.8450\./);
   assert.match(prompt, /DMR color codes named in this conversation: СС3 = color code 3\. They are radio network metadata, not callsigns/);
   assert.match(prompt, /is the DMR color code \(0–15\) of a radio network/);
   assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /DMR color codes named/);
@@ -1285,7 +1330,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.13.2",
+    harnessRelease: "2026.11.14.2",
   });
 });
 

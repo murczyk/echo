@@ -34,9 +34,12 @@ export const RESEARCH_INCOMPLETE_REASON = "incomplete_research";
 export const RESEARCH_CONTINUATIONS = 1;
 export const DEEP_RESEARCH_CONTINUATIONS = 3;
 const DEEP_SEARCH_PROMPT =
-  "Deep mode was requested, but no tool has run. Search Echo before answering from general knowledge: a word with an everyday meaning may be a callsign, a unit or a term from the reports. Only reformatting or translating earlier text, or a task answerable entirely from text, files or images the user supplied, needs no tool; in that case finish with a brief completion message.";
+  "Deep mode was requested, but no tool has run. Search ECHO before answering from general knowledge: a word with an everyday meaning may be a callsign, a unit or a term from the reports. Only reformatting or translating earlier text, or a task answerable entirely from text, files or images the user supplied, needs no tool; in that case finish with a brief completion message.";
 const FAILED_START_PROMPT =
   "The previous attempt failed before any work was done. Answer the user's request above now, starting with the tools it needs.";
+// Incident 01a1d9d0: hidden reasoning used the whole output allowance of a research turn.
+const CUT_OFF_HINT =
+  "Your previous turn used its whole output allowance on hidden reasoning and produced nothing usable. Keep your reasoning brief and act at once. ";
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
   preset: "balanced",
   api: "openai-completions",
@@ -110,7 +113,7 @@ export const RESEARCH_TUNING: ResearchTuning = {
   checkpointPriorMs: 60_000,
 };
 
-export const FLASH_GUIDANCE = `Start working in your first turn: when the request needs Echo data, run the first retrieval right away, without announcing it first. Never end a turn with a plan, a promise or a progress note while work remains; call the tool in that same turn. update_research is not needed before retrieval. A name or unfamiliar word may be a callsign, a unit or a term from the reports even when it has an everyday meaning: search Echo for it before answering from general knowledge. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination, or read more than three pages of one search, without recording a concrete coverage need in paginationReason or refining the search; explicit exhaustive requests may continue pagination. A cited partial answer with a stated coverage gap is better than none. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Send report_progress together with another tool call in the same turn, never as a turn of its own. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. When the user asks for a document, saving it with echo_document_script is part of research: save it before the final update_research, because the tool-free synthesis cannot create files; when the budget warning arrives before it is saved, save it now from the evidence collected so far. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer. A reply that calls no tool at all is delivered to the user as written: when the request needs no tool, such as reformatting or translating earlier text or applying the user's own instructions to text they supplied, write the complete answer in that reply, following the rules set earlier in the conversation, never a plan or a note.`;
+export const FLASH_GUIDANCE = `Start working in your first turn: when the request needs ECHO data, run the first retrieval right away, without announcing it first. Never end a turn with a plan, a promise or a progress note while work remains; call the tool in that same turn. update_research is not needed before retrieval. A name or unfamiliar word may be a callsign, a unit or a term from the reports even when it has an everyday meaning: search ECHO for it before answering from general knowledge. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination, or read more than three pages of one search, without recording a concrete coverage need in paginationReason or refining the search; explicit exhaustive requests may continue pagination. A cited partial answer with a stated coverage gap is better than none. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Send report_progress together with another tool call in the same turn, never as a turn of its own. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. When the user asks for a document, saving it with echo_document_script is part of research: save it before the final update_research, because the tool-free synthesis cannot create files; when the budget warning arrives before it is saved, save it now from the evidence collected so far. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer. A reply that calls no tool at all is delivered to the user as written: when the request needs no tool, such as reformatting or translating earlier text or applying the user's own instructions to text they supplied, write the complete answer in that reply, following the rules set earlier in the conversation, never a plan or a note.`;
 
 // Limits live in normalizedResearchUpdate, not here: a schema violation costs a whole
 // provider turn, and it was the most common failure of this tool in production.
@@ -373,15 +376,25 @@ export class FlashResearch {
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
   private researchStartedAt?: number;
-  // The longest validated part of a synthesis the finalization deadline cut off.
+  // The longest validated part of a synthesis the finalization deadline or the output
+  // limit cut off.
   private partial?: string;
+  private partialOutputLimit = false;
+  // The latest research turn ended at the output limit.
+  private cutOff = false;
   private readonly sources: () => Sources;
   private readonly journal?: WorkJournal;
   private readonly diagnostic: (event: CompletionDiagnostic) => void;
   private readonly tuning: ResearchTuning;
   usedFallback = false;
-  /** The answer is the finished part of a synthesis cut off by the deadline. */
+  /** The answer is the finished part of a cut-off synthesis. */
   usedPartial = false;
+
+  /** What cut off the synthesis whose finished part is the answer. */
+  get partialCause(): "deadline" | "output_limit" | undefined {
+    if (!this.usedPartial) return undefined;
+    return this.partialOutputLimit ? "output_limit" : "deadline";
+  }
 
   constructor(
     sources: () => Sources,
@@ -615,16 +628,18 @@ export class FlashResearch {
   get hasUnfinishedWork(): boolean {
     return (
       this.hasPendingTasks ||
-      (!this.state && this.publicToolRuns === 0 && this.toolRunsAtProgress === 0)
+      (!this.state &&
+        (this.cutOff || (this.publicToolRuns === 0 && this.toolRunsAtProgress === 0)))
     );
   }
 
-  // With saved state the checklist decides. Without it, the one sign of unfinished work
-  // is a public promise of progress that no tool call followed.
+  // With saved state the checklist decides. Without it, the signs of unfinished work are
+  // a public promise of progress that no tool call followed, and a last turn the output
+  // limit cut off, which may have been the plan for the whole request.
   private get unfinished(): boolean {
     return this.state
       ? this.hasPendingTasks
-      : this.toolRunsAtProgress === this.publicToolRuns;
+      : this.cutOff || this.toolRunsAtProgress === this.publicToolRuns;
   }
 
   // Deep was asked for more effort, so it must not simply end on an answer from memory.
@@ -673,12 +688,13 @@ export class FlashResearch {
 
   continuationPrompt(): string {
     if (this.failedStart) return FAILED_START_PROMPT;
+    const hint = this.cutOff ? CUT_OFF_HINT : "";
     const pending = this.pendingTasks;
-    if (!pending.length && !this.unfinished) return DEEP_SEARCH_PROMPT;
+    if (!pending.length && !this.unfinished) return hint + DEEP_SEARCH_PROMPT;
     const reason = pending.length
       ? `these tasks are still pending: ${JSON.stringify(pending)}`
       : "you announced work but ran no tool";
-    return `The work is not finished: ${reason}. Do the remaining work now by calling the tools it needs; a text reply does not do it. If a task cannot be done or needs no tool, mark it done or blocked with update_research, then finish with a brief completion message.`;
+    return `${hint}The work is not finished: ${reason}. Do the remaining work now by calling the tools it needs; a text reply does not do it. If a task cannot be done or needs no tool, mark it done or blocked with update_research, then finish with a brief completion message.`;
   }
 
   completed(purpose: string, durationMs: number): void {
@@ -693,6 +709,7 @@ export class FlashResearch {
     const durationMs = Date.now() - this.researchStartedAt;
     this.completed("research", durationMs);
     const completion = providerCompletion(message);
+    this.cutOff = completion.outcome === "output_limit";
     // Only the latest outcome counts: a provider that answered after a cooldown has
     // recovered, so a later failure gets the usual re-prompt.
     if (["stop", "toolUse", "length"].includes(completion.stopReason ?? "")) {
@@ -776,10 +793,12 @@ export class FlashResearch {
     return answer;
   }
 
-  private notePartial(text: string): void {
+  private notePartial(text: string, outputLimit = false): void {
     const answer = validatedFlashAnswer(completedLines(text), this.sources());
-    if (answer && answer.length > (this.partial?.length ?? 0))
+    if (answer && answer.length > (this.partial?.length ?? 0)) {
       this.partial = answer;
+      this.partialOutputLimit = outputLimit;
+    }
   }
 
   private async synthesisAttempt(
@@ -795,7 +814,7 @@ export class FlashResearch {
     let durationMs = 0;
     const candidate = await synthesizeBudgetEvidence({
       ...options,
-      onPartial: (text) => this.notePartial(text),
+      onPartial: (text, outputLimit) => this.notePartial(text, outputLimit),
       onOutcome: (event) => {
         outcome = event.outcome as CompletionStatus;
         durationMs = event.durationMs ?? 0;

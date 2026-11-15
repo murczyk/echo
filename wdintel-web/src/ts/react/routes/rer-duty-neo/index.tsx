@@ -282,6 +282,7 @@ export function RerDutyNeoPage({
     reloadEmptyFeeds,
     reloadFeeds,
     reloadEditedFeeds,
+    refreshChangedMessages,
     flushPendingNewerMessages,
     handleEditedMessage,
     handleDeleteConfirm,
@@ -935,12 +936,14 @@ export function RerDutyNeoPage({
                   }
                 : undefined
             }
-            onEditSuccess={() => {
+            onEditSuccess={(result) => {
               if (editAsReport) {
-                reloadFeeds();
-              } else {
-                reloadEditedFeeds();
+                return refreshChangedMessages([
+                  result.signal_message_id,
+                  ...(editTarget?.message.parentMessages ?? []).map(({ id }) => id),
+                ]);
               }
+              reloadEditedFeeds();
             }}
             onDeleteSuccess={() => {
               reloadFeeds();

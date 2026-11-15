@@ -548,16 +548,17 @@ mod m20261104_083000_group_message_requirements;
 mod m20261105_142754_messenger_account_internal_notes;
 mod m20261107_175132_important_only_my_organism;
 mod m20261108_090102_signoz_metrics_settings;
-mod m20261110_122635_messenger_media_meta_timeline;
-mod m20261113_124500_messenger_account_external_url;
 mod m20261109_104328_duty_search_settings;
 mod m20261109_104428_ai_network_match;
 mod m20261110_100819_ai_network_match_job_generation;
+mod m20261110_122635_messenger_media_meta_timeline;
 mod m20261111_090000_message_replay_session;
 mod m20261112_141106_attachment_order;
 mod m20261113_093453_report_group_preferences;
 mod m20261113_114713_legacy_replay_marker_index;
+mod m20261113_124500_messenger_account_external_url;
 mod m20261114_111044_messenger_chat_read_state;
+mod m20261114_170500_ai_agent_refusal_rewrite;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1260,6 +1261,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261108_090102_signoz_metrics_settings::Migration),
             Box::new(m20261110_122635_messenger_media_meta_timeline::Migration),
             Box::new(m20261113_124500_messenger_account_external_url::Migration),
+            Box::new(m20261114_170500_ai_agent_refusal_rewrite::Migration),
             Box::new(m20261109_141057_group_message_sending::Migration),
             Box::new(m20261107_150035_doc_media_settings::Migration),
             Box::new(m20261109_104328_duty_search_settings::Migration),

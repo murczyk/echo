@@ -59,6 +59,8 @@ const EMPTY = { name: "", args: {} };
 const ANSWER = { name: "", args: {} };
 // A model turn that writes the cited report itself after its tools, with no tool call.
 const REPORT = { name: "", args: {} };
+// A model turn whose hidden reasoning used the whole output allowance (incident 01a1d9d0).
+const CUT_OFF = { name: "", args: {} };
 const historyCitation = "/rer-analysis-neo?m=archive-history";
 // Longer than any saved draft can be.
 const longFindings = "Botanical findings. ".repeat(420);
@@ -163,6 +165,10 @@ const scenarios = [
   "deep-gaps",
   "deep-hard-stop",
   "deep-synthesis-fallback",
+  "deep-research-length",
+  "research-length-unrecovered",
+  "research-length-recovered",
+  "synthesis-length",
   "empty-final-turn",
   "deep-empty-final-turn",
   "refresh-required",
@@ -292,6 +298,16 @@ for (const [scenario, modelName] of [
     } else if (scenario === "deep-synthesis-fallback") {
       read();
       refresh();
+    } else if (scenario === "deep-research-length") {
+      read();
+      calls.push(CUT_OFF);
+      refresh();
+    } else if (scenario === "research-length-unrecovered") {
+      calls.length = 0;
+      calls.push(CUT_OFF, CUT_OFF);
+    } else if (scenario === "research-length-recovered") {
+      calls.length = 0;
+      calls.push(CUT_OFF, ANSWER);
     } else if (scenario.endsWith("empty-final-turn")) {
       read();
       refresh();
@@ -366,6 +382,7 @@ for (const [scenario, modelName] of [
     let continuations = 0;
     let rejectionNotices = 0;
     let deepSearchPrompts = 0;
+    let cutOffHints = 0;
     const synthesisBodies: string[] = [];
     const now = Date.now.bind(Date);
     t.mock.method(Date, "now", () => now() + clockOffset);
@@ -524,6 +541,13 @@ for (const [scenario, modelName] of [
           if (scenario === "long-evidence")
             assert.ok(JSON.stringify(body).includes("TAIL_FACT"));
           if (scenario === "synthesis-cancel") process.emit("SIGTERM");
+          // Incident 01a1d9d0: both attempts hit the output limit after some finished lines.
+          if (scenario === "synthesis-length")
+            return stream(
+              `## Archive\n\n- ${draft}\n- The greenhouse reopened. [джерело](${citation})\n- UNFINISHED [джерело](/rer`,
+              undefined,
+              "length",
+            );
           if (synthesisCalls === 1) {
             if (scenario === "retry-deadline") clockOffset += 61_000;
             if (["retry-length", "retry-deadline"].includes(scenario))
@@ -565,7 +589,7 @@ for (const [scenario, modelName] of [
             );
           return stream(
             scenario.startsWith("user-text") ||
-              ["history-aggregate", ...NO_EVIDENCE].includes(scenario)
+              ["history-aggregate", "research-length-unrecovered", ...NO_EVIDENCE].includes(scenario)
               ? "The botanical survey is ready."
               : scenario === "user-map"
                 ? `[мапа](echo-map:${mapId})`
@@ -579,6 +603,7 @@ for (const [scenario, modelName] of [
         if (lastInput?.includes("The work is not finished")) continuations++;
         if (lastInput?.includes("but not the draft")) rejectionNotices++;
         if (lastInput?.includes("Deep mode was requested")) deepSearchPrompts++;
+        if (lastInput?.includes("whole output allowance")) cutOffHints++;
         // One turn eats over half of the 60 s research window before anything was found.
         if (scenario === "slow-first-turn" && researchCalls === 1)
           clockOffset += 31_000;
@@ -660,6 +685,7 @@ for (const [scenario, modelName] of [
         }
         const call = calls.shift();
         if (call === EMPTY) return stream("");
+        if (call === CUT_OFF) return stream("", undefined, "length");
         if (call === ANSWER) return stream("The botanical survey is ready.");
         // Incident 01a1d04a: research wrote the whole report itself after its tools.
         if (call === REPORT)
@@ -896,7 +922,7 @@ for (const [scenario, modelName] of [
         answer.includes("не виконавши всі заплановані кроки"),
         NO_EVIDENCE.includes(scenario),
       );
-    } else assert.equal(Boolean(coverage), answer.includes("Охоплення джерел неповне"));
+    } else assert.equal(Boolean(coverage), answer.toLowerCase().includes("охоплення джерел неповне"));
     const diagnostics = events.filter(
       (event) => event.type === "completion_diagnostic",
     );
@@ -946,6 +972,41 @@ for (const [scenario, modelName] of [
       assert.equal(synthesisCalls, 1);
       assert.equal(diagnostics.at(-1).outcome, "fallback");
     }
+    // Incident 01a1d9d0: a research turn that spent the output allowance on hidden
+    // reasoning is no provider failure; the unfinished work is re-prompted once, with a
+    // hint to keep reasoning brief, and synthesis answers.
+    if (scenario === "deep-research-length") {
+      assert.ok(diagnostics.some((event) => event.stage === "research" && event.outcome === "output_limit"));
+      assert.ok(!diagnostics.some((event) => event.outcome === "provider_error"));
+      assert.equal(cutOffHints, 1);
+      assert.equal(continuations, 1);
+      assert.equal(synthesisCalls, 1);
+      assert.equal(diagnostics.at(-1).outcome, "complete");
+      assert.ok(!answer.includes("збій постачальника"));
+    } else if (scenario === "research-length-unrecovered") {
+      // Cut off before any tool, progress or saved plan, twice: nothing was searched, and
+      // the answer must not pass for complete.
+      assert.equal(cutOffHints, 1);
+      assert.equal(queries.length, 0);
+      assert.equal(synthesisCalls, 1);
+      assert.ok(!diagnostics.some((event) => event.outcome === "provider_error"));
+      assert.equal(coverage?.reason, "incomplete_research");
+      assert.ok(answer.includes("Охоплення джерел неповне"));
+    } else if (scenario === "research-length-recovered") {
+      // The re-prompt's tool-free answer is delivered, not lost to synthesis.
+      assert.equal(cutOffHints, 1);
+      assert.equal(synthesisCalls, 0);
+      assert.equal(diagnostics.at(-1).outcome, "research_text");
+      assert.equal(coverage, undefined);
+    } else assert.equal(cutOffHints, 0);
+    // Incident 01a1d9d0: a synthesis the output limit cut off keeps its finished cited lines.
+    if (scenario === "synthesis-length") {
+      assert.equal(synthesisCalls, 2);
+      assert.equal(diagnostics.at(-1).outcome, "partial");
+      assert.ok(answer.startsWith(`## Archive\n\n- ${draft}\n- The greenhouse reopened.`));
+      assert.ok(answer.includes("Відповідь обірвано через ліміт обсягу"));
+      assert.equal(coverage?.reason, "incomplete_research");
+    }
     if (scenario === "pagination-guard") assert.equal(queries.length, 1);
     if (recoveringPagination) {
       assert.equal(queries.length, 2);
@@ -962,7 +1023,7 @@ for (const [scenario, modelName] of [
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
-    else if (NO_EVIDENCE.includes(scenario))
+    else if ([...NO_EVIDENCE, "research-length-unrecovered", "research-length-recovered"].includes(scenario))
       assert.ok(answer.startsWith("The botanical survey is ready."));
     else if (
       scenario.startsWith("user-text") ||
@@ -1055,7 +1116,7 @@ for (const [scenario, modelName] of [
       );
     }
     if (NO_EVIDENCE.includes(scenario))
-      assert.ok(synthesisBodies.at(-1)!.includes("No Echo data was searched"));
+      assert.ok(synthesisBodies.at(-1)!.includes("No ECHO data was searched"));
     const failures = events.filter(
       (event) => event.type === "tool_end" && event.is_error,
     );
@@ -1135,7 +1196,7 @@ for (const [scenario, modelName] of [
     if (["user-text", "user-text-history", "user-map"].includes(scenario))
       assert.equal(queries.length, 0);
     else if (
-      ["pagination-recovery-no-memory", "deep-promise-only"].includes(scenario)
+      ["pagination-recovery-no-memory", "deep-promise-only", "research-length-unrecovered", "research-length-recovered"].includes(scenario)
     )
       assert.equal(checkpointsSaved.length, 0);
     else assert.ok(checkpointsSaved.length);
@@ -1228,6 +1289,7 @@ test("incident 01a1d054: a synthesis cut off at the deadline delivers its finish
   const answer = await cutOffSynthesis(t, research, written);
   assert.equal(answer, `## Archive\n\n- ${draft}`);
   assert.equal(research.usedPartial, true);
+  assert.equal(research.partialCause, "deadline");
   assert.equal(research.usedFallback, true);
   const synthesis = diagnostics.find((event) => event.stage === "synthesis");
   assert.equal(synthesis.outcome, "aborted");
@@ -1271,11 +1333,13 @@ test("incident 01a1d04a: research's own report counts only when long and cited f
   budget.dispose();
 });
 
-test("incident 01a1d054: a cut-off answer says the time limit cut it", () => {
-  const notice = (deep: boolean) =>
-    boundedResearchNotice({ reason: "time_limit", deep, coverageLimited: true, unfinished: false, fallbackText: "x", partial: true });
+test("incident 01a1d054: a cut-off answer says what cut it", () => {
+  const notice = (deep: boolean, partial: "deadline" | "output_limit" = "deadline") =>
+    boundedResearchNotice({ reason: "time_limit", deep, coverageLimited: true, unfinished: false, fallbackText: "x", partial });
   assert.equal(notice(false), "Відповідь обірвано через ліміт часу; охоплення джерел неповне. Оберіть глибокий аналіз, щоб отримати повний звіт.");
   assert.equal(notice(true), "Відповідь обірвано через ліміт часу; охоплення джерел неповне.");
+  // Incident 01a1d9d0: hidden reasoning used the output allowance; no time limit was hit.
+  assert.equal(notice(true, "output_limit"), "Відповідь обірвано через ліміт обсягу; охоплення джерел неповне.");
 });
 
 test("incident 01a1d054: only finished lines of a cut-off answer remain", () => {
@@ -1623,7 +1687,7 @@ test("#4031 synthesis never blames a limit that did not stop the work", () => {
   assert.match(deepTimedOut, /State remaining coverage limitations honestly/);
   // A translation of the previous answer searches nothing and hit no limit.
   const direct = outputRetrySystemPrompt(payload, { retrieved: false, limit: null });
-  assert.match(direct, /if the request needed Echo data, say that the search did not run/);
+  assert.match(direct, /if the request needed ECHO data, say that the search did not run/);
   assert.doesNotMatch(direct, /time budget ended|deep mode/);
   assert.match(direct, /No time, tool or budget limit stopped this work/);
   // An unknown outcome keeps saying nothing about limits.

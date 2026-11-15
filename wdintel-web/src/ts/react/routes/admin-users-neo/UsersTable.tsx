@@ -25,6 +25,7 @@ import { updateLogin } from '../../services/api/logins';
 import { buildUserLoadingRows } from './user-display';
 import { toClearTotpReq } from './user-form-helpers';
 import { useUsersColumns } from './useUsersColumns';
+import type { AorColumnLookup } from './aor-column';
 export function RowActions(props: {
   login: Login;
   onEdit: (login: Login) => void;
@@ -86,6 +87,7 @@ export function RowActions(props: {
 export function UsersTable(props: {
   data: Login[];
   loading: boolean;
+  aorLookup?: AorColumnLookup;
   onEdit: (login: Login) => void;
   onUserUpdated: (login: Login) => void;
   extraColumns?: AppMrtColumnDef<Login>[];
@@ -93,7 +95,13 @@ export function UsersTable(props: {
   const tableStateContext = useTableStateContext();
   const organism = useUserManagementScope();
   const actionsWidth = organism ? 112 : 76;
-  const userColumns = useUsersColumns(props.onEdit);
+  const userColumns = useUsersColumns(props.onEdit, props.aorLookup);
+  // The table caches accessor values per row until `data` changes, so new
+  // AOR lookups need new rows for filtering to see them.
+  const data = useMemo(
+    () => (props.loading ? buildUserLoadingRows() : [...props.data]),
+    [props.loading, props.data, props.aorLookup],
+  );
   const columns = useMemo(
     () => [...userColumns, ...(props.extraColumns ?? [])],
     [userColumns, props.extraColumns],
@@ -117,7 +125,7 @@ export function UsersTable(props: {
 
   const table = useAppMaterialReactTable({
     columns,
-    data: props.loading ? buildUserLoadingRows() : props.data,
+    data,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

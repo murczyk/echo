@@ -40,6 +40,11 @@ fn enrich_options(
         })
         .collect::<BTreeMap<_, _>>();
     let groups = group_counts(units, hierarchy).c(h!())?;
+    let names = hierarchy
+        .units
+        .iter()
+        .map(|unit| (unit.id, unit.name.trim()))
+        .collect::<BTreeMap<_, _>>();
     for (index, group) in hierarchy.groups.iter().enumerate() {
         let totals = &groups[index];
         if group.level < 2
@@ -48,15 +53,33 @@ fn enrich_options(
         {
             continue;
         }
-        let value = if totals.unit_ids.len() == 1 {
-            format!("unit-id:{}", totals.unit_ids[0])
+        let label = group_label(hierarchy, index).c(h!())?;
+        let unit_id = if totals.unit_ids.len() == 1 {
+            totals.unit_ids.first()
         } else {
-            format!("unit-parent:{}", group.id)
+            totals
+                .unit_ids
+                .iter()
+                .filter(|id| names.get(*id) == Some(&label.as_str()))
+                .min()
         };
+        let value = unit_id.map_or_else(
+            || format!("unit-parent:{}", group.id),
+            |id| format!("unit-id:{id}"),
+        );
         let label = match options.get(&value) {
             Some(option) => option.label.clone(),
-            None => group_label(hierarchy, index).c(h!())?,
+            None => label,
         };
+        for id in &totals.unit_ids {
+            let unit_value = format!("unit-id:{id}");
+            if options
+                .get(&unit_value)
+                .is_some_and(|option| option.label.trim() == label.trim())
+            {
+                options.remove(&unit_value);
+            }
+        }
         options.insert(
             value.clone(),
             UnitStatsOption {
@@ -125,4 +148,85 @@ fn group_counts(
         }
     }
     Ok(groups)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sigint::unit::types::{UnitHierarchyGroup, UnitHierarchyUnit};
+
+    #[test]
+    fn regression_3527_computed_parent_replaces_matching_catalog_options() {
+        let hierarchy = UnitHierarchyRsp {
+            revision: String::new(),
+            groups: vec![
+                UnitHierarchyGroup {
+                    id: "group:2:22 А".to_string(),
+                    label: "22 А".to_string(),
+                    level: 2,
+                    parent_index: None,
+                },
+                UnitHierarchyGroup {
+                    id: "group:2:22 А|3:__EMPTY__|4:72 мсд".to_string(),
+                    label: "72 мсд".to_string(),
+                    level: 4,
+                    parent_index: Some(0),
+                },
+                UnitHierarchyGroup {
+                    id: "group:0:Інший регіон|1:__EMPTY__|2:22 А".to_string(),
+                    label: "22 А".to_string(),
+                    level: 2,
+                    parent_index: None,
+                },
+            ],
+            units: [
+                (30, " 22 А ", 0),
+                (31, "22 А", 0),
+                (32, "72 мсд 22 А", 1),
+                (33, "Army headquarters", 0),
+                (34, "22 А", 2),
+            ]
+            .into_iter()
+            .map(|(id, name, group_index)| UnitHierarchyUnit {
+                id,
+                name: name.to_string(),
+                group_index: Some(group_index),
+            })
+            .collect(),
+            selections: Vec::new(),
+        };
+        for own_count in [0, 2] {
+            let units = hierarchy
+                .units
+                .iter()
+                .zip([own_count, 3, 5, 7, 11])
+                .map(|(unit, count)| AnalysisStatsUnit {
+                    unit_id: unit.id,
+                    name: unit.name.clone(),
+                    count,
+                })
+                .collect::<Vec<_>>();
+            let options = enrich_options(&units, &hierarchy).unwrap();
+            let armies = options
+                .iter()
+                .filter(|option| option.label.trim() == "22 А")
+                .collect::<Vec<_>>();
+            assert_eq!(armies.len(), 2);
+            assert_eq!(options.len(), 4);
+            for (value, count) in [
+                ("unit-id:30", 15 + own_count),
+                ("unit-id:33", 7),
+                ("unit-id:34", 11),
+            ] {
+                assert_eq!(
+                    options
+                        .iter()
+                        .find(|option| option.value == value)
+                        .unwrap()
+                        .count,
+                    count
+                );
+            }
+        }
+    }
 }

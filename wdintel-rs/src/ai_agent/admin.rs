@@ -98,6 +98,12 @@ pub async fn update_settings(
         .as_deref()
         .map(access::parse_uuid)
         .transpose()?;
+    let refusal_rewrite_ai_engine_id = req
+        .refusal_rewrite_ai_engine_id
+        .as_deref()
+        .map(access::parse_uuid)
+        .transpose()
+        .context(h!())?;
     if default_ai_engine_id.is_some_and(|id| !unique_ids.contains(&id)) {
         return Err(AppError::BL {
             msg: "Default provider must be in the allowlist".to_string(),
@@ -113,6 +119,42 @@ pub async fn update_settings(
         return Err(AppError::BL {
             msg: "Виберіть провайдера перевірки безпеки".to_string(),
         });
+    }
+    if refusal_rewrite_ai_engine_id.is_some_and(|id| !unique_ids.contains(&id))
+    {
+        return Err(AppError::BL {
+            msg: "Refusal rewrite provider must be in the allowlist"
+                .to_string(),
+        });
+    }
+    if let Some(rewrite_id) = refusal_rewrite_ai_engine_id {
+        let rewrite_engine = access::allowed_engine_by_id(&env.dbx, rewrite_id)
+            .await
+            .context(h!())?;
+        if !access::refusal_rewrite_compatible(&rewrite_engine) {
+            return Err(AppError::BL {
+                msg:
+                    "Провайдер перезапису відмов має працювати через ЕХО-шлюз"
+                        .to_string(),
+            });
+        }
+    }
+    if req.refusal_rewrite_enabled && refusal_rewrite_ai_engine_id.is_none() {
+        let default_rewrite_engine = access::ordered_allowed_engines(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .any(|ai_engine| {
+                crate::ai_engine::client::model_id(&ai_engine)
+                    == crate::config::AI_AGENT_REFUSAL_REWRITE_DEFAULT_MODEL
+                    && access::refusal_rewrite_compatible(&ai_engine)
+            });
+        if !default_rewrite_engine {
+            return Err(AppError::BL {
+                msg: "Виберіть провайдера перезапису відмов, або додайте gpt-6-luna до дозволених"
+                    .to_string(),
+            });
+        }
     }
     let template_login_id = req
         .template_login_id
@@ -201,6 +243,8 @@ pub async fn update_settings(
     settings.default_ai_engine_id = Set(default_ai_engine_id);
     settings.reviewer_ai_engine_id = Set(reviewer_ai_engine_id);
     settings.security_review_enabled = Set(req.security_review_enabled);
+    settings.refusal_rewrite_enabled = Set(Some(req.refusal_rewrite_enabled));
+    settings.refusal_rewrite_ai_engine_id = Set(refusal_rewrite_ai_engine_id);
     settings.mattermost_chat_enabled = Set(req.mattermost_chat_enabled);
     settings.mattermost_webhook_url = Set(mattermost_webhook_url);
     settings.mattermost_chat_webhook_url = Set(mattermost_chat_webhook_url);
@@ -324,6 +368,12 @@ async fn settings_item(
             .reviewer_ai_engine_id
             .map(|id| id.to_string()),
         security_review_enabled: settings.security_review_enabled,
+        refusal_rewrite_enabled: settings
+            .refusal_rewrite_enabled
+            .unwrap_or(false),
+        refusal_rewrite_ai_engine_id: settings
+            .refusal_rewrite_ai_engine_id
+            .map(|id| id.to_string()),
         mattermost_chat_enabled: settings.mattermost_chat_enabled,
         has_mattermost_webhook: settings.mattermost_webhook_url.is_some(),
         has_mattermost_chat_webhook: settings

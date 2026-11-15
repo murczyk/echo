@@ -427,8 +427,11 @@ type SynthesisOptions = {
   /** Images attached to the current message, kept for final synthesis. */
   images?: { type: "image"; data: string; mimeType: string }[];
   onOutcome?: (outcome: CompletionDiagnostic) => void;
-  /** Receives the text written before the signal cut the synthesis off. */
-  onPartial?: (text: string) => void;
+  /**
+   * Receives the text written before the signal or, with `outputLimit`, the provider's
+   * output limit cut the synthesis off.
+   */
+  onPartial?: (text: string, outputLimit?: boolean) => void;
 };
 
 /**
@@ -637,6 +640,10 @@ export async function synthesizeBudgetEvidence(
   }
   if (/content_filter/i.test(response.errorMessage ?? ""))
     throw new SynthesisContentFilterError("Provider filtered final synthesis");
+  // Hidden reasoning used the rest of the output allowance: what was written is
+  // unfinished, but its finished lines can still answer (incident 01a1d9d0).
+  if (response.stopReason === "length" && messageText(response).trim())
+    options.onPartial?.(messageText(response), true);
   if (response.stopReason !== "stop") return null;
   return messageText(response).trim() || null;
 }
