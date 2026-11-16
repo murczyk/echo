@@ -561,6 +561,7 @@ async fn cancel_request_for_user(
         return Ok(state);
     }
     let now = Utc::now().naive_utc();
+    let agent_login_id = request.agent_login_id;
     let mut request = request.into_active_model();
     request.state = Set("cancelled".to_string());
     request.cancellation_requested = Set(true);
@@ -570,6 +571,7 @@ async fn cancel_request_for_user(
     lifecycle::touch_container_activity_in_transaction(
         &txn,
         human_login_id,
+        agent_login_id,
         now,
     )
     .await?;

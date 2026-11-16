@@ -7286,6 +7286,7 @@ export type AiAgentIdReq = {
 
 export type AiAgentContainerItem = {
   linkedAgentId: string;
+  slot: number;
   humanLoginId: string;
   humanLogin: string;
   agentLoginId: string;
@@ -7379,6 +7380,7 @@ export type AiAgentAdminRequestDetail = {
 
 export type AiAgentAdminUserReq = {
   loginId: string;
+  linkedAgentId: string | null;
 };
 
 export type AiAgentAdminUserItem = {

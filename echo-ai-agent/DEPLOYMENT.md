@@ -402,7 +402,7 @@ event limits, and Fast or Balanced requests that build a document get 30 minutes
 
 A Deep run holds its conversation and one of the twelve request slots for its
 duration; since #4232 the user's other conversations run beside it in the same
-container. A backend restart or a lost worker lease fails running requests, so
+container, or in a second one for another model backend. A backend restart or a lost worker lease fails running requests, so
 deploys interrupt long Deep runs; the control panel's upgrade waits until the
 namespace has no queued or running request.
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::AI_AGENT_MAIN_CONTAINER_SLOT;
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_conversation, ai_agent_settings, organism,
 };
@@ -318,10 +319,13 @@ async fn issue_3572_maintenance_refreshed_existing_scope_without_relaxing_bootst
 ) {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let fixture = AgentFixture::new(&env).await;
-    let linked =
-        crate::ai_agent::lifecycle::ensure_linked_agent(&env, fixture.human.id)
-            .await
-            .unwrap();
+    let linked = crate::ai_agent::lifecycle::ensure_linked_agent_in_slot(
+        &env,
+        fixture.human.id,
+        AI_AGENT_MAIN_CONTAINER_SLOT,
+    )
+    .await
+    .unwrap();
     for login_id in [fixture.human.id, fixture.agent.id] {
         crate::functest::tests::mk_secret_group_user(
             &env.dbx,
@@ -347,6 +351,7 @@ async fn issue_3572_maintenance_refreshed_existing_scope_without_relaxing_bootst
         crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
             &env.dbx,
             fixture.human.id,
+            AI_AGENT_MAIN_CONTAINER_SLOT,
         )
         .await
         .unwrap();
@@ -368,16 +373,81 @@ async fn issue_3572_maintenance_refreshed_existing_scope_without_relaxing_bootst
             .status(),
         StatusCode::OK
     );
+    // #4232: the container for another backend has its own agent login,
+    // named after the slot, and maintenance tests it by slot.
+    let second = crate::ai_agent::lifecycle::ensure_linked_agent_in_slot(
+        &env,
+        fixture.human.id,
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(second.link.slot, Some(1));
+    assert_ne!(second.login.id, linked.login.id);
+    assert_eq!(
+        second.login.login,
+        format!("{}-ai-agent-2", fixture.human.login)
+    );
+    assert_ne!(
+        second.container.instance_name,
+        linked.container.instance_name
+    );
+    let prepared_second =
+        crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
+            &env.dbx,
+            fixture.human.id,
+            1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(prepared_second.link.id, second.link.id);
+    assert_eq!(
+        crate::ai_agent::lifecycle::container_slot(
+            &env.dbx,
+            fixture.human.id,
+            Some(second.login.id)
+        )
+        .await
+        .unwrap(),
+        1
+    );
+    revoke_login_credentials(&env, second.login.id)
+        .await
+        .unwrap();
+    ai_agent_user_link::Entity::delete_by_id(second.link.id)
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    // A link made before slots has none and is the main one, so the user
+    // can't get another main link.
+    assert_eq!(linked.link.slot, None);
+    let now = chrono::Utc::now().naive_utc();
+    assert!(ai_agent_user_link::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        human_login_id: Set(fixture.human.id),
+        agent_login_id: Set(second.login.id),
+        created_at: Set(now),
+        updated_at: Set(now),
+        slot: Set(Some(AI_AGENT_MAIN_CONTAINER_SLOT)),
+    }
+    .insert(&env.dbx)
+    .await
+    .is_err());
     for reason in ["human_blocked", "human_role_revoked", "organism_disabled"] {
         let fixture = AgentFixture::new(&env).await;
-        crate::ai_agent::lifecycle::ensure_linked_agent(&env, fixture.human.id)
-            .await
-            .unwrap();
+        crate::ai_agent::lifecycle::ensure_linked_agent_in_slot(
+            &env,
+            fixture.human.id,
+            AI_AGENT_MAIN_CONTAINER_SLOT,
+        )
+        .await
+        .unwrap();
         fixture.invalidate(&env, reason).await;
         assert!(
             crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
                 &env.dbx,
-                fixture.human.id
+                fixture.human.id,
+                AI_AGENT_MAIN_CONTAINER_SLOT,
             )
             .await
             .is_err(),

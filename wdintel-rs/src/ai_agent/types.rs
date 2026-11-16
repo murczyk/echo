@@ -382,6 +382,8 @@ pub struct AiAgentIdReq {
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentContainerItem {
     pub linked_agent_id: String,
+    /// 0 for the user's main container; 1 for one serving another backend.
+    pub slot: i32,
     pub human_login_id: String,
     pub human_login: String,
     pub agent_login_id: String,
@@ -514,6 +516,8 @@ pub struct AiAgentAdminRequestDetail {
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentAdminUserReq {
     pub login_id: String,
+    /// A container of the user other than the main one (#4232).
+    pub linked_agent_id: Option<String>,
 }
 
 #[derive(

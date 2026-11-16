@@ -565,6 +565,7 @@ mod m20261115_100000_messenger_chat_message_count;
 mod m20261116_063906_operator_echo_unit_id;
 mod m20261116_093333_organism_admins;
 mod m20261116_124020_ai_agent_parallel_conversations;
+mod m20261116_142224_ai_agent_second_container;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1287,6 +1288,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261115_181951_duty_card_visibility::Migration),
             Box::new(m20261116_110507_message_card_quick_action_count::Migration),
             Box::new(m20261116_124020_ai_agent_parallel_conversations::Migration),
+            Box::new(m20261116_142224_ai_agent_second_container::Migration),
         ]
     }
 }
