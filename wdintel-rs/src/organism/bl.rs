@@ -209,6 +209,7 @@ pub async fn create_organism_in_txn(
     txn: &DatabaseTransaction,
     req: &Json<CreateOrganismReq>,
 ) -> Result<organism::Model, AppError> {
+    super::access::ensure_supported_roles(Some(&req.roles)).context(h!())?;
     // ===== IMPORTANT NOTE =====
     // This helper intentionally performs the whole create flow inside the caller's
     // transaction without committing it. Endpoints that only *simulate* creation
@@ -258,6 +259,14 @@ pub async fn create_organism_in_txn(
         .await
         .c(h!())?;
 
+    super::admins::replace_admin_logins(
+        txn,
+        organism.id,
+        req.admin_logins.as_deref(),
+        false,
+    )
+    .await
+    .context(h!())?;
     Ok(organism)
 }
 
@@ -265,6 +274,8 @@ pub async fn update_organism(
     txn: &DatabaseTransaction,
     req: &UpdateOrganismReq,
 ) -> Result<organism::Model, AppError> {
+    super::access::ensure_supported_roles(req.roles.as_deref())
+        .context(h!())?;
     let parent_id = match req.parent_id {
         None => None,
         Some(parent_id) => {
@@ -285,6 +296,7 @@ pub async fn update_organism(
     let organism_obj = organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(req.id))
+        .lock_exclusive()
         .one(txn)
         .await
         .c(h!())?

@@ -1,6 +1,7 @@
+import type { User } from '../../../Bindings';
+
 export type UserRole =
   | 'Admin'
-  | 'OrganismAdmin'
   | 'Api'
   | 'ApiAgent'
   | 'Full'
@@ -24,8 +25,6 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
   const has = (target: UserRole) => Boolean(roles?.includes(target));
 
   switch (role) {
-    case 'OrganismAdmin':
-      return has('Admin') || has('OrganismAdmin');
     case 'Admin':
       return has('Admin');
     case 'Api':
@@ -124,4 +123,10 @@ export function hasAnyRole(
 
 export function canWriteMessages(roles: readonly string[] | null | undefined): boolean {
   return hasAnyRole(roles, ['Rer', 'Cyber']);
+}
+
+export function canManageOrganisms(
+  user: Pick<User, 'roles' | 'administeredOrganismIds'> | null | undefined,
+): boolean {
+  return hasRole(user?.roles, 'Admin') || Boolean(user?.administeredOrganismIds?.length);
 }

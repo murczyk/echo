@@ -49,6 +49,7 @@ suite =
                                     , goiHost = Nothing
                                     , goiIntegrations = []
                                     , lastReleaseSeen = Nothing
+                                    , administeredOrganismIds = []
                                     , rerReportEligible = False
                                     }
                                     shared.user
@@ -84,7 +85,7 @@ suite =
                     Just url ->
                         let
                             user =
-                                { id = "cyber", name = "cyber", roles = [ "Cyber" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing, rerReportEligible = False }
+                                { id = "cyber", name = "cyber", roles = [ "Cyber" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing, administeredOrganismIds = [], rerReportEligible = False }
 
                             ( model, _ ) =
                                 RerAnalysis.init user (Route.fromUrl () url) ()
@@ -138,6 +139,7 @@ suite =
                                     , goiHost = Nothing
                                     , goiIntegrations = []
                                     , lastReleaseSeen = Nothing
+                                    , administeredOrganismIds = []
                                     , rerReportEligible = False
                                     }
                                     shared.user
@@ -171,7 +173,7 @@ suite =
                     Just url ->
                         let
                             user =
-                                { id = "cyber", name = "cyber", roles = [ "Cyber", "UnitsEditor" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing, rerReportEligible = False }
+                                { id = "cyber", name = "cyber", roles = [ "Cyber", "UnitsEditor" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing, administeredOrganismIds = [], rerReportEligible = False }
 
                             ( initial, _ ) =
                                 RerAnalysis.init user (Route.fromUrl () url) ()
@@ -371,5 +373,6 @@ anonymousUser =
     , goiHost = Nothing
     , goiIntegrations = []
     , lastReleaseSeen = Nothing
+    , administeredOrganismIds = []
     , rerReportEligible = False
     }

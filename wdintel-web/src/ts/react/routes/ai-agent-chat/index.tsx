@@ -603,10 +603,15 @@ function AssistantMessage({
           py: 1.5,
         }}
       >
-        <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-          ЕХО Агент
-          {engineName ? ` · ${engineName}` : ''}
-        </Typography>
+        <div className="mb-echo-xs flex items-center justify-between gap-echo-sm">
+          <Typography variant="caption" color="text.secondary" component="div">
+            ЕХО Агент
+            {engineName ? ` · ${engineName}` : ''}
+          </Typography>
+          {copyable && content.trim() ? (
+            <AnswerCopyMenu markdown={content} contentRef={contentRef} />
+          ) : null}
+        </div>
         <div ref={contentRef}>
           <MarkdownContent
             citations={citations}
@@ -635,9 +640,6 @@ function AssistantMessage({
           <MapPreview key={`${mainMap.requestId}:${mainMap.id}`} summary={mainMap} />
         ) : null}
       </Box>
-      {copyable && content.trim() ? (
-        <AnswerCopyMenu markdown={content} contentRef={contentRef} />
-      ) : null}
     </div>
   );
 }

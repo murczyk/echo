@@ -6160,6 +6160,7 @@ type alias User =
     , name : String
     , displayName : Maybe (String)
     , roles : List (String)
+    , administeredOrganismIds : List (Int)
     , sigintZoneId : Maybe (Int)
     , organismId : Maybe (Int)
     , deltaLogin : Maybe (String)
@@ -6179,6 +6180,7 @@ userEncoder struct =
         , ( "name", (Json.Encode.string) struct.name )
         , ( "display_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.displayName )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
+        , ( "administered_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.administeredOrganismIds )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
         , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.organismId )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
@@ -9986,6 +9988,7 @@ type alias Organism =
     , enabled : Bool
     , aorIds : List (Int)
     , loginsCount : Int
+    , adminLogins : List (String)
     }
 
 
@@ -10000,6 +10003,7 @@ organismEncoder struct =
         , ( "enabled", (Json.Encode.bool) struct.enabled )
         , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
         , ( "logins_count", (Json.Encode.int) struct.loginsCount )
+        , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
         ]
 
 
@@ -10083,6 +10087,7 @@ type alias CreateOrganismReq =
     , parentId : Maybe (Int)
     , roles : List (String)
     , aorIds : Maybe (List (Int))
+    , adminLogins : Maybe (List (String))
     }
 
 
@@ -10093,6 +10098,7 @@ createOrganismReqEncoder struct =
         , ( "parent_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.parentId )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.aorIds )
+        , ( "admin_logins", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.adminLogins )
         ]
 
 
@@ -10103,6 +10109,7 @@ type alias UpdateOrganismReq =
     , roles : Maybe (List (String))
     , enabled : Bool
     , aorIds : Maybe (List (Int))
+    , adminLogins : Maybe (List (String))
     }
 
 
@@ -10115,6 +10122,7 @@ updateOrganismReqEncoder struct =
         , ( "roles", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.roles )
         , ( "enabled", (Json.Encode.bool) struct.enabled )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.aorIds )
+        , ( "admin_logins", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.adminLogins )
         ]
 
 
@@ -25793,6 +25801,7 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "administered_organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
@@ -28627,6 +28636,7 @@ organismDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
 
 
 myOrganismDecoder : Json.Decode.Decoder MyOrganism
@@ -28705,6 +28715,7 @@ createOrganismReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 updateOrganismReqDecoder : Json.Decode.Decoder UpdateOrganismReq
@@ -28716,6 +28727,7 @@ updateOrganismReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 addGroupToOrganismReqDecoder : Json.Decode.Decoder AddGroupToOrganismReq
@@ -36474,6 +36486,11 @@ type alias UserDutySettingsDto =
     , dutyRememberReportGroup : Bool
     , analysisRememberReportGroup : Bool
     , importantOnlyMyOrganism : Bool
+    , dutyHideCardHeader : Bool
+    , dutyHideCardFrequency : Bool
+    , dutyHideCardUnit : Bool
+    , messageCardQuickActionCount : Int
+    , messageCardSecondQuickAction : MessageCardQuickAction
     }
 
 
@@ -36501,3 +36518,8 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "analysisRememberReportGroup" (Json.Decode.bool), Json.Decode.succeed True ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardHeader" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardFrequency" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardUnit" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "messageCardQuickActionCount" (Json.Decode.int), Json.Decode.succeed 2 ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "messageCardSecondQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionImportant ]))

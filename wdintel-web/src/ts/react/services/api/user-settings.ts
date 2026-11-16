@@ -11,6 +11,8 @@ import {
   DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
   DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
   DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
+  DEFAULT_MESSAGE_CARD_QUICK_ACTION_COUNT,
+  DEFAULT_MESSAGE_CARD_SECOND_QUICK_ACTION,
 } from '../../hooks/duty-settings-defaults';
 import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
@@ -38,14 +40,32 @@ export const MESSAGE_CARD_QUICK_ACTION_OPTIONS: ReadonlyArray<{
   { value: 'delete', label: 'Видалити' },
 ];
 
-export function normalizeMessageCardQuickAction(value: unknown): MessageCardQuickAction {
+export function normalizeMessageCardQuickAction(
+  value: unknown,
+  fallback: MessageCardQuickAction = 'createReport',
+): MessageCardQuickAction {
   return (
-    MESSAGE_CARD_QUICK_ACTION_OPTIONS.find((option) => option.value === value)?.value ??
-    'createReport'
+    MESSAGE_CARD_QUICK_ACTION_OPTIONS.find((option) => option.value === value)?.value ?? fallback
   );
 }
+
+/** How many direct actions narrow cards show before the overflow menu. */
+export type MessageCardQuickActionCount = 1 | 2;
+
+export const MESSAGE_CARD_QUICK_ACTION_COUNTS: ReadonlyArray<MessageCardQuickActionCount> = [1, 2];
+
+export function normalizeMessageCardQuickActionCount(value: unknown): MessageCardQuickActionCount {
+  return (
+    MESSAGE_CARD_QUICK_ACTION_COUNTS.find((count) => count === value) ??
+    DEFAULT_MESSAGE_CARD_QUICK_ACTION_COUNT
+  );
+}
+
 export type UserDutySettings = {
   messageCardQuickAction: MessageCardQuickAction;
+  messageCardQuickActionCount: MessageCardQuickActionCount;
+  /** Used only when the count is 2; the server keeps it distinct from the first. */
+  messageCardSecondQuickAction: MessageCardQuickAction;
   /** Analysis time basis. Duty always uses creation time. */
   messageSortBy: MessageTimeBasis;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -67,10 +87,23 @@ export type UserDutySettings = {
   dutyRememberReportGroup: boolean;
   analysisRememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
+  dutyHideCardHeader: boolean;
+  dutyHideCardFrequency: boolean;
+  dutyHideCardUnit: boolean;
 };
 
-export type UserDutySettingsUpdate = Omit<UserDutySettings, 'messageCardQuickAction'> & {
+export type MessageCardQuickActionSettings = Pick<
+  UserDutySettings,
+  'messageCardQuickActionCount' | 'messageCardQuickAction' | 'messageCardSecondQuickAction'
+>;
+
+/** Quick actions are sent only after an explicit choice so stored defaults stay unset. */
+export type UserDutySettingsUpdate = Omit<
+  UserDutySettings,
+  'messageCardQuickAction' | 'messageCardSecondQuickAction'
+> & {
   messageCardQuickAction?: MessageCardQuickAction;
+  messageCardSecondQuickAction?: MessageCardQuickAction;
 };
 
 export type MessageTimeBasis = 'interception' | 'creation';
@@ -81,6 +114,8 @@ type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
 type UserDutySettingsWire = Omit<
   UserDutySettingsDto,
   | 'messageCardQuickAction'
+  | 'messageCardQuickActionCount'
+  | 'messageCardSecondQuickAction'
   | 'tagsLayout'
   | 'analysisMapInSidebar'
   | 'dutyAudioTranscriptionCollapsed'
@@ -99,8 +134,13 @@ type UserDutySettingsWire = Omit<
   | 'dutyRememberReportGroup'
   | 'analysisRememberReportGroup'
   | 'importantOnlyMyOrganism'
+  | 'dutyHideCardHeader'
+  | 'dutyHideCardFrequency'
+  | 'dutyHideCardUnit'
 > & {
   messageCardQuickAction?: MessageCardQuickAction | null;
+  messageCardQuickActionCount?: number | null;
+  messageCardSecondQuickAction?: MessageCardQuickAction | null;
   messageTextPreviewLines?: string | null;
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
@@ -120,6 +160,9 @@ type UserDutySettingsWire = Omit<
   dutyRememberReportGroup?: boolean | null;
   analysisRememberReportGroup?: boolean | null;
   importantOnlyMyOrganism?: boolean | null;
+  dutyHideCardHeader?: boolean | null;
+  dutyHideCardFrequency?: boolean | null;
+  dutyHideCardUnit?: boolean | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -177,6 +220,13 @@ function serializeTagsLayout(tagsLayout: TagsLayoutVariant): DutyTagsLayoutWire 
 function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings {
   return {
     messageCardQuickAction: normalizeMessageCardQuickAction(raw.messageCardQuickAction),
+    messageCardQuickActionCount: normalizeMessageCardQuickActionCount(
+      raw.messageCardQuickActionCount,
+    ),
+    messageCardSecondQuickAction: normalizeMessageCardQuickAction(
+      raw.messageCardSecondQuickAction,
+      DEFAULT_MESSAGE_CARD_SECOND_QUICK_ACTION,
+    ),
     messageSortBy: raw.messageSortBy === 'creation' ? 'creation' : 'interception',
     messageTextPreviewLines: normalizeMessageTextPreviewLines(raw.messageTextPreviewLines),
     tagsLayout: normalizeTagsLayout(raw.tagsLayout),
@@ -199,6 +249,9 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     analysisRememberReportGroup:
       raw.analysisRememberReportGroup ?? DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
     importantOnlyMyOrganism: raw.importantOnlyMyOrganism ?? false,
+    dutyHideCardHeader: raw.dutyHideCardHeader ?? false,
+    dutyHideCardFrequency: raw.dutyHideCardFrequency ?? false,
+    dutyHideCardUnit: raw.dutyHideCardUnit ?? false,
   };
 }
 
@@ -215,6 +268,8 @@ export async function saveUserSettings(
     '/api/user/settings',
     {
       messageCardQuickAction: body.messageCardQuickAction,
+      messageCardQuickActionCount: body.messageCardQuickActionCount,
+      messageCardSecondQuickAction: body.messageCardSecondQuickAction,
       messageSortBy: body.messageSortBy,
       messageTextPreviewLines: serializeMessageTextPreviewLines(body.messageTextPreviewLines),
       tagsLayout: serializeTagsLayout(body.tagsLayout),
@@ -235,6 +290,9 @@ export async function saveUserSettings(
       dutyRememberReportGroup: body.dutyRememberReportGroup,
       analysisRememberReportGroup: body.analysisRememberReportGroup,
       importantOnlyMyOrganism: body.importantOnlyMyOrganism,
+      dutyHideCardHeader: body.dutyHideCardHeader,
+      dutyHideCardFrequency: body.dutyHideCardFrequency,
+      dutyHideCardUnit: body.dutyHideCardUnit,
     },
     { signal },
   );

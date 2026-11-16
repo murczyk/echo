@@ -23,6 +23,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     form,
     formErrors,
     organisms,
+    logins,
     groups,
     availableGroups,
     aors,
@@ -117,12 +118,14 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
             id="admin-organism-tab-tags"
             aria-controls="admin-organism-panel-tags"
           />
-          <Tab
-            value="goi"
-            label="ГОІ"
-            id="admin-organism-tab-goi"
-            aria-controls="admin-organism-panel-goi"
-          />
+          {globalAdmin ? (
+            <Tab
+              value="goi"
+              label="ГОІ"
+              id="admin-organism-tab-goi"
+              aria-controls="admin-organism-panel-goi"
+            />
+          ) : null}
         </Tabs>
 
         {activeTab === 'main' ? (
@@ -133,6 +136,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
             className="space-y-echo-lg"
           >
             <OrganismFormFields
+              organismId={props.organismId === null ? null : Number(props.organismId)}
               form={form}
               formErrors={formErrors}
               isSubmitting={isSubmitting}
@@ -140,6 +144,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
               isSettingUpGoiWorker={isSettingUpGoiWorker}
               isNew={isNew}
               organisms={organisms}
+              logins={logins}
               groups={groups}
               availableGroups={availableGroups}
               aors={aors}
@@ -196,7 +201,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           </Box>
         ) : null}
 
-        {activeTab === 'goi' ? (
+        {globalAdmin && activeTab === 'goi' ? (
           <Box
             id="admin-organism-panel-goi"
             role="tabpanel"

@@ -270,6 +270,25 @@ criteria. No direct default-suite test; behavior is preserved by this contract.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/FeedColumnContent.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyMessageActions.spec.tsx`, `wdintel-web/src/ts/react/routes/settings-neo/__tests__/index.spec.tsx`.
 - **Original Echo issue/PR, if known:** [#4073](https://github.com/echoua/echo/issues/4073)
 
+## Duty card visibility
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-card-visibility`
+- **Affected route/component:** Duty message cards, Settings Duty section.
+- **User role or permission:** any Duty user; the frequency choice is shown only with radio features.
+- **Preconditions:** the user turned off «Заголовок», «Частота» or «Підрозділ» under «Показувати в Оперативному:».
+- **User action or external event:** a Duty feed renders a message card.
+- **Expected observable result:** a hidden header drops the card's networks, group, sender, location and event date/time, including where a server with hidden networks shows them in the card body; the action toolbar and «Важливе» badge stay right-aligned, and the creation-time footer stays. The unit then shows in the body unless its own switch is off. Hidden frequency and unit drop those metadata items wherever the card shows them. Copy, exclusion and report actions keep their values.
+- **Loading/empty/error/success behavior:** changes made in Settings reach mounted Duty cards without a refetch.
+- **URL, localStorage, or user-settings persistence:** `dutyHideCardHeader`, `dutyHideCardFrequency`, `dutyHideCardUnit`, all off by default. Older clients that omit them preserve the stored values.
+- **API endpoint and compatibility requirements:** `/api/user/settings`.
+- **Responsive and keyboard requirements:** none beyond the shared card.
+- **Known race/idempotency constraints:** none.
+- **Scope:** Analysis, classic Duty and other card hosts ignore these settings.
+- **Source implementation:** `routes/shared/message-card/DutyMessageCardVisibility.ts`, `routes/shared/message-card/MessageCard.tsx`, `routes/rer-duty-neo/useRerDutyPageSettings.ts`, `routes/settings-neo/SettingsDutyCardVisibility.tsx`.
+- **Existing test(s):** `wdintel-web/tests/e2e/rer-duty-card-visibility.spec.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`.
+- **Original Echo issue/PR, if known:** [#4219](https://github.com/echoua/echo/issues/4219)
+
 ## Duty radio-filter isolation
 
 - **Behavior ID:** `react-duty-radio-filter-isolation`

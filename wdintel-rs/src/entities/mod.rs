@@ -193,6 +193,7 @@ pub mod orbit_unit_echelon;
 pub mod orbit_unit_grouping_of_forces;
 pub mod orbit_unit_sigint_unit;
 pub mod organism;
+pub mod organism_admin;
 pub mod organism_aor;
 pub mod organism_group;
 pub mod organism_keyword_set;

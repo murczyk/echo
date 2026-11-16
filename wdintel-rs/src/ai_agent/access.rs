@@ -300,6 +300,16 @@ impl AgentProxyNeed {
             Self::DirectHttp { .. } => AgentProviderTransport::DirectHttp,
         }
     }
+
+    /// Recorded as the container's `configured_proxies`.
+    pub fn key(&self) -> String {
+        match self {
+            Self::EchoGateway => self.transport().as_str().to_string(),
+            Self::DirectHttp { vllm_upstream } => {
+                format!("{}:{vllm_upstream}", self.transport().as_str())
+            }
+        }
+    }
 }
 
 pub fn agent_proxy_need(
@@ -575,6 +585,11 @@ mod tests {
                 .map(|need| need.transport()),
             Some(AgentProviderTransport::DirectHttp)
         );
+        assert_eq!(
+            need("http://vllm.example:8000/v1", "x").map(|need| need.key()),
+            Some("direct_http:vllm.example:8000".to_string())
+        );
+        assert_eq!(AgentProxyNeed::EchoGateway.key(), "echo_gateway");
     }
 
     #[test]

@@ -220,7 +220,9 @@ pub async fn list_conversations(
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let active_states = conversation_active_states(&env.dbx, human.id).await?;
+    let active_states = conversation_active_states(&env.dbx, human.id)
+        .await
+        .context(h!())?;
     let items = conversations
         .into_iter()
         .map(|conversation| {

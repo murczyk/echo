@@ -7,12 +7,12 @@ import { createRoot, Root } from 'react-dom/client';
 import { AdminOrganismsNeoPage } from './routes/admin-organisms-neo';
 import { NeoMuiThemeProvider } from './mui-theme';
 
-function OrganismsNeoRoot({ roles }: { roles: string[] }) {
+function OrganismsNeoRoot({ roles, canManage }: { roles: string[]; canManage: boolean }) {
   return (
     <NeoMuiThemeProvider>
       <PowerSnackbarProvider>
         <OrganismManagementContext.Provider value={{ globalAdmin: hasRole(roles, 'Admin') }}>
-          {hasRole(roles, 'OrganismAdmin') ? (
+          {canManage ? (
             <AdminOrganismsNeoPage />
           ) : (
             <PowerAlert severity="error">Немає доступу до організмів.</PowerAlert>
@@ -27,7 +27,7 @@ class OrganismsNeoElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['data-auth-user-id', 'data-auth-user-roles'];
+    return ['data-auth-user-id', 'data-auth-user-roles', 'data-can-manage-organisms'];
   }
 
   attributeChangedCallback() {
@@ -38,8 +38,9 @@ class OrganismsNeoElement extends HTMLElement {
     const roles = this.getAttribute('data-auth-user-roles')?.split(',') ?? [];
     this.root?.render(
       <OrganismsNeoRoot
-        key={`${this.getAttribute('data-auth-user-id')}:${roles.join(',')}`}
+        key={`${this.getAttribute('data-auth-user-id')}:${roles.join(',')}:${this.getAttribute('data-can-manage-organisms')}`}
         roles={roles}
+        canManage={this.getAttribute('data-can-manage-organisms') === 'true'}
       />,
     );
   }

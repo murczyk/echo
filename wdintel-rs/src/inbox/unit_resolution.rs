@@ -104,6 +104,7 @@ type FailureMetadataCache = HashMap<String, FailureMetadata>;
 #[derive(Default)]
 struct InboxUnitBackfillCache {
     selections: HashMap<i64, super::unit_selection::InboxUnitSelection>,
+    echo_units: HashMap<i64, UnitTextResolution>,
     header_synonyms: HashMap<i64, UnitTextResolution>,
     unit_text_resolutions:
         HashMap<UnitTextResolutionCacheKey, Vec<UnitTextResolution>>,
@@ -158,6 +159,51 @@ where
                 resolution.item_id,
                 UnitTextResolution::resolved(
                     &resolution.unit_text,
+                    resolution.unit_id,
+                ),
+            )
+        })
+        .collect())
+}
+
+#[derive(FromQueryResult)]
+struct EchoUnitResolution {
+    item_id: i64,
+    unit_id: i64,
+    unit_name: String,
+}
+
+/// Units chosen by the message sender (`signal_message.echo_unit_id`, set by
+/// the Echo Operator API); deleted units fall back to unit name parsing.
+async fn load_echo_unit_resolutions<C>(
+    db: &C,
+    item_ids: &[i64],
+) -> anyhow::Result<HashMap<i64, UnitTextResolution>>
+where
+    C: ConnectionTrait,
+{
+    let resolutions = EchoUnitResolution::find_by_statement(
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+            select message.id as item_id, unit.id as unit_id, unit.name as unit_name
+            from signal_message message
+            join sigint_unit unit on unit.id = message.echo_unit_id and unit.deleted = false
+            where message.id = any($1)
+            "#,
+            [item_ids.to_vec().into()],
+        ),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(resolutions
+        .into_iter()
+        .map(|resolution| {
+            (
+                resolution.item_id,
+                UnitTextResolution::resolved(
+                    &resolution.unit_name,
                     resolution.unit_id,
                 ),
             )
@@ -1633,6 +1679,13 @@ where
     {
         vec![resolution]
     } else if let Some(resolution) =
+        load_echo_unit_resolutions(db, &[inbox_item_id])
+            .await
+            .c(h!())?
+            .remove(&inbox_item_id)
+    {
+        vec![resolution]
+    } else if let Some(resolution) =
         load_header_synonym_resolutions(db, &[inbox_item_id])
             .await
             .c(h!())?
@@ -1680,6 +1733,8 @@ where
         .context(h!())?
     {
         vec![resolution]
+    } else if let Some(resolution) = cache.echo_units.get(&inbox_item_id) {
+        vec![resolution.clone()]
     } else if let Some(resolution) = cache.header_synonyms.get(&inbox_item_id) {
         vec![resolution.clone()]
     } else {
@@ -2072,6 +2127,9 @@ pub(crate) async fn backfill_inbox_unit_links(
             )
             .await
             .context(h!())?,
+            echo_units: load_echo_unit_resolutions(&transaction, &item_ids)
+                .await
+                .c(h!())?,
             header_synonyms: load_header_synonym_resolutions(
                 &transaction,
                 &item_ids,
@@ -2655,6 +2713,71 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn echo_unit_id_wins_over_parsed_unit_until_deleted() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let parsed = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let echo = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let label = format!("echo-unit-parsed-{}", Uuid::new_v4());
+        sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(parsed.id),
+            label: Set(label.clone()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let item = insert_inbox_item(&env.dbx, Some(&label), None, None).await;
+        crate::entities::signal_message::Entity::update_many()
+            .col_expr(
+                crate::entities::signal_message::Column::EchoUnitId,
+                Expr::value(echo.id),
+            )
+            .filter(crate::entities::signal_message::Column::Id.eq(item.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        for (deleted, expected) in [(false, echo.id), (true, parsed.id)] {
+            sigint_unit::Entity::update_many()
+                .col_expr(sigint_unit::Column::Deleted, Expr::value(deleted))
+                .filter(sigint_unit::Column::Id.eq(echo.id))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+            resolve_and_sync_inbox_item(
+                &env.dbx,
+                item.id,
+                item.id_uuid,
+                item.unit_v2.as_deref(),
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                unit_ids_for_kind(
+                    &env.dbx,
+                    item.id,
+                    SigintInboxItemUnitKind::Parsed,
+                )
+                .await,
+                vec![expected]
+            );
+        }
     }
 
     #[tokio::test]

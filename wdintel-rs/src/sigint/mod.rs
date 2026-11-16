@@ -1015,6 +1015,7 @@ async fn xlsx_import_process_one(
         message_uid: NotSet,
         operator_tags: NotSet,
         attachments_hash: NotSet,
+        echo_unit_id: NotSet,
     }
     .insert(dbx)
     .await

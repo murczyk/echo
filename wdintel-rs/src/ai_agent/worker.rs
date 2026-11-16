@@ -386,17 +386,22 @@ async fn claim_next_request(
     ))
     .await
     .c(h!())?;
-    let candidates = claim_candidates(&txn).await?;
+    let candidates = claim_candidates(&txn).await.context(h!())?;
     let request_id = if candidates.is_empty() {
         None
     } else {
-        let running = running_requests_of(&txn, &candidates).await?;
-        let needs = engine_proxy_needs(&txn, &candidates, &running).await?;
-        let containers_in_use = containers_in_use(&txn).await?;
+        let running =
+            running_requests_of(&txn, &candidates).await.context(h!())?;
+        let needs = engine_proxy_needs(&txn, &candidates, &running)
+            .await
+            .context(h!())?;
+        let containers_in_use = containers_in_use(&txn).await.context(h!())?;
         pick_claim(&candidates, &running, &needs, containers_in_use)
     };
     let request = match request_id {
-        Some(request_id) => start_claimed_request(&txn, request_id).await?,
+        Some(request_id) => start_claimed_request(&txn, request_id)
+            .await
+            .context(h!())?,
         None => None,
     };
     txn.commit().await.c(h!())?;

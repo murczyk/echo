@@ -4,12 +4,13 @@ import { Box, FormControlLabel, Stack, Switch, Tooltip, Typography } from '@mui/
 import { PowerAlert } from '../../components/PowerAlert';
 import type {
   MessageAttachmentPreviewMode,
-  MessageCardQuickAction,
   MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
+import type { SettingsDutyCardVisibilityProps } from './SettingsDutyCardVisibility';
 import { SettingsMessageCard } from './SettingsMessageCard';
+import type { SettingsMessageCardQuickActionsProps } from './SettingsMessageCardQuickActions';
 
 const cardSx = {
   border: 1,
@@ -48,8 +49,7 @@ function ImportantOnlyMyOrganismLabel() {
 }
 
 export type SettingsDutySectionProps = {
-  messageCardQuickAction: MessageCardQuickAction;
-  onMessageCardQuickActionChange: (value: MessageCardQuickAction) => void;
+  quickActions: SettingsMessageCardQuickActionsProps;
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
@@ -83,11 +83,11 @@ export type SettingsDutySectionProps = {
   largeMessageCardText: boolean;
   onLargeMessageCardTextChange: (value: boolean) => void;
   onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
+  dutyCardVisibility: SettingsDutyCardVisibilityProps;
 };
 
 export function SettingsDutySection({
-  messageCardQuickAction,
-  onMessageCardQuickActionChange,
+  quickActions,
   loadInProgress,
   prefsLoadError,
   saveError,
@@ -120,6 +120,7 @@ export function SettingsDutySection({
   largeMessageCardText,
   onLargeMessageCardTextChange,
   onAttachmentPreviewModeChange,
+  dutyCardVisibility,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -139,25 +140,8 @@ export function SettingsDutySection({
         {prefsLoadError ? <PowerAlert severity="warning">{prefsLoadError}</PowerAlert> : null}
         {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
         <Stack spacing={3} sx={{ minWidth: 0 }}>
-          {showClassicDutySetting ? (
-            <Box sx={cardSx}>
-              <FormControlLabel
-                sx={{ m: 0 }}
-                control={
-                  <Switch
-                    checked={showClassicDuty}
-                    onChange={(_, checked) => onShowClassicDutyChange(checked)}
-                    disabled={loadInProgress}
-                  />
-                }
-                label="Показувати класичний оперативний"
-              />
-            </Box>
-          ) : null}
-
           <SettingsMessageCard
-            messageCardQuickAction={messageCardQuickAction}
-            onMessageCardQuickActionChange={onMessageCardQuickActionChange}
+            quickActions={quickActions}
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}
@@ -172,6 +156,7 @@ export function SettingsDutySection({
             onLargeMessageCardTextChange={onLargeMessageCardTextChange}
             onAttachmentPreviewModeChange={onAttachmentPreviewModeChange}
             loadInProgress={loadInProgress}
+            dutyCardVisibility={dutyCardVisibility}
           />
 
           {showAudioTranscriptionSettings ? (
@@ -304,6 +289,23 @@ export function SettingsDutySection({
               />
             </Stack>
           </Box>
+
+          {/* Last: the classic Duty page is going away. */}
+          {showClassicDutySetting ? (
+            <Box sx={cardSx}>
+              <FormControlLabel
+                sx={{ m: 0 }}
+                control={
+                  <Switch
+                    checked={showClassicDuty}
+                    onChange={(_, checked) => onShowClassicDutyChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label="Показувати класичний оперативний"
+              />
+            </Box>
+          ) : null}
         </Stack>
       </Stack>
     </Box>

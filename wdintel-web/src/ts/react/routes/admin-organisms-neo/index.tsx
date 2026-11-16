@@ -81,7 +81,6 @@ type OrganismLookup = {
 
 const ROLE_OPTIONS = [
   'Admin',
-  'OrganismAdmin',
   'ApiAgent',
   'Rer',
   'Bpla',
@@ -177,6 +176,7 @@ function buildOrganismLoadingRows(): Organism[] {
     name: '',
     parentId: null,
     roles: [],
+    adminLogins: [],
     enabled: false,
     aorIds: [],
     loginsCount: 0,
@@ -583,6 +583,7 @@ function DeleteOrganismDialog(props: {
         roles: props.organism.roles,
         enabled: false,
         aorIds: props.organism.aorIds,
+        adminLogins: null,
       };
       await updateOrganism(req);
       await props.onReload();
