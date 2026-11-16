@@ -1121,9 +1121,12 @@ test("#4224 a fresh search batch that fits the checkpoint is summarized unshorte
 
 test("#4224 a shortened checkpoint result never keeps a continuation that skips omitted records", () => {
   const sections = JSON.stringify({ result: { document: { fileName: "orders.xlsx" }, sections: [0, 1, 2, 3, 4, 5].map((ordinal) => ({ ordinal, markdown: "row ".repeat(200) })), nextAfter: 5 } });
+  for (const tool of ["echo_device_file_read", "echo_device_file_get", "echo_attachment_get"]) {
+    const read = JSON.parse(shortenedToolText(tool, sections, 2_500)).result;
+    assert.ok(read.sections.length < 6, tool);
+    assert.equal(read.nextAfter, read.sections.at(-1).ordinal, tool);
+  }
   const read = JSON.parse(shortenedToolText("echo_device_file_read", sections, 2_500)).result;
-  assert.ok(read.sections.length < 6);
-  assert.equal(read.nextAfter, read.sections.at(-1).ordinal);
   assert.match(read.checkpointOmitted, /nextAfter continues from the first omitted record/);
   const unknown = JSON.stringify({ items: Array.from({ length: 40 }, (_, index) => ({ index, text: "x".repeat(100) })), nextCursor: "page-2" });
   const list = JSON.parse(shortenedToolText("echo_frequency_lookup", unknown, 1_500));
