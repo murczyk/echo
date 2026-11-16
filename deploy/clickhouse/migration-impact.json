@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261116_063906_operator_echo_unit_id": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "cdc_additive" }
+      ]
+    },
     "echo:m20261113_093453_report_group_preferences": {
       "changes": [
         {

@@ -424,6 +424,7 @@ where
         operator_tags: Set(None),
         echo_inbox_message_id: Set(None),
         attachments_hash: Set(None),
+        echo_unit_id: NotSet,
     }
     .insert(dbx)
     .await
@@ -615,6 +616,7 @@ async fn migrate_comment_batch(
             operator_tags: Set(None),
             echo_inbox_message_id: Set(None),
             attachments_hash: Set(None),
+            echo_unit_id: NotSet,
         });
         comments_by_marker.insert(marker, comment);
     }
