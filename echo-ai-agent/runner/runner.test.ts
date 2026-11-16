@@ -1332,6 +1332,20 @@ test("#4224 search hit evidence keeps each attachment and its matched snippet", 
   ] }));
   assert.ok(long.text.endsWith(" — page 3: HWID activation key"), long.text);
   assert.ok(long.text.length < 700);
+  // Non-default revision and coverage states qualify the finding for synthesis.
+  const [old] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: "KMSAuto.exe", current: false, complete: false, summaryState: "failed", snippet: "page 1: KMS", citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.equal(old.text, "KMSAuto.exe [earlier revision, incomplete extraction, summary failed]: page 1: KMS");
+});
+
+test("#4224 an empty search page still delivers when its share is exhausted", () => {
+  const route = { skill: "device_file_search", requestKind: "deviceFileSearch" as const };
+  // Earlier reads left this call a share smaller than the empty page itself.
+  const compact = createToolResponseCompactor(100_000, 50_000, 128, 10);
+  compact.beginBatch(1);
+  assert.deepEqual(JSON.parse(compact(route, { documents: [], nextCursor: null }, 64)), { documents: [], nextCursor: null });
+  assert.throws(() => compactToolResponse(route, { documents: [], nextCursor: null }, 64, 2), /exceeds available context/);
 });
 
 test("keeps the strongest callsign relations within the item cap", () => {

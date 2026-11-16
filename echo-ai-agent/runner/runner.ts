@@ -2514,6 +2514,8 @@ function compactSearchHits(
     const encoded = encode(original.map((hit) => project(hit, summary, snippet)));
     if (encoded.length <= maxCharacters) return encoded;
   }
+  // An empty page that does not fit cannot be shortened: the caller retries larger.
+  if (!original.length) throw new Error("Search response exceeds available context");
   const [summary, snippet] = SEARCH_HIT_TEXT_LIMITS.at(-1)!;
   const projected = original.map((hit) => project(hit, summary, snippet));
   const warnings = Array.isArray(result.warnings) ? result.warnings : [];
@@ -2691,7 +2693,15 @@ export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch",
       [hit.snippet, SEARCH_HIT_SNIPPET_MAX_CHARACTERS],
     ].flatMap(([value, limit]) => typeof value === "string" && value.trim() !== "" && value !== name ? [capText(value, limit as number)] : []);
     const location = kind === "deviceFileSearch" && typeof hit.folder === "string" && hit.folder ? ` (${hit.folder})` : "";
-    const state = typeof hit.state === "string" ? ` [${hit.state}]` : "";
+    // The projection keeps only non-default states; synthesis needs them to qualify a finding.
+    const qualifiers = [
+      typeof hit.state === "string" ? hit.state : null,
+      hit.current === false ? "earlier revision" : null,
+      hit.hasContent === false ? "no content" : null,
+      hit.complete === false ? "incomplete extraction" : null,
+      typeof hit.summaryState === "string" ? `summary ${hit.summaryState}` : null,
+    ].filter(Boolean);
+    const state = qualifiers.length ? ` [${qualifiers.join(", ")}]` : "";
     return [{
       kind: kind === "deviceFileSearch" ? "file" as const : "attachment" as const,
       id: kind === "deviceFileSearch" ? hit.citation : `${hit.citation}#${String(hit.mediaId ?? name)}`,
