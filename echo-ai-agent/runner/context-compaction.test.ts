@@ -13,7 +13,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { installContextCompaction } from "./context-compaction.ts";
+import { installContextCompaction, shortenedToolText } from "./context-compaction.ts";
 import { assistantSnapshotEvent } from "./citations.ts";
 import {
   createToolResponseCompactor,
@@ -1117,4 +1117,19 @@ test("#4224 a fresh search batch that fits the checkpoint is summarized unshorte
   } finally {
     await value.close();
   }
+});
+
+test("#4224 a shortened checkpoint result never keeps a continuation that skips omitted records", () => {
+  const sections = JSON.stringify({ result: { document: { fileName: "orders.xlsx" }, sections: [0, 1, 2, 3, 4, 5].map((ordinal) => ({ ordinal, markdown: "row ".repeat(200) })), nextAfter: 5 } });
+  const read = JSON.parse(shortenedToolText("echo_device_file_read", sections, 2_500)).result;
+  assert.ok(read.sections.length < 6);
+  assert.equal(read.nextAfter, read.sections.at(-1).ordinal);
+  assert.match(read.checkpointOmitted, /nextAfter continues from the first omitted record/);
+  const unknown = JSON.stringify({ items: Array.from({ length: 40 }, (_, index) => ({ index, text: "x".repeat(100) })), nextCursor: "page-2" });
+  const list = JSON.parse(shortenedToolText("echo_frequency_lookup", unknown, 1_500));
+  assert.ok(list.items.length < 40);
+  assert.equal(list.nextCursor, null, "the page cursor would skip the omitted items");
+  assert.match(list.checkpointOmitted, /repeat a narrower request/);
+  const fits = JSON.stringify({ documents: [{ fileName: "a.exe" }], nextCursor: "next" });
+  assert.equal(shortenedToolText("echo_device_file_search", fits, 1_000), fits);
 });

@@ -144,16 +144,25 @@ function shortenedJsonResult(toolName: string, text: string, maxCharacters: numb
   const key = RECORD_KEYS.find((name) => Array.isArray(container[name]) && (container[name] as unknown[]).length > 0);
   if (!key) return null;
   const records = container[key] as Record<string, unknown>[];
+  // Sections continue with nextAfter, the ordinal of the last section read; lists with
+  // the tool's cursor after the last record.
+  const continuation = key === "sections" ? "nextAfter" : "nextCursor";
   const render = (count: number) => {
     const omitted = records.length - count;
-    const resume = omitted && count ? RESUME_CURSORS[toolName]?.(records[count - 1] ?? {}) : undefined;
+    const last = records[count - 1];
+    const resume = !omitted || !count
+      ? undefined
+      : key === "sections"
+        ? (typeof last?.ordinal === "number" ? last.ordinal : undefined)
+        : RESUME_CURSORS[toolName]?.(last ?? {});
     const shortened = {
       ...container,
       [key]: records.slice(0, count),
       ...(omitted
         ? {
-            ...(resume !== undefined ? { nextCursor: resume } : {}),
-            checkpointOmitted: `${omitted} of ${records.length} records omitted for the checkpoint; ${resume !== undefined ? "nextCursor continues from the first omitted record" : "repeat a narrower search to see them"}`,
+            // A continuation that would skip the omitted records is never kept.
+            [continuation]: resume ?? null,
+            checkpointOmitted: `${omitted} of ${records.length} records omitted for the checkpoint; ${resume !== undefined ? `${continuation} continues from the first omitted record` : "repeat a narrower request to see them"}`,
           }
         : {}),
     };
@@ -171,7 +180,7 @@ function shortenedJsonResult(toolName: string, text: string, maxCharacters: numb
 }
 
 /** Cuts a tool result at a record or line boundary and says what was left out. */
-function shortenedToolText(toolName: string, text: string, maxCharacters: number): string {
+export function shortenedToolText(toolName: string, text: string, maxCharacters: number): string {
   if (text.length <= maxCharacters) return text;
   const json = shortenedJsonResult(toolName, text, maxCharacters);
   if (json !== null) return json;

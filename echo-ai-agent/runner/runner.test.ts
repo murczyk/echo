@@ -1314,6 +1314,12 @@ test("#4224 search hit evidence keeps each attachment and its matched snippet", 
     { fileName: "KMSAuto.exe", folder: "C:\\Activators", summary: "KMS activator", snippet: "page 1: activation", citation: "/devices/d?file=f&revision=1" },
   ] }));
   assert.equal(file.text, "KMSAuto.exe (C:\\Activators): KMS activator — page 1: activation");
+  // A long summary cannot push the matched snippet out.
+  const [long] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: "KMSAuto.exe", folder: "C:\\Activators", summary: "Опис файлу. ".repeat(100), snippet: "page 3: HWID activation key", citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.ok(long.text.endsWith(" — page 3: HWID activation key"), long.text);
+  assert.ok(long.text.length < 700);
 });
 
 test("keeps the strongest callsign relations within the item cap", () => {

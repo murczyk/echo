@@ -155,3 +155,67 @@ test("#4224 six parallel full searches on a 64k window end with a cited answer",
   assert.ok(answer?.includes(firstCitation), answer);
   assert.ok(events.some((event) => event.type === "file_citations" && event.citations.some((citation: any) => fileCitationHref(citation) === firstCitation)));
 });
+
+test("#4224 calls a batch defers are not reported to synthesis as completed searches", async (t) => {
+  const events: any[] = [];
+  let searches = 0;
+  let synthesisBody: any;
+  const write = process.stdout.write.bind(process.stdout);
+  t.mock.method(process.stdout, "write", (chunk: string, ...args: any[]) => {
+    if (typeof chunk === "string" && chunk.startsWith('{"type":')) {
+      events.push(JSON.parse(chunk));
+      return true;
+    }
+    return write(chunk, ...args);
+  });
+  let research = 0;
+  t.mock.method(globalThis, "fetch", async (url: unknown, init: any) => {
+    const path = new URL(String(url)).pathname;
+    if (path === "/api/ai-agent/bootstrap/exchange")
+      return Response.json({ correlationId }, { headers: { "set-cookie": "session=fixture; HttpOnly" } });
+    if (path === "/api/device/files/ai/search") {
+      searches += 1;
+      const { query } = JSON.parse(init.body);
+      return Response.json({ documents: [fileHit(query, 0)], nextCursor: null });
+    }
+    const purpose = new Headers(init.headers).get("x-echo-ai-purpose") ?? "";
+    const body = JSON.parse(init.body);
+    if (purpose === "synthesis") {
+      synthesisBody = body;
+      return responsesStream([message(`KMSAuto [джерело](${fileHit("q0", 0).citation})`)]);
+    }
+    if (purpose === "checkpoint") return responsesStream([message("Checkpoint.")]);
+    research += 1;
+    if (research === 1)
+      return responsesStream(Array.from({ length: 40 }, (_, index) => ({
+        id: `fc_${index}`, type: "function_call", call_id: `call_${index}`, name: "echo_device_file_search", status: "completed", arguments: JSON.stringify({ query: `q${index}` }),
+      })));
+    if (body.tool_choice)
+      return responsesStream([{ id: "fc_update", type: "function_call", call_id: "call_update", name: "update_research", status: "completed", arguments: JSON.stringify({ draft: "", gaps: [] }) }]);
+    return responsesStream([message("Research complete.")]);
+  });
+  await runAgent(validatePayload({
+    prompt: "Знайди активатори",
+    modelName: "gemma-4",
+    providerTransport: "echo_gateway",
+    providerApiKey: "fixture-capability",
+    echoPublicHost: "echo.example.test",
+    bootstrapToken: "A".repeat(43),
+    correlationId,
+    contextWindow: 65_536,
+    maxTokens: 8192,
+    compactionReserveTokens: 16_384,
+    compactionKeepRecentTokens: 8_192,
+    executionPolicy: { preset: "balanced", api: "openai-responses", reasoningEffort: null, checkpointEffort: null, synthesisEffort: null, maxRuntimeSeconds: 600, finalizationSeconds: 120 },
+    deadlineAt: Date.now() + 600_000,
+    timeContext: { timeZone: "Europe/Kyiv", requestStartedAtUtc: "2026-11-15T21:17:01Z" },
+    skills: [{ method: "POST", path: "/api/device/files/ai/search", skill: "device_file_search", label: "Шукаю файли пристроїв", requestKind: "deviceFileSearch" }],
+  }, false));
+  assert.ok(searches > 0 && searches < 40, `${searches} searches reached Echo`);
+  const deferred = events.filter((event) => event.type === "tool_end" && /відкладено/.test(event.toolLabel ?? ""));
+  assert.equal(deferred.length, 40 - searches);
+  assert.ok(synthesisBody, "synthesis ran");
+  const actions = JSON.parse(synthesisBody.input.find((item: any) => item.role === "user" && JSON.stringify(item).includes("completedActions")).content[0]?.text ?? synthesisBody.input.find((item: any) => item.role === "user").content).completedActions;
+  const action = actions.find((entry: any) => entry.tool === "echo_device_file_search");
+  assert.equal(action.calls, searches);
+});

@@ -2669,7 +2669,11 @@ export function toolContextBudget(profile: ToolContextProfile): ToolContextBudge
   };
 }
 
-const SEARCH_HIT_EVIDENCE_MAX_CHARACTERS = 600;
+// Each part of a hit's evidence keeps its own room, so a long summary cannot push out
+// the matched snippet.
+const SEARCH_HIT_NAME_MAX_CHARACTERS = 160;
+const SEARCH_HIT_SUMMARY_MAX_CHARACTERS = 260;
+const SEARCH_HIT_SNIPPET_MAX_CHARACTERS = 200;
 const MAX_SEARCH_HIT_EVIDENCE = 200;
 
 /** Search hits as the model saw them, so a search-only run still has evidence (#4224). */
@@ -2682,13 +2686,16 @@ export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch",
     const name = String(hit.fileName ?? "");
     // The summary says what the file is; the snippet holds the matched text.
     const summary = kind === "deviceFileSearch" ? hit.summary : hit.text;
-    const details = [summary, hit.snippet].filter((value): value is string => typeof value === "string" && value.trim() !== "" && value !== name);
+    const details = [
+      [summary, SEARCH_HIT_SUMMARY_MAX_CHARACTERS],
+      [hit.snippet, SEARCH_HIT_SNIPPET_MAX_CHARACTERS],
+    ].flatMap(([value, limit]) => typeof value === "string" && value.trim() !== "" && value !== name ? [capText(value, limit as number)] : []);
     const location = kind === "deviceFileSearch" && typeof hit.folder === "string" && hit.folder ? ` (${hit.folder})` : "";
     const state = typeof hit.state === "string" ? ` [${hit.state}]` : "";
     return [{
       kind: kind === "deviceFileSearch" ? "file" as const : "attachment" as const,
       id: kind === "deviceFileSearch" ? hit.citation : `${hit.citation}#${String(hit.mediaId ?? name)}`,
-      text: capText(`${name}${location}${state}${details.length ? `: ${details.join(" — ")}` : ""}`, SEARCH_HIT_EVIDENCE_MAX_CHARACTERS),
+      text: `${capText(`${name}${location}${state}`, SEARCH_HIT_NAME_MAX_CHARACTERS)}${details.length ? `: ${details.join(" — ")}` : ""}`,
       citation: hit.citation,
     }];
   });
@@ -3493,6 +3500,7 @@ function createRouteTools(
   recordRetrieval: (skill: string) => void = () => {},
   recordAggregate: (skill: string, request: unknown, text: string) => void = () => {},
   recordHits: (hits: SearchHitEvidence[]) => void = () => {},
+  noteDeferred: (toolCallId: string) => void = () => {},
 ) {
   const activity = createRouteActivityTracker();
   const groupRoute = payload.skills.find((route) => route.skill === GROUP_LOOKUP_SKILL);
@@ -3513,14 +3521,16 @@ function createRouteTools(
       prepareArguments: (args: unknown) => prepareRouteArguments(route, args, (fields) => emit({
         type: "tool_diagnostic", tool: `echo_${route.skill}`, reason: "ignored_arguments", handledPrivately: false, fields,
       })) as any,
-      execute: async (_toolCallId, params, signal, onUpdate) => {
+      execute: async (toolCallId, params, signal, onUpdate) => {
         countInvocation();
         // More calls than the batch can give a useful share: this one runs next turn (#4224).
-        if (!compactResponse.admit())
+        if (!compactResponse.admit()) {
+          noteDeferred(toolCallId);
           return {
             content: [{ type: "text", text: JSON.stringify({ deferred: true, message: TOOL_BATCH_DEFERRED }) }],
             details: { skill: route.skill, activityLabel: activityLabel([route.label, "відкладено до наступного кроку"]) },
           };
+        }
         const requestBody = routeToolRequestBody(
           route,
           await groupScope.resolve(params, "selectedGroups" in ((routeParameters(route) as { properties?: object }).properties ?? {}), signal),
@@ -4790,6 +4800,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     const recordMessages = (messages: CitedMessage[]) => {
       for (const message of messages) deliveredMessages.set(`${message.messageId}:${message.messageIdentifier}`, message);
     };
+    // Calls a batch could not admit: they never reached Echo, so they are no completed action.
+    const deferredToolCalls = new Set<string>();
     const deliveredHits = new Map<string, SearchHitEvidence>();
     const recordHits = (hits: SearchHitEvidence[]) => {
       for (const hit of hits) {
@@ -4844,6 +4856,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         recordRetrieval,
         recordAggregate,
         recordHits,
+        (toolCallId) => deferredToolCalls.add(toolCallId),
       ),
       ...(payload.skills.some((route) => route.requestKind === "mapRecords") && payload.skills.some((route) => route.requestKind === "mapDocument")
         ? createMapTools(mapRegistry, async (path, body, signal) => {
@@ -4923,7 +4936,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         research.noteToolRun();
         delete event.arguments;
       }
-      if (research && event.type === "tool_end")
+      if (research && event.type === "tool_end" && !deferredToolCalls.has(String(event.tool_call_id)))
         research.noteToolResult(String(event.tool), Boolean(event.is_error));
       emit(event);
     };
