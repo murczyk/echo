@@ -8829,4 +8829,9 @@ export type UserDutySettingsDto = {
   dutyRememberReportGroup: boolean;
   analysisRememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
+  dutyHideCardHeader: boolean;
+  dutyHideCardFrequency: boolean;
+  dutyHideCardUnit: boolean;
+  messageCardQuickActionCount: number;
+  messageCardSecondQuickAction: MessageCardQuickAction;
 };

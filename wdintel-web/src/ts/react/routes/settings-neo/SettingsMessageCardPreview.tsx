@@ -2,6 +2,8 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
+import SquareTwoToneIcon from '@mui/icons-material/SquareTwoTone';
 import { Collapse, useMediaQuery } from '@mui/material';
 import {
   MessageAttachmentPreviewMode,
@@ -9,6 +11,7 @@ import {
   type MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+import type { DutyMessageCardVisibility } from '../shared/message-card/DutyMessageCardVisibility';
 import { MESSAGE_CARD_QUICK_ACTION_ICONS } from '../shared/message-card/MessageCardQuickAction';
 import './SettingsMessageCardPreview.css';
 
@@ -29,7 +32,8 @@ function PreviewLines({ widths }: { widths: number[] }) {
 }
 
 export function SettingsMessageCardPreview({
-  messageCardQuickAction,
+  dutyCardVisibility,
+  messageCardQuickActions,
   largeMessageCardText,
   tagsLayout,
   mediaSummaryEnabled,
@@ -37,7 +41,10 @@ export function SettingsMessageCardPreview({
   aiPositionHighlightsEnabled,
   messageTextPreviewLines,
 }: {
-  messageCardQuickAction: MessageCardQuickAction;
+  /** Duty tab only: previews the Duty-only hidden card parts. */
+  dutyCardVisibility?: DutyMessageCardVisibility;
+  /** Narrow-card direct actions in slot order. */
+  messageCardQuickActions: readonly MessageCardQuickAction[];
   largeMessageCardText: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled: boolean;
@@ -48,7 +55,6 @@ export function SettingsMessageCardPreview({
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const duration = reducedMotion ? 0 : 250;
   const attachmentsExpanded = attachmentPreviewMode !== MessageAttachmentPreviewMode.Collapsed;
-  const QuickActionIcon = MESSAGE_CARD_QUICK_ACTION_ICONS[messageCardQuickAction];
   return (
     <section
       aria-label="Попередній перегляд картки повідомлення"
@@ -67,15 +73,23 @@ export function SettingsMessageCardPreview({
       >
         <div className="message-card-header-row">
           <div data-message-card-header-left="true" className="w-full">
-            <PreviewLines widths={[40, 28]} />
+            <Collapse in={dutyCardVisibility?.hideHeader !== true} timeout={duration} unmountOnExit>
+              <PreviewLines widths={[40, 28]} />
+            </Collapse>
           </div>
           <div className="message-card-action-group pointer-events-none">
-            <span
-              data-message-card-quick-action-preview={messageCardQuickAction}
-              className="message-card-action-btn"
-            >
-              <QuickActionIcon className="message-card-action-btn__icon" />
-            </span>
+            {messageCardQuickActions.map((action) => {
+              const QuickActionIcon = MESSAGE_CARD_QUICK_ACTION_ICONS[action];
+              return (
+                <span
+                  key={action}
+                  data-message-card-quick-action-preview={action}
+                  className="message-card-action-btn"
+                >
+                  <QuickActionIcon className="message-card-action-btn__icon" />
+                </span>
+              );
+            })}
             <span className="message-card-action-btn">
               <MoreVertIcon className="message-card-action-btn__icon" />
             </span>
@@ -147,6 +161,35 @@ export function SettingsMessageCardPreview({
             </div>
           </div>
           <div className="message-card-details-region">
+            {dutyCardVisibility ? (
+              <div className="settings-message-card-preview__metadata">
+                <Collapse
+                  in={!dutyCardVisibility.hideFrequency}
+                  orientation="horizontal"
+                  timeout={duration}
+                  unmountOnExit
+                >
+                  <span
+                    data-frequency-preview="true"
+                    className="settings-message-card-preview__meta"
+                  >
+                    <SettingsInputAntennaOutlinedIcon className="settings-message-card-preview__meta-icon" />
+                    <span className="h-2 w-12 rounded-sm bg-echo-text-muted/25" />
+                  </span>
+                </Collapse>
+                <Collapse
+                  in={!dutyCardVisibility.hideUnit}
+                  orientation="horizontal"
+                  timeout={duration}
+                  unmountOnExit
+                >
+                  <span data-unit-preview="true" className="settings-message-card-preview__meta">
+                    <SquareTwoToneIcon className="settings-message-card-preview__meta-icon message-card-unit-icon" />
+                    <span className="h-2 w-16 rounded-sm bg-echo-text-muted/25" />
+                  </span>
+                </Collapse>
+              </div>
+            ) : null}
             <PreviewLines widths={[68, 88]} />
             <div className="message-card-divider" aria-hidden="true" />
             <Collapse in={tagsLayout !== 'hidden'} timeout={duration} unmountOnExit>

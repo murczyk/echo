@@ -664,6 +664,7 @@ export function useManageMessageDrawer({
       dutySettings.scheduleSave({
         ...dutySettings,
         messageCardQuickAction: undefined,
+        messageCardSecondQuickAction: undefined,
         messageAutoParseEnabled: enabled,
       });
     },

@@ -44,6 +44,8 @@
 .app-shell {
   --app-shell-top-offset: 0px;
   --app-shell-bottom-offset: 0px;
+  /* Top inset for page-level sticky content: clears the fixed navbar while it is shown. */
+  --app-shell-sticky-top: 0px;
   --app-shell-total-offset: calc(var(--app-shell-top-offset) + var(--app-shell-bottom-offset));
   box-sizing: border-box;
   background: var(--background-color);
@@ -53,6 +55,7 @@
 
 .app-shell--navbar-visible {
   --app-shell-top-offset: var(--app-shell-navbar-height);
+  --app-shell-sticky-top: var(--app-shell-navbar-height);
   padding-top: var(--app-shell-navbar-height);
 }
 
@@ -96,6 +99,17 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Settings pins its card preview: `clip` crops like `hidden` without becoming the sticky scroll container. */
+settings-neo.react-fill-host {
+  overflow: clip;
+}
+
+/* `overflow-x: hidden` on html and body makes body a scroll container that never scrolls. */
+html:has(settings-neo),
+body:has(settings-neo) {
+  overflow-x: clip;
 }
 
 .app-shell--fixed-viewport {
