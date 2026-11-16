@@ -315,6 +315,40 @@ test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds co
   }
 });
 
+// Regression: https://github.com/echoua/echo/issues/4224
+// A search-only run (six file searches, no reads) ended "no_evidence" in 1 ms.
+test("#4224 file and attachment search hits are synthesis evidence", async () => {
+  const fileHit = { kind: "file" as const, text: "KMSAuto++.exe (C:\\Activators): KMS activator for Windows and Office", citation: "/devices/d1?file=f1&revision=1" };
+  const attachmentHit = { kind: "attachment" as const, text: "activators.rar", citation: "/rer-analysis-neo?m=source-7" };
+  const hitsOnly = { messages: [], files: [], hits: [fileHit, attachmentHit] };
+  let request = "";
+  const answer = await synthesizeBudgetEvidence(
+    {
+      engine,
+      apiKey: "fixture-capability",
+      policy,
+      systemPrompt: "Summarize evidence",
+      prompt: "Знайди активатори",
+      evidence: hitsOnly,
+      maxTokens: 8192,
+      signal: new AbortController().signal,
+    },
+    async (_engine, context) => {
+      request = JSON.stringify(context.messages);
+      return { stopReason: "stop", content: [{ type: "text", text: `KMSAuto [джерело](${fileHit.citation})` }] } as any;
+    },
+  );
+  assert.ok(request.includes("KMSAuto++.exe") && request.includes(fileHit.citation));
+  assert.ok(request.includes(attachmentHit.citation));
+  assert.equal(chooseBudgetAnswer(answer, hitsOnly, [], [fileHit.citation]), `KMSAuto [джерело](${fileHit.citation})`);
+  assert.equal(chooseBudgetAnswer("KMSAuto, uncited", hitsOnly, [], [fileHit.citation]), budgetFallback());
+  // Read sections and messages still come first and keep their own citation rule.
+  assert.equal(
+    chooseBudgetAnswer(`KMSAuto [джерело](${fileHit.citation})`, { ...evidence, hits: [fileHit] }, evidence.messages),
+    budgetFallback(),
+  );
+});
+
 test("#3724 does not turn revoked provider access into a completed partial answer", async () => {
   for (const summarize of [
     async () =>

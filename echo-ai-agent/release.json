@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "release": "2026.11.14.2",
+  "release": "2026.11.16.1",
   "runnerProtocolVersion": 1,
   "nodeVersion": "24.19.0",
   "piVersion": "0.83.0",
   "supportedRunnerReleases": [
+    "2026.11.16.1",
     "2026.11.14.2",
     "2026.11.14.1",
     "2026.11.13.2",

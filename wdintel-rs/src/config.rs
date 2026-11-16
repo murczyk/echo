@@ -768,7 +768,7 @@ pub const AI_AGENT_REFUSAL_REWRITE_PROMPT_MAX_CHARS: usize = 8_192;
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.14.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.16.1";
 /// How often the bgworker compares the namespace harness with
 /// `AI_AGENT_HARNESS_RELEASE` (#4186). The first check waits longer, because a
 /// deploy restarts the bgworker before it upgrades the harness.

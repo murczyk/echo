@@ -32,9 +32,57 @@ test('#3064 file sections retain exact source revisions and continuation under c
 
 test('#3064 file search compaction rebuilds a revision keyset cursor', () => {
   const documents = [1, 2, 3].map((revision) => ({ ...document, revision, summary: 'x'.repeat(1800) }));
-  const result = JSON.parse(compactToolResponse({ skill: 'device_file_search', requestKind: 'deviceFileSearch' }, { documents, nextCursor: null }, 64, 2600));
+  const result = JSON.parse(compactToolResponse({ skill: 'device_file_search', requestKind: 'deviceFileSearch' }, { documents, nextCursor: null }, 64, 1000));
   assert.equal(result.documents.length, 1);
   assert.deepEqual(JSON.parse(Buffer.from(result.nextCursor, 'base64url').toString()), [source.fileId, 1]);
+  assert.match(result.warnings[0], /Showing 1 of 3 hits to fit context; follow nextCursor/);
+});
+
+// Regression: https://github.com/echoua/echo/issues/4224
+const searchHit = (index: number, overrides: Record<string, unknown> = {}) => {
+  const hit = { ...source, fileId: `01999999-2222-7222-8222-${String(index).padStart(12, '0')}`, extractionRevision: null };
+  return {
+    ...hit, fileName: `KMSAuto-${index}.exe`, path: `C:\\Users\\operator\\Downloads\\Activators\\KMSAuto-${index}.exe`, format: 'exe',
+    modifiedAt: 1_790_000_000_000, current: true, hasContent: true, state: 'completed', complete: true,
+    summary: 'Активатор Windows і Office. '.repeat(70), summaryState: 'completed', positionState: 'completed',
+    snippet: 'page 1: ' + 'KMS activation text '.repeat(30), citation: fileCitationHref({ ...hit, section: null }), ...overrides,
+  };
+};
+
+test('#4224 file search hits drop defaults and halve their size without losing citations', () => {
+  const documents = Array.from({ length: 50 }, (_, index) => searchHit(index));
+  const body = { documents, nextCursor: null };
+  const text = compactToolResponse({ skill: 'device_file_search', requestKind: 'deviceFileSearch' }, body, 64, 96_000);
+  assert.ok(text.length * 2 <= JSON.stringify(body).length, `${text.length} vs ${JSON.stringify(body).length}`);
+  const [hit] = JSON.parse(text).documents;
+  assert.equal(hit.folder, 'C:\\Users\\operator\\Downloads\\Activators');
+  for (const omitted of ['path', 'format', 'current', 'hasContent', 'state', 'complete', 'summaryState', 'positionState', 'extractionRevision'])
+    assert.ok(!(omitted in hit), omitted);
+  assert.deepEqual(Object.keys(hit).filter((key) => ['deviceId', 'fileId', 'revision', 'citation'].includes(key)).length, 4);
+  assert.deepEqual(collectFileCitations(body).filter((citation) => text.includes(fileCitationHref(citation))).length, 50);
+});
+
+test('#4224 file search hits keep non-default states for honest coverage', () => {
+  const documents = [
+    searchHit(1, { state: 'content_unavailable', hasContent: false, complete: false, summary: null, summaryState: 'pending', snippet: null }),
+    searchHit(2, { current: false, complete: false, summaryState: 'failed', format: 'bin' }),
+  ];
+  const [unavailable, partial] = JSON.parse(compactToolResponse({ skill: 'device_file_search', requestKind: 'deviceFileSearch' }, { documents, nextCursor: null }, 64, 96_000)).documents;
+  assert.equal(unavailable.state, 'content_unavailable');
+  assert.ok(!('hasContent' in unavailable) && !('summaryState' in unavailable) && !('summary' in unavailable));
+  assert.equal(partial.current, false);
+  assert.equal(partial.complete, false);
+  assert.equal(partial.summaryState, 'failed');
+  assert.equal(partial.format, 'bin');
+});
+
+test('#4224 file search hits shorten texts before dropping hits', () => {
+  const documents = Array.from({ length: 20 }, (_, index) => searchHit(index));
+  const result = JSON.parse(compactToolResponse({ skill: 'device_file_search', requestKind: 'deviceFileSearch' }, { documents, nextCursor: 'server' }, 64, 16_000));
+  assert.equal(result.documents.length, 20);
+  assert.equal(result.nextCursor, 'server');
+  assert.ok(result.documents.every((hit: any) => hit.summary.length <= 300 && hit.summary.endsWith('…')));
+  assert.equal(result.warnings, undefined);
 });
 
 test('#3064 file citations cannot be forged in prose or map edits', () => {

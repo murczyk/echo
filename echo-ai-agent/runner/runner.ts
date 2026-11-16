@@ -14,6 +14,7 @@ import {
   synthesisConversation,
   type ExecutionPolicy,
   type AggregateEvidence,
+  type SearchHitEvidence,
   type BudgetEvidence,
   type ResearchLimitReason,
   providerFailureKind,
@@ -32,6 +33,9 @@ import {
   stripUnknownFileCitations,
   compactDeviceEvidence,
   collectFileSections,
+  capText,
+  fileSearchCursor,
+  projectFileSearchHit,
   type FileSection,
   type FileCitation,
 } from "./devices.ts";
@@ -40,6 +44,7 @@ import {
   ATTACHMENT_PARAMETERS,
   ATTACHMENT_DESCRIPTION,
   attachmentRequest,
+  projectAttachmentSearchHit,
 } from "./attachments.ts";
 import {
   UPLOAD_ROUTES,
@@ -118,7 +123,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.14.2";
+const HARNESS_RELEASE = "2026.11.16.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -127,6 +132,16 @@ const INBOX_IMAGE_TEXT_MAX_CHARACTERS = 4_000;
 const TOOL_RESPONSE_MAX_CHARACTERS = 96_000;
 const TOOL_CONTEXT_MAX_CHARACTERS = 192_000;
 const TOOL_CONTEXT_CHARACTERS_PER_TOKEN = 4;
+// pi-ai keeps this margin below the context window (clampMaxTokensToContext).
+const CONTEXT_SAFETY_TOKENS = 4_096;
+// Room for the evidence checkpoint that replaces older turns (about 1,000 words).
+const CHECKPOINT_SUMMARY_TOKENS = 2_500;
+// Search JSON full of UUIDs and Cyrillic text tokenizes worse than the 4-character estimate.
+const TOOL_RESULT_CHARACTERS_PER_TOKEN = 3;
+// One assistant turn's tool calls may fill at most this share of the free context.
+const TOOL_BATCH_CONTEXT_SHARE = 0.5;
+const MIN_TOOL_BATCH_CHARACTERS = 8_000;
+const MIN_TOOL_CALL_CHARACTERS = 2_000;
 const TOOL_DEFAULT_MAX_ITEMS = 64;
 const FREQUENCY_SUMMARY_LISTS = ["callsigns", "units", "locations"];
 const FREQUENCY_SUMMARY_LIST_LIMITS = [32, 16, 8, 4];
@@ -2475,6 +2490,49 @@ function compactFrequencySummary(value: unknown, maxItems: number, maxCharacters
   return "{}";
 }
 
+// Summary/snippet lengths tried, longest first, before hits are dropped (#4224).
+const SEARCH_HIT_TEXT_LIMITS: readonly (readonly [number, number])[] = [[1_200, 600], [600, 300], [300, 160], [240, 120]];
+
+/**
+ * File and attachment search hits shortened before any is dropped. Hits are ordered by id,
+ * not relevance, so a trimmed page says so and points at its continuation.
+ */
+function compactSearchHits(
+  kind: "deviceFileSearch" | "attachmentSearch",
+  document: JsonObject,
+  result: JsonObject,
+  maxCharacters: number,
+): string {
+  const original = result.documents as JsonObject[];
+  const project = kind === "deviceFileSearch" ? projectFileSearchHit : projectAttachmentSearchHit;
+  const encode = (documents: unknown[], extra: JsonObject = {}) => {
+    Object.assign(result, { documents }, extra);
+    return JSON.stringify(document);
+  };
+  for (const [summary, snippet] of SEARCH_HIT_TEXT_LIMITS) {
+    const encoded = encode(original.map((hit) => project(hit, summary, snippet)));
+    if (encoded.length <= maxCharacters) return encoded;
+  }
+  const [summary, snippet] = SEARCH_HIT_TEXT_LIMITS.at(-1)!;
+  const projected = original.map((hit) => project(hit, summary, snippet));
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  let count = projected.length;
+  let encoded = "";
+  while (count >= 1) {
+    const last = original[count - 1];
+    encoded = encode(projected.slice(0, count), count < original.length
+      ? {
+          nextCursor: kind === "deviceFileSearch" ? fileSearchCursor(last) : last.mediaId,
+          warnings: [...warnings, `Showing ${count} of ${original.length} hits to fit context; follow nextCursor for the rest before concluding that a file is absent`],
+        }
+      : {});
+    if (encoded.length <= maxCharacters || count === 1) break;
+    count -= 1;
+  }
+  if (encoded.length > maxCharacters) throw new Error("Search response exceeds available context; narrow the search");
+  return encoded;
+}
+
 export function compactToolResponse(
   route: Pick<SkillDefinition, "skill" | "requestKind">,
   value: unknown,
@@ -2496,6 +2554,8 @@ export function compactToolResponse(
   if (route.requestKind.startsWith("attachment") || route.requestKind.startsWith("deviceFile") || route.requestKind === "uploadRead") {
     const document = structuredClone(value) as JsonObject;
     const result = document.result && typeof document.result === "object" ? document.result as JsonObject : document;
+    if ((route.requestKind === "deviceFileSearch" || route.requestKind === "attachmentSearch") && Array.isArray(result.documents))
+      return compactSearchHits(route.requestKind, document, result, maxCharacters);
     if (Array.isArray(result.sections)) {
       for (const section of result.sections as JsonObject[]) { delete section.html; delete section.text; }
       while (JSON.stringify(document).length > maxCharacters && result.sections.length > 1) {
@@ -2553,34 +2613,145 @@ export function compactToolResponse(
   }
 }
 
-export function createContextToolResponseCompactor(contextWindow: number) {
-  return createToolResponseCompactor(
+/** The runtime profile the tool context budget is derived from. */
+export interface ToolContextProfile {
+  contextWindow: number;
+  maxTokens: number;
+  compactionReserveTokens: number;
+  compactionKeepRecentTokens: number;
+  /** System prompt, tool schemas and the prompt: present in every turn. History is
+   * left out because compaction can summarize it. */
+  fixedTokens?: number;
+}
+
+export interface ToolContextBudget {
+  /** Tool-result characters the retained context may hold. */
+  totalCharacters: number;
+  /** Characters all tool calls of one assistant turn may add together. */
+  batchCharacters: number;
+  /** Compaction starts when less than this (plus a per-call reserve) remains. */
+  thresholdCharacters: number;
+  /** Recent context compaction keeps, so the budget clears after compaction. */
+  keepRecentTokens: number;
+}
+
+/**
+ * Tool output sized to the free context: a 64k window holds about 20k tokens of system
+ * prompt and tool schemas, so six full search pages overflowed it at once (#4224).
+ */
+export function toolContextBudget(profile: ToolContextProfile): ToolContextBudget {
+  const capacityTokens = Math.max(
+    0,
+    profile.contextWindow -
+      CONTEXT_SAFETY_TOKENS -
+      Math.max(profile.compactionReserveTokens, profile.maxTokens) -
+      (profile.fixedTokens ?? 0) -
+      CHECKPOINT_SUMMARY_TOKENS,
+  );
+  const batchCharacters = Math.max(
+    MIN_TOOL_BATCH_CHARACTERS,
+    Math.floor(capacityTokens * TOOL_BATCH_CONTEXT_SHARE * TOOL_RESULT_CHARACTERS_PER_TOKEN),
+  );
+  const totalCharacters = Math.max(2 * batchCharacters, capacityTokens * TOOL_CONTEXT_CHARACTERS_PER_TOKEN);
+  const thresholdCharacters = Math.min(TOOL_RESPONSE_MAX_CHARACTERS, batchCharacters);
+  return {
+    totalCharacters,
+    batchCharacters,
+    thresholdCharacters,
+    keepRecentTokens: Math.max(
+      1,
+      Math.min(
+        profile.compactionKeepRecentTokens,
+        Math.floor((totalCharacters - thresholdCharacters) / TOOL_CONTEXT_CHARACTERS_PER_TOKEN),
+      ),
+    ),
+  };
+}
+
+const SEARCH_HIT_EVIDENCE_MAX_CHARACTERS = 600;
+const MAX_SEARCH_HIT_EVIDENCE = 200;
+
+/** Search hits as the model saw them, so a search-only run still has evidence (#4224). */
+export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch", text: string): SearchHitEvidence[] {
+  const body = JSON.parse(text) as JsonObject;
+  const result = (body.result && typeof body.result === "object" ? body.result : body) as JsonObject;
+  const documents = Array.isArray(result.documents) ? result.documents as JsonObject[] : [];
+  return documents.flatMap((hit) => {
+    if (typeof hit.citation !== "string" || !hit.citation) return [];
+    const name = String(hit.fileName ?? "");
+    const detail = String((kind === "deviceFileSearch" ? hit.summary ?? hit.snippet : hit.text ?? hit.snippet) ?? "");
+    const location = kind === "deviceFileSearch" && typeof hit.folder === "string" && hit.folder ? ` (${hit.folder})` : "";
+    const state = typeof hit.state === "string" ? ` [${hit.state}]` : "";
+    return [{
+      kind: kind === "deviceFileSearch" ? "file" as const : "attachment" as const,
+      text: capText(`${name}${location}${state}${detail && detail !== name ? `: ${detail}` : ""}`, SEARCH_HIT_EVIDENCE_MAX_CHARACTERS),
+      citation: hit.citation,
+    }];
+  });
+}
+
+/** Echo route calls an assistant turn requested; they share one tool batch budget. */
+function routeToolCalls(message: unknown, routeToolNames: ReadonlySet<string>): number {
+  const content = (message as JsonObject | undefined)?.content;
+  return Array.isArray(content)
+    ? content.filter((block) => (block as JsonObject | null)?.type === "toolCall" && routeToolNames.has(String((block as JsonObject).name))).length
+    : 0;
+}
+
+/** Context every turn carries before any result: system prompt, tool schemas and the prompt. */
+export function fixedContextTokens(systemPrompt: string, tools: readonly unknown[], prompt: string): number {
+  const schemas = JSON.stringify(tools.map((tool) => {
+    const { name, description, parameters } = tool as JsonObject;
+    return { name, description, parameters };
+  }));
+  return Math.ceil((systemPrompt.length + schemas.length + prompt.length) / TOOL_CONTEXT_CHARACTERS_PER_TOKEN);
+}
+
+export function createContextToolResponseCompactor(contextWindow: number, profile?: Omit<ToolContextProfile, "contextWindow">) {
+  const compact = createToolResponseCompactor(
     Math.max(
       TOOL_CONTEXT_MAX_CHARACTERS,
       contextWindow * TOOL_CONTEXT_CHARACTERS_PER_TOKEN,
     ),
   );
+  if (profile) compact.configure(toolContextBudget({ ...profile, contextWindow }));
+  return compact;
 }
 
-export function createToolResponseCompactor(
-  maxTotalCharacters = TOOL_CONTEXT_MAX_CHARACTERS,
-  maxResponseCharacters = TOOL_RESPONSE_MAX_CHARACTERS,
-  maxInvocations = MAX_TOOL_INVOCATIONS,
-): ((
+type ToolResponseCompactor = ((
   route: Pick<SkillDefinition, "skill" | "requestKind">,
   value: unknown,
   maxItems: number,
 ) => string) & {
   reset: (messages: unknown[]) => void;
   needsCompaction: () => boolean;
-} {
-  let remainingCharacters = maxTotalCharacters;
+  /** An assistant turn requested `calls` tool results: they share one batch budget. */
+  beginBatch: (calls: number) => void;
+  /** Applies a budget measured once the session's fixed context is known. */
+  configure: (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => void;
+};
+
+export function createToolResponseCompactor(
+  maxTotalCharacters = TOOL_CONTEXT_MAX_CHARACTERS,
+  maxResponseCharacters = TOOL_RESPONSE_MAX_CHARACTERS,
+  maxInvocations = MAX_TOOL_INVOCATIONS,
+  maxBatchCharacters = Number.POSITIVE_INFINITY,
+): ToolResponseCompactor {
+  let totalCharacters = maxTotalCharacters;
+  let responseCharacters = maxResponseCharacters;
+  let batchCharacters = maxBatchCharacters;
+  let remainingCharacters = totalCharacters;
   let remainingInvocations = maxInvocations;
+  let batchRemaining = batchCharacters;
+  let batchCalls = 1;
   const compact = (route: Pick<SkillDefinition, "skill" | "requestKind">, value: unknown, maxItems: number) => {
     const reservedForLater = Math.max(0, remainingInvocations - 1) * 2;
+    // Calls run one after another: an even share keeps the last calls of a batch from
+    // getting nothing (#4224).
+    const batchShare = Math.max(MIN_TOOL_CALL_CHARACTERS, Math.floor(batchRemaining / batchCalls));
     const maxCharacters = Math.max(
       2,
-      Math.min(maxResponseCharacters, remainingCharacters - reservedForLater),
+      Math.min(responseCharacters, batchShare, remainingCharacters - reservedForLater),
     );
     const compacted = compactToolResponse(
       route,
@@ -2593,7 +2764,20 @@ export function createToolResponseCompactor(
     }
     remainingCharacters = Math.max(0, remainingCharacters - compacted.length);
     remainingInvocations = Math.max(0, remainingInvocations - 1);
+    batchRemaining = Math.max(0, batchRemaining - compacted.length);
+    batchCalls = Math.max(1, batchCalls - 1);
     return compacted;
+  };
+  compact.beginBatch = (calls: number) => {
+    batchRemaining = batchCharacters;
+    batchCalls = Math.max(1, calls);
+  };
+  compact.configure = (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => {
+    remainingCharacters = Math.max(0, remainingCharacters + budget.totalCharacters - totalCharacters);
+    totalCharacters = budget.totalCharacters;
+    responseCharacters = budget.thresholdCharacters;
+    batchCharacters = budget.batchCharacters;
+    batchRemaining = batchCharacters;
   };
   compact.reset = (messages: unknown[]) => {
     const retained = messages.reduce<number>((total, message) => {
@@ -2601,11 +2785,11 @@ export function createToolResponseCompactor(
       if (result.role !== "toolResult" || !Array.isArray(result.content)) return total;
       return total + result.content.reduce((size: number, block: JsonObject) => size + (block.type === "text" && typeof block.text === "string" ? block.text.length : 0), 0);
     }, 0);
-    remainingCharacters = Math.max(0, maxTotalCharacters - retained);
+    remainingCharacters = Math.max(0, totalCharacters - retained);
   };
   compact.needsCompaction = () =>
     remainingCharacters <
-    Math.min(maxResponseCharacters, maxTotalCharacters / 2) +
+    Math.min(responseCharacters, totalCharacters / 2) +
       Math.max(0, remainingInvocations - 1) * 2;
   return compact;
 }
@@ -2852,6 +3036,30 @@ function activityLabel(parts: (string | null)[]): string {
     : label;
 }
 
+/** A Kyiv date range with inclusive bounds; times appear only off day boundaries. */
+function activityRange(since: unknown, till: unknown): string | null {
+  const start = typeof since === "number" && Number.isFinite(since) ? since : null;
+  const end = typeof till === "number" && Number.isFinite(till) ? till : null;
+  if ((start === null && end === null) || (start !== null && end !== null && end < start))
+    return null;
+  const showTime =
+    (start !== null && start !== kyivMidnightEpochMs(calendarDateAt(start))) ||
+    (end !== null &&
+      end !== kyivMidnightEpochMs(shiftCalendarDate(calendarDateAt(end), 1)) - 1);
+  const format = new Intl.DateTimeFormat("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    ...(showTime ? ({ hour: "2-digit", minute: "2-digit" } as const) : {}),
+  });
+  if (start !== null && end !== null)
+    return format.formatRange(new Date(start), new Date(end));
+  return start !== null
+    ? `від ${format.format(new Date(start))}`
+    : `до ${format.format(new Date(end!))}`;
+}
+
 function activityPeriod(body: JsonObject): string | null {
   const since = body.since_date_inclusive_ms;
   const till =
@@ -2860,26 +3068,89 @@ function activityPeriod(body: JsonObject): string | null {
       : typeof body.till_date_noninclusive_ms === "number"
         ? body.till_date_noninclusive_ms - 1
         : null;
-  if (
-    typeof since !== "number" ||
-    !Number.isFinite(since) ||
-    till === null ||
-    !Number.isFinite(till) ||
-    till < since
-  )
-    return null;
-  const showTime =
-    since !== kyivMidnightEpochMs(calendarDateAt(since)) ||
-    till !==
-      kyivMidnightEpochMs(shiftCalendarDate(calendarDateAt(till), 1)) - 1;
-  const format = new Intl.DateTimeFormat("uk-UA", {
-    timeZone: "Europe/Kyiv",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    ...(showTime ? ({ hour: "2-digit", minute: "2-digit" } as const) : {}),
-  });
-  return `за ${format.formatRange(new Date(since), new Date(till))}`;
+  if (typeof since !== "number" || till === null) return null;
+  const range = activityRange(since, till);
+  return range ? `за ${range}` : null;
+}
+
+// File, attachment and device searches: their activity names the query and filters (#4224).
+const SEARCH_ACTIVITY_KINDS = new Set(["deviceFileSearch", "attachmentSearch", "deviceSearch"]);
+const FILE_SEARCH_SCOPES: Record<string, string> = { name: "у назвах", content: "у вмісті", summary: "в описах" };
+const SEARCH_ACTIVITY_NOUNS: Record<string, { found: string; none: string }> = {
+  deviceFileSearch: { found: "файлів", none: "файлів не знайдено" },
+  attachmentSearch: { found: "документів", none: "документів не знайдено" },
+  deviceSearch: { found: "пристроїв", none: "пристроїв не знайдено" },
+};
+
+function activityNames(label: string, values: unknown[], names: (value: unknown) => string | null, countLabel: string): string | null {
+  if (values.length === 0) return null;
+  const shown = values.map(names).filter(Boolean).slice(0, 2);
+  if (shown.length === 0) return `${countLabel}: ${values.length}`;
+  return `${label} «${shown.join("», «")}»${values.length > shown.length ? ` та ще ${values.length - shown.length}` : ""}`;
+}
+
+function searchActivityScope(
+  kind: string,
+  body: JsonObject,
+  groupNames: ReadonlyMap<string, string>,
+  deviceNames: ReadonlyMap<string, string>,
+): (string | null)[] {
+  const query = activityText(body.query);
+  const count = (value: unknown, label: string) =>
+    Array.isArray(value) && value.length ? `${label}: ${value.length}` : null;
+  const shared = [query ? `пошук «${query}»` : null];
+  if (kind === "deviceSearch")
+    return [
+      ...shared,
+      count(body.unitIds, "підрозділів"),
+      count(body.aorIds, "районів відповідальності"),
+      body.includeArchived === true ? "з архівними пристроями" : null,
+    ];
+  const format = activityText(body.format);
+  if (kind === "attachmentSearch") {
+    const period = activityRange(body.from, body.to);
+    return [
+      ...shared,
+      period ? (/^(від|до) /.test(period) ? period : `за ${period}`) : null,
+      activityGroups({ selected_groups: body.selectedGroups }, groupNames),
+      count(body.messageIds, "вибрано повідомлень"),
+      format ? `формат «${format}»` : null,
+    ];
+  }
+  const folder = activityText(body.pathPrefix);
+  const modified = activityRange(body.from, body.to);
+  return [
+    ...shared,
+    typeof body.scope === "string" ? (FILE_SEARCH_SCOPES[body.scope] ?? null) : null,
+    activityNames("пристрої", Array.isArray(body.deviceIds) ? body.deviceIds : [], (id) => activityText(deviceNames.get(String(id))), "пристроїв"),
+    folder ? `у теці «${folder}»` : null,
+    format ? `формат «${format}»` : null,
+    modified ? `змінено ${modified}` : null,
+    body.includeArchived === true ? "з архівними пристроями" : null,
+    body.history === true ? "з попередніми версіями" : null,
+  ];
+}
+
+function rememberActivityDevices(skill: string, value: unknown, deviceNames: Map<string, string>): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const body = value as JsonObject;
+  const devices = skill === "device_search" && Array.isArray(body.devices)
+    ? body.devices
+    : skill === "device_get"
+      ? [body.device && typeof body.device === "object" ? body.device : body]
+      : [];
+  for (const device of devices as JsonObject[]) {
+    if (typeof device?.id === "string" && typeof device.name === "string" && device.name)
+      deviceNames.set(device.id, device.name);
+  }
+}
+
+function searchResultItems(kind: string, value: unknown): unknown[] | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as JsonObject;
+  const result = (body.result && typeof body.result === "object" ? body.result : body) as JsonObject;
+  const items = kind === "deviceSearch" ? result.devices : result.documents;
+  return Array.isArray(items) ? items : null;
 }
 
 function activityGroups(
@@ -2951,8 +3222,12 @@ interface RouteActivity {
 
 export function createRouteActivityTracker() {
   const groupNames = new Map<string, string>();
+  const deviceNames = new Map<string, string>();
   const messageIds = new Set<number>();
-  const nextPages = new Map<string, Map<number, number>>();
+  const collected = new Map<string, Set<string>>();
+  const nextPages = new Map<string, Map<unknown, number>>();
+  const searchPage = (page: number | null, cursor: unknown) =>
+    cursor == null ? null : page === null ? "наступна добірка" : `добірка ${page}`;
   return {
     rememberGroups(groups: unknown): void {
       rememberActivityGroups(GROUP_LOOKUP_SKILL, groups, groupNames);
@@ -2964,17 +3239,31 @@ export function createRouteActivityTracker() {
         !Array.isArray(requestBody)
           ? (requestBody as JsonObject)
           : {};
+      const search = SEARCH_ACTIVITY_KINDS.has(route.requestKind);
       const query = JSON.stringify({
         ...body,
         before_id_noninclusive: undefined,
+        ...(search ? { cursor: undefined, limit: undefined } : {}),
       });
-      const cursor = body.before_id_noninclusive;
-      const page =
-        route.requestKind !== "inboxMessages"
+      const cursor = search ? body.cursor : body.before_id_noninclusive;
+      const page = search
+        ? cursor == null ? 1 : (nextPages.get(`${route.skill}:${query}`)?.get(cursor) ?? null)
+        : route.requestKind !== "inboxMessages"
           ? null
           : typeof cursor === "number"
             ? (nextPages.get(query)?.get(cursor) ?? null)
             : 1;
+      if (search)
+        return {
+          body,
+          query,
+          page,
+          label: activityLabel([
+            route.label,
+            ...searchActivityScope(route.requestKind, body, groupNames, deviceNames),
+            searchPage(page, cursor),
+          ]),
+        };
       return {
         body,
         query,
@@ -3000,7 +3289,39 @@ export function createRouteActivityTracker() {
       compacted: string,
     ): string {
       rememberActivityGroups(route.skill, response, groupNames);
+      rememberActivityDevices(route.skill, response, deviceNames);
       const delivered = JSON.parse(compacted) as unknown;
+      if (SEARCH_ACTIVITY_KINDS.has(route.requestKind)) {
+        const items = searchResultItems(route.requestKind, delivered) ?? [];
+        const retrieved = searchResultItems(route.requestKind, response)?.length ?? items.length;
+        const deliveredBody = delivered && typeof delivered === "object" ? delivered as JsonObject : {};
+        const nextCursor = ((deliveredBody.result && typeof deliveredBody.result === "object" ? deliveredBody.result : deliveredBody) as JsonObject).nextCursor;
+        if (nextCursor != null && activity.page !== null) {
+          const key = `${route.skill}:${activity.query}`;
+          const pages = nextPages.get(key) ?? new Map<unknown, number>();
+          pages.set(nextCursor, activity.page + 1);
+          nextPages.set(key, pages);
+        }
+        const seen = collected.get(route.requestKind) ?? new Set<string>();
+        collected.set(route.requestKind, seen);
+        for (const item of items as JsonObject[]) {
+          const key = item?.citation ?? item?.id;
+          if (typeof key === "string") seen.add(key);
+        }
+        const noun = SEARCH_ACTIVITY_NOUNS[route.requestKind];
+        // Results before filters: the label is capped and must keep its counts.
+        const [query, ...filters] = searchActivityScope(route.requestKind, activity.body, groupNames, deviceNames);
+        return activityLabel([
+          route.label,
+          query,
+          searchPage(activity.page, activity.body.cursor),
+          items.length > 0 ? `знайдено ${noun.found}: ${items.length}` : noun.none,
+          retrieved !== items.length ? `отримано: ${retrieved}; для перегляду: ${items.length}` : null,
+          seen.size > items.length ? `зібрано ${noun.found} для запиту: ${seen.size}` : null,
+          nextCursor != null ? "є наступна добірка" : null,
+          ...filters,
+        ]);
+      }
       const scope = activityScope(activity.body, groupNames);
       if (route.skill === "accessible_group_details") {
         const groups = Array.isArray(delivered)
@@ -3152,6 +3473,7 @@ function createRouteTools(
   research?: FlashResearch,
   recordRetrieval: (skill: string) => void = () => {},
   recordAggregate: (skill: string, request: unknown, text: string) => void = () => {},
+  recordHits: (hits: SearchHitEvidence[]) => void = () => {},
 ) {
   const activity = createRouteActivityTracker();
   const groupRoute = payload.skills.find((route) => route.skill === GROUP_LOOKUP_SKILL);
@@ -3224,6 +3546,7 @@ function createRouteTools(
         const files = collectFileCitations(prepared.body).filter((citation) => text.includes(fileCitationHref(citation)));
         for (let offset = 0; offset < files.length; offset += 100) emit({ type: "file_citations", citations: files.slice(offset, offset + 100) });
         recordFiles(files, collectFileSections(JSON.parse(text)));
+        if (route.requestKind === "deviceFileSearch" || route.requestKind === "attachmentSearch") recordHits(searchHitEvidence(route.requestKind, text));
         const delivered = deliveredCitations(text, prepared.citations);
         recordCitations(delivered);
         recordMessages(
@@ -4185,7 +4508,9 @@ async function completeLimitedResearch(options: {
       ...(options.research ? { completedActions: options.research.completedActions(), ...options.research.groupScope(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence,
-    checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
+    // The model's saved draft and the compaction checkpoint each hold evidence the other
+    // may lack (#4224).
+    checkpoint: [options.research?.compactEvidence(), options.checkpoint].filter(Boolean).join("\n\n") || undefined,
     maxTokens,
     signal,
     purpose: options.research && !payload.executionPolicy ? "research" : "synthesis",
@@ -4400,7 +4725,13 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         throw error;
       }
     };
-    const compactResponse = createContextToolResponseCompactor(payload.contextWindow);
+    const toolProfile = {
+      contextWindow: payload.contextWindow,
+      maxTokens: payload.maxTokens,
+      compactionReserveTokens: payload.compactionReserveTokens,
+      compactionKeepRecentTokens: payload.compactionKeepRecentTokens,
+    };
+    const compactResponse = createContextToolResponseCompactor(payload.contextWindow, toolProfile);
     const deliveredCitationsThisTurn: MessageCitation[] = [];
     const recordSources = (citations: MessageCitation[]) => {
       deliveredCitationsThisTurn.push(...citations);
@@ -4432,6 +4763,17 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     const deliveredMessages = new Map<string, CitedMessage>();
     const recordMessages = (messages: CitedMessage[]) => {
       for (const message of messages) deliveredMessages.set(`${message.messageId}:${message.messageIdentifier}`, message);
+    };
+    const deliveredHits = new Map<string, SearchHitEvidence>();
+    const recordHits = (hits: SearchHitEvidence[]) => {
+      for (const hit of hits) {
+        deliveredHits.delete(hit.citation);
+        deliveredHits.set(hit.citation, hit);
+      }
+      for (const oldest of deliveredHits.keys()) {
+        if (deliveredHits.size <= MAX_SEARCH_HIT_EVIDENCE) break;
+        deliveredHits.delete(oldest);
+      }
     };
     // Synthesis sees only delivered evidence, and statistics cite no message.
     const deliveredAggregates = new Map<string, AggregateEvidence>();
@@ -4475,6 +4817,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         research,
         recordRetrieval,
         recordAggregate,
+        recordHits,
       ),
       ...(payload.skills.some((route) => route.requestKind === "mapRecords") && payload.skills.some((route) => route.requestKind === "mapDocument")
         ? createMapTools(mapRegistry, async (path, body, signal) => {
@@ -4517,6 +4860,13 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       sessionManager,
       settingsManager,
     }));
+    // Measured once the system prompt and tool schemas are known (#4224).
+    const toolBudget = toolContextBudget({
+      ...toolProfile,
+      fixedTokens: fixedContextTokens(session.agent.state.systemPrompt ?? "", session.agent.state.tools ?? [], payload.prompt),
+    });
+    compactResponse.configure(toolBudget);
+    const routeToolNames = new Set(tools.filter((tool) => payload.skills.some((route) => tool.name === `echo_${route.skill}`)).map((tool) => tool.name));
     const researchSignal = budget
       ? AbortSignal.any([cancellation.signal, budget.research.signal])
       : cancellation.signal;
@@ -4565,6 +4915,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       ),
       (message) => {
         research?.researchCompleted(message, budget);
+        compactResponse.beginBatch(routeToolCalls(message, routeToolNames));
         currentTurnAssistantMessages.push(message);
         refusalHold?.onAssistantMessage();
         const errorMessage = (message as { errorMessage?: string })?.errorMessage;
@@ -4586,7 +4937,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     );
     const contextCompaction = installContextCompaction(
       session,
-      { ...payload, checkpointEngine, signal: researchSignal, saveCheckpoint: journal ? (summary) => journal.checkpoint(research?.checkpoint(summary) ?? summary) : undefined, toolContextNeedsCompaction: compactResponse.needsCompaction,
+      { ...payload, compactionKeepRecentTokens: toolBudget.keepRecentTokens, checkpointEngine, signal: researchSignal, saveCheckpoint: journal ? (summary) => journal.checkpoint(research?.checkpoint(summary) ?? summary) : undefined, toolContextNeedsCompaction: compactResponse.needsCompaction,
         beforeProvider: research ? (purpose, context) => research.beforeProvider(purpose, context, budget, maxToolInvocations - toolInvocations, purpose === "checkpoint" ? checkpointEngine?.contextWindow ?? payload.contextWindow : payload.contextWindow, purpose === "checkpoint" ? payload.checkpointMaxTokens : payload.maxTokens) : undefined,
         providerCompleted: research ? (purpose, duration) => research.completed(purpose, duration) : undefined, },
       () =>
@@ -4684,7 +5035,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
           ? research.directAnswer(reply ?? uncutText(lastAssistantMessage(currentTurnAssistantMessages)), budget)
           : undefined);
         await completeLimitedResearch({ payload, budget, selectedEngine: selectedModel,
-          evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence, aggregates: [...deliveredAggregates.values()] },
+          evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence, aggregates: [...deliveredAggregates.values()], hits: [...deliveredHits.values()] },
           deliveredCitationsThisTurn, deliveredFiles, mapRegistry, documentRegistry, cancellation: cancellation.signal,
           checkpoint: contextCompaction.latestCheckpoint(), research, toolRemaining: maxToolInvocations - toolInvocations, images, retrieved: echoRetrievals > 0, answer });
         return;
@@ -4831,7 +5182,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       // model. Failing the request lets the chat say the provider did not answer and
       // offer a retry or another model (incident 01a1d35e).
       const noEvidence = !savedEvidence.length && !deliveredMessages.size && !deliveredFileSections.size &&
-        !deliveredAggregates.size && !images.length && !payload.uploads?.length;
+        !deliveredAggregates.size && !deliveredHits.size && !images.length && !payload.uploads?.length;
       if (research && budget.reason === "provider_error" && research.providerNeverAnswered && noEvidence && terminalProviderFailure(error))
         throw error;
       emitAssistant.current = false;
@@ -4845,6 +5196,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
           files: [...deliveredFileSections.values()],
           saved: savedEvidence,
           aggregates: [...deliveredAggregates.values()],
+          hits: [...deliveredHits.values()],
         },
         deliveredCitationsThisTurn,
         deliveredFiles,

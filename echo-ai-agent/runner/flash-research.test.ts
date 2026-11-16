@@ -332,6 +332,8 @@ for (const [scenario, modelName] of [
       refresh();
     } else {
       read();
+      // #4224 sizes a page to the free context: the second page exhausts it.
+      if (scenario === "checkpoint-failure") read({ period, search: "botanical survey" });
       if (scenario === "pagination-guard") read({ period, cursor: 20 });
       if (recoveringPagination) {
         read({ period, cursor: 20 });

@@ -27,7 +27,7 @@ export const DEVICE_PARAMETERS = {
 export const DEVICE_DESCRIPTIONS: Record<string, string> = {
   deviceSearch: 'Discover devices the current human may read, by name, tags, metadata, unit or AOR. Follow nextCursor. Active devices by default.',
   deviceGet: 'Read an authorized device and its source and analytical metadata. Use an ID from device_search.',
-  deviceFileSearch: 'Search filenames, extracted contents, archive members and summaries across authorized devices. Metadata-only files are searchable. Current revisions and active devices by default; set history/includeArchived explicitly. No implicit date cutoff; from/to are file modification times in UTC milliseconds, never observation dates. Follow nextCursor. Content unavailable or incomplete indexing does not establish absence.',
+  deviceFileSearch: 'Search filenames, extracted contents, archive members and summaries across authorized devices. Metadata-only files are searchable. Current revisions and active devices by default; set history/includeArchived explicitly. No implicit date cutoff; from/to are file modification times in UTC milliseconds, never observation dates. Follow nextCursor. Content unavailable or incomplete indexing does not establish absence. Hits give folder without the file name and omit default values: a current revision with completed extraction and summary.',
   deviceFileRead: 'Read a synchronized file revision and bounded extracted sections, coordinates and grounded positions. Use IDs and revision from search. Preserve extractionRevision across pages; follow nextAfter. Cite document.citation and identify the filename and page/sheet/member locator.',
   deviceFileInspect: 'Inspect an authorized original file revision with a focused page/table/OCR/image operation. Poll device_file_inspection_status. The original remains unchanged.',
   deviceFileStatus: 'Read progress or bounded original inspection results. Access is checked again.',
@@ -113,4 +113,50 @@ export function collectFileSections(value: unknown): FileSection[] {
   const result = body.result ?? body;
   if (!result.document || !Array.isArray(result.sections)) return [];
   return result.sections.filter((section: any) => Check(FILE_CITATION_SCHEMA, section.source) && section.citation === fileCitationHref(section.source) && typeof section.markdown === 'string').map((section: any) => ({ source: section.source, name: result.document.fileName, locator: section.locator, text: section.markdown }));
+}
+
+/** Cuts model-facing text to `maxCharacters`, marking the cut. */
+export function capText(text: string, maxCharacters: number): string {
+  return text.length <= maxCharacters ? text : `${text.slice(0, Math.max(0, maxCharacters - 1))}…`;
+}
+
+const FOLDER_MAX_CHARACTERS = 200;
+
+function folderOf(path: string, fileName: string): string {
+  const folder = fileName && path.endsWith(fileName) ? path.slice(0, path.length - fileName.length).replace(/[\\/]+$/, '') : path;
+  return folder.length <= FOLDER_MAX_CHARACTERS ? folder : `…${folder.slice(-(FOLDER_MAX_CHARACTERS - 1))}`;
+}
+
+/**
+ * A device-file search hit as the model sees it: the ids `device_file_read` needs and the
+ * citation stay, default states are omitted, and the folder replaces the full path (#4224).
+ */
+export function projectFileSearchHit(document: Record<string, any>, summaryLimit: number, snippetLimit: number): Record<string, unknown> {
+  const fileName = typeof document.fileName === 'string' ? document.fileName : '';
+  const folder = folderOf(typeof document.path === 'string' ? document.path : '', fileName);
+  const extension = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase() : '';
+  const completed = document.state === 'completed';
+  return {
+    fileName,
+    ...(folder ? { folder } : {}),
+    deviceId: document.deviceId,
+    fileId: document.fileId,
+    revision: document.revision,
+    ...(document.extractionRevision ? { extractionRevision: document.extractionRevision } : {}),
+    ...(document.modifiedAt != null ? { modifiedAt: document.modifiedAt } : {}),
+    ...(typeof document.format === 'string' && document.format.toLowerCase() !== extension ? { format: document.format } : {}),
+    ...(document.current === false ? { current: false } : {}),
+    ...(completed ? {} : { state: document.state }),
+    ...(document.hasContent === false && document.state !== 'content_unavailable' ? { hasContent: false } : {}),
+    ...(completed && document.complete === false ? { complete: false } : {}),
+    ...(completed && !['completed', 'skipped'].includes(document.summaryState) ? { summaryState: document.summaryState } : {}),
+    ...(typeof document.summary === 'string' && document.summary ? { summary: capText(document.summary, summaryLimit) } : {}),
+    ...(typeof document.snippet === 'string' && document.snippet ? { snippet: capText(document.snippet, snippetLimit) } : {}),
+    citation: document.citation,
+  };
+}
+
+/** The server's continuation cursor after `document`. */
+export function fileSearchCursor(document: Record<string, any>): string {
+  return Buffer.from(JSON.stringify([document.fileId, document.revision])).toString('base64url');
 }

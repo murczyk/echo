@@ -41,6 +41,14 @@ const MAX_COMPACTION_PASSES = 3;
 const MAX_CHECKPOINT_CALLS = 6;
 const CHECKPOINT_TARGET_WORDS = 1_000;
 const PROVIDER_REQUEST_ENVELOPE_RESERVE_BYTES = 64 * 1024;
+// About the size of a checkpoint that replaces summarized turns (CHECKPOINT_TARGET_WORDS).
+const CHECKPOINT_SUMMARY_TOKENS = 2_500;
+// pi-ai keeps this margin below the context window (clampMaxTokensToContext).
+const CONTEXT_SAFETY_TOKENS = 4_096;
+// Shortened tool results are sized for real tokenization of search JSON, not the
+// 4-character estimate.
+const SHORTENED_TRANSCRIPT_CHARACTERS_PER_TOKEN = 3;
+const MIN_SHORTENED_RESULT_CHARACTERS = 400;
 
 export class ContextCompactionLimitError extends Error {}
 export class ContextCheckpointProviderError extends Error {}
@@ -108,24 +116,48 @@ function smallerCut(entries: SessionEntry[], cut: number): number {
   );
 }
 
-function checkpointTranscript(messages: Context["messages"]): string {
-  return messages
-    .map((message) => {
-      if (message.role !== "toolResult")
-        return serializeConversation([message]);
-      const text = message.content
-        .flatMap((block) => (block.type === "text" ? [block.text] : []))
-        .join("\n");
-      return `[Tool result]: ${JSON.stringify(message.toolName)} ${JSON.stringify(message.toolCallId)}\n${text}`;
-    })
+/** Cuts a tool result at a record or line boundary and says what was left out. */
+function shortenedToolText(text: string, maxCharacters: number): string {
+  if (text.length <= maxCharacters) return text;
+  const head = text.slice(0, maxCharacters);
+  const boundary = Math.max(head.lastIndexOf("},{"), head.lastIndexOf("\n"));
+  const kept = boundary >= maxCharacters / 2 ? head.slice(0, boundary + 1) : head;
+  return `${kept}\n[… ${text.length - kept.length} characters omitted for the checkpoint; repeat a narrower search or follow its cursor for them]`;
+}
+
+function checkpointTranscript(messages: Context["messages"], maxCharacters = Number.POSITIVE_INFINITY): string | null {
+  const parts = messages.map((message) => {
+    if (message.role !== "toolResult")
+      return { fixed: serializeConversation([message]), text: undefined };
+    const text = message.content
+      .flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("\n");
+    return { fixed: `[Tool result]: ${JSON.stringify(message.toolName)} ${JSON.stringify(message.toolCallId)}\n`, text };
+  });
+  const render = (limit: number) => parts
+    .map(({ fixed, text }) => fixed + (text === undefined ? "" : shortenedToolText(text, limit)))
     .join("\n\n");
+  const full = render(Number.POSITIVE_INFINITY);
+  if (full.length <= maxCharacters) return full;
+  // A fresh batch larger than the checkpoint window (#4224): shorten the largest results
+  // to one common length instead of leaving the batch out.
+  let low = MIN_SHORTENED_RESULT_CHARACTERS;
+  let high = Math.max(low, ...parts.map(({ text }) => text?.length ?? 0));
+  if (render(low).length > maxCharacters) return null;
+  while (high - low > 64) {
+    const middle = Math.floor((low + high) / 2);
+    if (render(middle).length <= maxCharacters) low = middle;
+    else high = middle;
+  }
+  return render(low);
 }
 
 function checkpointContext(
   entries: SessionEntry[],
   settings: ContextSettings,
   retry = false,
-): Context {
+  maxTranscriptCharacters?: number,
+): Context | null {
   const messages = convertToLlm(
     entryMessages(entries).map((message) =>
       message.role === "assistant"
@@ -142,16 +174,45 @@ function checkpointContext(
     Math.min(CHECKPOINT_TARGET_WORDS, (settings.checkpointMaxTokens ?? settings.maxTokens) / 8)
       / (retry ? 2 : 1),
   ));
+  const transcript = checkpointTranscript(messages, maxTranscriptCharacters);
+  if (transcript === null) return null;
   return {
     systemPrompt: `${CHECKPOINT_INSTRUCTIONS} Aim for at most ${wordLimit} words. Compress repeated findings and source text; keep exact citations and continuation cursors for the findings retained.`,
     messages: [
       {
         role: "user",
-        content: `Original request: ${JSON.stringify(settings.prompt)}\nFixed time context: ${JSON.stringify(settings.timeContext)}\n<conversation>\n${checkpointTranscript(messages)}\n</conversation>`,
+        content: `Original request: ${JSON.stringify(settings.prompt)}\nFixed time context: ${JSON.stringify(settings.timeContext)}\n<conversation>\n${transcript}\n</conversation>`,
         timestamp: Date.now(),
       },
     ],
   };
+}
+
+/** Transcript characters a checkpoint request can carry next to its instructions and output. */
+function checkpointTranscriptBudget(
+  entries: SessionEntry[],
+  settings: ContextSettings,
+  checkpointEngine: NonNullable<AgentSession["model"]>,
+  retry: boolean,
+): number {
+  const empty = checkpointContext(entries.slice(0, 0), settings, retry)!;
+  const overhead =
+    Math.ceil((empty.systemPrompt ?? "").length / 4) +
+    empty.messages.reduce((total, message) => total + estimateTokens(message as AgentMessage), 0);
+  const tokens =
+    checkpointEngine.contextWindow -
+    CONTEXT_SAFETY_TOKENS -
+    (settings.checkpointMaxTokens ?? settings.maxTokens) -
+    overhead;
+  const characters = Math.max(0, tokens) * SHORTENED_TRANSCRIPT_CHARACTERS_PER_TOKEN;
+  return settings.providerRequestMaxBytes === undefined
+    ? characters
+    // Cyrillic text is two bytes per character.
+    : Math.min(characters, Math.floor((settings.providerRequestMaxBytes - PROVIDER_REQUEST_ENVELOPE_RESERVE_BYTES) / 2));
+}
+
+function entryTokens(entries: SessionEntry[]): number {
+  return entryMessages(entries).reduce((total, message) => total + estimateTokens(message), 0);
 }
 
 function checkpointText(response: AssistantMessage): string {
@@ -317,6 +378,16 @@ async function compactOnce(
   let cut = checkpointCut(entries, settings.compactionKeepRecentTokens);
   const tokensBefore = selectedEngine.contextWindow - available(context);
   const checkpointTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
+  // A fresh batch larger than the recent budget is kept whole, leaving only earlier
+  // turns to summarize. When they cannot free enough room (only the prompt, in
+  // #4224), summarizing them is a wasted call: summarize all evidence instead.
+  const needed = Math.max(0, settings.compactionReserveTokens - available(context));
+  if (cut > 0 && cut < entries.length && entryTokens(entries.slice(0, cut)) - CHECKPOINT_SUMMARY_TOKENS < needed)
+    cut = entries.length;
+  const fitsCheckpoint = (summaryContext: Context | null): summaryContext is Context =>
+    summaryContext !== null &&
+    clampMaxTokensToContext(checkpointEngine, summaryContext, checkpointTokens) >= checkpointTokens &&
+    providerRequestFits(summaryContext, settings);
   let retryAllEvidence = false;
   for (
     let attempt = 0;
@@ -325,15 +396,17 @@ async function compactOnce(
   ) {
     retryAllEvidence = false;
     signal?.throwIfAborted();
-    const summaryContext = checkpointContext(entries.slice(0, cut), settings, attempt > 0);
-    if (
-      clampMaxTokensToContext(
-        checkpointEngine,
-        summaryContext,
-        checkpointTokens,
-      ) < checkpointTokens ||
-      !providerRequestFits(summaryContext, settings)
-    ) {
+    let summaryContext = checkpointContext(entries.slice(0, cut), settings, attempt > 0);
+    // All evidence does not fit the checkpoint request: shorten the largest tool results
+    // rather than retreat to a cut that keeps the oversized batch (#4224).
+    if (!fitsCheckpoint(summaryContext) && cut === entries.length)
+      summaryContext = checkpointContext(
+        entries,
+        settings,
+        attempt > 0,
+        checkpointTranscriptBudget(entries, settings, checkpointEngine, attempt > 0),
+      );
+    if (!fitsCheckpoint(summaryContext)) {
       cut = smallerCut(entries, cut);
       continue;
     }
@@ -446,7 +519,7 @@ async function compactAllForOutputRetry(
         (entry.message.stopReason !== "length" &&
           entry.message.stopReason !== "error"),
     );
-  const context = checkpointContext(entries, settings);
+  const context = checkpointContext(entries, settings)!;
   const maxTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
   if (clampMaxTokensToContext(checkpointEngine, context, maxTokens) < maxTokens)
     throw new ContextCompactionLimitError("output recovery evidence exceeds checkpoint context");

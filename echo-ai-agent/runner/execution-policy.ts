@@ -181,6 +181,14 @@ export interface BudgetEvidence {
   saved?: { text: string; citations: string[] }[];
   /** Statistics and lookups as the research model saw them; they cite no message. */
   aggregates?: AggregateEvidence[];
+  /** File and attachment search hits the research model saw (#4224). */
+  hits?: SearchHitEvidence[];
+}
+
+export interface SearchHitEvidence {
+  kind: "file" | "attachment";
+  text: string;
+  citation: string;
 }
 
 export interface AggregateEvidence {
@@ -192,7 +200,9 @@ export interface AggregateEvidence {
 function evidenceRecords(
   evidence: BudgetEvidence,
 ): { text: string; citation: string; dmr?: Record<string, unknown> }[] {
+  // Packed newest first: read sections and messages before search hits.
   return [
+    ...(evidence.hits ?? []).map(({ text, citation }) => ({ text, citation })),
     ...evidence.messages.map((message) => ({
       text: message.text,
       citation: citationHref(message),
@@ -221,10 +231,15 @@ export function chooseBudgetAnswer(
     fileCitationHref(section.source),
   ),
 ): string {
-  const savedOnly = !evidence.messages.length && !evidence.files.length && !evidence.aggregates?.length && Boolean(evidence.saved?.length);
+  const hits = evidence.hits ?? [];
+  const savedOnly = !evidence.messages.length && !evidence.files.length && !evidence.aggregates?.length && !hits.length && Boolean(evidence.saved?.length);
+  // Search hits alone (#4224): the answer must cite at least one of them.
+  const hitsOnly = !evidence.messages.length && !evidence.files.length && hits.length > 0;
   const valid =
     candidate &&
     (!savedOnly || evidence.saved!.some((record) => record.citations.some((citation) => candidate.includes(citation)))) &&
+    (!hitsOnly || hits.some((hit) => candidate.includes(hit.citation)) ||
+      Boolean(evidence.saved?.some((record) => record.citations.some((citation) => candidate.includes(citation))))) &&
     !needsCitationRepair(candidate, evidence.messages) &&
     (!evidence.files.length ||
       evidence.files.some((section) =>
