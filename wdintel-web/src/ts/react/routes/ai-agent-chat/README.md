@@ -19,9 +19,10 @@ the viewed conversation replaces its URL with `/`; deleting another preserves th
 current view. The backend rejects deletion while a request is queued or running.
 
 Conversations run in parallel (#4232): a message waits in the queue only behind
-earlier requests in its own conversation, or while the user's other
-conversations run on an engine that needs different agent-container proxies
-(local vLLM vs the gateway). History rows show **Виконується** or **У черзі**
+earlier requests in its own conversation. Conversations whose engines need the
+same agent-container proxies (every gateway engine, or one vLLM host) share the
+user's container; one on another backend runs in a second container, and only a
+third backend at once waits. History rows show **Виконується** or **У черзі**
 before the timestamp, and the list refreshes every 5 seconds while any row has
 one, so a conversation finished in the background clears its marker.
 

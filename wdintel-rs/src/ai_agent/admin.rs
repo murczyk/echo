@@ -869,6 +869,7 @@ pub async fn list_containers(
             .ok_or(AppError::NotFound)?;
         items.push(AiAgentContainerItem {
             linked_agent_id: link.id.to_string(),
+            slot: i32::from(link.slot),
             human_login_id: human.id.to_string(),
             human_login: human.login,
             agent_login_id: agent.id.to_string(),
@@ -1255,7 +1256,8 @@ pub async fn start_user_agent(
 ) -> Result<Json<AiAgentAdminUserItem>, AppError> {
     ensure_admin_non_api_agent(&env, &user).await?;
     let login_id = access::parse_uuid(&req.login_id)?;
-    lifecycle::start_for_user(&env, login_id, None).await?;
+    let slot = requested_slot(&env, login_id, &req).await?;
+    lifecycle::start_for_user(&env, login_id, None, slot).await?;
     Ok(Json(user_item(&env, login_id).await?))
 }
 
@@ -1278,12 +1280,34 @@ pub async fn test_user_agent(
     req: Json<AiAgentAdminUserReq>,
 ) -> Result<Json<AiAgentConnectionTestRsp>, AppError> {
     ensure_admin_non_api_agent(&env, &user).await?;
-    lifecycle::test_connection(&env, access::parse_uuid(&req.login_id)?)
-        .await?;
+    let login_id = access::parse_uuid(&req.login_id)?;
+    let slot = requested_slot(&env, login_id, &req).await?;
+    lifecycle::test_connection(&env, login_id, slot).await?;
     Ok(Json(AiAgentConnectionTestRsp {
         ok: true,
         message: "Connection verified".to_string(),
     }))
+}
+
+/// The container slot an admin action targets: the one of `linked_agent_id`
+/// (a row of the containers page), else the user's main container.
+async fn requested_slot(
+    env: &Env,
+    human_login_id: Uuid,
+    req: &AiAgentAdminUserReq,
+) -> Result<i16, AppError> {
+    let Some(linked_agent_id) = req.linked_agent_id.as_deref() else {
+        return Ok(crate::config::AI_AGENT_MAIN_CONTAINER_SLOT);
+    };
+    let link = ai_agent_user_link::Entity::find_by_id(access::parse_uuid(
+        linked_agent_id,
+    )?)
+    .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+    .one(&env.dbx)
+    .await
+    .c(h!())?
+    .ok_or(AppError::NotFound)?;
+    Ok(link.slot)
 }
 
 async fn user_item(
@@ -1325,6 +1349,10 @@ async fn user_item(
         .collect();
     let link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human.id))
+        .filter(
+            ai_agent_user_link::Column::Slot
+                .eq(crate::config::AI_AGENT_MAIN_CONTAINER_SLOT),
+        )
         .one(&env.dbx)
         .await
         .c(h!())?;

@@ -18700,6 +18700,7 @@ aiAgentIdReqEncoder struct =
 
 type alias AiAgentContainerItem =
     { linkedAgentId : String
+    , slot : Int
     , humanLoginId : String
     , humanLogin : String
     , agentLoginId : String
@@ -18718,6 +18719,7 @@ aiAgentContainerItemEncoder : AiAgentContainerItem -> Json.Encode.Value
 aiAgentContainerItemEncoder struct =
     Json.Encode.object
         [ ( "linkedAgentId", (Json.Encode.string) struct.linkedAgentId )
+        , ( "slot", (Json.Encode.int) struct.slot )
         , ( "humanLoginId", (Json.Encode.string) struct.humanLoginId )
         , ( "humanLogin", (Json.Encode.string) struct.humanLogin )
         , ( "agentLoginId", (Json.Encode.string) struct.agentLoginId )
@@ -18922,6 +18924,7 @@ aiAgentAdminRequestDetailEncoder struct =
 
 type alias AiAgentAdminUserReq =
     { loginId : String
+    , linkedAgentId : Maybe (String)
     }
 
 
@@ -18929,6 +18932,7 @@ aiAgentAdminUserReqEncoder : AiAgentAdminUserReq -> Json.Encode.Value
 aiAgentAdminUserReqEncoder struct =
     Json.Encode.object
         [ ( "loginId", (Json.Encode.string) struct.loginId )
+        , ( "linkedAgentId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.linkedAgentId )
         ]
 
 
@@ -34239,6 +34243,7 @@ aiAgentContainerItemDecoder : Json.Decode.Decoder AiAgentContainerItem
 aiAgentContainerItemDecoder =
     Json.Decode.succeed AiAgentContainerItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "linkedAgentId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "slot" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLoginId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLogin" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "agentLoginId" (Json.Decode.string)))
@@ -34350,6 +34355,7 @@ aiAgentAdminUserReqDecoder : Json.Decode.Decoder AiAgentAdminUserReq
 aiAgentAdminUserReqDecoder =
     Json.Decode.succeed AiAgentAdminUserReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "loginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "linkedAgentId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentAdminUserItemDecoder : Json.Decode.Decoder AiAgentAdminUserItem

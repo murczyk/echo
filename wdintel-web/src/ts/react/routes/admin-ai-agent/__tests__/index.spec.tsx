@@ -125,6 +125,7 @@ beforeEach(async () => {
   mocks.listContainers.mockResolvedValue([
     {
       id: 'container-1',
+      slot: 1,
       humanLoginId: 'login-1',
       humanLogin: 'alice',
       linkedLoginId: 'login-2',

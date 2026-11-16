@@ -382,7 +382,7 @@ function ContainersPage() {
   async function runAction(container: AiAgentContainer, action: 'start' | 'stop') {
     setActionId(container.id);
     try {
-      if (action === 'start') await startAiAgentContainer(container.humanLoginId);
+      if (action === 'start') await startAiAgentContainer(container.humanLoginId, container.id);
       else await stopAiAgentContainer(container.humanLoginId);
       notify({
         severity: 'success',
