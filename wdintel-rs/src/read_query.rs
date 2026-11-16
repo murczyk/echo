@@ -189,7 +189,10 @@ pub(crate) async fn scope<T>(
 }
 
 pub(crate) fn connection(db: &DatabaseConnection) -> ReadConnection<'_> {
-    ReadConnection { db, slots: true }
+    ReadConnection {
+        db,
+        skip_slots: None,
+    }
 }
 
 /// Source reads bounded to the analytics fresh tail: the few minutes that
@@ -199,12 +202,31 @@ pub(crate) fn connection(db: &DatabaseConnection) -> ReadConnection<'_> {
 pub(crate) fn fresh_tail_connection(
     db: &DatabaseConnection,
 ) -> ReadConnection<'_> {
-    ReadConnection { db, slots: false }
+    ReadConnection {
+        db,
+        skip_slots: Some("fresh_tail"),
+    }
+}
+
+/// Source reads restricted to an explicit list of at most
+/// `ANALYSIS_SOURCE_ID_BOUNDED_READ_MAX_IDS` message primary keys, such as
+/// hydrating candidates or a message opened by id. They take milliseconds, so
+/// like fresh-tail reads they skip the shared SQL slots and cannot wait behind
+/// the same login's heavy stats reads (#4222), but keep the pool wait bound,
+/// statement timeout and cancellation of every source read.
+pub(crate) fn id_bounded_connection(
+    db: &DatabaseConnection,
+) -> ReadConnection<'_> {
+    ReadConnection {
+        db,
+        skip_slots: Some("id_bounded"),
+    }
 }
 
 pub(crate) struct ReadConnection<'a> {
     db: &'a DatabaseConnection,
-    slots: bool,
+    /// Why the read skips the shared SQL slots; `None` takes a slot.
+    skip_slots: Option<&'static str>,
 }
 
 fn login_reads(
@@ -419,7 +441,7 @@ pub(crate) struct ReadTransaction {
 pub(crate) async fn begin(
     db: &DatabaseConnection,
 ) -> anyhow::Result<ReadTransaction> {
-    let mut lease = read_lease(db, connection(db).is_source_read(), true)
+    let mut lease = read_lease(db, connection(db).is_source_read(), None)
         .await
         .c(h!())?;
     sqlx::query(sqlx::AssertSqlSafe(
@@ -437,15 +459,15 @@ pub(crate) async fn begin(
 async fn read_lease(
     db: &DatabaseConnection,
     active: bool,
-    slots: bool,
+    skip_slots: Option<&'static str>,
 ) -> anyhow::Result<ReadLease> {
-    let permits = if active && slots {
-        Some(acquire_reads().await.c(h!())?)
-    } else {
-        if active {
-            log::info!(target: "analytics_route", "request_id={} stage=source_admission outcome=skipped reason=fresh_tail", request_id());
+    let permits = match (active, skip_slots) {
+        (true, None) => Some(acquire_reads().await.c(h!())?),
+        (true, Some(reason)) => {
+            log::info!(target: "analytics_route", "request_id={} stage=source_admission outcome=skipped reason={reason}", request_id());
+            None
         }
-        None
+        (false, _) => None,
     };
     let pool = db.get_postgres_connection_pool();
     let started = Instant::now();
@@ -653,7 +675,8 @@ impl ReadConnection<'_> {
         statement: Statement,
         one: bool,
     ) -> anyhow::Result<Vec<QueryResult>> {
-        let mut lease = read_lease(self.db, true, self.slots).await.c(h!())?;
+        let mut lease =
+            read_lease(self.db, true, self.skip_slots).await.c(h!())?;
         let result = read_rows(
             &mut **lease.connection.as_mut().c(h!())?,
             statement,

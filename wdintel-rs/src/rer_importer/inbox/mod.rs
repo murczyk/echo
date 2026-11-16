@@ -438,13 +438,14 @@ async fn inbox_window_bl(
     )
     .await
     .context(h!())?;
-    let mut target_messages = fetch_inbox_messages_with_query(
+    let mut target_messages = fetch_inbox_candidate_messages(
         &env.dbx,
         login,
         logins,
         env,
         &target_req,
         &target_query,
+        candidate_ids.len(),
     )
     .await
     .context(h!())?
@@ -789,8 +790,14 @@ async fn messages_by_id_matching_filters(
     )
     .await
     .c(h!())?;
-    let messages = fetch_inbox_messages_with_query(
-        &env.dbx, &login, &logins, &env, &inbox_req, &query,
+    let messages = fetch_inbox_candidate_messages(
+        &env.dbx,
+        &login,
+        &logins,
+        &env,
+        &inbox_req,
+        &query,
+        req.message_ids.len(),
     )
     .await
     .c(h!())?;
@@ -4794,8 +4801,14 @@ async fn hydrate_analytics_inbox_candidates(
     )
     .await
     .context(h!())?;
-    let mut messages = fetch_inbox_messages_with_query(
-        &env.dbx, login, logins, env, req, &query,
+    let mut messages = fetch_inbox_candidate_messages(
+        &env.dbx,
+        login,
+        logins,
+        env,
+        req,
+        &query,
+        candidate_ids.len(),
     )
     .await
     .context(h!())?;
@@ -4864,8 +4877,14 @@ async fn hydrate_hybrid_inbox_candidates_inner(
         .await
         .context(h!())?;
         messages.extend(
-            fetch_inbox_messages_with_query(
-                &env.dbx, login, logins, env, req, &query,
+            fetch_inbox_candidate_messages(
+                &env.dbx,
+                login,
+                logins,
+                env,
+                req,
+                &query,
+                ids.len(),
             )
             .await
             .context(h!())?,
@@ -5023,7 +5042,12 @@ pub async fn get_inbox_messages_created_between(
         [created_after.into(), created_till.into()],
     );
     fetch_inbox_messages_with_statement(
-        &env.dbx, login, logins, env, &req, statement,
+        crate::read_query::connection(&env.dbx),
+        login,
+        logins,
+        env,
+        &req,
+        statement,
     )
     .await
 }
@@ -5047,8 +5071,14 @@ pub async fn get_inbox_messages_by_ids(
     )
     .await
     .c(h!())?;
-    Ok(fetch_inbox_messages_with_query(
-        &env.dbx, login, logins, env, &req, &query,
+    Ok(fetch_inbox_candidate_messages(
+        &env.dbx,
+        login,
+        logins,
+        env,
+        &req,
+        &query,
+        ids.len(),
     )
     .await
     .context(h!())?)
@@ -5096,7 +5126,37 @@ async fn fetch_inbox_messages_with_query(
     q: &str,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     fetch_inbox_messages_with_statement(
-        dbx,
+        crate::read_query::connection(dbx),
+        login,
+        logins,
+        env,
+        req,
+        Statement::from_string(DatabaseBackend::Postgres, q),
+    )
+    .await
+}
+
+/// Reads a `build_inbox_query_for_candidate_ids` query. Over at most
+/// `ANALYSIS_SOURCE_ID_BOUNDED_READ_MAX_IDS` ids it is a primary-key read of a
+/// few milliseconds, so it skips the shared source SQL slots: a message opened
+/// by id must not wait behind the same login's heavy stats reads (#4222).
+async fn fetch_inbox_candidate_messages(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    q: &str,
+    candidate_count: usize,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let connection =
+        if candidate_count <= ANALYSIS_SOURCE_ID_BOUNDED_READ_MAX_IDS {
+            crate::read_query::id_bounded_connection(dbx)
+        } else {
+            crate::read_query::connection(dbx)
+        };
+    fetch_inbox_messages_with_statement(
+        connection,
         login,
         logins,
         env,
@@ -5107,19 +5167,16 @@ async fn fetch_inbox_messages_with_query(
 }
 
 async fn fetch_inbox_messages_with_statement(
-    dbx: &DatabaseConnection,
+    connection: crate::read_query::ReadConnection<'_>,
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
     statement: Statement,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let messages = fetch_inbox_message_descriptions(
-        &crate::read_query::connection(dbx),
-        statement,
-    )
-    .await
-    .c(h!())?;
+    let messages = fetch_inbox_message_descriptions(&connection, statement)
+        .await
+        .c(h!())?;
     Ok(
         aggregate_to_inbox_messages(login, messages, logins, &req, &env)
             .await
@@ -5838,6 +5895,227 @@ mod tests {
             )
             .await;
             assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+        }
+    }
+
+    /// The source-read scope that `read_deadline::enforce` opens in production.
+    async fn echo_4222_source_read_scope<B: actix_web::body::MessageBody>(
+        req: actix_web::dev::ServiceRequest,
+        next: actix_web::middleware::Next<B>,
+    ) -> Result<actix_web::dev::ServiceResponse<B>, actix_web::Error> {
+        let pools = vec![crate::read_query::pool_identity(
+            &req.app_data::<web::Data<Env>>().unwrap().dbx,
+        )];
+        crate::read_query::scope(
+            Uuid::new_v4().to_string(),
+            pools,
+            next.call(req),
+        )
+        .await
+    }
+
+    // ECHO-4222: a message opened by id waited 10 s behind the same login's
+    // slow stats reads, which held both of its source SQL slots, then got 503.
+    #[actix_web::test]
+    #[serial]
+    async fn echo_4222_message_by_id_does_not_wait_for_login_read_slots() {
+        let env = cleanup_locked().await.unwrap().0;
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let mut login_model = login.clone().into_active_model();
+        login_model.roles = Set(json!(["Rer"]));
+        login_model.update(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let body = "ECHO-4222 message".to_string();
+        let body_noheader =
+            crate::rer_importer::body_noheader::extract_text(&body).unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body)),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some(login.id.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                sender: Set(message.sender.clone()),
+                message_uid: Set(message.message_uid.clone()),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(now)),
+                checked: Set(Some(true)),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                body_noheader: Set(Some(
+                    serde_json::to_value(body_noheader).unwrap(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::sigint::worker::incoming_message_after_insert(
+            &env.dbx, message.id,
+        )
+        .await
+        .unwrap();
+        let redis_session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(actix_web::middleware::from_fn(
+                    echo_4222_source_read_scope,
+                ))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(
+                    redis_session_store,
+                    Key::generate(),
+                ))
+                .route(
+                    "/test/echo-3461-login/{login}",
+                    web::post().to(echo_3461_login),
+                )
+                .service(messages_by_id_matching_filters),
+        )
+        .await;
+        let login_response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/echo-3461-login/{}", login.id))
+                .to_request(),
+        )
+        .await;
+        let session_cookie: Cookie<'static> = login_response
+            .response()
+            .cookies()
+            .next()
+            .unwrap()
+            .into_owned();
+
+        // Hold every source SQL slot of this login, like the slow stats reads.
+        let lock = Uuid::new_v4().as_u128() as i64;
+        let blocker = env.dbx.begin().await.unwrap();
+        blocker
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT pg_advisory_xact_lock($1)",
+                [lock.into()],
+            ))
+            .await
+            .unwrap();
+        let marker = format!("echo_4222_{}", Uuid::new_v4().simple());
+        let login_id = login.id;
+        let mut readers = Vec::new();
+        for _ in 0..ANALYSIS_SOURCE_READ_MAX_PER_LOGIN {
+            let reader = env.dbx.clone();
+            let statement = Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                format!(
+                    "SELECT pg_advisory_xact_lock_shared($1) /* {marker} */"
+                ),
+                [lock.into()],
+            );
+            readers.push(tokio::spawn(async move {
+                crate::read_query::scope(
+                    Uuid::new_v4().to_string(),
+                    vec![crate::read_query::pool_identity(&reader)],
+                    async {
+                        crate::read_query::set_login(login_id);
+                        crate::read_query::connection(&reader)
+                            .query_one_raw(statement)
+                            .await
+                            .unwrap();
+                    },
+                )
+                .await;
+            }));
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let row = env
+                    .dbx
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "SELECT count(*) AS count FROM pg_stat_activity \
+                         WHERE pid<>pg_backend_pid() AND state='active' \
+                         AND query LIKE $1",
+                        [format!("%{marker}%").into()],
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                if row.try_get::<i64>("", "count").unwrap() as usize
+                    == ANALYSIS_SOURCE_READ_MAX_PER_LOGIN
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let request = |message_ids: Vec<i64>| {
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/messages-by-id-matching-filters")
+                .cookie(session_cookie.clone())
+                .set_json(json!({ "message_ids": message_ids }))
+                .to_request()
+        };
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            actix_test::call_service(&app, request(vec![message.id])),
+        )
+        .await
+        .expect("an id-bounded read must not wait for the login's slots");
+        assert_eq!(response.status(), StatusCode::OK);
+        let response: serde_json::Value =
+            actix_test::read_body_json(response).await;
+        assert_eq!(response["messages"][0][0], json!(message.id));
+        assert_eq!(response["messages"].as_array().unwrap().len(), 1);
+        let unbounded = (0..=ANALYSIS_SOURCE_ID_BOUNDED_READ_MAX_IDS as i64)
+            .map(|offset| message.id + offset)
+            .collect();
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                actix_test::call_service(&app, request(unbounded)),
+            )
+            .await
+            .is_err(),
+            "a longer id list must still wait for a slot"
+        );
+        assert!(readers.iter().all(|reader| !reader.is_finished()));
+
+        blocker.rollback().await.unwrap();
+        for reader in readers {
+            reader.await.unwrap();
         }
     }
 
