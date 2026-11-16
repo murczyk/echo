@@ -4595,7 +4595,7 @@ async function completeLimitedResearch(options: {
     evidence,
     // The model's saved draft and the compaction checkpoint each hold evidence the other
     // may lack (#4224).
-    checkpoint: [options.research?.compactEvidence(), options.checkpoint].filter(Boolean).join("\n\n") || undefined,
+    checkpoint: [options.research?.compactEvidence(), options.checkpoint].filter((text): text is string => Boolean(text)),
     maxTokens,
     signal,
     purpose: options.research && !payload.executionPolicy ? "research" : "synthesis",
