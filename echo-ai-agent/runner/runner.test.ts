@@ -1618,7 +1618,8 @@ test("#4224 device file, device and attachment searches report their query and r
 
   const body = { query: "KMS", scope: "name", deviceIds, pathPrefix: "C:\\Activators", format: "exe", from: Date.UTC(2026, 10, 1) - 2 * 3_600_000, to: Date.UTC(2026, 10, 16) - 2 * 3_600_000 - 1, history: true, limit: 50 };
   const first = tracker.start(fileRoute, body);
-  assert.equal(first.label, "Шукаю файли пристроїв · пошук «KMS» · у назвах · пристрої «Ноутбук-1», «Ноутбук-2» та ще 1 · у теці «C:\\Activators» · формат «exe» · змінено 1–15 лист. 2026 р. · з попередніми версіями");
+  // Dates are matched loosely: ICU range formatting differs between Node releases.
+  assert.match(first.label, /^Шукаю файли пристроїв · пошук «KMS» · у назвах · пристрої «Ноутбук-1», «Ноутбук-2» та ще 1 · у теці «C:\\Activators» · формат «exe» · змінено 1\D{1,3}15\sлист\.\s2026\sр\. · з попередніми версіями$/);
   const hit = (index: number) => ({ fileName: `KMSAuto-${index}.exe`, citation: `/devices/${deviceIds[0]}?file=f${index}&revision=1` });
   const response = { documents: [hit(1), hit(2), hit(3)], nextCursor: "WyIwMWExYTc4OS1hMDI5LTcxOTAtYjdhMS1hMzFkM2Y3M2Q5N2EiLDFd" };
   const finished = tracker.finish(fileRoute, first, response, JSON.stringify({ documents: [hit(1), hit(2)], nextCursor: response.nextCursor }));
@@ -1635,8 +1636,8 @@ test("#4224 device file, device and attachment searches report their query and r
 
   tracker.rememberGroups([{ master_key: "private-group-key", name: "Радіомережа А" }]);
   const attachments = tracker.start(attachmentRoute, { query: "activator", selectedGroups: ["private-group-key"], from: Date.UTC(2026, 10, 1) - 2 * 3_600_000, limit: 50 });
-  assert.equal(attachments.label, "Шукаю документи · пошук «activator» · від 1 лист. 2026 р. · джерела «Радіомережа А»");
-  assert.equal(tracker.finish(attachmentRoute, attachments, { documents: [] }, JSON.stringify({ documents: [] })), "Шукаю документи · пошук «activator» · документів не знайдено · від 1 лист. 2026 р. · джерела «Радіомережа А»");
+  assert.match(attachments.label, /^Шукаю документи · пошук «activator» · від\s1\sлист\.\s2026\sр\. · джерела «Радіомережа А»$/);
+  assert.match(tracker.finish(attachmentRoute, attachments, { documents: [] }, JSON.stringify({ documents: [] })), /^Шукаю документи · пошук «activator» · документів не знайдено · від\s1\sлист\.\s2026\sр\. · джерела «Радіомережа А»$/);
   // Attachments of one message share its citation; each still counts.
   const shared = "/rer-analysis-neo?m=source-7";
   const page = (ids: string[]) => JSON.stringify({ documents: ids.map((mediaId) => ({ mediaId, fileName: `${mediaId}.pdf`, text: "x", citation: shared })) });
