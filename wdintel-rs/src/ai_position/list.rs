@@ -26,6 +26,7 @@ use actix_identity::Identity;
 use actix_web::{post, web::Json};
 use anyhow::Context;
 use chrono::NaiveDateTime;
+use sea_orm::sea_query::{extension::postgres::PgFunc, Expr};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
     EntityTrait, FromQueryResult, QueryFilter, QueryOrder, Statement, Value,
@@ -508,8 +509,13 @@ pub(crate) async fn load_coordinates(
     if mention_ids.is_empty() {
         return Ok(result);
     }
+    // One array parameter: a document can have more mentions than the
+    // 65,535 bind parameters PostgreSQL allows (echo-4227).
     let coordinates = ai_position_coordinate::Entity::find()
-        .filter(ai_position_coordinate::Column::MentionId.is_in(mention_ids))
+        .filter(sea_orm::ExprTrait::eq(
+            Expr::col(ai_position_coordinate::Column::MentionId),
+            PgFunc::any(Expr::val(mention_ids)),
+        ))
         .order_by_asc(ai_position_coordinate::Column::Id)
         .all(dbx)
         .await
@@ -791,9 +797,10 @@ pub(crate) async fn positions_by_message(
         .all(dbx)
         .await
         .c(h!())?;
-    let positions = position_highlights(dbx, mentions, allowed_groups)
-        .await
-        .c(h!())?;
+    let positions =
+        position_highlights(dbx, mentions, allowed_groups, KnownRepeats::Each)
+            .await
+            .c(h!())?;
     for (mention, position) in positions {
         if let Some(message_id) = mention.sigint_inbox_item_id {
             result.entry(message_id).or_default().push(position);
@@ -802,6 +809,9 @@ pub(crate) async fn positions_by_message(
     Ok(result)
 }
 
+/// Positions for attachment cards, by media id. Cards only place them on
+/// the map, so a name repeated across a document with the same known
+/// location appears once (see [`KnownRepeats::OncePerMedia`]).
 pub(crate) async fn positions_by_media(
     dbx: &DatabaseConnection,
     media_ids: Vec<Uuid>,
@@ -824,9 +834,14 @@ pub(crate) async fn positions_by_media(
         .all(dbx)
         .await
         .c(h!())?;
-    let positions = position_highlights(dbx, mentions, allowed_groups)
-        .await
-        .c(h!())?;
+    let positions = position_highlights(
+        dbx,
+        mentions,
+        allowed_groups,
+        KnownRepeats::OncePerMedia,
+    )
+    .await
+    .c(h!())?;
     for (mention, position) in positions {
         if let Some(media_id) = mention.media_id {
             result.entry(media_id).or_default().push(position);
@@ -835,10 +850,22 @@ pub(crate) async fn positions_by_media(
     Ok(result)
 }
 
+/// Which mentions of a name with a known location become positions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KnownRepeats {
+    /// Message text highlights every mention at its own span.
+    Each,
+    /// The first mention per media, knowledge, kind and name: documents
+    /// repeat one name tens of thousands of times (echo-4227). Mentions
+    /// with coordinates of their own are all kept.
+    OncePerMedia,
+}
+
 async fn position_highlights(
     dbx: &DatabaseConnection,
     mentions: Vec<crate::entities::ai_position_mention::Model>,
     allowed_groups: &HashSet<String>,
+    repeats: KnownRepeats,
 ) -> anyhow::Result<
     Vec<(
         crate::entities::ai_position_mention::Model,
@@ -872,7 +899,11 @@ async fn position_highlights(
     .c(h!())?;
     let mut own_sources = super::sources::mention_sources(
         dbx,
-        mentions.iter().map(|mention| mention.id).collect(),
+        mentions
+            .iter()
+            .map(|mention| mention.id)
+            .filter(|id| coordinates.contains_key(id))
+            .collect(),
         allowed_groups,
     )
     .await
@@ -884,6 +915,7 @@ async fn position_highlights(
     )
     .await
     .c(h!())?;
+    let mut shown_known = HashSet::new();
     for mention in mentions {
         let own: Vec<String> = coordinates
             .remove(&mention.id)
@@ -898,6 +930,18 @@ async fn position_highlights(
         };
         if own.is_empty() && knowledge.is_none() {
             continue;
+        }
+        if let Some(known) = knowledge {
+            if repeats == KnownRepeats::OncePerMedia
+                && !shown_known.insert((
+                    mention.media_id,
+                    known.id,
+                    mention.kind.clone(),
+                    mention.name.clone(),
+                ))
+            {
+                continue;
+            }
         }
         let coordinate_sources = knowledge.map_or_else(
             || own_sources.remove(&mention.id).unwrap_or_default(),

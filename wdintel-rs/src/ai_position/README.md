@@ -118,6 +118,12 @@ Message and attachment previews deduplicate knowledge lookups by scope and
 name, then load at most `AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE` keys per
 query. This bounds SQL expression depth even for documents with thousands of
 position mentions. All batches retain the same source-group access checks.
+Coordinates are loaded with one array parameter, since a document can have
+more mentions than PostgreSQL's 65,535 bind parameters. An attachment card
+only places positions on the map, so it keeps one knowledge-backed position
+per name, kind and knowledge row instead of one per mention; mentions with
+coordinates of their own are all kept. Message text still highlights every
+mention.
 The subprocess regression in
 `wdintel-rs/src/ai_position/knowledge_lookup_tests.rs` exercises 20,000 repeated
 and distinct names with a normal 2 MiB thread stack, including inaccessible
