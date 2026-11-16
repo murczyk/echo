@@ -4,9 +4,7 @@ use crate::h;
 use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
-use crate::messengers::read_state::{
-    total_count_expr, with_read_state, TOTAL_COUNT,
-};
+use crate::messengers::read_state::with_read_state;
 use crate::messengers::types::{
     MessengersChatItem, MessengersChatsListReq, MessengersChatsListRsp,
     MessengersTelegramChatId,
@@ -16,8 +14,7 @@ use chrono::NaiveDateTime;
 use sea_orm::sea_query::NullOrdering;
 use sea_orm::*;
 
-/// A chat with the caller's read state of it, see `with_read_state`, and its
-/// message count.
+/// A chat with the caller's read state of it, see `with_read_state`.
 #[derive(FromQueryResult)]
 struct ChatRow {
     #[sea_orm(nested)]
@@ -25,7 +22,6 @@ struct ChatRow {
     oldest_read_at: Option<NaiveDateTime>,
     newest_read_at: Option<NaiveDateTime>,
     unread_count: i64,
-    total_count: i64,
 }
 
 pub(crate) async fn list_chats(
@@ -44,7 +40,6 @@ pub(crate) async fn list_chats(
         )
         .order_by_desc(messenger_chat::Column::Id);
     let rows = with_read_state(chats, scope.login_id)
-        .column_as(total_count_expr(), TOTAL_COUNT)
         .into_model::<ChatRow>()
         .all(dbx)
         .await
@@ -96,6 +91,6 @@ fn chat_item(row: &ChatRow) -> MessengersChatItem {
             .newest_read_at
             .map(|dt| dt.and_utc().timestamp_millis()),
         unread_count: row.unread_count,
-        total_count: row.total_count,
+        total_count: chat.message_count,
     }
 }

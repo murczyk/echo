@@ -36,6 +36,7 @@ pub struct Model {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub avatar_id: Option<Uuid>,
+    pub message_count: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

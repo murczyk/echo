@@ -23,15 +23,19 @@ use uuid::Uuid;
 // (`messenger_sent_at`) it has read, bounds included. Messages outside the
 // span are unread, and a chat without a read state is unread entirely.
 //
-// Counts read only `sigint_chat_message`, never `signal_message`: messenger
-// ingest does not soft-delete messages, and skipping the `deleted` check
-// keeps every count an index-only range scan on
+// A chat's total is `messenger_chat.message_count`, kept by a trigger on
+// `sigint_chat_message`, so neither the total nor the unread count of a chat
+// without a read state reads any message. Consumers that need the read count
+// subtract `unread_count` from the total.
+//
+// Unread counts of read chats read only `sigint_chat_message`, never
+// `signal_message`: messenger ingest does not soft-delete messages, and
+// skipping the `deleted` check keeps every count an index-only range scan on
 // `sigint_chat_message_chat_timeline_idx`.
 
 pub(crate) const OLDEST_READ_AT: &str = "oldest_read_at";
 pub(crate) const NEWEST_READ_AT: &str = "newest_read_at";
 pub(crate) const UNREAD_COUNT: &str = "unread_count";
-pub(crate) const TOTAL_COUNT: &str = "total_count";
 
 #[derive(FromQueryResult)]
 struct ReadStateRow {
@@ -76,12 +80,13 @@ pub(crate) fn with_read_state(
 /// timeline index (`messenger_chat_id = c.id AND messenger_sent_at < bound`).
 /// A single `count(*)` filtered by `bound IS NULL OR sent_at < oldest OR
 /// sent_at > newest` cannot use the bounds in the index condition and walks
-/// the whole chat. `CASE` only runs the subqueries of the branch it takes.
+/// the whole chat. `CASE` only runs the subqueries of the branch it takes,
+/// and a chat without a read state is unread entirely, its stored count.
+/// Caught-up chats cost two near-empty range probes.
 ///
 /// ```sql
 /// CASE WHEN messenger_chat_read_state.login_id IS NULL
-///   THEN (SELECT COUNT(*) FROM sigint_chat_message
-///         WHERE sigint_chat_message.messenger_chat_id = messenger_chat.id)
+///   THEN messenger_chat.message_count
 ///   ELSE (SELECT COUNT(*) FROM sigint_chat_message
 ///         WHERE sigint_chat_message.messenger_chat_id = messenger_chat.id
 ///           AND sigint_chat_message.messenger_sent_at
@@ -107,19 +112,12 @@ fn unread_count_expr() -> SimpleExpr {
         .gt(state_col(messenger_chat_read_state::Column::NewestReadAt));
     Expr::case(
         state_col(messenger_chat_read_state::Column::LoginId).is_null(),
-        count_messages(None),
+        Expr::col((messenger_chat::Entity, messenger_chat::Column::MessageCount)),
     )
     .finally(
-        count_messages(Some(before_oldest))
-            .add(count_messages(Some(after_newest))),
+        count_messages(before_oldest).add(count_messages(after_newest)),
     )
     .into()
-}
-
-/// Every message of the chat in the enclosing `messenger_chat` row, one range
-/// scan of the timeline index over the whole chat.
-pub(crate) fn total_count_expr() -> SimpleExpr {
-    count_messages(None)
 }
 
 /// The messages of the chat in the enclosing `messenger_chat` row.
@@ -136,12 +134,9 @@ fn chat_messages() -> SelectStatement {
         .to_owned()
 }
 
-fn count_messages(range: Option<SimpleExpr>) -> SimpleExpr {
+fn count_messages(range: SimpleExpr) -> SimpleExpr {
     let mut query = chat_messages();
-    query.expr(Expr::col(Asterisk).count());
-    if let Some(range) = range {
-        query.and_where(range);
-    }
+    query.expr(Expr::col(Asterisk).count()).and_where(range);
     sub_query(query)
 }
 
