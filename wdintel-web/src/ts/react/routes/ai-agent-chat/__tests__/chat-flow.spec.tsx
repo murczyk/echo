@@ -474,7 +474,7 @@ describe('AiAgentChat request queue', () => {
     expect(options).toEqual([
       'Швидкийдо 2 хв',
       'Збалансованийдо 5 хв',
-      'Глибокийдо 4 год; нові повідомлення чекатимуть у черзі',
+      'Глибокийдо 4 год; нові повідомлення в цій розмові чекатимуть у черзі',
     ]);
     await chooseOption('Глибина аналізу', 'Глибокий');
     expect(selector('Глибина аналізу').textContent).toBe('Глибокий');
@@ -1186,7 +1186,9 @@ describe('#4031 Deep continuation of incomplete answers', () => {
   it('sends a just-finished answer on as a one-shot Deep follow-up', async () => {
     await finishIncompleteRequest('request-limited');
     expect(continueButtons()).toHaveLength(1);
-    expect(container.textContent).toContain('до 4 год; нові повідомлення чекатимуть у черзі');
+    expect(container.textContent).toContain(
+      'до 4 год; нові повідомлення в цій розмові чекатимуть у черзі',
+    );
 
     setTextarea('Незавершена чернетка');
     await flush();
@@ -1400,6 +1402,41 @@ describe('AiAgentChat conversation controls', () => {
     ).not.toBe('true');
     expect(document.body.querySelector('[aria-label="Перейменувати розмову"]')).toBeNull();
     expect(window.location.search).toBe(`?conversation=${CONVERSATION.id}`);
+  });
+
+  it('#4232 marks working conversations and refreshes the list until they finish', async () => {
+    const refreshes: Array<() => void> = [];
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    setIntervalSpy.mockImplementation(((handler: () => void, timeout?: number) => {
+      if (timeout === 5_000) refreshes.push(handler);
+      return refreshes.length;
+    }) as typeof window.setInterval);
+    mocks.conversations.mockResolvedValue([
+      { ...CONVERSATION, activeState: 'running' },
+      { ...CONVERSATION, id: '22222222-2222-4222-8222-222222222222', activeState: 'queued' },
+    ]);
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AiAgentChat />));
+    await flush();
+    const historyButton = container.querySelector(
+      'button[aria-label="Розгорнути ліву панель"]',
+    ) as HTMLButtonElement;
+    await act(async () => historyButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    const history = document.body.querySelector('aside');
+    expect(history?.textContent).toContain('Виконується · ');
+    expect(history?.textContent).toContain('У черзі · ');
+    expect(refreshes).toHaveLength(1);
+
+    mocks.conversations.mockResolvedValue([CONVERSATION]);
+    await act(async () => refreshes[0]());
+    await flush();
+    expect(history?.textContent).not.toContain('Виконується');
+    expect(history?.textContent).not.toContain('У черзі');
+    setIntervalSpy.mockRestore();
   });
 
   it('restores the active conversation and reconnects every queued or running request', async () => {

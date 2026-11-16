@@ -6824,6 +6824,7 @@ export type AiAgentConversationSummary = {
   aiEngineId: string;
   createdAt: number;
   updatedAt: number;
+  activeState: string | null;
 };
 
 export type AiAgentConversationListRsp = {

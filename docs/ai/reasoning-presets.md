@@ -25,7 +25,8 @@ written as findings, without a coverage notice, footer or `incomplete_research`
 metadata. A real stop (time, tool or context limit, or a provider failure), tasks
 left pending or a failed synthesis qualify it, with one line naming that.
 
-The limit starts when a worker claims the request, excluding queue time.
+The limit starts when a worker claims the request, excluding queue time but
+including any wait for a container start begun by the user's other conversation.
 Fast reserves its last 30 seconds, Balanced 60 seconds, a document request
 120 seconds, and Deep 300 seconds for a final answer; non-OpenAI engines (GLM, Gemma) and GPT-6.1 Sol reserve twice that, because
 they run the [bounded research workflow](../../echo-ai-agent/FLASH_RESEARCH.md) (GPT-6.1 Sol since #4224). Checkpoints, output recovery, citation repair, and provider
@@ -36,8 +37,9 @@ calls, with one provider call reserved for final synthesis. A 4-hour Deep
 request allows 1024 tool and API calls, 2048 provider calls, 50 000 runner
 events (64 MiB) and 30-minute provider turns (`reasoning::limits`).
 
-A Deep request holds its user's single running slot for as long as it runs:
-the user's next messages wait in the queue. A backend restart or a lost worker
+A Deep request holds its conversation for as long as it runs: the next messages
+in that conversation wait in the queue, while the user's other conversations
+keep running (#4232). A backend restart or a lost worker
 lease fails running requests (there is no resume), so long Deep runs are lost
 on a deploy; namespace upgrades wait until the namespace is idle.
 

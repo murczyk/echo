@@ -82,8 +82,12 @@ export type AiAgentConfiguration = {
   defaultProviderId: string | null;
 };
 
-export type AiAgentConversation = Omit<AiAgentConversationSummary, 'aiEngineId'> & {
+/** Whether a conversation in the list has a running or only a queued request. */
+export type AiAgentConversationActivity = 'running' | 'queued';
+
+export type AiAgentConversation = Omit<AiAgentConversationSummary, 'aiEngineId' | 'activeState'> & {
   providerId: string | null;
+  activeState: AiAgentConversationActivity | null;
 };
 
 export type AiAgentMessage = Omit<
@@ -419,7 +423,12 @@ function normalizeConversation(
     providerId: value.aiEngineId,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
+    activeState: 'activeState' in value ? conversationActivity(value.activeState) : null,
   };
+}
+
+function conversationActivity(value: string | null): AiAgentConversationActivity | null {
+  return value === 'running' || value === 'queued' ? value : null;
 }
 
 function normalizeMessage(value: AiAgentMessageItem): AiAgentMessage {
