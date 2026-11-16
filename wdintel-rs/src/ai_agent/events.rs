@@ -393,6 +393,7 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             | "draft_refresh"
             | "research_text"
             | "partial"
+            | "refusal"
     ) {
         return None;
     }
@@ -417,7 +418,10 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
         }
     }
     if let Some(issue) = event.get("draftIssue").and_then(Value::as_str) {
-        if matches!(issue, "no_citation" | "unknown_link" | "bare_link") {
+        if matches!(
+            issue,
+            "no_citation" | "unknown_link" | "bare_link" | "refusal"
+        ) {
             diagnostic["draftIssue"] = Value::String(issue.to_string());
         }
     }
@@ -975,7 +979,14 @@ mod tests {
             .unwrap()
         };
         assert_eq!(rejected("unknown_link")["draftIssue"], "unknown_link");
+        // #4224: a draft that declines the request is never the answer.
+        assert_eq!(rejected("refusal")["draftIssue"], "refusal");
         assert!(rejected("private text").get("draftIssue").is_none());
+        assert!(completion_diagnostic(&serde_json::json!({
+            "type": "completion_diagnostic", "stage": "synthesis",
+            "outcome": "refusal"
+        }))
+        .is_some());
         for outcome in ["continued", "draft_refresh"] {
             assert!(completion_diagnostic(&serde_json::json!({
                 "type": "completion_diagnostic", "stage": "research",

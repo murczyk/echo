@@ -271,7 +271,9 @@ export type CompletionStatus =
   | "authorization"
   | "content_filter"
   | "no_evidence"
-  | "citation_rejected";
+  | "citation_rejected"
+  /** The answer declined the request (#4224). */
+  | "refusal";
 export interface CompletionDiagnostic {
   stage: "research" | "synthesis" | "answer";
   outcome:
@@ -293,7 +295,7 @@ export interface CompletionDiagnostic {
   textCharacters?: number;
   toolCalls?: number;
   /** Why a saved draft failed citation validation. */
-  draftIssue?: "no_citation" | "unknown_link" | "bare_link";
+  draftIssue?: "no_citation" | "unknown_link" | "bare_link" | "refusal";
   durationMs?: number;
   remainingMs?: number;
   maxTokens?: number;
@@ -478,6 +480,11 @@ export function synthesisConversation(
     .map(({ role, content }) => ({ role, content }));
 }
 
+// pi-ai keeps this margin below the context window (clampMaxTokensToContext).
+const SYNTHESIS_CONTEXT_MARGIN_TOKENS = 4_096;
+const SMALL_SYNTHESIS_WINDOW_TOKENS = 131_072;
+const SMALL_WINDOW_EVIDENCE_SHARE = 0.75;
+
 function synthesisContext(options: SynthesisOptions): Context | null {
   const records = evidenceRecords(options.evidence);
   const aggregates = (options.evidence.aggregates ?? []).map(({ tool, request, result }) => ({
@@ -505,9 +512,13 @@ function synthesisContext(options: SynthesisOptions): Context | null {
   let remaining =
     options.engine.contextWindow -
     options.maxTokens -
-    2048 -
+    SYNTHESIS_CONTEXT_MARGIN_TOKENS -
     estimateTokens(messages[0]) -
     Math.ceil(options.systemPrompt.length / 3);
+  // Evidence is estimated at four characters a token; UUID-heavy and Cyrillic records
+  // tokenize worse, which a 64k window cannot absorb (#4224).
+  if (options.engine.contextWindow <= SMALL_SYNTHESIS_WINDOW_TOKENS)
+    remaining = Math.floor(remaining * SMALL_WINDOW_EVIDENCE_SHARE);
   // Each checkpoint is budgeted on its own: one too large must not drop the others (#4224).
   let checkpointRoom = remaining / 2;
   for (const text of [options.checkpoint ?? []].flat().filter(Boolean)) {

@@ -767,8 +767,12 @@ pub const AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS: i32 = 2_048;
 pub const AI_AGENT_REFUSAL_REWRITE_PROMPT_MAX_CHARS: usize = 8_192;
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
+/// OpenAI engines that also run the bounded research harness (#4224); mirrors
+/// the runner's `BOUNDED_OPENAI_MODELS`.
+pub const AI_AGENT_BOUNDED_RESEARCH_OPENAI_MODELS: &[&str] =
+    &[AI_AGENT_OPENAI_GPT_6_1_SOL];
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.16.1";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.16.2";
 /// How often the bgworker compares the namespace harness with
 /// `AI_AGENT_HARNESS_RELEASE` (#4186). The first check waits longer, because a
 /// deploy restarts the bgworker before it upgrades the harness.
