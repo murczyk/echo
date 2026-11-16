@@ -6,12 +6,13 @@ use crate::ai_engine::client::{government_model, model_id};
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
-    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REASON_MODEL_REFUSAL,
-    AI_AGENT_REASON_PROVIDER_ERROR, AI_AGENT_REQUEST_CLAIM_ADVISORY_LOCK_KEY,
-    AI_AGENT_REQUEST_WORKER_COUNT, AI_AGENT_RESPONSE_MAX_BYTES,
-    AI_AGENT_RESPONSE_MAX_CHARS, AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES,
-    AI_AGENT_USER_FAILURE_MESSAGE, AI_AGENT_WORKER_ERROR_SLEEP_SEC,
-    AI_AGENT_WORKER_IDLE_SLEEP_MS, AI_AGENT_WORKER_LEASE_ADVISORY_LOCK_KEY,
+    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_MAX_RUNNING_CONTAINERS,
+    AI_AGENT_REASON_MODEL_REFUSAL, AI_AGENT_REASON_PROVIDER_ERROR,
+    AI_AGENT_REQUEST_CLAIM_ADVISORY_LOCK_KEY, AI_AGENT_REQUEST_WORKER_COUNT,
+    AI_AGENT_RESPONSE_MAX_BYTES, AI_AGENT_RESPONSE_MAX_CHARS,
+    AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES, AI_AGENT_USER_FAILURE_MESSAGE,
+    AI_AGENT_WORKER_ERROR_SLEEP_SEC, AI_AGENT_WORKER_IDLE_SLEEP_MS,
+    AI_AGENT_WORKER_LEASE_ADVISORY_LOCK_KEY,
     AI_AGENT_WORKER_LEASE_HEARTBEAT_SEC,
     AI_AGENT_WORKER_LEASE_HEARTBEAT_TIMEOUT_SEC,
     AI_AGENT_WORKER_LEASE_RETRY_MS, AI_AGENT_WORKER_LEASE_TAKEOVER_GRACE_SEC,
@@ -391,7 +392,8 @@ async fn claim_next_request(
     } else {
         let running = running_requests_of(&txn, &candidates).await?;
         let needs = engine_proxy_needs(&txn, &candidates, &running).await?;
-        pick_claim(&candidates, &running, &needs)
+        let containers_in_use = containers_in_use(&txn).await?;
+        pick_claim(&candidates, &running, &needs, containers_in_use)
     };
     let request = match request_id {
         Some(request_id) => start_claimed_request(&txn, request_id).await?,
@@ -480,6 +482,24 @@ async fn running_requests_of(
         .collect())
 }
 
+/// Containers serving running requests: one per user running any.
+async fn containers_in_use(
+    txn: &sea_orm::DatabaseTransaction,
+) -> Result<u64, AppError> {
+    let row = txn
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "select count(distinct human_login_id) as count
+             from ai_agent_request
+             where state = 'running'",
+        ))
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let count: i64 = row.try_get("", "count").c(h!())?;
+    Ok(count.max(0) as u64)
+}
+
 async fn engine_proxy_needs(
     txn: &sea_orm::DatabaseTransaction,
     candidates: &[ClaimCandidate],
@@ -505,12 +525,19 @@ async fn engine_proxy_needs(
 
 /// A candidate may run beside its user's running requests only if they all
 /// need the same container proxies; an engine the harness cannot serve runs
-/// alone and fails at its start. Users running the fewest requests go first.
+/// alone and fails at its start. A user with nothing running needs a
+/// container of their own, so they wait while every container slot serves
+/// running requests, instead of failing at the running-container limit; the
+/// extra worker slots go to more conversations of users already running.
+/// Users running the fewest requests go first.
 fn pick_claim(
     candidates: &[ClaimCandidate],
     running: &[RunningRequest],
     needs: &HashMap<Uuid, access::AgentProxyNeed>,
+    containers_in_use: u64,
 ) -> Option<Uuid> {
+    let container_available =
+        containers_in_use < AI_AGENT_MAX_RUNNING_CONTAINERS;
     candidates
         .iter()
         .filter_map(|candidate| {
@@ -520,12 +547,15 @@ fn pick_claim(
                     running.human_login_id == candidate.human_login_id
                 })
                 .collect::<Vec<_>>();
-            let claimable = users_running.is_empty()
-                || needs.get(&candidate.ai_engine_id).is_some_and(|need| {
+            let claimable = if users_running.is_empty() {
+                container_available
+            } else {
+                needs.get(&candidate.ai_engine_id).is_some_and(|need| {
                     users_running.iter().all(|running| {
                         needs.get(&running.ai_engine_id) == Some(need)
                     })
-                });
+                })
+            };
             claimable.then_some((users_running.len(), candidate))
         })
         .min_by_key(|(running_count, candidate)| {
@@ -2277,7 +2307,8 @@ mod tests {
             pick_claim(
                 std::slice::from_ref(&flash_beside_gpt),
                 &[running(alice, gpt)],
-                &needs
+                &needs,
+                1
             ),
             Some(flash_beside_gpt.id),
             "every gateway engine shares the container"
@@ -2286,14 +2317,20 @@ mod tests {
             pick_claim(
                 &[claim_candidate(alice, gemma, 1)],
                 &[running(alice, gpt)],
-                &needs
+                &needs,
+                1
             ),
             None,
             "a vLLM request waits for the gateway runs to finish"
         );
         let unsupported_alone = claim_candidate(alice, unsupported, 1);
         assert_eq!(
-            pick_claim(std::slice::from_ref(&unsupported_alone), &[], &needs),
+            pick_claim(
+                std::slice::from_ref(&unsupported_alone),
+                &[],
+                &needs,
+                0
+            ),
             Some(unsupported_alone.id),
             "an unsupported engine still runs alone and fails at its start"
         );
@@ -2301,7 +2338,8 @@ mod tests {
             pick_claim(
                 &[claim_candidate(alice, unsupported, 1)],
                 &[running(alice, gpt)],
-                &needs
+                &needs,
+                1
             ),
             None
         );
@@ -2312,15 +2350,41 @@ mod tests {
             pick_claim(
                 &[alice_older.clone(), bob_newer.clone()],
                 &[running(alice, gpt)],
-                &needs
+                &needs,
+                1
             ),
             Some(bob_newer.id),
             "users running fewer requests go first"
         );
         assert_eq!(
-            pick_claim(&[alice_older.clone(), bob_newer], &[], &needs),
+            pick_claim(
+                &[alice_older.clone(), bob_newer.clone()],
+                &[],
+                &needs,
+                0
+            ),
             Some(alice_older.id),
             "then the older request"
+        );
+        assert_eq!(
+            pick_claim(
+                &[alice_older.clone(), bob_newer.clone()],
+                &[running(alice, gpt)],
+                &needs,
+                AI_AGENT_MAX_RUNNING_CONTAINERS
+            ),
+            Some(alice_older.id),
+            "with every container busy, only users already running get slots"
+        );
+        assert_eq!(
+            pick_claim(
+                std::slice::from_ref(&bob_newer),
+                &[],
+                &needs,
+                AI_AGENT_MAX_RUNNING_CONTAINERS
+            ),
+            None,
+            "a new user waits for a container instead of failing at the limit"
         );
     }
 

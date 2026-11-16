@@ -1070,6 +1070,7 @@ export function AiAgentChat({
   const refreshConversationListRef = useRef(refreshConversationList);
   refreshConversationListRef.current = refreshConversationList;
   const listRefreshFailedRef = useRef(false);
+  const listRefreshesInFlightRef = useRef(0);
   const conversationsActive = conversations.some(
     (conversation) => conversation.activeState !== null,
   );
@@ -1235,7 +1236,11 @@ export function AiAgentChat({
   }
 
   async function refreshConversationList({ background = false } = {}) {
+    // A slow response would otherwise be superseded by every later tick and
+    // never applied.
+    if (background && listRefreshesInFlightRef.current > 0) return;
     const sequence = ++listSequenceRef.current;
+    listRefreshesInFlightRef.current += 1;
     try {
       const next = await listAiAgentConversations();
       listRefreshFailedRef.current = false;
@@ -1250,6 +1255,8 @@ export function AiAgentChat({
         severity: 'error',
         message: `Не вдалося оновити історію розмов: ${errorMessage(loadError)}`,
       });
+    } finally {
+      listRefreshesInFlightRef.current -= 1;
     }
   }
 

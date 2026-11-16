@@ -1431,8 +1431,16 @@ describe('AiAgentChat conversation controls', () => {
     expect(history?.textContent).toContain('У черзі · ');
     expect(refreshes).toHaveLength(1);
 
-    mocks.conversations.mockResolvedValue([CONVERSATION]);
+    let respond: (value: (typeof CONVERSATION)[]) => void = () => {};
+    mocks.conversations.mockImplementation(() => new Promise((resolve) => (respond = resolve)));
+    const listCalls = mocks.conversations.mock.calls.length;
     await act(async () => refreshes[0]());
+    await act(async () => refreshes[0]());
+    expect(
+      mocks.conversations.mock.calls.length,
+      'a slow refresh is not superseded by the next tick',
+    ).toBe(listCalls + 1);
+    await act(async () => respond([CONVERSATION]));
     await flush();
     expect(history?.textContent).not.toContain('Виконується');
     expect(history?.textContent).not.toContain('У черзі');

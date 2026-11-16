@@ -1692,10 +1692,14 @@ async fn lock_user_lifecycle_waiting(
         .c(h!())?;
     // A request start or prewarm holds this lock for a whole container start,
     // which can outlast the server's `lock_timeout`; a submission then waits
-    // for the start instead of failing.
-    txn.execute_unprepared(&format!("set local lock_timeout = {wait_ms}"))
-        .await
-        .c(h!())?;
+    // for the start instead of failing. `lock_timeout` alone bounds the wait:
+    // the pool's `statement_timeout` (30 s with `[postgres_runtime]`) would
+    // otherwise cut a longer one short.
+    txn.execute_unprepared(&format!(
+        "set local lock_timeout = {wait_ms}; set local statement_timeout = 0"
+    ))
+    .await
+    .c(h!())?;
     txn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "select pg_advisory_xact_lock($1)",
@@ -1703,9 +1707,11 @@ async fn lock_user_lifecycle_waiting(
     ))
     .await
     .c(h!())?;
-    txn.execute_unprepared("set local lock_timeout to default")
-        .await
-        .c(h!())?;
+    txn.execute_unprepared(
+        "set local lock_timeout to default; set local statement_timeout to default",
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -2607,7 +2613,38 @@ mod tests {
             .is_err());
         assert!(began.elapsed() < std::time::Duration::from_secs(5));
         waiter.rollback().await.unwrap();
-        start.rollback().await.unwrap();
+
+        // A statement timeout must not cut a longer wait short, and the
+        // connection's own value (the pool sets it at connect) comes back.
+        let waiter = dbx.begin().await.unwrap();
+        waiter
+            .execute_unprepared("set local statement_timeout = 50")
+            .await
+            .unwrap();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            start.rollback().await.unwrap();
+        });
+        lock_user_lifecycle_waiting(&waiter, human_login_id, 5_000)
+            .await
+            .unwrap();
+        release.await.unwrap();
+        let restored = waiter
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "select current_setting('statement_timeout') = (
+                     select case when reset_val = '0' then '0'
+                                 else reset_val || 'ms' end
+                     from pg_settings where name = 'statement_timeout'
+                 ) as restored",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<bool>("", "restored")
+            .unwrap();
+        assert!(restored);
+        waiter.rollback().await.unwrap();
         const {
             assert!(
                 AI_AGENT_REQUEST_START_LOCK_WAIT_MS
