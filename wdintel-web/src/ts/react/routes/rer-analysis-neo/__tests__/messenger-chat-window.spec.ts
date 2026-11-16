@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { MessengersMessageItem, MessengersMessagesListRsp } from '../../../../../Bindings';
 import {
   aroundPage,
+  aroundSentAtPage,
   appendNewer,
   hasMoreAbove,
   hasMoreBelow,
@@ -84,6 +85,32 @@ describe('messenger chat window', () => {
 
     it('does not claim the chat end when the anchor is missing from the page', () => {
       expect(hasMoreBelow([aroundPage(rsp(['b', 'a'], 'o', 'n'), 'zzz', 4)])).toBe(true);
+    });
+  });
+
+  describe('pages around a time', () => {
+    const at = (sentAt: number, id: string): MessengersMessageItem => ({ ...message(id), sentAt });
+    const rspAt = (...items: MessengersMessageItem[]): MessengersMessagesListRsp => ({
+      items,
+      olderCursor: 'o',
+      newerCursor: 'n',
+    });
+
+    it('keeps loading below while the newer side is full', () => {
+      const page = aroundSentAtPage(rspAt(at(5, 'e'), at(4, 'd'), at(3, 'c'), at(2, 'b')), 3, 4);
+      expect(hasMoreBelow([page])).toBe(true);
+    });
+
+    it('marks the chat end when the newer side is short, or when nothing is newer', () => {
+      expect(
+        hasMoreBelow([aroundSentAtPage(rspAt(at(4, 'd'), at(3, 'c'), at(2, 'b')), 3, 4)]),
+      ).toBe(false);
+      expect(hasMoreBelow([aroundSentAtPage(rspAt(at(3, 'c'), at(2, 'b')), 3, 4)])).toBe(false);
+    });
+
+    it('does not count a message sent at the read time as newer', () => {
+      const page = aroundSentAtPage(rspAt(at(3, 'd'), at(3, 'c'), at(3, 'b')), 3, 4);
+      expect(hasMoreBelow([page])).toBe(false);
     });
   });
 

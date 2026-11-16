@@ -15,7 +15,7 @@ use crate::messengers::types::{
     MessengersMessagesListRsp, MessengersTelegramMessageId,
 };
 use crate::types::{Env, ShortContext};
-use chrono::{DateTime, NaiveDateTime};
+use chrono::{DateTime, Duration, NaiveDateTime};
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use std::collections::HashMap;
@@ -31,6 +31,25 @@ struct TimelinePosition {
 }
 
 impl TimelinePosition {
+    /// The end of the millisecond `ms`: every message sent within it is at or
+    /// before this position, the next millisecond's messages after it. It
+    /// matches how read bounds are stored, so a chat's `newest_read_at`
+    /// splits its read messages from its unread ones.
+    fn end_of_millisecond(ms: i64) -> Result<Self, AppError> {
+        let sent_at = DateTime::from_timestamp_millis(ms)
+            .and_then(|dt| {
+                dt.naive_utc()
+                    .checked_add_signed(Duration::microseconds(999))
+            })
+            .ok_or_else(|| AppError::BL {
+                msg: format!("invalid around_sent_at: {ms}"),
+            })?;
+        Ok(Self {
+            sent_at,
+            id: i64::MAX,
+        })
+    }
+
     fn encode(&self) -> String {
         format!("{}_{}", self.sent_at.and_utc().timestamp_micros(), self.id)
     }
@@ -54,7 +73,8 @@ impl TimelinePosition {
 
 enum PageRequest {
     Cursor(CursorPage<TimelinePosition>),
-    Around(Uuid),
+    AroundMessage(Uuid),
+    AroundPosition(TimelinePosition),
 }
 
 #[derive(FromQueryResult)]
@@ -118,14 +138,30 @@ pub(crate) async fn list_messages(
 fn page_request(
     req: &MessengersMessagesListReq,
 ) -> Result<PageRequest, AppError> {
-    if let Some(message_id) = &req.around_message_id {
-        if req.cursor.is_some() || req.direction.is_some() {
+    let around =
+        req.around_message_id.is_some() || req.around_sent_at.is_some();
+    if around && (req.cursor.is_some() || req.direction.is_some()) {
+        return Err(AppError::BL {
+            msg: "around_message_id and around_sent_at exclude cursor and \
+                  direction"
+                .to_string(),
+        });
+    }
+    match (&req.around_message_id, req.around_sent_at) {
+        (Some(_), Some(_)) => {
             return Err(AppError::BL {
-                msg: "around_message_id excludes cursor and direction"
-                    .to_string(),
+                msg: "around_message_id excludes around_sent_at".to_string(),
             });
         }
-        return Ok(PageRequest::Around(parse_echo_uuid(message_id).c(h!())?));
+        (Some(message_id), None) => {
+            let message_id = parse_echo_uuid(message_id).c(h!())?;
+            return Ok(PageRequest::AroundMessage(message_id));
+        }
+        (None, Some(ms)) => {
+            let position = TimelinePosition::end_of_millisecond(ms).c(h!())?;
+            return Ok(PageRequest::AroundPosition(position));
+        }
+        (None, None) => {}
     }
     let page = parse_cursor_page(
         req.cursor.as_deref(),
@@ -155,8 +191,14 @@ async fn load_page(
         PageRequest::Cursor(CursorPage::Newer(position)) => {
             load_newer_page(dbx, chat_id, position, limit).await
         }
-        PageRequest::Around(message_id) => {
-            load_around_page(dbx, chat_id, message_id, limit).await
+        PageRequest::AroundMessage(message_id) => {
+            let target = find_message_position(dbx, chat_id, message_id)
+                .await
+                .c(h!())?;
+            load_around_page(dbx, chat_id, target, limit).await
+        }
+        PageRequest::AroundPosition(position) => {
+            load_around_page(dbx, chat_id, position, limit).await
         }
     }
 }
@@ -203,17 +245,15 @@ async fn load_newer_page(
     Ok(MessagePage { rows, older, newer })
 }
 
-/// The message with the older half of the page below it and the newer half
-/// above it, so the page reads the same as any other.
+/// The page split at `target`: the newer half of the page above it, the older
+/// half below it including a message at `target` itself, so the page reads the
+/// same as any other.
 async fn load_around_page(
     dbx: &DatabaseConnection,
     chat_id: Uuid,
-    message_id: Uuid,
+    target: TimelinePosition,
     limit: u64,
 ) -> Result<MessagePage, AppError> {
-    let target = find_message_position(dbx, chat_id, message_id)
-        .await
-        .c(h!())?;
     let newer_limit = limit / 2;
     let mut rows = load_newer_rows(dbx, chat_id, Some(target), newer_limit)
         .await

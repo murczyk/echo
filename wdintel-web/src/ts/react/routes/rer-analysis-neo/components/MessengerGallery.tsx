@@ -11,7 +11,9 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   forwardRef,
   memo,
@@ -463,6 +465,10 @@ export function MessengerGallery({
   onOpenMessage,
   source = messengerGallerySource,
 }: Props) {
+  // The page's own phone check (the same one the workspace makes), so the gallery is also tight in the right panel.
+  const phone = useMediaQuery(useTheme().breakpoints.down('sm'));
+  // One padding for the bar of the tabs and for the grid below it.
+  const gutter = phone ? 'p-2' : 'p-3';
   const [tab, setTab] = useState<GalleryTab>('photo');
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
@@ -656,29 +662,43 @@ export function MessengerGallery({
       aria-label={chatId == null ? 'Медіа акаунта' : 'Медіа чату'}
       data-messenger-gallery
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-divider)] p-3">
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-divider)] ${gutter}`}
+      >
         <ToggleButtonGroup
           exclusive
           size="small"
           value={tab}
           onChange={(_event, value: GalleryTab | null) => value != null && changeTab(value)}
           aria-label="Тип медіа"
+          // On a phone the tabs fill the row: no empty space beside them, and each tab grows with its number.
+          sx={phone ? { width: '100%' } : undefined}
         >
           {GALLERY_TABS.map((value) => (
-            <ToggleButton key={value} value={value} sx={{ textTransform: 'none', px: 1.25 }}>
+            <ToggleButton
+              key={value}
+              value={value}
+              // On a phone the four tabs share one line: a smaller text and 6 px less padding on each side; the label never wraps.
+              sx={{
+                textTransform: 'none',
+                whiteSpace: 'nowrap',
+                px: phone ? 0.5 : 1.25,
+                ...(phone ? { flex: '1 1 auto', fontSize: 12, lineHeight: 1.3 } : {}),
+              }}
+            >
               {GALLERY_TAB_LABELS[value]}
               {counts ? ` (${counts[value]})` : ''}
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2 ${phone ? 'w-full' : ''}`}>
           <Button
             size="small"
             variant="outlined"
             disabled={busyAction != null || (source.ids == null && items.length === 0)}
             startIcon={busyAction === 'ids' ? <CircularProgress size={14} /> : undefined}
             onClick={() => void selectAll()}
-            sx={{ textTransform: 'none' }}
+            sx={{ textTransform: 'none', ...(phone ? { flex: 1 } : {}) }}
           >
             Вибрати всі
           </Button>
@@ -686,14 +706,14 @@ export function MessengerGallery({
             title={source.zip == null ? 'Завантаження ZIP з’явиться пізніше' : ''}
             disableInteractive
           >
-            <span>
+            <span className={phone ? 'flex-1' : undefined}>
               <Button
                 size="small"
                 variant="outlined"
                 disabled={source.zip == null || selected.size === 0 || busyAction != null}
                 startIcon={busyAction === 'zip' ? <CircularProgress size={14} /> : <DownloadIcon />}
                 onClick={() => void downloadZip()}
-                sx={{ textTransform: 'none' }}
+                sx={{ textTransform: 'none', ...(phone ? { width: '100%' } : {}) }}
               >
                 ZIP ({selected.size})
               </Button>
@@ -704,7 +724,7 @@ export function MessengerGallery({
       <div
         ref={setScroller}
         onScroll={loadMoreWhenNearEnd}
-        className="slim-scrollbar min-h-0 flex-1 overflow-y-auto p-3"
+        className={`slim-scrollbar min-h-0 flex-1 overflow-y-auto ${gutter}`}
       >
         {error != null ? (
           <PowerAlert

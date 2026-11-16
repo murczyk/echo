@@ -164,6 +164,7 @@ pub use super::messenger_alert_settings::Entity as MessengerAlertSettings;
 pub use super::messenger_avatar::Entity as MessengerAvatar;
 pub use super::messenger_chat::Entity as MessengerChat;
 pub use super::messenger_chat_member::Entity as MessengerChatMember;
+pub use super::messenger_chat_read_state::Entity as MessengerChatReadState;
 pub use super::messenger_contact::Entity as MessengerContact;
 pub use super::messenger_media_meta::Entity as MessengerMediaMeta;
 pub use super::modulation::Entity as Modulation;
