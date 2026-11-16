@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import '../../../components/selectable-list.css';
 
 export type MessengerAccountItem = {
@@ -64,13 +66,16 @@ export function MessengerAccountAvatar({
   account: MessengerAccountItem;
   className?: string;
 }) {
+  // An image that does not load (gone, no access) gives way to the initials, not to an empty circle.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const avatarUrl = account.avatarUrl && account.avatarUrl !== failedUrl ? account.avatarUrl : null;
   return (
     <span
       className={`group-navigation-avatar overflow-hidden ${className}`}
       data-messenger-account-avatar
       aria-hidden="true"
       style={
-        account.avatarUrl
+        avatarUrl
           ? undefined
           : {
               backgroundColor: 'var(--echo-color-primary, var(--color-action))',
@@ -78,8 +83,14 @@ export function MessengerAccountAvatar({
             }
       }
     >
-      {account.avatarUrl ? (
-        <img src={account.avatarUrl} alt="" className="h-full w-full object-cover" />
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setFailedUrl(avatarUrl)}
+        />
       ) : (
         messengerAccountInitials(account.name)
       )}

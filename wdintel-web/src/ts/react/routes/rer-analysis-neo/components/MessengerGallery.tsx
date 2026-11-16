@@ -454,7 +454,7 @@ const GalleryAudioRow = memo(function GalleryAudioRow(props: TileProps) {
   );
 });
 
-// The media of one analysis messenger chat for the right panel, like kontur's Media tab: tabs by kind with counts,
+// The media of one analysis messenger chat for the right panel, like the collector's Media tab: tabs by kind with counts,
 // a grid of the shared attachment tiles, selection with a ZIP, the shared preview dialog, "go to message" and "copy link".
 // Counts, "select all" over unloaded pages and the ZIP wait for the backend (see `GalleryDataSource`); without them the
 // tab labels have no numbers, "select all" takes what is loaded and the ZIP button stays disabled.

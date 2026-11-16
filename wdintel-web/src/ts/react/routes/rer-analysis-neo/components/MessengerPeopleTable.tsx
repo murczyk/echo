@@ -19,7 +19,9 @@ import {
   type MRT_VisibilityState,
 } from 'material-react-table';
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -61,6 +63,7 @@ import {
 } from '../messenger-contacts-export';
 import { clearTableQueryInUrl } from '../helpers';
 import { CopyValue } from './CopyValue';
+import { MessengerAccountAvatar } from './MessengerAccountList';
 import { MessengerSearchField } from './MessengerSearchField';
 
 type Props = {
@@ -147,6 +150,41 @@ const DENSE_COLUMNS: Record<string, { size: number; grow: boolean }> = {
   phone: { size: 84, grow: false },
 };
 
+// Whether the table is dense, for the cells: its name column is too narrow for an avatar.
+const DenseTableContext = createContext(false);
+
+// The name of a person with the avatar before it.
+function PersonName({ person }: { person: ContactRow }) {
+  const dense = useContext(DenseTableContext);
+  const name = contactFullName(person);
+  const deletedMark = person.deleted ? (
+    <Typography component="span" color="text.secondary" fontWeight={400}>
+      {' (видалено)'}
+    </Typography>
+  ) : null;
+  const text = name ? (
+    <Typography fontWeight={600} noWrap>
+      {name}
+      {deletedMark}
+    </Typography>
+  ) : (
+    <Typography color="error" noWrap>
+      Без імені
+      {deletedMark}
+    </Typography>
+  );
+  if (dense || person.id.startsWith('loading-')) return text;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <MessengerAccountAvatar
+        account={{ id: person.id, name, phone: '', avatarUrl: person.avatarUrl }}
+        className="!size-7 !text-xs"
+      />
+      <span className="min-w-0">{text}</span>
+    </span>
+  );
+}
+
 // Widths are tight so that all four columns fit a narrow host (the right panel): User ID and phone are fixed (the phone
 // fits "+" and a Russian number with 2 spare characters), the name and the username share the rest equally, never below
 // their `size`.
@@ -160,38 +198,20 @@ const columns: AppMrtColumnDef<ContactRow>[] = [
     size: 130,
     grow: true,
     meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
-    // Clicking the name selects the row, as in kontur.
+    // Clicking the name selects the row, as in the collector.
     // A column's own props replace the table's, so the shared cell look (the borders) is carried over.
     muiTableBodyCellProps: ({ row }) => ({
       onClick: row.getToggleSelectedHandler(),
       sx: { ...CUSTOM_STYLES.muiTableBodyCellProps.sx, cursor: 'pointer' },
     }),
-    Cell: mrtCustomCell(({ row }) => {
-      const name = contactFullName(row.original);
-      const deletedMark = row.original.deleted ? (
-        <Typography component="span" color="text.secondary" fontWeight={400}>
-          {' (видалено)'}
-        </Typography>
-      ) : null;
-      return name ? (
-        <Typography fontWeight={600} noWrap>
-          {name}
-          {deletedMark}
-        </Typography>
-      ) : (
-        <Typography color="error" noWrap>
-          Без імені
-          {deletedMark}
-        </Typography>
-      );
-    }),
+    Cell: mrtCustomCell(({ row }) => <PersonName person={row.original} />),
   },
   {
     header: 'User ID',
     id: 'userId',
     accessorFn: (row) => row.userId ?? '',
     filterFn: 'contains',
-    // As in kontur the search looks at the name, the username and the phone.
+    // As in the collector the search looks at the name, the username and the phone.
     enableGlobalFilter: false,
     size: 118,
     grow: false,
@@ -305,7 +325,7 @@ function ExportMenu({
   );
 }
 
-// A list of people of an analysis messenger account (its contacts, or the members of a chat), as in kontur but with
+// A list of people of an analysis messenger account (its contacts, or the members of a chat), as in the collector but with
 // infinite scroll instead of pages: a virtualized table with sorting, filters and hideable columns like the other
 // table pages, a search, row selection and CSV / XLSX export. The host loads the rows.
 export function MessengerPeopleTable(props: Props) {
@@ -685,7 +705,9 @@ function MessengerPeopleTableBody({
         </div>
       ) : null}
       <div className="min-h-0 flex-1">
-        <MaterialReactTable table={table} />
+        <DenseTableContext.Provider value={dense}>
+          <MaterialReactTable table={table} />
+        </DenseTableContext.Provider>
       </div>
     </section>
   );

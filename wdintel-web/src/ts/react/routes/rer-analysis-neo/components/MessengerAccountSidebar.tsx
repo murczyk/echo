@@ -242,7 +242,12 @@ function ChatSection({
                 onClick={() => onSelectChat(chat.id)}
               >
                 <MessengerAccountAvatar
-                  account={{ id: chat.id, name: chatLabel(chat), phone: '' }}
+                  account={{
+                    id: chat.id,
+                    name: chatLabel(chat),
+                    phone: '',
+                    avatarUrl: chat.avatarUrl,
+                  }}
                 />
                 <span className="flex min-w-0 flex-col">
                   <span className="group-navigation-name" title={chatLabel(chat)}>
@@ -457,7 +462,7 @@ function ExpandedSidebar({
         </p>
       ) : // A failed first load has no chats to show; a failed refresh keeps the old ones under the error.
       error != null && chats.length === 0 ? null : (
-        // Sections are cut off from each other by a line, as in kontur, and the last one is closed by a line too.
+        // Sections are cut off from each other by a line, as in the collector, and the last one is closed by a line too.
         <div className={`border-b border-solid ${DIVIDER}`}>
           {CHAT_SECTIONS.map(({ key, title, Icon }) => (
             <ChatSection
@@ -747,6 +752,7 @@ function CollapsedSidebar({
                               id: chat.id,
                               name: chatLabel(chat),
                               phone: '',
+                              avatarUrl: chat.avatarUrl,
                             }}
                             className={RAIL_AVATAR_SIZE}
                           />

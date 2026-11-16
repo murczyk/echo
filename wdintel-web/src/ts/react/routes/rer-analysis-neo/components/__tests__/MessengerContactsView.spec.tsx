@@ -15,7 +15,12 @@ vi.mock('../../../../utils/download-blob', () => downloadMock);
 
 import { MessengerContactsView } from '../MessengerContactsView';
 
-const contact = (id: string, firstName: string | null, userId: string): MessengersContactItem => ({
+const contact = (
+  id: string,
+  firstName: string | null,
+  userId: string,
+  avatarUrl: string | null = null,
+): MessengersContactItem => ({
   id,
   messengerType: 'Telegram',
   externalId: id,
@@ -27,6 +32,7 @@ const contact = (id: string, firstName: string | null, userId: string): Messenge
   isCloseFriend: null,
   createdAt: 0,
   updatedAt: 0,
+  avatarUrl,
   telegram: { userId },
 });
 
@@ -125,6 +131,24 @@ describe('MessengerContactsView', () => {
     expect(text()).toContain('@c1_user');
     // A contact without a name is marked, not left blank.
     expect(text()).toContain('Без імені');
+  });
+
+  it('shows the avatar of a contact before its name, the initials when it has none', async () => {
+    apiMock.listMessengersContacts.mockResolvedValueOnce(
+      page([
+        contact('c1', 'Сестра', '333', '/api/messengers/avatars/av1'),
+        contact('c2', 'Брат', '444'),
+      ]),
+    );
+    await mount();
+    const avatars = [...container.querySelectorAll('[data-messenger-account-avatar]')];
+    const avatarOf = (name: string) =>
+      avatars.find((avatar) => avatar.parentElement?.textContent?.includes(name));
+    expect(avatarOf('Сестра')?.querySelector('img')?.getAttribute('src')).toBe(
+      '/api/messengers/avatars/av1',
+    );
+    expect(avatarOf('Брат')?.querySelector('img')).toBeNull();
+    expect(avatarOf('Брат')?.textContent).toBe('Б');
   });
 
   it('closes the last row with a bottom border that beats the shared rule that removes it', async () => {

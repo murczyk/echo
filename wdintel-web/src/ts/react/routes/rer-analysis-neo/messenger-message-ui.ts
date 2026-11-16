@@ -12,7 +12,7 @@ export type SenderUiState = {
   needsCopyPrefix: boolean;
 };
 
-// Same rules as kontur, for analysis messenger chats: a private chat shows no names except for a sender that is not one of its
+// Same rules as in the collector, for analysis messenger chats: a private chat shows no names except for a sender that is not one of its
 // members, and a copied private-chat selection gets the names that the screen hides.
 export function getSenderUiState({
   isOutgoing,

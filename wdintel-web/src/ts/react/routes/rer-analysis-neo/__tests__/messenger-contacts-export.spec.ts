@@ -2,13 +2,14 @@ import { strFromU8, unzipSync } from 'fflate';
 import readXlsxFile from 'read-excel-file/web-worker';
 import { describe, expect, it } from 'vitest';
 
-import type { MessengersContactItem } from '../../../../../Bindings';
+import type { MessengersChatMemberItem, MessengersContactItem } from '../../../../../Bindings';
 import {
   buildContactsCsv,
   buildContactsXlsx,
   contactFullName,
   contactsFileName,
   toContactRow,
+  toMemberRow,
   withAccountRow,
   type ContactRow,
 } from '../messenger-contacts-export';
@@ -35,6 +36,7 @@ const contact = (id: string, userId: string | null): MessengersContactItem => ({
   isCloseFriend: null,
   createdAt: 0,
   updatedAt: 0,
+  avatarUrl: null,
   telegram: userId == null ? null : { userId },
 });
 
@@ -43,6 +45,27 @@ describe('messenger contacts export', () => {
     it('reads the messenger user id from the telegram block', () => {
       expect(toContactRow(contact('c1', '7'))).toMatchObject({ id: 'c1', userId: '7' });
       expect(toContactRow(contact('c2', null)).userId).toBeNull();
+    });
+
+    it('carries the avatar of a contact, a member and the account itself', () => {
+      const url = '/api/messengers/avatars/av1';
+      expect(toContactRow({ ...contact('c1', '7'), avatarUrl: url }).avatarUrl).toBe(url);
+      expect(
+        toMemberRow({
+          id: 'm1',
+          externalId: '9',
+          deleted: false,
+          avatarUrl: url,
+        } as MessengersChatMemberItem).avatarUrl,
+      ).toBe(url);
+      const rows = withAccountRow([], {
+        id: 'a1',
+        name: 'Me',
+        phone: '',
+        userId: '1',
+        avatarUrl: url,
+      });
+      expect(rows[0].avatarUrl).toBe(url);
     });
 
     it('lists the account first, with its phone as contacts have it', () => {
