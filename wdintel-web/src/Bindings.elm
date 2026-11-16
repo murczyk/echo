@@ -17548,6 +17548,7 @@ type alias AiAgentConversationSummary =
     , aiEngineId : String
     , createdAt : Int
     , updatedAt : Int
+    , activeState : Maybe (String)
     }
 
 
@@ -17559,6 +17560,7 @@ aiAgentConversationSummaryEncoder struct =
         , ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
         , ( "createdAt", (Json.Encode.int) struct.createdAt )
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "activeState", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.activeState )
         ]
 
 
@@ -33663,6 +33665,7 @@ aiAgentConversationSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activeState" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentConversationListRspDecoder : Json.Decode.Decoder AiAgentConversationListRsp

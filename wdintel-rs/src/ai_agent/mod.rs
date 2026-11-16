@@ -213,17 +213,53 @@ pub async fn list_conversations(
     user: Identity,
 ) -> Result<Json<AiAgentConversationListRsp>, AppError> {
     let human = access::current_human_login(&env.dbx, &user, false).await?;
-    let items = ai_agent_conversation::Entity::find()
+    let conversations = ai_agent_conversation::Entity::find()
         .filter(ai_agent_conversation::Column::HumanLoginId.eq(human.id))
         .filter(ai_agent_conversation::Column::DeletedAt.is_null())
         .order_by_desc(ai_agent_conversation::Column::UpdatedAt)
         .all(&env.dbx)
         .await
-        .c(h!())?
+        .c(h!())?;
+    let active_states = conversation_active_states(&env.dbx, human.id)
+        .await
+        .context(h!())?;
+    let items = conversations
         .into_iter()
-        .map(conversation_summary)
+        .map(|conversation| {
+            let active_state = active_states.get(&conversation.id).cloned();
+            AiAgentConversationSummary {
+                active_state,
+                ..conversation_summary(conversation)
+            }
+        })
         .collect();
     Ok(Json(AiAgentConversationListRsp { items }))
+}
+
+/// "running" for conversations with a running request, else "queued" for
+/// those with a queued one, so the list shows which chats are working.
+async fn conversation_active_states(
+    dbx: &DatabaseConnection,
+    human_login_id: Uuid,
+) -> Result<HashMap<Uuid, String>, AppError> {
+    let active: Vec<(Uuid, String)> = ai_agent_request::Entity::find()
+        .select_only()
+        .column(ai_agent_request::Column::ConversationId)
+        .column(ai_agent_request::Column::State)
+        .filter(ai_agent_request::Column::HumanLoginId.eq(human_login_id))
+        .filter(ai_agent_request::Column::State.is_in(["queued", "running"]))
+        .into_tuple()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut states = HashMap::new();
+    for (conversation_id, state) in active {
+        let current = states.entry(conversation_id).or_insert(state.clone());
+        if state == "running" {
+            *current = state;
+        }
+    }
+    Ok(states)
 }
 
 #[post("/api/ai-agent/conversations/create")]
@@ -977,6 +1013,7 @@ fn conversation_summary(
         ai_engine_id: conversation.ai_engine_id.to_string(),
         created_at: conversation.created_at.and_utc().timestamp_millis(),
         updated_at: conversation.updated_at.and_utc().timestamp_millis(),
+        active_state: None,
     }
 }
 

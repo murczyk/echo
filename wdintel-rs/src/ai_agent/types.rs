@@ -91,6 +91,8 @@ pub struct AiAgentConversationSummary {
     pub ai_engine_id: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// "running" or "queued" while the conversation has unfinished requests.
+    pub active_state: Option<String>,
 }
 
 #[derive(

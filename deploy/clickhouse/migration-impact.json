@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261116_124020_ai_agent_parallel_conversations": {
+      "changes": [{ "table": "public.ai_agent_container", "strategy": "excluded" }]
+    },
     "echo:m20261116_110507_message_card_quick_action_count": {
       "changes": [
         {

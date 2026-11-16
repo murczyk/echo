@@ -285,6 +285,51 @@ pub fn agent_provider_transport(
     None
 }
 
+/// What an agent container's proxies must provide for an engine. Requests
+/// with equal needs can run in the same container at once (#4232).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AgentProxyNeed {
+    EchoGateway,
+    DirectHttp { vllm_upstream: String },
+}
+
+impl AgentProxyNeed {
+    pub fn transport(&self) -> AgentProviderTransport {
+        match self {
+            Self::EchoGateway => AgentProviderTransport::EchoGateway,
+            Self::DirectHttp { .. } => AgentProviderTransport::DirectHttp,
+        }
+    }
+
+    /// Recorded as the container's `configured_proxies`.
+    pub fn key(&self) -> String {
+        match self {
+            Self::EchoGateway => self.transport().as_str().to_string(),
+            Self::DirectHttp { vllm_upstream } => {
+                format!("{}:{vllm_upstream}", self.transport().as_str())
+            }
+        }
+    }
+}
+
+pub fn agent_proxy_need(
+    ai_engine: &ai_engine::Model,
+) -> Option<AgentProxyNeed> {
+    match agent_provider_transport(ai_engine)? {
+        AgentProviderTransport::EchoGateway => {
+            Some(AgentProxyNeed::EchoGateway)
+        }
+        AgentProviderTransport::DirectHttp => {
+            let url = Url::parse(&ai_engine.url).ok()?;
+            let host = url.host_str()?;
+            let port = url.port_or_known_default()?;
+            Some(AgentProxyNeed::DirectHttp {
+                vllm_upstream: format!("{host}:{port}"),
+            })
+        }
+    }
+}
+
 /// True when the engine can serve the refusal rewrite layer: the rewrite
 /// call goes through the Echo gateway, which only proxies government-hosted
 /// engines (directly or through a government proxy).
@@ -480,6 +525,70 @@ mod tests {
             )),
             None
         );
+    }
+
+    #[test]
+    fn issue_4232_proxy_need_groups_engines_that_can_share_a_container() {
+        let need = |url: &str, model_name: &str| {
+            agent_proxy_need(&ai_engine::Model {
+                model_name: model_name.to_string(),
+                ..engine(url, Some("sk-bf-key"), true)
+            })
+        };
+        let vllm = |upstream: &str| {
+            Some(AgentProxyNeed::DirectHttp {
+                vllm_upstream: upstream.to_string(),
+            })
+        };
+        assert_eq!(
+            need(
+                "http://proxy.internal:8080/v1",
+                "inference.ai.mod.gov.ua/glm-5.3"
+            ),
+            Some(AgentProxyNeed::EchoGateway)
+        );
+        assert_eq!(
+            need(
+                "https://proxy.example.ts.net/v1",
+                "inference.ai.mod.gov.ua/gpt-6.1"
+            ),
+            need(
+                "http://proxy.internal:8080/v1",
+                "inference.ai.mod.gov.ua/glm-5.3"
+            ),
+            "every gateway engine shares the container's Echo proxy"
+        );
+        assert_eq!(
+            need("http://vllm.example:8000/v1", "google/gemma-3-27b-it"),
+            vllm("vllm.example:8000")
+        );
+        assert_eq!(
+            need("http://vllm.example/v1", "google/gemma-3-27b-it"),
+            vllm("vllm.example:80"),
+            "the default port names the same upstream"
+        );
+        assert_ne!(
+            need("http://vllm.example:8000/v1", "google/gemma-3-27b-it"),
+            need("http://vllm.example:8001/v1", "google/gemma-3-27b-it"),
+        );
+        assert_eq!(
+            agent_proxy_need(&engine(
+                "http://vllm.example:8000/v1",
+                None,
+                false
+            )),
+            None
+        );
+        assert_eq!(
+            need("http://vllm.example:8000/v1", "x")
+                .map(|need| need.transport()),
+            Some(AgentProviderTransport::DirectHttp)
+        );
+        assert_eq!(
+            need("http://vllm.example:8000/v1", "x").map(|need| need.key()),
+            Some("direct_http:vllm.example:8000".to_string())
+        );
+        assert_eq!(AgentProxyNeed::EchoGateway.key(), "echo_gateway");
     }
 
     #[test]
