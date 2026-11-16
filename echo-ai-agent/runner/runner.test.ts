@@ -1341,6 +1341,10 @@ test("#4224 search hit evidence keeps each attachment and its matched snippet", 
     { fileName: `${"Дуже довга назва ".repeat(10)}.exe`, folder: "C:\\" + "Каталог\\".repeat(30), current: false, citation: "/devices/d?file=f&revision=1" },
   ] }));
   assert.match(deep.text, /… \[earlier revision\]$/, "a long name and folder never cut the qualifiers");
+  const [ocr] = searchHitEvidence("attachmentSearch", JSON.stringify({ documents: [
+    { mediaId: "m1", fileName: "scan.pdf", quality: "degraded", text: "OCR summary", citation: "/rer-analysis-neo?m=source-7" },
+  ] }));
+  assert.equal(ocr.text, "scan.pdf [degraded quality]: OCR summary");
 });
 
 test("#4224 large reads fit small windows and later calls wait once the batch is used up", () => {
@@ -1361,6 +1365,15 @@ test("#4224 large reads fit small windows and later calls wait once the batch is
     delivered += 1;
   }
   assert.ok(delivered >= 2 && delivered < 8, `${delivered} reads delivered`);
+});
+
+test("#4224 a share too small for one source record retries with the call allowance", () => {
+  const route = { skill: "device_search", requestKind: "deviceSearch" as const };
+  const compact = createToolResponseCompactor(100_000, 50_000, 128, 2_500);
+  compact.beginBatch(1);
+  const device = { id: "01999999-1111-7111-8111-111111111111", name: "Ноутбук", description: "x".repeat(2_600) };
+  const delivered = JSON.parse(compact(route, { devices: [device], nextCursor: null }, 64));
+  assert.equal(delivered.devices.length, 1);
 });
 
 test("#4224 an empty search page still delivers when its share is exhausted", () => {

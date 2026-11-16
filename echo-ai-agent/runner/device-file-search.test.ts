@@ -218,4 +218,9 @@ test("#4224 calls a batch defers are not reported to synthesis as completed sear
   const actions = JSON.parse(synthesisBody.input.find((item: any) => item.role === "user" && JSON.stringify(item).includes("completedActions")).content[0]?.text ?? synthesisBody.input.find((item: any) => item.role === "user").content).completedActions;
   const action = actions.find((entry: any) => entry.tool === "echo_device_file_search");
   assert.equal(action.calls, searches);
+  // The deferred searches never ran: synthesis is told, and coverage is marked incomplete.
+  const request = JSON.parse(synthesisBody.input.find((item: any) => item.role === "user" && JSON.stringify(item).includes("completedActions")).content[0]?.text ?? synthesisBody.input.find((item: any) => item.role === "user").content);
+  assert.equal(request.deferredCalls.length, 40 - searches);
+  assert.ok(JSON.stringify(synthesisBody).includes("never run because one turn asked for more"));
+  assert.ok(events.some((event) => event.type === "completion_metadata" && event.coverageLimited === true));
 });

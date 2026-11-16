@@ -358,6 +358,7 @@ function retrievalKey(tool: string, query: unknown): string {
 export class FlashResearch {
   private state?: ResearchState;
   private draft?: string;
+  private readonly deferredCalls = new Map<string, { tool: string; arguments: unknown }>();
   private retrievals = 0;
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
@@ -568,8 +569,23 @@ export class FlashResearch {
       (this.state
         ? this.state.gaps.length > 0 ||
           this.state.checklist.some((item) => item.status !== "done")
-        : this.hasUnfinishedWork) || [...this.unread.values()].some(Boolean)
+        : this.hasUnfinishedWork) || [...this.unread.values()].some(Boolean) ||
+      this.deferredCalls.size > 0
     );
+  }
+
+  /** A call the batch budget deferred: unresolved until the same call runs (#4224). */
+  noteDeferred(tool: string, args: unknown): void {
+    this.deferredCalls.set(`${tool}:${JSON.stringify(args)}`, { tool, arguments: args });
+  }
+
+  noteRan(tool: string, args: unknown): void {
+    this.deferredCalls.delete(`${tool}:${JSON.stringify(args)}`);
+  }
+
+  /** Deferred calls that never ran, for synthesis to report as not searched. */
+  deferredScope(): { deferredCalls?: { tool: string; arguments: unknown }[] } {
+    return this.deferredCalls.size ? { deferredCalls: [...this.deferredCalls.values()] } : {};
   }
 
   noteProgress(): void {
