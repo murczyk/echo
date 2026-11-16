@@ -51,7 +51,8 @@ sandbox separately.
    - each child gets a new session. A timeout or a dropped `Running` kills the
      whole process group;
    - stderr keeps its last 64 KiB, with control characters replaced and remote
-     URLs redacted. stdout is captured in full when a job reads it.
+     URLs redacted. stdout is captured only up to the caller's cap
+     (`process::capture`); output past it fails the job with `OutputLimit`.
 3. **Child sandbox** (`sandbox/child.rs`, Linux-only steps in
    `sandbox/linux.rs`). It runs between `fork` and `exec`, using only
    async-signal-safe syscalls:
@@ -77,7 +78,9 @@ sandbox separately.
      - TCP rules (ABI 4) and signal/abstract-socket scoping (ABI 6) apply when
        the kernel has them.
    - Without Landlock (e.g. the Proxmox kernel), a parent with `CAP_SYS_ADMIN`
-     uses a mount namespace instead (`sandbox/mounts.rs`, `FsIsolation::Auto`):
+     uses a mount namespace instead (`sandbox/mounts.rs`, `FsIsolation::Auto`).
+     This is the production path: Ubuntu 22.04 in a Proxmox LXC container with
+     `nesting=1`. Landlock is used on development machines and in tests.
      - `unshare(CLONE_NEWNS)`, then `pivot_root` into an empty read-only tmpfs
        that holds only the same paths, bind-mounted from the host at their
        resolved locations, with the symlinks met on the way recreated, plus
@@ -118,30 +121,74 @@ that have not opted in to the sandbox (see [Wiring](#wiring)).
 
 ## Residual risks
 
-- **No seccomp yet.** `fork`, `io_uring`, `bpf`, `userfaultfd` and the rest of
-  the kernel attack surface stay reachable. Landlock still blocks `exec` of
-  anything other than the listed binary. A `Policy` syscall layer (for example
-  with `seccompiler`) can be added without changing the API.
-- **Signals.** On kernels older than 6.12 (no Landlock ABI 6), a compromised
-  child keeps the service's uid (root in production), only without
-  capabilities. It can `kill()` other processes of that uid, wdintel-rs
-  included.
-- **Network.** For offline jobs, network isolation needs root (network
-  namespace) or Landlock ABI 4. Unprivileged runs on 5.15 kernels have neither,
-  so only the protocol whitelist stops network access. Network jobs can
-  `connect()` to any host on the allowed port when Landlock has no TCP support.
-  ffmpeg follows HTTP redirects to any host its protocol whitelist allows, so
-  the origin allowlist covers only the first request. Plain `http` origins also
-  send pre-signed URLs unencrypted; allow them only for local storage such as a
-  development MinIO.
+These assume code execution inside ffmpeg (a decoder memory-safety bug) on
+the production path: the mount namespace in a Proxmox LXC container, with the
+child running as uid 0 without capabilities. The first four are the open
+gaps G11–G14 in the
+[checklist](../docs/media-security-audit-checklist.md#known-gaps-start-here).
+
+- **No seccomp yet (G13).** Every syscall stays reachable. In particular:
+  - the child can create nested user namespaces, which `nesting=1` allows,
+    and holds every capability over the namespaces it creates there. That
+    opens nf_tables and other code that is otherwise only reachable with
+    privilege;
+  - `io_uring`, `bpf`, `userfaultfd`, `perf_event_open` and `keyctl` are
+    reachable, and so are unprivileged socket families such as `AF_ALG` and
+    `AF_VSOCK`. These are common sources of kernel privilege escalation;
+  - the container shares the Proxmox host kernel, so a kernel bug reached
+    this way compromises the host;
+  - in the mount namespace, `memfd_create` plus `execveat` runs arbitrary
+    code; only Landlock blocks `exec` of anything but the listed binary.
+
+  Planned: a denylist filter built in the parent with `seccompiler` and
+  installed as the last step before `exec`, after `NO_NEW_PRIVS`. It stacks
+  with the container's own LXC seccomp profile, which cannot block user
+  namespaces because nesting needs them.
+- **No PID namespace (G11).** The child keeps the service's uid (root), so
+  it can `kill()` every root process in the container: wdintel-rs, the
+  bgworker, the messenger bots and PID 1. Landlock ABI 6 signal scoping
+  applies only on the Landlock path. Planned: a PID namespace, created in
+  `pre_exec` by a raw `clone(CLONE_NEWPID)` with the first child waiting
+  and passing on the exit status.
+- **Network (G12).** Offline jobs get a network namespace (root has
+  `CAP_SYS_ADMIN`), so they reach no network, abstract Unix socket or SysV
+  IPC of the container. The HLS preview gets none, and the mount namespace
+  has no TCP rules. That child can connect to any host and port the
+  container can reach (localhost services, the LAN, the internet), and to
+  the container's abstract Unix sockets. Without code execution:
+  - ffmpeg follows HTTP redirects to any host its protocol whitelist allows,
+    so the origin allowlist covers only the first request;
+  - plain `http` origins send pre-signed URLs unencrypted; allow them only
+    for local storage such as a development MinIO.
+
+  Planned: a per-job network namespace with only loopback, created by the
+  parent, and a range-request proxy in the parent that is the only thing
+  ffmpeg can reach. It also fixes G7 and the redirects.
+  Unprivileged runs on 5.15 kernels (development only) have neither a
+  network namespace nor Landlock TCP rules; only the protocol whitelist
+  stops network access there.
+- **Landlock and Unix sockets (G14).** `FsIsolation::Auto` picks Landlock
+  whenever the kernel supports it, so production would switch to it if the
+  Proxmox kernel enabled Landlock. Landlock restricts `connect()` to
+  path-based Unix sockets only from ABI 9 (`ResolveUnix`), and this crate
+  requests at most ABI 6. A uid 0 child could then reach
+  `/run/systemd/private` or the system D-Bus and act as root. The mount
+  namespace hides `/run`. Planned: force `FsIsolation::MountNamespace` in
+  production and log which isolation is in use.
+- **Recursive binds in LXC.** When a granted directory can only be bound
+  together with its submounts (`bind` in `mounts.rs`), those submounts keep
+  their own flags and may be writable. Check with
+  `findmnt -R /usr /lib /etc/ssl /sys/devices/system/cpu` on the host.
 - **Pre-signed URLs in argv (G7).** A remote input's URL is visible in
   `/proc/<pid>/cmdline` for the length of the job. Mount `/proc` with
-  `hidepid=2`, or later serve S3 reads through a loopback proxy.
+  `hidepid=2`, or serve S3 reads through the loopback proxy planned for G12.
 - **`PR_SET_PDEATHSIG`** follows the thread that spawned the child. Spawn from
   async tasks, never from a short-lived `spawn_blocking` thread, or the child
   dies when that thread exits.
 - **Memory and CPU** are bounded only by the service cgroup and each job's
-  wall-clock timeout. The parent keeps only the last
+  wall-clock timeout. A decoder bomb shares `MemoryMax` with wdintel-rs, and
+  the OOM killer may pick wdintel-rs, the larger process. Planned:
+  `oom_score_adj=1000` in the child. The parent keeps only the last
   `ECHO_MEDIA_STDERR_TAIL_BYTES` of decoder stderr, and ffprobe stdout over
   `ProbeOptions::max_output_bytes` (`ECHO_MEDIA_PROBE_OUTPUT_BYTES`, 64 KiB)
   fails the probe with `OutputLimit`.
@@ -287,8 +334,9 @@ a pre-signed S3 URL:
 - Every job passes `Formats::AUDIO`. A format outside that list fails to open,
   which is terminal, so it becomes `InvalidAudio` rather than unsupported.
 - `media_metadata` probes, so FLAC, Ogg, WMA, AIFF and the other containers
-  on `Formats::AUDIO` are reported as unsupported rather than invalid. As before this crate, only a `format_name` of `wav` or `mp3`
-  continues; the check is in wdintel-rs, not an ffmpeg flag.
+  on `Formats::AUDIO` are reported as unsupported rather than invalid. As
+  before this crate, only a `format_name` of `wav` or `mp3` continues; the
+  check is in wdintel-rs, not an ffmpeg flag.
 - `decode_verify` decodes the whole WAV or MP3 source and checks framecrc
   progress, with `DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT` as the stall limit.
 - `audio_rendition` writes the MP3 rendition (capped at 512 MiB) and the wave
@@ -307,13 +355,27 @@ a pre-signed S3 URL:
 2. Clean up `.echo-media-*` job directories left by a crash. Cache cleanup
    ignores them in the playback cache root, the thumbnail directories and
    `/tmp`.
-3. Check the deployment: Landlock in `/sys/kernel/security/lsm` (or the mount
-   namespace fallback working there), `CAP_SYS_ADMIN` for the services, and
-   root-owned `ffmpeg` and `ffprobe` on the service `PATH`. Then enable
-   «Пісочниця для обробки медіа» in the admin system settings and restart;
-   the startup self-check confirms it works.
+3. Check the deployment: the mount namespace working in the LXC container
+   (`nesting=1`), `CAP_SYS_ADMIN` for the services, and root-owned `ffmpeg`
+   and `ffprobe` on the service `PATH`. Run the mount namespace tests inside
+   the container, not only under `unshare -r`, because locked mount flags
+   and AppArmor differ there. Then enable «Пісочниця для обробки медіа» in the
+   admin system settings and restart; the startup self-check confirms it
+   works.
 4. Clean up `.echo-media-root-*` directories in the temp dir. They are empty,
    and are left only if the service dies while spawning a job.
+5. Against code execution in the decoder, in this order (see
+   [Residual risks](#residual-risks)):
+   1. a seccomp filter (G13);
+   2. a PID namespace (G11);
+   3. a loopback-only network namespace and parent proxy for the HLS
+      preview (G12, G7);
+   4. `FsIsolation::MountNamespace` forced in production, with the isolation
+      in use logged at startup (G14);
+   5. `oom_score_adj=1000` in the child.
+6. Make the startup self-check also confirm isolation, not just that ffmpeg
+   runs: a sandboxed `/bin/sh` must fail to read a host file, open a socket
+   or create a namespace.
 
 ## Tests
 

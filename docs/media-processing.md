@@ -112,9 +112,11 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
   - The device client supplies the MIME type and stores it with the file.
 - **Device audio** (`wdintel-rs/src/devices/audio/`) accepts only WAV and MP3,
   from 1 B to 100 MiB.
-  - Each file is fully decoded with `ffmpeg -xerror -err_detect explode` and
-    `-protocol_whitelist file,pipe` before it is accepted (`probe.rs`
-    `decoder_command`).
+  - Each file is probed and fully decoded with `ffmpeg -xerror -err_detect
+    explode` through [`echo-media`](../echo-media/README.md) before it is
+    accepted (`probe.rs` `probe_owned`). The input gets
+    `-protocol_whitelist file` and the `ECHO_MEDIA_FORMATS_AUDIO` demuxers;
+    only a `wav` or `mp3` format name continues.
   - The bytes are stored as one encrypted S3 object.
 
 ## Storage
@@ -128,7 +130,7 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | Device file thumbnails | `/tmp/echo-device-file-thumbnails` | 1 GiB budget, 24 h TTL, `0700`/`0600` |
 | Thumbnail sources | `<storage_dir>/messenger_media_cache/thumbnail_sources` | 20 GiB budget, 24 h TTL |
 | HLS preview segments | `<storage_dir>/messenger_media_cache/preview-v1` | 512 MiB budget, 24 h TTL |
-| Waveform/spectrogram PNG | `<storage_dir>/messenger_media_cache/audio_png/{wave,spectrogram}-<id>.png` | `0700`/`0600`, removed with the message's media |
+| Waveform/spectrogram PNG | `/tmp/{wave,spectrogram}-<id>.png` (`MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR`) | `0600`, published atomically from a private job directory; only regular files are served; removed with the message's media; names are predictable (G8) |
 | ZIP archive work | `<storage_dir>/device-file-archive` | private attempt directories |
 | Outbound chat media (echo-messengers) | `/var/lib/echo-messengers/chat-attachments` | service-owned |
 | Extraction/OCR results | `wd` / `wd_files` tables, encrypted artifacts | sanitized HTML |
@@ -143,7 +145,7 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | Waveform, spectrogram | encrypted messenger audio | `ffmpeg` through `echo-media` | `messenger/media_wave.rs` `generate_png` | decrypted audio in a random temp file; `-protocol_whitelist file`, `ECHO_MEDIA_FORMATS_AUDIO` demuxers; sandboxed child; 120 s timeout; PNG ≤ 1 MiB |
 | Transcription probe | message and device audio | `ffprobe` through `echo-media` | `transcription/worker.rs` `ensure_audio` | 100 MiB plaintext cap; `-protocol_whitelist file`, `ECHO_MEDIA_FORMATS_AUDIO` demuxers (includes `mpegts`, `asf`/WMA, `aiff`, `caf`, `ac3`, `eac3`, `w64`); sandboxed child; 30 s timeout |
 | Transcription | audio | `echo-gpu-client` → GPU host queue | `transcription/`, [transcription.md](transcription.md) | native queue in `wd` |
-| Device audio rendition, wave | WAV/MP3 | `ffmpeg` libmp3lame | `devices/audio/content.rs` `media_command` | `-protocol_whitelist file,pipe`, `-xerror` |
+| Device audio rendition, wave | WAV/MP3 | `ffmpeg` libmp3lame through `echo-media` | `devices/audio/probe.rs` `render`, called by `devices/audio/content.rs` | `-protocol_whitelist file`, `ECHO_MEDIA_FORMATS_AUDIO` demuxers, `-xerror`; sandboxed child; 30 min timeout, 1 thread; MP3 ≤ 512 MiB, PNG ≤ 1 MiB (`RLIMIT_FSIZE`) |
 | OCR | PDF, JPEG, PNG attachments | `echo-document-extractor` (PaddleOCR, pypdfium2, Pillow, NuExtract3/Gemma via router) | `ocr/worker.rs`, `ocr/package.rs` | source ≤ 250 MiB; result ZIP ≤ 1,000 entries and ≤ 250 MiB declared; HTML sanitized with `ammonia` |
 | Attachment indexing | Office, PDF, text, CSV, JSON, XML/HTML, archives | `echo-document-extractor` native API (LibreOffice in bubblewrap with seccomp, libarchive, python-docx/pptx, openpyxl, lxml) | `attachments/worker.rs`, [attachments README](../wdintel-rs/src/attachments/README.md) | 1,000 members, 2 archive levels, 1 GiB expanded, 250 MiB per input |
 | Device document indexing | Device file content | same extractor; KML/KMZ through Echo's parser | `devices/documents/` | shared bounds |
@@ -152,14 +154,27 @@ All of this is in `wdintel-rs/src/messenger/media.rs`.
 | KML/KMZ, XLSX import | map and report files | `quick-xml`, `zip`, `calamine`, `geoconvert` | `kml/`, `rer_importer/`, `palitra/` | — |
 | AI-agent uploads | PNG, JPEG, WebP, PDF | `image` crate (jpeg/png/webp), `infer` | `ai_agent/uploads/` | own limits |
 
-Thumbnail, transcription-probe, playback-copy, HLS-preview and
-waveform/spectrogram processes run through `echo-media`. Each gets a cleared
-environment and no capabilities. Landlock limits it to reading system libraries
-and its input, and writing only a private job directory; on kernels without
-Landlock (such as Proxmox's), a private mount namespace does the same. Offline jobs run in
-their own network namespace when the service is root. The other ffmpeg rows
-above still spawn ffmpeg directly; the
-[echo-media README](../echo-media/README.md#wiring) tracks them.
+Every ffmpeg and ffprobe row above runs through `echo-media`: thumbnails, the
+transcription probe, playback copies, the HLS preview, waveforms and device
+audio. The sandbox is on only when «Пісочниця для обробки медіа» is enabled in
+the admin system settings (`media_sandbox_enabled`, read at startup). When it
+is off, jobs keep the whitelists, the cleared environment and the output caps,
+but run unisolated.
+
+With the sandbox on, each child gets a cleared environment and no
+capabilities:
+
+- **Production** (Ubuntu 22.04 in a Proxmox LXC container, `nesting=1`; the
+  Proxmox kernel has no Landlock). A private mount namespace limits the child
+  to reading system libraries and its input, and writing only a private job
+  directory.
+- **Development machines and tests.** Landlock does the same.
+- **Network.** Offline jobs run in their own network namespace when the
+  service is root. The HLS preview keeps the container's network.
+
+There is no seccomp filter and no PID namespace yet. A compromised decoder
+still runs as uid 0 (G11–G13). See the
+[echo-media README](../echo-media/README.md#residual-risks).
 
 Some processing runs outside the main media path:
 
@@ -248,7 +263,7 @@ The only `add_header Content-Security-Policy` in `deploy/nginx/*` is on the
 
 | Component | Used for | Runs as |
 | --- | --- | --- |
-| FFmpeg / ffprobe (distro package, found on `PATH`) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker`; thumbnails, the transcription probe, playback copies, the HLS preview and waveforms run sandboxed through `echo-media` (no capabilities, Landlock) |
+| FFmpeg / ffprobe (distro package, found on `PATH`) | thumbnails, playback copies, HLS preview, waveforms, device audio, transcription probe | `root`, inside `wdintel-rs` / `wdintel-rs-bgworker`; every job runs through `echo-media`, sandboxed when enabled (no capabilities; mount namespace in production, Landlock elsewhere) |
 | libx264, libmp3lame, AAC encoder | HLS preview, device audio rendition | same |
 | signal-cli-rest-api / signal-cli | Signal ingest and attachment download | `root` (`echo-signal-bot@`) |
 | whatsapp-cli | WhatsApp ingest | `root` (`echo-whatsapp-bot@`) |
@@ -276,7 +291,7 @@ options.
 | `ammonia` | OCR and extracted HTML sanitising |
 | `calamine`, `docx-rs`, `rust_xlsxwriter`, `csv` | spreadsheet and report import/export |
 | `geoconvert`, `milgeo-rs` | coordinates, map formats |
-| `echo-media` (workspace crate; `landlock` on Linux) | sandboxed ffmpeg/ffprobe jobs; used for thumbnails, the transcription probe, playback copies, the HLS preview and waveforms |
+| `echo-media` (workspace crate; `landlock` on Linux) | sandboxed ffmpeg/ffprobe jobs; used for every ffmpeg and ffprobe call |
 | `actix-web`, `actix-files`, `actix-multipart` | HTTP serving and uploads |
 | `content_disposition` | header encoding |
 | `opencv` (optional feature) | image processing in `terminal` |
