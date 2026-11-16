@@ -1332,6 +1332,57 @@ test("#4224 search hit evidence keeps each attachment and its matched snippet", 
   ] }));
   assert.ok(long.text.endsWith(" — page 3: HWID activation key"), long.text);
   assert.ok(long.text.length < 700);
+  // Non-default revision and coverage states qualify the finding for synthesis.
+  const [old] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: "KMSAuto.exe", current: false, complete: false, summaryState: "failed", snippet: "page 1: KMS", citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.equal(old.text, "KMSAuto.exe [earlier revision, incomplete extraction, summary failed]: page 1: KMS");
+  const [deep] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: `${"Дуже довга назва ".repeat(10)}.exe`, folder: "C:\\" + "Каталог\\".repeat(30), current: false, citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.match(deep.text, /… \[earlier revision\]$/, "a long name and folder never cut the qualifiers");
+  const [ocr] = searchHitEvidence("attachmentSearch", JSON.stringify({ documents: [
+    { mediaId: "m1", fileName: "scan.pdf", quality: "degraded", text: "OCR summary", citation: "/rer-analysis-neo?m=source-7" },
+  ] }));
+  assert.equal(ocr.text, "scan.pdf [degraded quality]: OCR summary");
+});
+
+test("#4224 large reads fit small windows and later calls wait once the batch is used up", () => {
+  const read = { skill: "device_file_read", requestKind: "deviceFileRead" as const };
+  const source = { deviceId: "01999999-1111-7111-8111-111111111111", fileId: "01999999-2222-7222-8222-222222222222", revision: 1 };
+  const section = (ordinal: number) => ({ document: { ...source, fileName: "orders.xlsx" }, sections: [{ ordinal, locator: "sheet 1", markdown: "x".repeat(12_000) }], nextAfter: null });
+  // A 32k profile: one 12,000-character section is indivisible but fits the allowance.
+  const small = createContextToolResponseCompactor(32_768, { maxTokens: 4_096, compactionReserveTokens: 8_192, compactionKeepRecentTokens: 1_024, fixedTokens: 10_000 });
+  small.beginBatch(1);
+  assert.equal(JSON.parse(small(read, section(0), 64)).sections.length, 1);
+  // Eight such reads on the 64k profile: those admitted deliver, the rest wait.
+  const compact = createContextToolResponseCompactor(65_536, { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  compact.beginBatch(8);
+  let delivered = 0;
+  for (let call = 0; call < 8; call++) {
+    if (!compact.admit()) continue;
+    assert.equal(JSON.parse(compact(read, section(call), 64)).sections.length, 1);
+    delivered += 1;
+  }
+  assert.ok(delivered >= 2 && delivered < 8, `${delivered} reads delivered`);
+});
+
+test("#4224 a share too small for one source record retries with the call allowance", () => {
+  const route = { skill: "device_search", requestKind: "deviceSearch" as const };
+  const compact = createToolResponseCompactor(100_000, 50_000, 128, 2_500);
+  compact.beginBatch(1);
+  const device = { id: "01999999-1111-7111-8111-111111111111", name: "Ноутбук", description: "x".repeat(2_600) };
+  const delivered = JSON.parse(compact(route, { devices: [device], nextCursor: null }, 64));
+  assert.equal(delivered.devices.length, 1);
+});
+
+test("#4224 an empty search page still delivers when its share is exhausted", () => {
+  const route = { skill: "device_file_search", requestKind: "deviceFileSearch" as const };
+  // Earlier reads left this call a share smaller than the empty page itself.
+  const compact = createToolResponseCompactor(100_000, 50_000, 128, 10);
+  compact.beginBatch(1);
+  assert.deepEqual(JSON.parse(compact(route, { documents: [], nextCursor: null }, 64)), { documents: [], nextCursor: null });
+  assert.throws(() => compactToolResponse(route, { documents: [], nextCursor: null }, 64, 2), /exceeds available context/);
 });
 
 test("keeps the strongest callsign relations within the item cap", () => {
@@ -1618,7 +1669,8 @@ test("#4224 device file, device and attachment searches report their query and r
 
   const body = { query: "KMS", scope: "name", deviceIds, pathPrefix: "C:\\Activators", format: "exe", from: Date.UTC(2026, 10, 1) - 2 * 3_600_000, to: Date.UTC(2026, 10, 16) - 2 * 3_600_000 - 1, history: true, limit: 50 };
   const first = tracker.start(fileRoute, body);
-  assert.equal(first.label, "Шукаю файли пристроїв · пошук «KMS» · у назвах · пристрої «Ноутбук-1», «Ноутбук-2» та ще 1 · у теці «C:\\Activators» · формат «exe» · змінено 1–15 лист. 2026 р. · з попередніми версіями");
+  // Dates are matched loosely: ICU range formatting differs between Node releases.
+  assert.match(first.label, /^Шукаю файли пристроїв · пошук «KMS» · у назвах · пристрої «Ноутбук-1», «Ноутбук-2» та ще 1 · у теці «C:\\Activators» · формат «exe» · змінено 1\D{1,3}15\sлист\.\s2026\sр\. · з попередніми версіями$/);
   const hit = (index: number) => ({ fileName: `KMSAuto-${index}.exe`, citation: `/devices/${deviceIds[0]}?file=f${index}&revision=1` });
   const response = { documents: [hit(1), hit(2), hit(3)], nextCursor: "WyIwMWExYTc4OS1hMDI5LTcxOTAtYjdhMS1hMzFkM2Y3M2Q5N2EiLDFd" };
   const finished = tracker.finish(fileRoute, first, response, JSON.stringify({ documents: [hit(1), hit(2)], nextCursor: response.nextCursor }));
@@ -1635,8 +1687,8 @@ test("#4224 device file, device and attachment searches report their query and r
 
   tracker.rememberGroups([{ master_key: "private-group-key", name: "Радіомережа А" }]);
   const attachments = tracker.start(attachmentRoute, { query: "activator", selectedGroups: ["private-group-key"], from: Date.UTC(2026, 10, 1) - 2 * 3_600_000, limit: 50 });
-  assert.equal(attachments.label, "Шукаю документи · пошук «activator» · від 1 лист. 2026 р. · джерела «Радіомережа А»");
-  assert.equal(tracker.finish(attachmentRoute, attachments, { documents: [] }, JSON.stringify({ documents: [] })), "Шукаю документи · пошук «activator» · документів не знайдено · від 1 лист. 2026 р. · джерела «Радіомережа А»");
+  assert.match(attachments.label, /^Шукаю документи · пошук «activator» · від\s1\sлист\.\s2026\sр\. · джерела «Радіомережа А»$/);
+  assert.match(tracker.finish(attachmentRoute, attachments, { documents: [] }, JSON.stringify({ documents: [] })), /^Шукаю документи · пошук «activator» · документів не знайдено · від\s1\sлист\.\s2026\sр\. · джерела «Радіомережа А»$/);
   // Attachments of one message share its citation; each still counts.
   const shared = "/rer-analysis-neo?m=source-7";
   const page = (ids: string[]) => JSON.stringify({ documents: ids.map((mediaId) => ({ mediaId, fileName: `${mediaId}.pdf`, text: "x", citation: shared })) });

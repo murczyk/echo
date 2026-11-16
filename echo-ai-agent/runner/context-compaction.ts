@@ -125,7 +125,8 @@ const RESUME_CURSORS: Record<string, (last: Record<string, unknown>) => unknown>
   echo_inbox_messages: (last) => last.id,
 };
 // Reads whose sections continue with `after`; inspection results have no such cursor.
-const SECTION_READS = new Set(["echo_device_file_read", "echo_attachment_read", "echo_upload_read"]);
+// The get routes share their read's parameters, `after` included.
+const SECTION_READS = new Set(["echo_device_file_read", "echo_device_file_get", "echo_attachment_read", "echo_attachment_get", "echo_upload_read"]);
 const RECORD_KEYS = ["documents", "messages", "devices", "sections", "items"];
 
 /**

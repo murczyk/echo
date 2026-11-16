@@ -123,3 +123,10 @@ test('#3757 final citation cleanup retains registered file source links', async 
   assert.equal(chooseCitedAnswer(draft, repair, [message], [message], [href]), repair);
   assert.equal(chooseCitedAnswer('[джерело](/devices/forged?file=forged)', null, [], [], [href]), '');
 });
+
+test('#4224 a file at a filesystem root keeps its root folder', () => {
+  const project = (path: string, fileName: string) => compactToolResponse({ skill: 'device_file_search', requestKind: 'deviceFileSearch' }, { documents: [{ ...document, fileName, path, state: 'completed' }], nextCursor: null }, 64, 96_000);
+  assert.equal(JSON.parse(project('C:\\KMSAuto.exe', 'KMSAuto.exe')).documents[0].folder, 'C:\\');
+  assert.equal(JSON.parse(project('/KMSAuto.exe', 'KMSAuto.exe')).documents[0].folder, '/');
+  assert.equal(JSON.parse(project('C:\\Tools\\KMSAuto.exe', 'KMSAuto.exe')).documents[0].folder, 'C:\\Tools');
+});

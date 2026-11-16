@@ -123,7 +123,10 @@ export function capText(text: string, maxCharacters: number): string {
 const FOLDER_MAX_CHARACTERS = 200;
 
 function folderOf(path: string, fileName: string): string {
-  const folder = fileName && path.endsWith(fileName) ? path.slice(0, path.length - fileName.length).replace(/[\\/]+$/, '') : path;
+  const parent = fileName && path.endsWith(fileName) ? path.slice(0, path.length - fileName.length) : path;
+  const trimmed = parent.replace(/[\\/]+$/, '');
+  // A file at a filesystem root keeps the root: `C:\` or `/`, not `C:` or nothing.
+  const folder = parent !== trimmed && (trimmed === '' || /^[A-Za-z]:$/.test(trimmed)) ? `${trimmed}${parent.at(-1)}` : trimmed;
   return folder.length <= FOLDER_MAX_CHARACTERS ? folder : `…${folder.slice(-(FOLDER_MAX_CHARACTERS - 1))}`;
 }
 

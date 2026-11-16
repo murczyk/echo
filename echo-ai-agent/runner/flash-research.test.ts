@@ -2489,3 +2489,16 @@ test("#4125 statistics reach the tool-free synthesis even without a saved draft"
   assert.equal(records[0].result.rows[0].freq, "163.9350");
   assert.equal(records[0].result.rows[0].count, 42);
 });
+
+// Regression: https://github.com/echoua/echo/issues/4224
+test("#4224 deferred calls stay unfinished work until the same call runs, in any argument order", () => {
+  const research = new FlashResearch(() => sources);
+  research.noteDeferred("echo_device_file_search", { query: "KMS", limit: 50, scope: { name: true, content: false } });
+  assert.equal(research.hasUnfinishedWork, true);
+  assert.equal(research.hasGaps(), true);
+  assert.match(research.continuationPrompt(), /deferred because one turn asked for more than the context holds/);
+  assert.equal(research.deferredScope().deferredCalls?.length, 1);
+  research.noteRan("echo_device_file_search", { scope: { content: false, name: true }, limit: 50, query: "KMS" });
+  assert.deepEqual(research.deferredScope(), {});
+  assert.equal(research.hasUnfinishedWork, false);
+});

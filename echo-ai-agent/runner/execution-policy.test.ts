@@ -349,6 +349,23 @@ test("#4224 file and attachment search hits are synthesis evidence", async () =>
   );
 });
 
+test("#4224 the saved draft survives a checkpoint too large for synthesis", async () => {
+  let request = "";
+  await synthesizeBudgetEvidence(
+    {
+      engine, apiKey: "fixture-capability", policy, systemPrompt: "Summarize evidence", prompt: "Report",
+      evidence, checkpoint: ["SAVED_DRAFT [джерело](/rer-analysis-neo?m=source-42)", "Huge checkpoint. ".repeat(40_000)],
+      maxTokens: 8192, signal: new AbortController().signal,
+    },
+    async (_engine, context) => {
+      request = JSON.stringify(context.messages);
+      return { stopReason: "stop", content: [{ type: "text", text: "ok" }] } as any;
+    },
+  );
+  assert.ok(request.includes("SAVED_DRAFT"));
+  assert.ok(!request.includes("Huge checkpoint."));
+});
+
 test("#3724 does not turn revoked provider access into a completed partial answer", async () => {
   for (const summarize of [
     async () =>

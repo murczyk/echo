@@ -2514,6 +2514,8 @@ function compactSearchHits(
     const encoded = encode(original.map((hit) => project(hit, summary, snippet)));
     if (encoded.length <= maxCharacters) return encoded;
   }
+  // An empty page that does not fit cannot be shortened: the caller retries larger.
+  if (!original.length) throw new Error("Search response exceeds available context");
   const [summary, snippet] = SEARCH_HIT_TEXT_LIMITS.at(-1)!;
   const projected = original.map((hit) => project(hit, summary, snippet));
   const warnings = Array.isArray(result.warnings) ? result.warnings : [];
@@ -2691,11 +2693,20 @@ export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch",
       [hit.snippet, SEARCH_HIT_SNIPPET_MAX_CHARACTERS],
     ].flatMap(([value, limit]) => typeof value === "string" && value.trim() !== "" && value !== name ? [capText(value, limit as number)] : []);
     const location = kind === "deviceFileSearch" && typeof hit.folder === "string" && hit.folder ? ` (${hit.folder})` : "";
-    const state = typeof hit.state === "string" ? ` [${hit.state}]` : "";
+    // The projection keeps only non-default states; synthesis needs them to qualify a finding.
+    const qualifiers = [
+      typeof hit.state === "string" ? hit.state : null,
+      hit.current === false ? "earlier revision" : null,
+      hit.hasContent === false ? "no content" : null,
+      hit.complete === false ? "incomplete extraction" : null,
+      typeof hit.summaryState === "string" ? `summary ${hit.summaryState}` : null,
+      typeof hit.quality === "string" && hit.quality !== "accepted" ? `${hit.quality} quality` : null,
+    ].filter(Boolean);
+    const state = qualifiers.length ? ` [${qualifiers.join(", ")}]` : "";
     return [{
       kind: kind === "deviceFileSearch" ? "file" as const : "attachment" as const,
       id: kind === "deviceFileSearch" ? hit.citation : `${hit.citation}#${String(hit.mediaId ?? name)}`,
-      text: `${capText(`${name}${location}${state}`, SEARCH_HIT_NAME_MAX_CHARACTERS)}${details.length ? `: ${details.join(" — ")}` : ""}`,
+      text: `${capText(`${name}${location}`, SEARCH_HIT_NAME_MAX_CHARACTERS)}${state}${details.length ? `: ${details.join(" — ")}` : ""}`,
       citation: hit.citation,
     }];
   });
@@ -2736,6 +2747,24 @@ function routeToolCalls(message: unknown, routeToolNames: ReadonlySet<string>): 
   return Array.isArray(content)
     ? content.filter((block) => (block as JsonObject | null)?.type === "toolCall" && routeToolNames.has(String((block as JsonObject).name))).length
     : 0;
+}
+
+const RECORD_ARRAYS = ["documents", "devices", "messages", "sections", "known", "located", "other", "fileMentions", "items"];
+
+/** The compacted result kept none of the source records the original had. */
+function droppedEveryRecord(value: unknown, compacted: string): boolean {
+  const count = (body: unknown): number => {
+    if (!body || typeof body !== "object" || Array.isArray(body)) return 0;
+    const object = body as JsonObject;
+    const result = object.result && typeof object.result === "object" ? object.result as JsonObject : object;
+    return RECORD_ARRAYS.reduce((total, key) => total + (Array.isArray(result[key]) ? (result[key] as unknown[]).length : 0), 0);
+  };
+  if (count(value) === 0) return false;
+  try {
+    return count(JSON.parse(compacted)) === 0;
+  } catch {
+    return false;
+  }
 }
 
 /** Context every turn carries before any result: system prompt, tool schemas and the prompt. */
@@ -2783,6 +2812,8 @@ export function createToolResponseCompactor(
 ): ToolResponseCompactor {
   let totalCharacters = maxTotalCharacters;
   let responseCharacters = maxResponseCharacters;
+  // When to compact; one indivisible result (a large read section) may exceed it (#4224).
+  let thresholdCharacters = maxResponseCharacters;
   let batchCharacters = maxBatchCharacters;
   let remainingCharacters = totalCharacters;
   let remainingInvocations = maxInvocations;
@@ -2798,10 +2829,12 @@ export function createToolResponseCompactor(
       : Number.POSITIVE_INFINITY;
     const callCharacters = Math.max(2, Math.min(responseCharacters, remainingCharacters - reservedForLater));
     const maxCharacters = Math.max(2, Math.min(callCharacters, batchShare));
-    const attempt = (limit: number): string | null => {
+    const attempt = (limit: number, lossless: boolean): string | null => {
       try {
         const result = compactToolResponse(route, value, maxItems, limit);
-        return result === "{}" && JSON.stringify(value) !== "{}" ? null : result;
+        if (result === "{}" && JSON.stringify(value) !== "{}") return null;
+        // A share too small for even one source record is no result: retry larger.
+        return lossless && droppedEveryRecord(value, result) ? null : result;
       } catch {
         return null;
       }
@@ -2809,7 +2842,9 @@ export function createToolResponseCompactor(
     // The batch share is a fair split, not a hard limit: a result that cannot be shortened
     // into it (one large read section) may use the call's whole allowance, and the next
     // turn compacts. Only that allowance failing is an error.
-    let compacted = attempt(maxCharacters) ?? (maxCharacters < callCharacters ? attempt(callCharacters) : null);
+    let compacted = maxCharacters < callCharacters
+      ? attempt(maxCharacters, true) ?? attempt(callCharacters, false)
+      : attempt(maxCharacters, false);
     if (compacted === null) {
       batchSlots = Math.max(0, batchSlots - 1);
       compacted = compactToolResponse(route, value, maxItems, callCharacters);
@@ -2829,14 +2864,17 @@ export function createToolResponseCompactor(
       Number.isFinite(batchCharacters) ? Math.max(1, Math.floor(batchCharacters / MIN_TOOL_CALL_CHARACTERS)) : Number.POSITIVE_INFINITY,
     );
   };
-  compact.admit = () => batchSlots > 0;
+  // A call is admitted while slots remain and the batch still has a minimum share left:
+  // an oversized read may have used it up.
+  compact.admit = () =>
+    batchSlots > 0 && (!Number.isFinite(batchCharacters) || batchRemaining >= Math.min(MIN_TOOL_CALL_CHARACTERS, batchCharacters));
   compact.release = () => {
     batchSlots = Math.max(0, batchSlots - 1);
   };
   compact.configure = (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => {
     remainingCharacters = Math.max(0, remainingCharacters + budget.totalCharacters - totalCharacters);
     totalCharacters = budget.totalCharacters;
-    responseCharacters = budget.thresholdCharacters;
+    thresholdCharacters = budget.thresholdCharacters;
     batchCharacters = budget.batchCharacters;
     batchRemaining = batchCharacters;
     batchSlots = 1;
@@ -2851,7 +2889,7 @@ export function createToolResponseCompactor(
   };
   compact.needsCompaction = () =>
     remainingCharacters <
-    Math.min(responseCharacters, totalCharacters / 2) +
+    Math.min(thresholdCharacters, totalCharacters / 2) +
       Math.max(0, remainingInvocations - 1) * 2;
   return compact;
 }
@@ -3563,11 +3601,13 @@ function createRouteTools(
         // More calls than the batch can give a useful share: this one runs next turn (#4224).
         if (!compactResponse.admit()) {
           noteDeferred(toolCallId);
+          research?.noteDeferred(`echo_${route.skill}`, params);
           return {
             content: [{ type: "text", text: JSON.stringify({ deferred: true, message: TOOL_BATCH_DEFERRED }) }],
             details: { skill: route.skill, activityLabel: activityLabel([route.label, "відкладено до наступного кроку"]) },
           };
         }
+        research?.noteRan(`echo_${route.skill}`, params);
         const requestBody = routeToolRequestBody(
           route,
           await groupScope.resolve(params, "selectedGroups" in ((routeParameters(route) as { properties?: object }).properties ?? {}), signal),
@@ -4350,6 +4390,7 @@ function isOutputTokenLimit(message: JsonObject | undefined): boolean {
 const NO_RETRIEVAL_NOTICE = " No ECHO data was searched in this request. Do not state or imply that ECHO has no matching data or that the attached files are all the available data; if the request needed ECHO data, say that the search did not run.";
 const NO_RETRIEVAL_RETRY_NOTICE = " The time budget ended before any search; add that the request can be repeated, in the deep mode if needed.";
 const NO_LIMIT_NOTICE = " No time, tool or budget limit stopped this work: never claim that one did, even if an earlier answer in the conversation says so.";
+const DEFERRED_CALLS_GUIDANCE = " deferredCalls lists ECHO calls that were requested but never run because one turn asked for more than the context holds: name them as not searched rather than as finding nothing.";
 const COVERAGE_GUIDANCE = "State remaining coverage limitations honestly without delaying the supported findings.";
 const FINAL_FINDINGS_GUIDANCE = "Report anything searched for and not found as a finding. Do not add a section about incomplete coverage.";
 const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference. groupsRead lists the groups really read, even when they returned nothing. groupProblems states group names that could not be read: report each as stated rather than as a failed search, unless groupsRead shows the same group under a corrected spelling. Never describe other groups as that group. Evidence records with statisticsFrom are ECHO statistics or lookups that the tool returned for its request: report their figures as statistics for that scope without message citations, and never present them as individual messages.";
@@ -4573,19 +4614,19 @@ async function completeLimitedResearch(options: {
     engine: options.selectedEngine,
     apiKey: payload.providerApiKey ?? "echo-local-tokenless",
     policy: budget.policy,
-    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}` : "") +
+    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}${options.research.deferredScope().deferredCalls ? DEFERRED_CALLS_GUIDANCE : ""}` : "") +
       // The tool-free answer gets the same authorization framing as research (#4224).
       (payload.rewriteModelName ? REFUSAL_FRAMING_SUFFIX : ""),
     prompt: JSON.stringify({
       // A quarter of the input leaves the rest for evidence.
       conversation: synthesisConversation(payload.history, Math.floor((options.selectedEngine.contextWindow - maxTokens) / 4)),
       request: payload.prompt,
-      ...(options.research ? { completedActions: options.research.completedActions(), ...options.research.groupScope(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
+      ...(options.research ? { completedActions: options.research.completedActions(), ...options.research.groupScope(), ...options.research.deferredScope(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence,
     // The model's saved draft and the compaction checkpoint each hold evidence the other
     // may lack (#4224).
-    checkpoint: [options.research?.compactEvidence(), options.checkpoint].filter(Boolean).join("\n\n") || undefined,
+    checkpoint: [options.research?.compactEvidence(), options.checkpoint].filter((text): text is string => Boolean(text)),
     maxTokens,
     signal,
     purpose: options.research && !payload.executionPolicy ? "research" : "synthesis",
