@@ -4,6 +4,7 @@ use crate::h;
 use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
+use crate::messengers::avatars::avatar_url;
 use crate::messengers::read_state::with_read_state;
 use crate::messengers::types::{
     MessengersChatItem, MessengersChatsListReq, MessengersChatsListRsp,
@@ -81,6 +82,8 @@ fn chat_item(row: &ChatRow) -> MessengersChatItem {
         last_message_date: chat
             .last_message_date
             .map(|dt| dt.and_utc().timestamp_millis()),
+        is_bot: chat.is_bot,
+        avatar_url: avatar_url(chat.avatar_id),
         telegram: chat.telegram_chat_id.map(|id| MessengersTelegramChatId {
             chat_id: id.to_string(),
         }),

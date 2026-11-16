@@ -257,7 +257,7 @@ fn is_browser_player_media(content_type: &str) -> bool {
     essence.starts_with("video/") || essence.starts_with("audio/")
 }
 
-fn apply_media_document_security_headers(
+pub(crate) fn apply_media_document_security_headers(
     response: &mut HttpResponse,
     content_type: &str,
 ) {

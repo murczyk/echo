@@ -25,6 +25,7 @@ are removed from the RER inbox and analysis feeds; see
 | `POST /chats/mark-all-read` | Implemented | `MessengersChatsMarkAllReadReq` | `null` |
 | `POST /chats/members/list` | Implemented | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
 | `POST /contacts/list` | Implemented | `MessengersContactsListReq` | `MessengersContactsListRsp` |
+| `GET /avatars/{avatar_id}` | Implemented | none | the image or video |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 | `POST /attachments/list` | Implemented | `MessengersAttachmentsListReq` | `MessengersAttachmentsListRsp` |
 | `POST /attachments/count` | Implemented | `MessengersAttachmentsCountsReq` | `MessengersAttachmentsCountsRsp` |
@@ -121,6 +122,7 @@ type MessengersAccountItem = {
   notes: string | null                  // from the collector
   internal_notes: string | null         // written by Echo users
   external_url: string | null           // absolute http(s) URL of the account's page in the collector
+  avatar_url: string | null             // see Avatars
   telegram: { user_id: string } | null
   datasource_group: MessengersDatasourceGroup
 }
@@ -220,6 +222,8 @@ type MessengersChatItem = {
   members_count: number | null
   account_member_status: string | null  // the account's membership in the chat
   last_message_date: number | null      // epoch ms
+  is_bot: boolean | null                // a dialog with a bot; null until the collector says
+  avatar_url: string | null             // see Avatars
   telegram: { chat_id: string } | null
   oldest_read_at: number | null         // epoch ms, the caller's read span; null until read
   newest_read_at: number | null         // epoch ms
@@ -257,6 +261,7 @@ type MessengersChatMemberItem = {
   role: string | null                   // creator, admin, member, ...
   joined_date: number | null            // epoch ms
   deleted: boolean
+  avatar_url: string | null             // see Avatars
   telegram: { user_id: string } | null
 }
 ```
@@ -414,6 +419,7 @@ type MessengersContactItem = {
   is_mutual: boolean | null
   is_close_friend: boolean | null
   created_at: number                    // epoch ms, when Echo first stored it
+  avatar_url: string | null             // see Avatars
   telegram: { user_id: string } | null
 }
 ```
@@ -423,6 +429,27 @@ type MessengersContactItem = {
   contact can repeat or be skipped.
 - `created_at` is not when the contact joined the address book, which collectors
   do not send. A contact restored after deletion keeps its original value.
+
+## Avatars
+
+Accounts, chats, chat members and contacts carry `avatar_url`: the path of
+their current avatar, `/api/messengers/avatars/{avatar_id}`, or `null` when
+the owner has none or it was removed. The avatar id changes with the avatar,
+so the URL identifies one immutable image or video; a client may cache it.
+
+### `GET /avatars/{avatar_id}`
+
+The content of the avatar, with the `Content-Type` it was stored with (an
+image or a video; animated avatars are videos). Visible to the logins that can
+see the account that owns it, directly or through its chat, member or contact;
+an unknown avatar or one of an account outside the caller's groups is a `404`.
+
+- Not a JSON route and not ranged: the body is the whole file, at most 20 MiB.
+- `Cache-Control: private, max-age=86400`.
+- Avatars that are not the owner's current one (its history) are served too,
+  but nothing links to them yet.
+- Served with the sandboxing headers of the media route, since the file comes
+  from the messenger.
 
 ## Messages
 
@@ -734,8 +761,3 @@ Unchanged on purpose:
 Optional fields on the same request bodies, starting with `messages/list`.
 `sigint_search.id` equals `sigint_chat_message.id`, so text search joins the
 timeline directly and the message cursor stays the same.
-
-### Avatars
-
-`avatar_url` on accounts, chats, members and contacts, and a route that serves
-`messenger_avatar` content behind a group check. No such route exists yet.

@@ -963,6 +963,10 @@ pub const MESSENGERS_ATTACHMENTS_DEFAULT_LIMIT: i64 = 50;
 pub const MESSENGERS_ATTACHMENTS_MAX_LIMIT: i64 = 100;
 pub const MESSENGERS_CONTACTS_DEFAULT_LIMIT: i64 = 100;
 pub const MESSENGERS_CONTACTS_MAX_LIMIT: i64 = 250;
+/// Route of the avatar content, the avatar id follows.
+pub const MESSENGERS_AVATAR_PATH_BASE: &str = "/api/messengers/avatars";
+/// The content of an avatar never changes under its id.
+pub const MESSENGERS_AVATAR_CACHE_CONTROL: &str = "private, max-age=86400";
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 /// Master keys of messenger account groups are this prefix plus the account id.

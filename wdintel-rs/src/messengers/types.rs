@@ -41,6 +41,8 @@ pub struct MessengersAccountItem {
     pub notes: Option<String>,
     pub internal_notes: Option<String>,
     pub external_url: Option<String>,
+    /// `/api/messengers/avatars/{id}` of the current avatar; `null` without one.
+    pub avatar_url: Option<String>,
     pub telegram: Option<MessengersTelegramAccountId>,
     pub datasource_group: MessengersDatasourceGroup,
 }
@@ -91,6 +93,10 @@ pub struct MessengersChatItem {
     pub members_count: Option<i32>,
     pub account_member_status: Option<String>,
     pub last_message_date: Option<i64>,
+    /// A dialog with a bot; `null` until the collector has said.
+    pub is_bot: Option<bool>,
+    /// `/api/messengers/avatars/{id}` of the current avatar; `null` without one.
+    pub avatar_url: Option<String>,
     pub telegram: Option<MessengersTelegramChatId>,
     /// The caller's read span of the chat timeline, epoch ms; `null` until
     /// the chat is first read.
@@ -304,6 +310,8 @@ pub struct MessengersChatMemberItem {
     pub role: Option<String>,
     pub joined_date: Option<i64>,
     pub deleted: bool,
+    /// `/api/messengers/avatars/{id}` of the current avatar; `null` without one.
+    pub avatar_url: Option<String>,
     pub telegram: Option<MessengersTelegramAccountId>,
 }
 
@@ -349,5 +357,7 @@ pub struct MessengersContactItem {
     pub is_close_friend: Option<bool>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// `/api/messengers/avatars/{id}` of the current avatar; `null` without one.
+    pub avatar_url: Option<String>,
     pub telegram: Option<MessengersTelegramAccountId>,
 }

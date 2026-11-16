@@ -259,6 +259,7 @@ fn set_chat_fields(
     chat.account_member_status = Set(item.account_member_status.clone());
     chat.last_message_date =
         Set(timestamp_from_millis(item.last_message_date).c(h!())?);
+    chat.is_bot = Set(item.is_bot);
     chat.deleted = Set(false);
     chat.updated_at = Set(now);
     Ok(())
@@ -277,6 +278,7 @@ fn chat_item(chat: &messenger_chat::Model) -> MessengerIngestChatItem {
         last_message_date: chat
             .last_message_date
             .map(|date| date.and_utc().timestamp_millis()),
+        is_bot: chat.is_bot,
         telegram: chat.telegram_chat_id.map(|chat_id| {
             MessengerIngestTelegramChatId {
                 chat_id: chat_id.to_string(),
@@ -341,6 +343,7 @@ mod tests {
             members_count: Some(10),
             account_member_status: Some("member".to_string()),
             last_message_date: Some(1_735_689_600_123),
+            is_bot: Some(false),
             telegram: chat_id.map(|chat_id| MessengerIngestTelegramChatId {
                 chat_id: chat_id.to_string(),
             }),
@@ -411,15 +414,18 @@ mod tests {
         .unwrap();
         assert_eq!(chat.telegram_chat_id, Some(-1001));
         assert_eq!(chat.messenger_type, MESSENGER_TYPE_TELEGRAM);
+        assert_eq!(chat.is_bot, Some(false));
 
         let mut changed = chat_input("chat-1", Some("-1001"));
         changed.title = Some("Renamed".to_string());
+        changed.is_bot = Some(true);
         let updated =
             update_chat(&txn, &account, &chat.id.to_string(), &changed, now)
                 .await
                 .unwrap();
         assert_eq!(updated.id, chat.id);
         assert_eq!(updated.title.as_deref(), Some("Renamed"));
+        assert_eq!(updated.is_bot, Some(true));
 
         let deleted = delete_chat(&txn, &account, &chat.id.to_string(), now)
             .await
@@ -607,9 +613,11 @@ mod tests {
             updated_at: Utc::now().naive_utc(),
             avatar_id: None,
             message_count: 0,
+            is_bot: Some(true),
         };
         let item = chat_item(&chat);
         assert_eq!(item.id, id.to_string());
+        assert_eq!(item.is_bot, Some(true));
         assert_eq!(
             item.telegram,
             Some(MessengerIngestTelegramChatId {

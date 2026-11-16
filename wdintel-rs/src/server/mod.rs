@@ -2002,6 +2002,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messengers::chat_read_state_update)
             .service(crate::messengers::chats_mark_all_read)
             .service(crate::messengers::chat_members_list)
+            .service(crate::messengers::avatar_get)
             .service(crate::messengers::contacts_list)
             .service(crate::messengers::messages_list)
             .service(crate::messengers::attachments_list)
