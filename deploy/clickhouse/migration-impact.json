@@ -1,10 +1,7 @@
 {
   "migrations": {
     "echo:m20261116_124020_ai_agent_parallel_conversations": {
-      "changes": [
-        { "table": "public.ai_agent_request", "strategy": "excluded" },
-        { "table": "public.ai_agent_container", "strategy": "excluded" }
-      ]
+      "changes": [{ "table": "public.ai_agent_container", "strategy": "excluded" }]
     },
     "echo:m20261113_093453_report_group_preferences": {
       "changes": [
