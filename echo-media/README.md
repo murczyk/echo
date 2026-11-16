@@ -286,8 +286,8 @@ a pre-signed S3 URL:
 
 - Every job passes `Formats::AUDIO`. A format outside that list fails to open,
   which is terminal, so it becomes `InvalidAudio` rather than unsupported.
-- `media_metadata` probes, so FLAC or Ogg is reported as unsupported rather
-  than invalid. As before this crate, only a `format_name` of `wav` or `mp3`
+- `media_metadata` probes, so FLAC, Ogg, WMA, AIFF and the other containers
+  on `Formats::AUDIO` are reported as unsupported rather than invalid. As before this crate, only a `format_name` of `wav` or `mp3`
   continues; the check is in wdintel-rs, not an ffmpeg flag.
 - `decode_verify` decodes the whole WAV or MP3 source and checks framecrc
   progress, with `DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT` as the stall limit.

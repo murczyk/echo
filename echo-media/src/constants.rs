@@ -101,9 +101,11 @@ pub const ECHO_MEDIA_FORMATS_IMAGE: &str =
     "image2,jpeg_pipe,png_pipe,webp_pipe,bmp_pipe,tiff_pipe,gif,apng,ico";
 pub const ECHO_MEDIA_FORMATS_VIDEO: &str =
     "mov,matroska,webm,avi,asf,flv,mpeg,mpegvideo,mpegts,ogg,hevc,h264";
-/// Includes `mpegts` for audio-only transport streams (legacy recordings).
+/// Includes `mpegts` for audio-only transport streams (legacy recordings),
+/// and `asf` (WMA), `aiff`, `caf`, `ac3`, `eac3` and `w64` because messenger
+/// treats every `audio/*` attachment as audio.
 pub const ECHO_MEDIA_FORMATS_AUDIO: &str =
-    "mp3,wav,ogg,flac,aac,mov,matroska,webm,amr,mpegts";
+    "mp3,wav,ogg,flac,aac,mov,matroska,webm,amr,mpegts,asf,aiff,caf,ac3,eac3,w64";
 pub const ECHO_MEDIA_FORMATS_MOV: &str = "mov";
 pub const ECHO_MEDIA_FORMATS_WAV_MP3: &str = "wav,mp3";
 /// Demuxers that read other files or URLs named inside the input.

@@ -51,10 +51,11 @@ async fn probe_reports_audio_parameters() {
     assert_eq!(audio.channels, Some(1));
 }
 
-/// The transcription worker's cases: WAV and AAC in MPEG-TS (legacy
-/// transport) are audio; random and truncated bytes fail terminally.
+/// The transcription worker's cases: WAV, AAC in MPEG-TS (legacy transport)
+/// and the other messenger audio containers are audio; random and truncated
+/// bytes fail terminally.
 #[tokio::test]
-async fn audio_probe_accepts_transport_streams_and_rejects_non_audio() {
+async fn audio_probe_accepts_messenger_formats_and_rejects_non_audio() {
     let dir = tempfile::tempdir().unwrap();
     let transport = generate(
         dir.path(),
@@ -70,7 +71,33 @@ async fn audio_probe_accepts_transport_streams_and_rejects_non_audio() {
             "mpegts",
         ],
     );
-    for path in [wav(dir.path(), "native.audio"), transport] {
+    // Messenger accepts any `audio/*` attachment: WMA, AIFF, CAF, AC3 and
+    // Wave64 must probe too, under the production `.source`-style name.
+    let mut paths = vec![wav(dir.path(), "native.audio"), transport];
+    for (name, codec, format) in [
+        ("wma.audio", "wmav2", "asf"),
+        ("aiff.audio", "pcm_s16be", "aiff"),
+        ("caf.audio", "pcm_s16le", "caf"),
+        ("ac3.audio", "ac3", "ac3"),
+        ("eac3.audio", "eac3", "eac3"),
+        ("w64.audio", "pcm_s16le", "w64"),
+    ] {
+        paths.push(generate(
+            dir.path(),
+            name,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1",
+                "-c:a",
+                codec,
+                "-f",
+                format,
+            ],
+        ));
+    }
+    for path in paths {
         let probe = ffmpeg()
             .probe(
                 &Input::file(&path).unwrap(),
