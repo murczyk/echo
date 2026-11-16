@@ -41,7 +41,19 @@ delivery counts differ, both are stated; a withheld response is never described
 as an empty search. Source-group results state the records delivered for
 review rather than the total number of accessible groups. A detailed call
 label is retained through later updates or errors so a generic route title
-cannot replace its scope. Lifecycle payloads retain their existing audit
+cannot replace its scope.
+
+File, attachment and device searches follow the same pattern (#4224). They start
+with the query and filters: `у назвах`/`у вмісті`/`в описах`, device names
+learned from earlier device results (otherwise a count), folder, format,
+`змінено …` for file modification times, archived devices, earlier revisions,
+source groups and message selection for attachments, and units or AORs for
+devices. A continued search shows its page (`добірка 2`, or `наступна добірка`
+when the cursor is unknown). Finished searches put the results before the
+filters, so the length cap keeps them: `знайдено файлів: N` (or
+`файлів не знайдено`), retrieved versus delivered when the page was shortened,
+the cumulative files or documents collected for the request, and
+`є наступна добірка`. Lifecycle payloads retain their existing audit
 identity and arguments. Progress sentences remain separate from answer text;
 private thinking and citation-repair text remain excluded. The final cited
 snapshot still replaces the streamed draft.

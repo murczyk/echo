@@ -43,3 +43,26 @@ export function attachmentRequest(kind: string, params: Record<string, unknown>)
   if (!Check(schema, params)) throw new Error('Invalid attachment parameters');
   return params;
 }
+
+/**
+ * An attachment search hit as the model sees it: `text` (the summary) and the citation
+ * stay, the duplicate `summary` and default states are omitted (#4224).
+ */
+export function projectAttachmentSearchHit(document: Record<string, any>, summaryLimit: number, snippetLimit: number): Record<string, unknown> {
+  const completed = document.state === 'completed';
+  const cap = (value: string, limit: number) => value.length <= limit ? value : `${value.slice(0, Math.max(0, limit - 1))}…`;
+  return {
+    mediaId: document.mediaId,
+    messageId: document.messageId,
+    fileName: document.fileName,
+    ...(document.revision ? { revision: document.revision } : {}),
+    ...(completed ? {} : { state: document.state }),
+    ...(completed && document.complete === false ? { complete: false } : {}),
+    ...(completed && typeof document.summaryState === 'string' && !['completed', 'skipped'].includes(document.summaryState) ? { summaryState: document.summaryState } : {}),
+    ...(document.quality ? { quality: document.quality } : {}),
+    ...(document.lastError ? { lastError: document.lastError } : {}),
+    text: cap(typeof document.text === 'string' ? document.text : String(document.fileName ?? ''), summaryLimit),
+    ...(typeof document.snippet === 'string' && document.snippet ? { snippet: cap(document.snippet, snippetLimit) } : {}),
+    citation: document.citation,
+  };
+}
