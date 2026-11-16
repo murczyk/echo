@@ -9,6 +9,7 @@ import { expandUnitSelections, indexUnitHierarchyTree } from '../shared/unit-chi
 import { readUnitHierarchyTree } from '../shared/unit-hierarchy';
 
 export const STATS_REFRESH_MS = 60_000;
+export const STATS_REFRESH_INDICATOR_DELAY_MS = 250;
 export const STATS_SERIES_PAGE_SIZE = 10;
 export const STATS_MAX_DAYS = 90;
 export const senderValue = (key: string | null) => JSON.stringify(key);

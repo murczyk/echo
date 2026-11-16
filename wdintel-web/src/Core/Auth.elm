@@ -1,4 +1,4 @@
-module Core.Auth exposing (canReadDevices, canUseRadioFeatures, canWriteMessages, hasRerOrCyber, hasRole, serverModeIs)
+module Core.Auth exposing (canManageOrganisms, canReadDevices, canUseRadioFeatures, canWriteMessages, hasRerOrCyber, hasRole, serverModeIs)
 
 import Bindings as B exposing (User)
 
@@ -8,9 +8,6 @@ import Bindings as B exposing (User)
 hasRole : String -> User -> Bool
 hasRole role user =
     case role of
-        "OrganismAdmin" ->
-            List.member "Admin" user.roles || List.member "OrganismAdmin" user.roles
-
         "Admin" ->
             List.member "Admin" user.roles
 
@@ -125,3 +122,8 @@ serverModeIs mode mServerInfo =
 canWriteMessages : User -> Bool
 canWriteMessages user =
     hasRole "Rer" user || hasRole "Cyber" user
+
+
+canManageOrganisms : User -> Bool
+canManageOrganisms user =
+    hasRole "Admin" user || not (List.isEmpty user.administeredOrganismIds)

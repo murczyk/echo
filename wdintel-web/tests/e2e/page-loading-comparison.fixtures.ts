@@ -40,6 +40,7 @@ function emptyUserResponse() {
     goi_host: null,
     goi_integrations: [],
     last_release_seen: null,
+    administered_organism_ids: [],
     rer_report_eligible: false,
   };
 }

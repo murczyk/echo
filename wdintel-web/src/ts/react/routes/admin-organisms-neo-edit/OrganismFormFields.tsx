@@ -8,9 +8,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useOrganismManagement } from '../admin-organisms-neo/management-context';
+import {
+  protectedOrganismRole,
+  useOrganismManagement,
+} from '../admin-organisms-neo/management-context';
 
-import { Organism } from '../../../../Bindings';
+import { Login, Organism } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
@@ -53,6 +56,26 @@ export function OrganismFormFields(props: OrganismFormFieldsProps) {
         helperText={props.formErrors.name || ' '}
         fullWidth
         disabled={props.isSubmitting}
+      />
+
+      <Autocomplete<Pick<Login, 'id' | 'login'>, true>
+        multiple
+        options={props.logins.filter(
+          (login) =>
+            !login.deleted &&
+            (globalAdmin ||
+              (login.organismId === props.organismId && !login.roles.some(protectedOrganismRole))),
+        )}
+        value={props.form.adminLogins.map(
+          (id) => props.logins.find((login) => login.id === id) ?? { id, login: id },
+        )}
+        getOptionLabel={(login) => login.login}
+        isOptionEqualToValue={(option, value) => option.id === value.id}
+        onChange={(_, selected) =>
+          props.onChange({ adminLogins: selected.map((login) => login.id) })
+        }
+        disabled={props.isSubmitting}
+        renderInput={(params) => <TextField {...params} label="Адміністратори" fullWidth />}
       />
 
       <Autocomplete<Pick<Organism, 'id' | 'name'>>

@@ -2383,6 +2383,7 @@ export type User = {
   name: string;
   displayName: string | null;
   roles: Array<string>;
+  administeredOrganismIds: Array<number>;
   sigintZoneId: number | null;
   organismId: number | null;
   deltaLogin: string | null;
@@ -3866,6 +3867,7 @@ export type Organism = {
   enabled: boolean;
   aorIds: Array<number>;
   loginsCount: number;
+  adminLogins: Array<string>;
 };
 
 export type MyOrganism = {
@@ -3900,6 +3902,7 @@ export type CreateOrganismReq = {
   parentId: number | null;
   roles: Array<string>;
   aorIds: Array<number> | null;
+  adminLogins: Array<string> | null;
 };
 
 export type UpdateOrganismReq = {
@@ -3909,6 +3912,7 @@ export type UpdateOrganismReq = {
   roles: Array<string> | null;
   enabled: boolean;
   aorIds: Array<number> | null;
+  adminLogins: Array<string> | null;
 };
 
 export type AddGroupToOrganismReq = {

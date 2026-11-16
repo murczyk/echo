@@ -19,6 +19,126 @@ async fn sign_in(
 
 #[actix_web::test]
 #[serial]
+async fn issue_3873_goi_administration_requires_global_admin() {
+    use super::goi::integrations::*;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let own = mk_organism(&env.dbx, Default::default()).await.unwrap();
+    let manager = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            organism_id: Set(Some(own.id)),
+            roles: Set(json!(["Rer"])),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let admin = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            roles: Set(json!(["Admin"])),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    super::admins::replace_admin_logins(&txn, own.id, Some(&[manager.id.to_string()]), false)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    let store = RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+        .await
+        .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .route("/test-goi-login/{id}", web::post().to(sign_in))
+            .service(list_admin_goi_integrations)
+            .service(get_admin_goi_integration)
+            .service(upsert_admin_goi_integration)
+            .service(delete_admin_goi_integration),
+    )
+    .await;
+    macro_rules! call {
+        ($cookie:expr, $path:expr, $body:expr) => {
+            test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri($path)
+                    .cookie($cookie.clone())
+                    .set_json($body)
+                    .to_request(),
+            )
+            .await
+        };
+    }
+    let mut cookies = Vec::new();
+    for id in [admin.id, manager.id] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test-goi-login/{id}"))
+                .to_request(),
+        )
+        .await;
+        cookies.push(response.response().cookies().next().unwrap().into_owned());
+    }
+    let mut req = json!({
+        "id":null,"owner_organism_id":own.id,"integration_type":"full",
+        "ssh_host":"127.0.0.1","ssh_user":"test","ssh_port":22,"path":"/tmp",
+        "api_host":"127.0.0.1","api_port":8088,"api_login":"fixture","api_password":"fixture-secret",
+        "disable_goi_to_echo_palitra_sync":true,"pause_worker":true,
+        "maintainer_login_id":null,"access_organism_ids":[own.id],"access_logins":[]
+    });
+    let created = call!(cookies[0], "/api/admin/goi/integration/upsert", &req);
+    assert_eq!(created.status(), StatusCode::OK);
+    let created: serde_json::Value = test::read_body_json(created).await;
+    let id = created["id"].as_i64().unwrap();
+    req["id"] = json!(id);
+    for (path, body) in [
+        ("/api/admin/goi/integrations", json!({})),
+        ("/api/admin/goi/integration", json!({"id":id})),
+        ("/api/admin/goi/integration/upsert", req.clone()),
+        ("/api/admin/goi/integration/delete", json!({"id":id})),
+    ] {
+        assert_eq!(
+            call!(cookies[1], path, body).status(),
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+    }
+    let listed = call!(cookies[0], "/api/admin/goi/integrations", json!({}));
+    assert_eq!(listed.status(), StatusCode::OK);
+    let loaded = call!(cookies[0], "/api/admin/goi/integration", json!({"id":id}));
+    assert_eq!(loaded.status(), StatusCode::OK);
+    let loaded: serde_json::Value = test::read_body_json(loaded).await;
+    assert_eq!(loaded["api_password"], "fixture-secret");
+    req["pause_worker"] = json!(false);
+    let updated = call!(cookies[0], "/api/admin/goi/integration/upsert", &req);
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated: serde_json::Value = test::read_body_json(updated).await;
+    assert_eq!(updated["pause_worker"], false);
+    assert_eq!(
+        call!(
+            cookies[0],
+            "/api/admin/goi/integration/delete",
+            json!({"id":id})
+        )
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        call!(cookies[0], "/api/admin/goi/integration", json!({"id":id})).status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[actix_web::test]
+#[serial]
 async fn issue_3873_label_database_constraints_and_transfer_cleanup() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let first = mk_organism(&env.dbx, Default::default()).await.unwrap();
@@ -75,18 +195,6 @@ async fn issue_3873_label_database_constraints_and_transfer_cleanup() {
     let count = db.query_one_raw(Statement::from_string(DbBackend::Postgres,
         r#"select count(*)::bigint as count from organism_message_stats_exclusion"#.to_owned())).await.unwrap().unwrap();
     assert_eq!(count.try_get::<i64>("", "count").unwrap(), 0);
-    assert!(crate::users::role_matches(
-        &["OrganismAdmin".into()],
-        "OrganismAdmin"
-    )
-    .unwrap());
-    assert!(
-        !crate::users::role_matches(&["OrganismAdmin".into()], "Admin")
-            .unwrap()
-    );
-    assert!(
-        !crate::users::role_matches(&["OrganismAdmin".into()], "Rer").unwrap()
-    );
 }
 
 #[actix_web::test]
@@ -129,13 +237,23 @@ async fn issue_3873_organism_admin_is_scoped_for_users_labels_and_settings() {
         &env.dbx,
         login::ActiveModel {
             organism_id: Set(Some(own.id)),
-            roles: Set(json!(["OrganismAdmin", "No2FA"])),
+            roles: Set(json!(["No2FA"])),
             sigint_zone_id: Set(zone),
             ..Default::default()
         },
     )
     .await
     .unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    super::admins::replace_admin_logins(
+        &txn,
+        own.id,
+        Some(&[manager.id.to_string()]),
+        false,
+    )
+    .await
+    .unwrap();
+    txn.commit().await.unwrap();
     let member = mk_login(
         &env.dbx,
         login::ActiveModel {
@@ -424,12 +542,7 @@ async fn issue_3873_organism_admin_is_scoped_for_users_labels_and_settings() {
         test::read_body_json(call!("/api/organism/user-labels", json!(own.id)))
             .await;
     assert_eq!(state["assignments"], json!([]));
-    login::Entity::update_many()
-        .filter(login::Column::Id.eq(manager.id))
-        .col_expr(login::Column::Roles, Expr::value(json!(["Basic"])))
-        .exec(&env.dbx)
-        .await
-        .unwrap();
+    assert_eq!(call!("/api/organism/update", json!({"id":own.id,"parent_id":null,"enabled":true,"name":"Delegated","aor_ids":[aor.aor_id],"roles":["Rer","Basic"],"admin_logins":[member.id.to_string()]})).status(), StatusCode::OK);
     assert_eq!(
         call!("/api/organism/user-labels", json!(own.id)).status(),
         StatusCode::FORBIDDEN
@@ -573,12 +686,22 @@ async fn issue_4172_group_discovery_respects_managed_organism() {
         db,
         login::ActiveModel {
             organism_id: Set(Some(own.id)),
-            roles: Set(json!(["OrganismAdmin", "No2FA"])),
+            roles: Set(json!(["No2FA"])),
             ..Default::default()
         },
     )
     .await
     .unwrap();
+    let txn = db.begin().await.unwrap();
+    super::admins::replace_admin_logins(
+        &txn,
+        own.id,
+        Some(&[manager.id.to_string()]),
+        false,
+    )
+    .await
+    .unwrap();
+    txn.commit().await.unwrap();
     let store =
         RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
             .await
@@ -601,22 +724,33 @@ async fn issue_4172_group_discovery_respects_managed_organism() {
     .await;
     let cookie = response.response().cookies().next().unwrap().into_owned();
     for (organism_id, roles, expected) in [
-        (
-            own.id,
-            json!(["OrganismAdmin", "No2FA"]),
-            vec![first.master_key.clone()],
-        ),
-        (empty.id, json!(["OrganismAdmin", "No2FA"]), vec![]),
+        (own.id, json!(["No2FA"]), vec![first.master_key.clone()]),
+        (empty.id, json!(["No2FA"]), vec![]),
         (
             empty.id,
             json!(["Admin", "No2FA"]),
             vec![first.master_key.clone(), second.master_key.clone()],
         ),
     ] {
+        let manager_id = manager.id;
         let mut manager = manager.clone().into_active_model();
         manager.organism_id = Set(Some(organism_id));
         manager.roles = Set(roles);
         manager.update(db).await.unwrap();
+        organism_admin::Entity::delete_many()
+            .exec(db)
+            .await
+            .unwrap();
+        let txn = db.begin().await.unwrap();
+        super::admins::replace_admin_logins(
+            &txn,
+            organism_id,
+            Some(&[manager_id.to_string()]),
+            false,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
         let response = test::call_service(
             &app,
             test::TestRequest::post()
@@ -637,10 +771,25 @@ async fn issue_4172_group_discovery_respects_managed_organism() {
     let mut child = own.into_active_model();
     child.parent_id = Set(Some(parent.id));
     let child = child.update(db).await.unwrap();
+    let manager_id = manager.id;
     let mut manager = manager.into_active_model();
     manager.organism_id = Set(Some(child.id));
-    manager.roles = Set(json!(["OrganismAdmin", "No2FA"]));
+    manager.roles = Set(json!(["No2FA"]));
     manager.update(db).await.unwrap();
+    organism_admin::Entity::delete_many()
+        .exec(db)
+        .await
+        .unwrap();
+    let txn = db.begin().await.unwrap();
+    super::admins::replace_admin_logins(
+        &txn,
+        child.id,
+        Some(&[manager_id.to_string()]),
+        false,
+    )
+    .await
+    .unwrap();
+    txn.commit().await.unwrap();
     let response = test::call_service(
         &app,
         test::TestRequest::post()
@@ -652,4 +801,195 @@ async fn issue_4172_group_discovery_respects_managed_organism() {
     let groups: Vec<serde_json::Value> = test::read_body_json(response).await;
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0]["master_key"], first.master_key);
+}
+
+#[actix_web::test]
+#[serial]
+async fn organism_admin_assignments_are_independent_and_revocable() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let first = mk_organism(&env.dbx, Default::default()).await.unwrap();
+    let second = mk_organism(&env.dbx, Default::default()).await.unwrap();
+    let manager = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            roles: Set(json!(["Basic"])),
+            organism_id: Set(Some(first.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let member = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            roles: Set(json!(["Basic"])),
+            organism_id: Set(Some(second.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    for organism_id in [first.id, second.id] {
+        admins::replace_admin_logins(
+            &txn,
+            organism_id,
+            Some(&[manager.id.to_string()]),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    txn.commit().await.unwrap();
+    assert_eq!(
+        access::administered_organism_ids(&env.dbx, manager.id)
+            .await
+            .unwrap(),
+        vec![first.id, second.id]
+    );
+    let txn = env.dbx.begin().await.unwrap();
+    assert!(admins::replace_admin_logins(
+        &txn,
+        first.id,
+        Some(&[manager.id.to_string(), member.id.to_string()]),
+        true
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        admins::collect_admin_logins(&txn, &[first.id])
+            .await
+            .unwrap()[&first.id],
+        vec![manager.id.to_string()]
+    );
+    admins::replace_admin_logins(
+        &txn,
+        second.id,
+        Some(&[manager.id.to_string(), member.id.to_string()]),
+        true,
+    )
+    .await
+    .unwrap();
+    admins::replace_admin_logins(&txn, first.id, Some(&[]), true)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    assert_eq!(
+        access::administered_organism_ids(&env.dbx, manager.id)
+            .await
+            .unwrap(),
+        vec![second.id]
+    );
+    let mut second = second.into_active_model();
+    second.enabled = Set(false);
+    second.update(&env.dbx).await.unwrap();
+    assert!(access::administered_organism_ids(&env.dbx, manager.id)
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        login::Entity::find_by_id(manager.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .roles,
+        json!(["Basic"])
+    );
+}
+
+#[actix_web::test]
+#[serial]
+async fn organism_admin_migration_preserves_assignments_and_unrelated_roles() {
+    use echo_migration::{MigratorTrait, SchemaManager};
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let migration = echo_migration::Migrator::migrations()
+        .into_iter()
+        .find(|migration| migration.name().ends_with("_organism_admins"))
+        .unwrap();
+    let schema = SchemaManager::new(&txn);
+    migration.down(&schema).await.unwrap();
+    let organism = mk_organism(
+        &txn,
+        organism::ActiveModel {
+            roles: Set(json!(["Basic", "OrganismAdmin"])),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut expected = Vec::new();
+    for deleted in [false, true] {
+        let login = mk_login(
+            &txn,
+            login::ActiveModel {
+                organism_id: Set(Some(organism.id)),
+                roles: Set(json!(["Basic", "OrganismAdmin", "No2FA"])),
+                deleted: Set(deleted),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        expected.push(login.id.to_string());
+    }
+    let ordinary = mk_login(
+        &txn,
+        login::ActiveModel {
+            organism_id: Set(Some(organism.id)),
+            roles: Set(json!(["Basic"])),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    migration.up(&schema).await.unwrap();
+    let actual = admins::collect_admin_logins(&txn, &[organism.id])
+        .await
+        .unwrap();
+    expected.sort();
+    assert_eq!(actual[&organism.id], expected);
+    for id in &expected {
+        assert_eq!(
+            login::Entity::find_by_id(uuid::Uuid::parse_str(id).unwrap())
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .roles,
+            json!(["Basic", "No2FA"])
+        );
+    }
+    assert_eq!(
+        login::Entity::find_by_id(ordinary.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap()
+            .roles,
+        json!(["Basic"])
+    );
+    assert_eq!(
+        organism::Entity::find_by_id(organism.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap()
+            .roles,
+        json!(["Basic"])
+    );
+    migration.down(&schema).await.unwrap();
+    for id in &expected {
+        assert_eq!(
+            login::Entity::find_by_id(uuid::Uuid::parse_str(id).unwrap())
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .roles,
+            json!(["Basic", "No2FA", "OrganismAdmin"])
+        );
+    }
+    txn.rollback().await.unwrap();
 }

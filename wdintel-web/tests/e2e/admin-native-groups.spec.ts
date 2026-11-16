@@ -101,6 +101,7 @@ async function installNativeGroupMocks(page: Page, loseFirstCreateResponse = fal
         goi_host: null,
         goi_integrations: [],
         last_release_seen: null,
+        administered_organism_ids: [],
         rer_report_eligible: false,
       },
       '/api/user/sigint-groups': assigned ? [group.masterKey] : [],

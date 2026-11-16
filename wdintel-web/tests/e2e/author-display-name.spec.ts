@@ -27,6 +27,7 @@ test('@smoke @regression #3575 profile saves update classic author widgets and k
         goi_host: null,
         goi_integrations: [],
         last_release_seen: null,
+        administered_organism_ids: [],
         rer_report_eligible: false,
       },
     }),

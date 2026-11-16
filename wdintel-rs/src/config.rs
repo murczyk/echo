@@ -6,7 +6,6 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-pub const ROLE_ORGANISM_ADMIN: &str = "OrganismAdmin";
 pub const USER_LABEL_UNASSIGNED_ID: i64 = -1;
 pub const USER_LABEL_NAME_MAX_CHARS: usize = 80;
 
@@ -2003,6 +2002,7 @@ DELETE FROM comp_freq;
 DELETE FROM comp_freq_callsign;
 DELETE FROM sigint_zone_aor;
 DELETE FROM sigint_zone_datasource;
+DELETE FROM organism_admin;
 DELETE FROM organism_group;
 DELETE FROM goi_association;
 DELETE FROM goi_knowledge;

@@ -1,5 +1,6 @@
 import {
   AreaOfResponsibility,
+  Login,
   Organism,
   OrganismGroup,
   SignalGroupFull,
@@ -13,6 +14,7 @@ export type OrganismFormState = {
   name: string;
   parentId: number | null;
   roles: string[];
+  adminLogins: string[];
   aorIds: number[];
   enabled: boolean;
   limitGroups: boolean;
@@ -36,7 +38,6 @@ export const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
 
 export const ROLE_OPTIONS = [
   'Admin',
-  'OrganismAdmin',
   'ApiAgent',
   'Rer',
   'Bpla',
@@ -55,6 +56,7 @@ export const emptyFormState: OrganismFormState = {
   name: '',
   parentId: null,
   roles: [],
+  adminLogins: [],
   aorIds: [],
   enabled: true,
   limitGroups: false,
@@ -187,6 +189,7 @@ export type AdminOrganismsNeoEditPageProps = {
 };
 
 export type OrganismFormFieldsProps = {
+  organismId: number | null;
   form: OrganismFormState;
   formErrors: Record<string, string>;
   isSubmitting: boolean;
@@ -194,6 +197,7 @@ export type OrganismFormFieldsProps = {
   isSettingUpGoiWorker: boolean;
   isNew: boolean;
   organisms: Organism[];
+  logins: Login[];
   groups: SignalGroupFull[];
   availableGroups: SignalGroupFull[];
   aors: AreaOfResponsibility[];

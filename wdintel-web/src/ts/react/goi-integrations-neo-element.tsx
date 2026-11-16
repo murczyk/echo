@@ -10,7 +10,7 @@ function GoiIntegrationsNeoRoot({ roles }: { roles: string[] }) {
   return (
     <NeoMuiThemeProvider>
       <OrganismManagementContext.Provider value={{ globalAdmin: hasRole(roles, 'Admin') }}>
-        {hasRole(roles, 'OrganismAdmin') ? (
+        {hasRole(roles, 'Admin') ? (
           <AdminGoiIntegrationsNeoPage />
         ) : (
           <PowerAlert severity="error">Немає доступу до ГОІ.</PowerAlert>

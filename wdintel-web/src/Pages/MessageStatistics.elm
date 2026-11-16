@@ -2,7 +2,7 @@ module Pages.MessageStatistics exposing (Model, Msg, page)
 
 import Auth
 import Effect as E exposing (Effect)
-import Html exposing (div, node)
+import Html exposing (node)
 import Html.Attributes exposing (attribute, class)
 import Layouts
 import Page exposing (Page)
@@ -61,17 +61,11 @@ view : Auth.User -> Model -> View Msg
 view user _ =
     { title = "Статистика повідомлень"
     , body =
-        [ div
-            [ class "app-shell-fill-height box-border min-h-0 w-full flex flex-col overflow-visible lg:overflow-hidden"
+        [ node "message-statistics"
+            [ class "block w-full"
+            , attribute "data-auth-user-id" user.id
+            , attribute "data-auth-user-roles" (String.join "," user.roles)
             ]
-            [ div [ class "flex-1 min-h-0 w-full" ]
-                [ node "message-statistics"
-                    [ class "block w-full h-full"
-                    , attribute "data-auth-user-id" user.id
-                    , attribute "data-auth-user-roles" (String.join "," user.roles)
-                    ]
-                    []
-                ]
-            ]
+            []
         ]
     }

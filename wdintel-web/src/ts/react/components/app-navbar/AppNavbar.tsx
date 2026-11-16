@@ -1,3 +1,4 @@
+import type { User } from '../../../../Bindings';
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Tooltip } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
@@ -25,7 +26,13 @@ import { ChangelogDropdown } from './ChangelogDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
-import { canReadDevices, canUseRadioFeatures, hasRole, hasRerOrCyber } from '../../utils/roles';
+import {
+  canManageOrganisms,
+  canReadDevices,
+  canUseRadioFeatures,
+  hasRole,
+  hasRerOrCyber,
+} from '../../utils/roles';
 import { shouldHandleAsSpaClick } from '../../utils/browser';
 import { requestNavigation } from '../../../browser/navigation-guard';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
@@ -97,6 +104,7 @@ export interface AppNavbarProps {
   user: {
     name: string;
     roles: string[];
+    administeredOrganismIds: User['administeredOrganismIds'];
     goiFullAccessForOrganism: boolean;
     goiIntegrations: Array<{
       id: number;
@@ -275,7 +283,7 @@ export function AppNavbar({
   const serverModeIsLive =
     shared?.serverInfo?.mode === 'live' || shared?.serverInfo?.mode === 'debug';
   const isGlobalAdmin = hasRole(user?.roles, 'Admin');
-  const isAdminMenuVisible = hasRole(user?.roles, 'OrganismAdmin');
+  const isAdminMenuVisible = canManageOrganisms(user);
   const isBasic = hasRole(user?.roles, 'Basic');
   const isRerOrCyber = hasRerOrCyber(user?.roles);
   const isApiAgent = hasRole(user?.roles, 'ApiAgent');
