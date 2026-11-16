@@ -1,7 +1,8 @@
 use crate::entities::{
     datasource, datasource_group, group_admin_data, login, organism_group,
-    secret_group_user, sigint_zone_datasource, signal_group, signal_group_aor,
-    signal_message_group, signal_message_metadata, signal_profile,
+    secret_group_user, sigint_unit, sigint_zone_datasource, signal_group,
+    signal_group_aor, signal_message_group, signal_message_metadata,
+    signal_profile,
 };
 use crate::error::AppError;
 use crate::h;
@@ -13,6 +14,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
+use log::warn;
 use sea_orm::*;
 use sea_query::{Expr, OnConflict};
 
@@ -44,6 +46,10 @@ async fn message_submit(
             ensure_group(datasource.id, &txn, req.group.clone())
                 .await
                 .c(h!())?;
+        let echo_unit_id =
+            existing_echo_unit_id(&txn, req.metadata.echo_unit_id)
+                .await
+                .c(h!())?;
         let timestamp = Utc::now().naive_utc();
 
         let message = Message {
@@ -69,6 +75,7 @@ async fn message_submit(
                 crate::message_queue::ProcessSignalMessageQueueItemOptions {
                     login_id: sender_login_id,
                     skip_dedupe: sender_login_id.is_some(),
+                    echo_unit_id,
                     ..Default::default()
                 },
             )
@@ -129,6 +136,32 @@ async fn enqueue_message_dmr_metadata(
     }
 
     Ok(())
+}
+
+/// Keeps the unit Echo Operator sent only when it exists; otherwise the
+/// inbox item falls back to unit name parsing.
+async fn existing_echo_unit_id<C>(
+    db: &C,
+    echo_unit_id: Option<i64>,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(echo_unit_id) = echo_unit_id else {
+        return Ok(None);
+    };
+    let exists = sigint_unit::Entity::find_by_id(echo_unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some();
+    if !exists {
+        warn!(
+            "Echo Operator sent unknown echo_unit_id={echo_unit_id}, falling back to unit name parsing"
+        );
+    }
+    Ok(exists.then_some(echo_unit_id))
 }
 
 async fn ensure_api_datasource(
@@ -756,6 +789,39 @@ mod tests {
         mk_signal_message, mk_signal_message_group,
     };
     use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn existing_echo_unit_id_drops_missing_and_deleted_units() {
+        let env = cleanup().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let deleted = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        for (sent, expected) in [
+            (None, None),
+            (Some(unit.id), Some(unit.id)),
+            (Some(deleted.id), None),
+            (Some(i64::MAX), None),
+        ] {
+            assert_eq!(
+                existing_echo_unit_id(&env.dbx, sent).await.unwrap(),
+                expected
+            );
+        }
+    }
 
     #[tokio::test]
     #[serial]

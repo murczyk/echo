@@ -1,12 +1,14 @@
 # Budget-aware bounded research
 
 `glm-5.3-flash-uncensored` always uses this workflow. Every other non-OpenAI
-engine (GLM-5.3, Gemma) uses it when [reasoning presets](../docs/ai/reasoning-presets.md)
+engine (GLM-5.3, Gemma) and `gpt-6.1-sol` use it when [reasoning presets](../docs/ai/reasoning-presets.md)
 give the request a budget; without presets those engines keep their unbudgeted
-path. OpenAI engines keep the generic path, where a failed final synthesis yields a
-short notice instead of raw source excerpts. The selected provider and total
-Fast/Balanced/Deep deadlines are 120/600/14400 seconds (OpenAI Balanced stays at
-300), and document requests in Fast or Balanced get 1800 seconds. These engines reserve 60/120/600 seconds
+path. The list of OpenAI engines on this workflow is Rust
+`AI_AGENT_BOUNDED_RESEARCH_OPENAI_MODELS` and the runner's `BOUNDED_OPENAI_MODELS`
+(a test keeps them equal). Other OpenAI engines keep the generic path, where a failed
+final synthesis yields a short notice instead of raw source excerpts. The selected
+provider and total Fast/Balanced/Deep deadlines are 120/600/14400 seconds (other
+OpenAI engines' Balanced stays at 300), and document requests in Fast or Balanced get 1800 seconds. These engines reserve 60/120/600 seconds
 (240 for documents) of those deadlines for synthesis (Rust `reasoning::resolve`;
 the runner also accepts the base 30/60/300/120 reserves, Balanced at the former
 300 seconds and Deep at the former 1800/120, so policies queued before a change
@@ -217,3 +219,29 @@ comparison. Results contain provider finish reasons, usage, selected-answer
 outcome, retrievals and the synthetic answer. Compare substantive coverage,
 valid citations, readable groups and deadline compliance; a scripted provider
 fixture alone does not establish model behavior.
+
+## GPT-6.1 Sol (#4224)
+
+GPT-6.1 Sol moved to this workflow after its generic path lost a whole Balanced
+request to one context overflow (echo-cbr request `01a1e112`), with no budget
+status, no saved cited draft and a single 59-second synthesis. It runs over the
+OpenAI Responses transport. pi-ai's Responses `streamSimple` drops `toolChoice`, so
+the forced `update_research` turn sets the flat Responses form
+`{"type":"function","name":"update_research"}` through `onPayload`; the gateway
+accepts only that form. Its answer arrives with the synthesis instead of streaming,
+as on GLM. On windows up to 128k tokens, synthesis keeps pi-ai's 4,096-token margin and
+packs evidence into three quarters of the remaining room, because UUID-heavy and
+Cyrillic records tokenize worse than the four-character estimate.
+
+When the refusal rewrite layer (#4214) is armed (`rewriteModelName`), the
+bounded path keeps it:
+
+- The answer-writing synthesis gets the same authorization framing as research.
+- If research declines before any tool runs, the request is rewritten and researched
+  again with the tools. The declined reply is not resent.
+- If synthesis declines, it is retried once with the rewritten request and the
+  framing, when the finalization window allows. A draft, research text or partial
+  answer that declines is never the answer (`draftIssue` / outcome `refusal`).
+
+The rewrite call keeps the synthesis deadline at the gateway, so a rewrite during
+finalization is not cut off by the research deadline.

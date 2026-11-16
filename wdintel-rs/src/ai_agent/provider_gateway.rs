@@ -175,11 +175,8 @@ async fn provider_call(
                 }
             }
         }
-        if purpose != ProviderPurpose::Synthesis {
-            deadline = deadline.map(|deadline| {
-                deadline - policy.finalization_seconds as i64 * 1000
-            });
-        }
+        deadline =
+            purpose_deadline(deadline, purpose, policy.finalization_seconds);
     }
     info!("AI agent provider policy request_id={} engine_id={} api={:?} purpose={:?} effort={:?}", authorization.request_id, authorization.ai_engine.id, api, purpose, body.get("reasoning_effort").or_else(|| body.get("reasoning")));
     proxy_provider_call(
@@ -917,6 +914,23 @@ fn observe_stream_body(
     )
 }
 
+/// Research and checkpoints stop at the research deadline, before the
+/// finalization reserve. Synthesis and the refusal rewrite that may precede it
+/// while the answer is written (#4224) keep the request's full deadline.
+fn purpose_deadline(
+    deadline: Option<i64>,
+    purpose: ProviderPurpose,
+    finalization_seconds: u64,
+) -> Option<i64> {
+    if matches!(
+        purpose,
+        ProviderPurpose::Synthesis | ProviderPurpose::Rewrite
+    ) {
+        return deadline;
+    }
+    deadline.map(|deadline| deadline - finalization_seconds as i64 * 1000)
+}
+
 fn enforce_stream_deadline(
     stream: impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>>,
     timeout: Duration,
@@ -1239,6 +1253,46 @@ mod tests {
             );
             assert_eq!(accepted["tools"][0]["parameters"], parameters);
         }
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4224
+    #[test]
+    fn issue_4224_rewrite_kept_the_synthesis_deadline() {
+        let deadline = Some(1_000_000);
+        for purpose in [ProviderPurpose::Research, ProviderPurpose::Checkpoint]
+        {
+            assert_eq!(purpose_deadline(deadline, purpose, 120), Some(880_000));
+        }
+        for purpose in [ProviderPurpose::Synthesis, ProviderPurpose::Rewrite] {
+            assert_eq!(purpose_deadline(deadline, purpose, 120), deadline);
+        }
+        assert_eq!(
+            purpose_deadline(None, ProviderPurpose::Research, 120),
+            None
+        );
+    }
+
+    #[test]
+    fn issue_4224_responses_accepted_a_forced_function_tool_choice() {
+        let body = json!({"model":"gpt-6.1-sol","input":[{"role":"user","content":"Find evidence"}],"tools":[{"type":"function","name":"update_research","parameters":{"type":"object"}}]});
+        let mut forced = body.clone();
+        forced["tool_choice"] =
+            json!({"type":"function","name":"update_research"});
+        let (accepted, _) = validate_responses_body(
+            &serde_json::to_vec(&forced).unwrap(),
+            "gpt-6.1-sol",
+        )
+        .unwrap();
+        assert_eq!(accepted["tool_choice"]["name"], "update_research");
+        // The Chat Completions shape is not a Responses tool choice.
+        let mut nested = body;
+        nested["tool_choice"] =
+            json!({"type":"function","function":{"name":"update_research"}});
+        assert!(validate_responses_body(
+            &serde_json::to_vec(&nested).unwrap(),
+            "gpt-6.1-sol"
+        )
+        .is_none());
     }
 
     #[test]

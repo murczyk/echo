@@ -50,6 +50,10 @@ const chat = {
   accountMemberStatus: null,
   lastMessageDate: null,
   telegram: null,
+  oldestReadAt: null,
+  newestReadAt: null,
+  unreadCount: 0,
+  totalCount: 0,
 };
 const photo = {
   chatId: 'c1',

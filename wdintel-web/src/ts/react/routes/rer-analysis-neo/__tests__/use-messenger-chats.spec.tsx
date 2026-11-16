@@ -5,7 +5,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const apiMock = vi.hoisted(() => ({ listMessengersChats: vi.fn() }));
+const apiMock = vi.hoisted(() => ({
+  listMessengersChats: vi.fn(),
+  markAllMessengersChatsRead: vi.fn(),
+}));
 vi.mock('../../../services/api/analysis-messengers', () => apiMock);
 
 import { useMessengerChats } from '../use-messenger-chats';
@@ -35,6 +38,7 @@ describe('useMessengerChats', () => {
 
   beforeEach(() => {
     apiMock.listMessengersChats.mockReset();
+    apiMock.markAllMessengersChatsRead.mockReset().mockResolvedValue(undefined);
     latest = null;
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -107,5 +111,48 @@ describe('useMessengerChats', () => {
     expect(latest).toMatchObject({ loading: true, fetching: true, error: null });
     await act(async () => resolve({ items: [chat('c1')] }));
     expect(titles()).toEqual(['c1']);
+  });
+
+  describe('read state', () => {
+    it('takes the read state of one chat from a write, without loading the list again', async () => {
+      apiMock.listMessengersChats.mockResolvedValueOnce({
+        items: [
+          { ...chat('c1'), oldestReadAt: null, newestReadAt: null, unreadCount: 9 },
+          { ...chat('c2'), oldestReadAt: null, newestReadAt: null, unreadCount: 4 },
+        ],
+      });
+      await render();
+      act(() =>
+        latest?.patchReadState('c1', { oldestReadAt: 10, newestReadAt: 20, unreadCount: 2 }),
+      );
+      expect(latest?.chats.map((item) => [item.id, item.unreadCount, item.newestReadAt])).toEqual([
+        ['c1', 2, 20],
+        ['c2', 4, null],
+      ]);
+      expect(apiMock.listMessengersChats).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks all read, then loads the counts again in place', async () => {
+      let resolve!: (value: unknown) => void;
+      apiMock.listMessengersChats
+        .mockResolvedValueOnce({ items: [{ ...chat('c1'), unreadCount: 9 }] })
+        .mockReturnValueOnce(new Promise((r) => (resolve = r)));
+      await render();
+      await act(async () => latest?.markAllRead());
+      expect(apiMock.markAllMessengersChatsRead).toHaveBeenCalledWith({ accountId: 'a1' });
+      // The old chats stay on screen while the new counts come.
+      expect(latest).toMatchObject({ loading: false, fetching: true });
+      expect(latest?.chats[0].unreadCount).toBe(9);
+      await act(async () => resolve({ items: [{ ...chat('c1'), unreadCount: 0 }] }));
+      expect(latest?.chats[0].unreadCount).toBe(0);
+    });
+
+    it('rejects and loads nothing when marking all read fails', async () => {
+      apiMock.listMessengersChats.mockResolvedValueOnce({ items: [chat('c1')] });
+      apiMock.markAllMessengersChatsRead.mockRejectedValueOnce(new Error('forbidden'));
+      await render();
+      await expect(act(async () => latest?.markAllRead())).rejects.toThrow('forbidden');
+      expect(apiMock.listMessengersChats).toHaveBeenCalledTimes(1);
+    });
   });
 });

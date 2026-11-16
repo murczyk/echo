@@ -18,6 +18,11 @@
         }
       ]
     },
+    "echo:m20261116_063906_operator_echo_unit_id": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "cdc_additive" }
+      ]
+    },
     "echo:m20261113_093453_report_group_preferences": {
       "changes": [
         {
@@ -324,6 +329,16 @@
     "echo:m20261113_124500_messenger_account_external_url": {
       "changes": [
         { "table": "public.messenger_account", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261114_111044_messenger_chat_read_state": {
+      "changes": [
+        { "table": "public.messenger_chat_read_state", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261115_100000_messenger_chat_message_count": {
+      "changes": [
+        { "table": "public.messenger_chat", "strategy": "excluded" }
       ]
     },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {

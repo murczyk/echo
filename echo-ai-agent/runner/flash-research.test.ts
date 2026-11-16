@@ -18,6 +18,7 @@ import {
   normalizedResearchUpdate,
   synthesisTokenLimit,
   usesBoundedResearch,
+  BOUNDED_OPENAI_MODELS,
   validatedFlashAnswer,
 } from "./flash-research.ts";
 import {
@@ -332,6 +333,8 @@ for (const [scenario, modelName] of [
       refresh();
     } else {
       read();
+      // #4224 sizes a page to the free context: the second page exhausts it.
+      if (scenario === "checkpoint-failure") read({ period, search: "botanical survey" });
       if (scenario === "pagination-guard") read({ period, cursor: 20 });
       if (recoveringPagination) {
         read({ period, cursor: 20 });
@@ -1815,15 +1818,31 @@ test("#4053 reading one named group counts as a focused search", async () => {
   );
 });
 
-test("bounded research covers every non-OpenAI engine with a budget", () => {
+test("bounded research covers every non-OpenAI engine and GPT-6.1 Sol with a budget", () => {
   assert.equal(usesBoundedResearch(FLASH_ENGINE), true);
   assert.equal(usesBoundedResearch("glm-5.3", policy), true);
   assert.equal(usesBoundedResearch("gemma-4", policy), true);
+  // #4224: GPT-6.1 Sol's generic path lost a whole Balanced request to one overflow.
+  assert.equal(usesBoundedResearch("gpt-6.1-sol", policy), true);
   // Without reasoning presets these engines have no budget to bound.
   assert.equal(usesBoundedResearch("glm-5.3"), false);
   assert.equal(usesBoundedResearch("gemma-4"), false);
-  for (const openai of ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-sol", "o1", "o3-mini", "o4-mini"])
+  assert.equal(usesBoundedResearch("gpt-6.1-sol"), false);
+  for (const openai of ["gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "o1", "o3-mini", "o4-mini"])
     assert.equal(usesBoundedResearch(openai, policy), false);
+});
+
+test("#4224 the bounded OpenAI engines match the backend's list", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const config = await readFile(process.env.ECHO_AI_AGENT_BACKEND_CONFIG ?? new URL("../../wdintel-rs/src/config.rs", import.meta.url), "utf8");
+  const list = /AI_AGENT_BOUNDED_RESEARCH_OPENAI_MODELS: &\[&str\] =\s*&\[([^\]]*)\]/.exec(config)?.[1];
+  assert.ok(list !== undefined, "AI_AGENT_BOUNDED_RESEARCH_OPENAI_MODELS");
+  const names = list.split(",").map((name) => name.trim()).filter(Boolean).map((name) => {
+    const constant = new RegExp(`pub const ${name}: &str = "([^"]+)";`).exec(config)?.[1];
+    assert.ok(constant, name);
+    return constant;
+  });
+  assert.deepEqual(names, [...BOUNDED_OPENAI_MODELS]);
 });
 
 test("#3572 draft reuse validates against current access, including every cited link", () => {
@@ -1879,7 +1898,9 @@ test("#3572 Flash reserves synthesis inside unchanged presets without altering o
       );
     }
     assert.deepEqual(finalizationMultipliers(FLASH_ENGINE), [2]);
-    assert.deepEqual(finalizationMultipliers("gpt-6.1-sol"), [1]);
+    // #4224: GPT-6.1 Sol reserves the longer window and still accepts queued base policies.
+    assert.deepEqual(finalizationMultipliers("gpt-6.1-sol"), [1, 2]);
+    assert.deepEqual(finalizationMultipliers("gpt-6-sol"), [1]);
     assert.throws(() =>
       validateExecutionPolicy(
         { ...original, finalizationSeconds: reserve * 2 },
@@ -2467,4 +2488,17 @@ test("#4125 statistics reach the tool-free synthesis even without a saved draft"
   assert.deepEqual(records[0].request, { period });
   assert.equal(records[0].result.rows[0].freq, "163.9350");
   assert.equal(records[0].result.rows[0].count, 42);
+});
+
+// Regression: https://github.com/echoua/echo/issues/4224
+test("#4224 deferred calls stay unfinished work until the same call runs, in any argument order", () => {
+  const research = new FlashResearch(() => sources);
+  research.noteDeferred("echo_device_file_search", { query: "KMS", limit: 50, scope: { name: true, content: false } });
+  assert.equal(research.hasUnfinishedWork, true);
+  assert.equal(research.hasGaps(), true);
+  assert.match(research.continuationPrompt(), /deferred because one turn asked for more than the context holds/);
+  assert.equal(research.deferredScope().deferredCalls?.length, 1);
+  research.noteRan("echo_device_file_search", { scope: { content: false, name: true }, limit: 50, query: "KMS" });
+  assert.deepEqual(research.deferredScope(), {});
+  assert.equal(research.hasUnfinishedWork, false);
 });

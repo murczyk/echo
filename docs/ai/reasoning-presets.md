@@ -1,7 +1,7 @@
 # Agent reasoning and research budgets
 
 The composer shows only **Швидкий**, **Збалансований**, and **Глибокий**.
-Their limits are 2 minutes, 5 minutes (10 on non-OpenAI engines) and 4 hours;
+Their limits are 2 minutes, 5 minutes (10 on non-OpenAI engines and GPT-6.1 Sol) and 4 hours;
 the composer shows them in the mode menu. A Fast or Balanced request that builds a document (an open
 document, a .docx attached to the message, or a report request in a conversation
 with a .docx upload or a generated document) gets 30 minutes instead and keeps
@@ -20,15 +20,15 @@ as a new Deep request in the same conversation; it is a fresh run informed by th
 previous answer, not a resume. Deep answers get no button because there is no
 higher mode.
 
-A Deep answer on a non-OpenAI engine is final. Gaps reported on finished work are
+A Deep answer on a bounded-research engine (non-OpenAI engines and GPT-6.1 Sol) is final. Gaps reported on finished work are
 written as findings, without a coverage notice, footer or `incomplete_research`
 metadata. A real stop (time, tool or context limit, or a provider failure), tasks
 left pending or a failed synthesis qualify it, with one line naming that.
 
 The limit starts when a worker claims the request, excluding queue time.
 Fast reserves its last 30 seconds, Balanced 60 seconds, a document request
-120 seconds, and Deep 300 seconds for a final answer; non-OpenAI engines (GLM, Gemma) reserve twice that, because
-they run the [bounded research workflow](../../echo-ai-agent/FLASH_RESEARCH.md). Checkpoints, output recovery, citation repair, and provider
+120 seconds, and Deep 300 seconds for a final answer; non-OpenAI engines (GLM, Gemma) and GPT-6.1 Sol reserve twice that, because
+they run the [bounded research workflow](../../echo-ai-agent/FLASH_RESEARCH.md) (GPT-6.1 Sol since #4224). Checkpoints, output recovery, citation repair, and provider
 retries share the original deadline and call counters. These are ceilings,
 not promised completion times: the agent finishes as soon as the work is done.
 The normal tool and Echo API ceilings are 128 and the provider ceiling is 256

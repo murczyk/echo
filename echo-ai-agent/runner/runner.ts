@@ -14,6 +14,7 @@ import {
   synthesisConversation,
   type ExecutionPolicy,
   type AggregateEvidence,
+  type SearchHitEvidence,
   type BudgetEvidence,
   type ResearchLimitReason,
   providerFailureKind,
@@ -32,6 +33,9 @@ import {
   stripUnknownFileCitations,
   compactDeviceEvidence,
   collectFileSections,
+  capText,
+  fileSearchCursor,
+  projectFileSearchHit,
   type FileSection,
   type FileCitation,
 } from "./devices.ts";
@@ -40,6 +44,7 @@ import {
   ATTACHMENT_PARAMETERS,
   ATTACHMENT_DESCRIPTION,
   attachmentRequest,
+  projectAttachmentSearchHit,
 } from "./attachments.ts";
 import {
   UPLOAD_ROUTES,
@@ -110,7 +115,7 @@ import {
 } from "./documents.ts";
 import { SidcResolver } from "./sidc-resolver.ts";
 import { ContextCheckpointProviderError, ContextCompactionLimitError, installContextCompaction, type ContextCompaction } from "./context-compaction.ts";
-import { REFUSAL_FRAMING_SUFFIX, createRefusalHold, recoverFinalRefusal } from "./refusal-rewrite.ts";
+import { REFUSAL_FRAMING_SUFFIX, createRefusalHold, recoverFinalRefusal, rewriteRefusedAsk, type RefusalRewriteEngine } from "./refusal-rewrite.ts";
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -118,7 +123,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.14.2";
+const HARNESS_RELEASE = "2026.11.16.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -127,6 +132,17 @@ const INBOX_IMAGE_TEXT_MAX_CHARACTERS = 4_000;
 const TOOL_RESPONSE_MAX_CHARACTERS = 96_000;
 const TOOL_CONTEXT_MAX_CHARACTERS = 192_000;
 const TOOL_CONTEXT_CHARACTERS_PER_TOKEN = 4;
+// pi-ai keeps this margin below the context window (clampMaxTokensToContext).
+const CONTEXT_SAFETY_TOKENS = 4_096;
+// Room for the evidence checkpoint that replaces older turns (about 1,000 words).
+const CHECKPOINT_SUMMARY_TOKENS = 2_500;
+// Search JSON full of UUIDs and Cyrillic text tokenizes worse than the 4-character estimate.
+const TOOL_RESULT_CHARACTERS_PER_TOKEN = 3;
+// One assistant turn's tool calls may fill at most this share of the free context.
+const TOOL_BATCH_CONTEXT_SHARE = 0.5;
+const MIN_TOOL_BATCH_CHARACTERS = 8_000;
+const MIN_TOOL_CALL_CHARACTERS = 2_000;
+const TOOL_BATCH_DEFERRED = "Not run: this turn requested more ECHO calls than the context holds at once. Request it again in a later turn, after reviewing the results already returned.";
 const TOOL_DEFAULT_MAX_ITEMS = 64;
 const FREQUENCY_SUMMARY_LISTS = ["callsigns", "units", "locations"];
 const FREQUENCY_SUMMARY_LIST_LIMITS = [32, 16, 8, 4];
@@ -2475,6 +2491,51 @@ function compactFrequencySummary(value: unknown, maxItems: number, maxCharacters
   return "{}";
 }
 
+// Summary/snippet lengths tried, longest first, before hits are dropped (#4224).
+const SEARCH_HIT_TEXT_LIMITS: readonly (readonly [number, number])[] = [[1_200, 600], [600, 300], [300, 160], [240, 120]];
+
+/**
+ * File and attachment search hits shortened before any is dropped. Hits are ordered by id,
+ * not relevance, so a trimmed page says so and points at its continuation.
+ */
+function compactSearchHits(
+  kind: "deviceFileSearch" | "attachmentSearch",
+  document: JsonObject,
+  result: JsonObject,
+  maxCharacters: number,
+): string {
+  const original = result.documents as JsonObject[];
+  const project = kind === "deviceFileSearch" ? projectFileSearchHit : projectAttachmentSearchHit;
+  const encode = (documents: unknown[], extra: JsonObject = {}) => {
+    Object.assign(result, { documents }, extra);
+    return JSON.stringify(document);
+  };
+  for (const [summary, snippet] of SEARCH_HIT_TEXT_LIMITS) {
+    const encoded = encode(original.map((hit) => project(hit, summary, snippet)));
+    if (encoded.length <= maxCharacters) return encoded;
+  }
+  // An empty page that does not fit cannot be shortened: the caller retries larger.
+  if (!original.length) throw new Error("Search response exceeds available context");
+  const [summary, snippet] = SEARCH_HIT_TEXT_LIMITS.at(-1)!;
+  const projected = original.map((hit) => project(hit, summary, snippet));
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  let count = projected.length;
+  let encoded = "";
+  while (count >= 1) {
+    const last = original[count - 1];
+    encoded = encode(projected.slice(0, count), count < original.length
+      ? {
+          nextCursor: kind === "deviceFileSearch" ? fileSearchCursor(last) : last.mediaId,
+          warnings: [...warnings, `Showing ${count} of ${original.length} hits to fit context; follow nextCursor for the rest before concluding that a file is absent`],
+        }
+      : {});
+    if (encoded.length <= maxCharacters || count === 1) break;
+    count -= 1;
+  }
+  if (encoded.length > maxCharacters) throw new Error("Search response exceeds available context; narrow the search");
+  return encoded;
+}
+
 export function compactToolResponse(
   route: Pick<SkillDefinition, "skill" | "requestKind">,
   value: unknown,
@@ -2496,6 +2557,8 @@ export function compactToolResponse(
   if (route.requestKind.startsWith("attachment") || route.requestKind.startsWith("deviceFile") || route.requestKind === "uploadRead") {
     const document = structuredClone(value) as JsonObject;
     const result = document.result && typeof document.result === "object" ? document.result as JsonObject : document;
+    if ((route.requestKind === "deviceFileSearch" || route.requestKind === "attachmentSearch") && Array.isArray(result.documents))
+      return compactSearchHits(route.requestKind, document, result, maxCharacters);
     if (Array.isArray(result.sections)) {
       for (const section of result.sections as JsonObject[]) { delete section.html; delete section.text; }
       while (JSON.stringify(document).length > maxCharacters && result.sections.length > 1) {
@@ -2553,47 +2616,268 @@ export function compactToolResponse(
   }
 }
 
-export function createContextToolResponseCompactor(contextWindow: number) {
-  return createToolResponseCompactor(
+/** The runtime profile the tool context budget is derived from. */
+export interface ToolContextProfile {
+  contextWindow: number;
+  maxTokens: number;
+  compactionReserveTokens: number;
+  compactionKeepRecentTokens: number;
+  /** System prompt, tool schemas and the prompt: present in every turn. History is
+   * left out because compaction can summarize it. */
+  fixedTokens?: number;
+}
+
+export interface ToolContextBudget {
+  /** Tool-result characters the retained context may hold. */
+  totalCharacters: number;
+  /** Characters all tool calls of one assistant turn may add together. */
+  batchCharacters: number;
+  /** Compaction starts when less than this (plus a per-call reserve) remains. */
+  thresholdCharacters: number;
+  /** Recent context compaction keeps, so the budget clears after compaction. */
+  keepRecentTokens: number;
+}
+
+/**
+ * Tool output sized to the free context: a 64k window holds about 20k tokens of system
+ * prompt and tool schemas, so six full search pages overflowed it at once (#4224).
+ */
+export function toolContextBudget(profile: ToolContextProfile): ToolContextBudget {
+  const capacityTokens = Math.max(
+    0,
+    profile.contextWindow -
+      CONTEXT_SAFETY_TOKENS -
+      Math.max(profile.compactionReserveTokens, profile.maxTokens) -
+      (profile.fixedTokens ?? 0) -
+      CHECKPOINT_SUMMARY_TOKENS,
+  );
+  const batchCharacters = Math.max(
+    MIN_TOOL_BATCH_CHARACTERS,
+    Math.floor(capacityTokens * TOOL_BATCH_CONTEXT_SHARE * TOOL_RESULT_CHARACTERS_PER_TOKEN),
+  );
+  const totalCharacters = Math.max(2 * batchCharacters, capacityTokens * TOOL_CONTEXT_CHARACTERS_PER_TOKEN);
+  const thresholdCharacters = Math.min(TOOL_RESPONSE_MAX_CHARACTERS, batchCharacters);
+  return {
+    totalCharacters,
+    batchCharacters,
+    thresholdCharacters,
+    keepRecentTokens: Math.max(
+      1,
+      Math.min(
+        profile.compactionKeepRecentTokens,
+        Math.floor((totalCharacters - thresholdCharacters) / TOOL_CONTEXT_CHARACTERS_PER_TOKEN),
+      ),
+    ),
+  };
+}
+
+// Each part of a hit's evidence keeps its own room, so a long summary cannot push out
+// the matched snippet.
+const SEARCH_HIT_NAME_MAX_CHARACTERS = 160;
+const SEARCH_HIT_SUMMARY_MAX_CHARACTERS = 260;
+const SEARCH_HIT_SNIPPET_MAX_CHARACTERS = 200;
+const MAX_SEARCH_HIT_EVIDENCE = 200;
+
+/** Search hits as the model saw them, so a search-only run still has evidence (#4224). */
+export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch", text: string): SearchHitEvidence[] {
+  const body = JSON.parse(text) as JsonObject;
+  const result = (body.result && typeof body.result === "object" ? body.result : body) as JsonObject;
+  const documents = Array.isArray(result.documents) ? result.documents as JsonObject[] : [];
+  return documents.flatMap((hit) => {
+    if (typeof hit.citation !== "string" || !hit.citation) return [];
+    const name = String(hit.fileName ?? "");
+    // The summary says what the file is; the snippet holds the matched text.
+    const summary = kind === "deviceFileSearch" ? hit.summary : hit.text;
+    const details = [
+      [summary, SEARCH_HIT_SUMMARY_MAX_CHARACTERS],
+      [hit.snippet, SEARCH_HIT_SNIPPET_MAX_CHARACTERS],
+    ].flatMap(([value, limit]) => typeof value === "string" && value.trim() !== "" && value !== name ? [capText(value, limit as number)] : []);
+    const location = kind === "deviceFileSearch" && typeof hit.folder === "string" && hit.folder ? ` (${hit.folder})` : "";
+    // The projection keeps only non-default states; synthesis needs them to qualify a finding.
+    const qualifiers = [
+      typeof hit.state === "string" ? hit.state : null,
+      hit.current === false ? "earlier revision" : null,
+      hit.hasContent === false ? "no content" : null,
+      hit.complete === false ? "incomplete extraction" : null,
+      typeof hit.summaryState === "string" ? `summary ${hit.summaryState}` : null,
+      typeof hit.quality === "string" && hit.quality !== "accepted" ? `${hit.quality} quality` : null,
+    ].filter(Boolean);
+    const state = qualifiers.length ? ` [${qualifiers.join(", ")}]` : "";
+    return [{
+      kind: kind === "deviceFileSearch" ? "file" as const : "attachment" as const,
+      id: kind === "deviceFileSearch" ? hit.citation : `${hit.citation}#${String(hit.mediaId ?? name)}`,
+      text: `${capText(`${name}${location}`, SEARCH_HIT_NAME_MAX_CHARACTERS)}${state}${details.length ? `: ${details.join(" — ")}` : ""}`,
+      citation: hit.citation,
+    }];
+  });
+}
+
+/**
+ * Forces the research checkpoint tool. pi-ai's Responses streamSimple drops `toolChoice`,
+ * so that transport sets the flat Responses form, which the gateway accepts (#4224).
+ */
+export function forcedResearchToolChoice(engine: { api?: string }, options: any): JsonObject {
+  if (engine.api !== "openai-responses")
+    return { toolChoice: { type: "function", function: { name: RESEARCH_TOOL_NAME } } };
+  const previous = options?.onPayload;
+  return {
+    onPayload: async (params: JsonObject, model: unknown) => ({
+      ...((await previous?.(params, model)) ?? params),
+      tool_choice: { type: "function", name: RESEARCH_TOOL_NAME },
+    }),
+  };
+}
+
+/** The rewritten request, logged like the generic path's rewrite, or null when unusable. */
+async function rewriteRefusalLogged(rewrite: RefusalRewriteEngine, prompt: string, stage: "research" | "synthesis"): Promise<string | null> {
+  let rewritten: string | null = null;
+  try {
+    rewritten = await rewriteRefusedAsk(rewrite, prompt);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "refusal_rewrite", stage, outcome: "error", error: String(error) }));
+    return null;
+  }
+  console.error(JSON.stringify({ event: "refusal_rewrite", stage, outcome: rewritten ? "rewritten" : "unusable" }));
+  return rewritten;
+}
+
+/** Echo route calls an assistant turn requested; they share one tool batch budget. */
+function routeToolCalls(message: unknown, routeToolNames: ReadonlySet<string>): number {
+  const content = (message as JsonObject | undefined)?.content;
+  return Array.isArray(content)
+    ? content.filter((block) => (block as JsonObject | null)?.type === "toolCall" && routeToolNames.has(String((block as JsonObject).name))).length
+    : 0;
+}
+
+const RECORD_ARRAYS = ["documents", "devices", "messages", "sections", "known", "located", "other", "fileMentions", "items"];
+
+/** The compacted result kept none of the source records the original had. */
+function droppedEveryRecord(value: unknown, compacted: string): boolean {
+  const count = (body: unknown): number => {
+    if (!body || typeof body !== "object" || Array.isArray(body)) return 0;
+    const object = body as JsonObject;
+    const result = object.result && typeof object.result === "object" ? object.result as JsonObject : object;
+    return RECORD_ARRAYS.reduce((total, key) => total + (Array.isArray(result[key]) ? (result[key] as unknown[]).length : 0), 0);
+  };
+  if (count(value) === 0) return false;
+  try {
+    return count(JSON.parse(compacted)) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Context every turn carries before any result: system prompt, tool schemas and the prompt. */
+export function fixedContextTokens(systemPrompt: string, tools: readonly unknown[], prompt: string): number {
+  const schemas = JSON.stringify(tools.map((tool) => {
+    const { name, description, parameters } = tool as JsonObject;
+    return { name, description, parameters };
+  }));
+  return Math.ceil((systemPrompt.length + schemas.length + prompt.length) / TOOL_CONTEXT_CHARACTERS_PER_TOKEN);
+}
+
+export function createContextToolResponseCompactor(contextWindow: number, profile?: Omit<ToolContextProfile, "contextWindow">) {
+  const compact = createToolResponseCompactor(
     Math.max(
       TOOL_CONTEXT_MAX_CHARACTERS,
       contextWindow * TOOL_CONTEXT_CHARACTERS_PER_TOKEN,
     ),
   );
+  if (profile) compact.configure(toolContextBudget({ ...profile, contextWindow }));
+  return compact;
 }
 
-export function createToolResponseCompactor(
-  maxTotalCharacters = TOOL_CONTEXT_MAX_CHARACTERS,
-  maxResponseCharacters = TOOL_RESPONSE_MAX_CHARACTERS,
-  maxInvocations = MAX_TOOL_INVOCATIONS,
-): ((
+type ToolResponseCompactor = ((
   route: Pick<SkillDefinition, "skill" | "requestKind">,
   value: unknown,
   maxItems: number,
 ) => string) & {
   reset: (messages: unknown[]) => void;
   needsCompaction: () => boolean;
-} {
-  let remainingCharacters = maxTotalCharacters;
+  /** An assistant turn requested `calls` tool results: they share one batch budget. */
+  beginBatch: (calls: number) => void;
+  /** Whether another call of this batch fits; calls past the batch's minimum shares wait. */
+  admit: () => boolean;
+  /** An admitted call that returned without a compacted result. */
+  release: () => void;
+  /** Applies a budget measured once the session's fixed context is known. */
+  configure: (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => void;
+};
+
+export function createToolResponseCompactor(
+  maxTotalCharacters = TOOL_CONTEXT_MAX_CHARACTERS,
+  maxResponseCharacters = TOOL_RESPONSE_MAX_CHARACTERS,
+  maxInvocations = MAX_TOOL_INVOCATIONS,
+  maxBatchCharacters = Number.POSITIVE_INFINITY,
+): ToolResponseCompactor {
+  let totalCharacters = maxTotalCharacters;
+  let responseCharacters = maxResponseCharacters;
+  // When to compact; one indivisible result (a large read section) may exceed it (#4224).
+  let thresholdCharacters = maxResponseCharacters;
+  let batchCharacters = maxBatchCharacters;
+  let remainingCharacters = totalCharacters;
   let remainingInvocations = maxInvocations;
+  let batchRemaining = batchCharacters;
+  // Calls of the current batch that may still run: each gets at least the minimum share.
+  let batchSlots = 1;
   const compact = (route: Pick<SkillDefinition, "skill" | "requestKind">, value: unknown, maxItems: number) => {
     const reservedForLater = Math.max(0, remainingInvocations - 1) * 2;
-    const maxCharacters = Math.max(
-      2,
-      Math.min(maxResponseCharacters, remainingCharacters - reservedForLater),
-    );
-    const compacted = compactToolResponse(
-      route,
-      value,
-      maxItems,
-      maxCharacters,
-    );
-    if (compacted === "{}" && JSON.stringify(value) !== "{}") {
-      throw new Error("tool context budget exhausted before delivering source data");
+    // Calls run one after another: an even share keeps the last calls of a batch from
+    // getting nothing (#4224). Shares never exceed what the batch has left.
+    const batchShare = Number.isFinite(batchRemaining)
+      ? Math.floor(batchRemaining / Math.max(1, batchSlots))
+      : Number.POSITIVE_INFINITY;
+    const callCharacters = Math.max(2, Math.min(responseCharacters, remainingCharacters - reservedForLater));
+    const maxCharacters = Math.max(2, Math.min(callCharacters, batchShare));
+    const attempt = (limit: number, lossless: boolean): string | null => {
+      try {
+        const result = compactToolResponse(route, value, maxItems, limit);
+        if (result === "{}" && JSON.stringify(value) !== "{}") return null;
+        // A share too small for even one source record is no result: retry larger.
+        return lossless && droppedEveryRecord(value, result) ? null : result;
+      } catch {
+        return null;
+      }
+    };
+    // The batch share is a fair split, not a hard limit: a result that cannot be shortened
+    // into it (one large read section) may use the call's whole allowance, and the next
+    // turn compacts. Only that allowance failing is an error.
+    let compacted = maxCharacters < callCharacters
+      ? attempt(maxCharacters, true) ?? attempt(callCharacters, false)
+      : attempt(maxCharacters, false);
+    if (compacted === null) {
+      batchSlots = Math.max(0, batchSlots - 1);
+      compacted = compactToolResponse(route, value, maxItems, callCharacters);
+      if (compacted === "{}" && JSON.stringify(value) !== "{}")
+        throw new Error("tool context budget exhausted before delivering source data");
     }
     remainingCharacters = Math.max(0, remainingCharacters - compacted.length);
     remainingInvocations = Math.max(0, remainingInvocations - 1);
+    batchRemaining = Math.max(0, batchRemaining - compacted.length);
+    batchSlots = Math.max(0, batchSlots - 1);
     return compacted;
+  };
+  compact.beginBatch = (calls: number) => {
+    batchRemaining = batchCharacters;
+    batchSlots = Math.min(
+      Math.max(1, calls),
+      Number.isFinite(batchCharacters) ? Math.max(1, Math.floor(batchCharacters / MIN_TOOL_CALL_CHARACTERS)) : Number.POSITIVE_INFINITY,
+    );
+  };
+  // A call is admitted while slots remain and the batch still has a minimum share left:
+  // an oversized read may have used it up.
+  compact.admit = () =>
+    batchSlots > 0 && (!Number.isFinite(batchCharacters) || batchRemaining >= Math.min(MIN_TOOL_CALL_CHARACTERS, batchCharacters));
+  compact.release = () => {
+    batchSlots = Math.max(0, batchSlots - 1);
+  };
+  compact.configure = (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => {
+    remainingCharacters = Math.max(0, remainingCharacters + budget.totalCharacters - totalCharacters);
+    totalCharacters = budget.totalCharacters;
+    thresholdCharacters = budget.thresholdCharacters;
+    batchCharacters = budget.batchCharacters;
+    batchRemaining = batchCharacters;
+    batchSlots = 1;
   };
   compact.reset = (messages: unknown[]) => {
     const retained = messages.reduce<number>((total, message) => {
@@ -2601,11 +2885,11 @@ export function createToolResponseCompactor(
       if (result.role !== "toolResult" || !Array.isArray(result.content)) return total;
       return total + result.content.reduce((size: number, block: JsonObject) => size + (block.type === "text" && typeof block.text === "string" ? block.text.length : 0), 0);
     }, 0);
-    remainingCharacters = Math.max(0, maxTotalCharacters - retained);
+    remainingCharacters = Math.max(0, totalCharacters - retained);
   };
   compact.needsCompaction = () =>
     remainingCharacters <
-    Math.min(maxResponseCharacters, maxTotalCharacters / 2) +
+    Math.min(thresholdCharacters, totalCharacters / 2) +
       Math.max(0, remainingInvocations - 1) * 2;
   return compact;
 }
@@ -2852,6 +3136,30 @@ function activityLabel(parts: (string | null)[]): string {
     : label;
 }
 
+/** A Kyiv date range with inclusive bounds; times appear only off day boundaries. */
+function activityRange(since: unknown, till: unknown): string | null {
+  const start = typeof since === "number" && Number.isFinite(since) ? since : null;
+  const end = typeof till === "number" && Number.isFinite(till) ? till : null;
+  if ((start === null && end === null) || (start !== null && end !== null && end < start))
+    return null;
+  const showTime =
+    (start !== null && start !== kyivMidnightEpochMs(calendarDateAt(start))) ||
+    (end !== null &&
+      end !== kyivMidnightEpochMs(shiftCalendarDate(calendarDateAt(end), 1)) - 1);
+  const format = new Intl.DateTimeFormat("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    ...(showTime ? ({ hour: "2-digit", minute: "2-digit" } as const) : {}),
+  });
+  if (start !== null && end !== null)
+    return format.formatRange(new Date(start), new Date(end));
+  return start !== null
+    ? `від ${format.format(new Date(start))}`
+    : `до ${format.format(new Date(end!))}`;
+}
+
 function activityPeriod(body: JsonObject): string | null {
   const since = body.since_date_inclusive_ms;
   const till =
@@ -2860,26 +3168,89 @@ function activityPeriod(body: JsonObject): string | null {
       : typeof body.till_date_noninclusive_ms === "number"
         ? body.till_date_noninclusive_ms - 1
         : null;
-  if (
-    typeof since !== "number" ||
-    !Number.isFinite(since) ||
-    till === null ||
-    !Number.isFinite(till) ||
-    till < since
-  )
-    return null;
-  const showTime =
-    since !== kyivMidnightEpochMs(calendarDateAt(since)) ||
-    till !==
-      kyivMidnightEpochMs(shiftCalendarDate(calendarDateAt(till), 1)) - 1;
-  const format = new Intl.DateTimeFormat("uk-UA", {
-    timeZone: "Europe/Kyiv",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    ...(showTime ? ({ hour: "2-digit", minute: "2-digit" } as const) : {}),
-  });
-  return `за ${format.formatRange(new Date(since), new Date(till))}`;
+  if (typeof since !== "number" || till === null) return null;
+  const range = activityRange(since, till);
+  return range ? `за ${range}` : null;
+}
+
+// File, attachment and device searches: their activity names the query and filters (#4224).
+const SEARCH_ACTIVITY_KINDS = new Set(["deviceFileSearch", "attachmentSearch", "deviceSearch"]);
+const FILE_SEARCH_SCOPES: Record<string, string> = { name: "у назвах", content: "у вмісті", summary: "в описах" };
+const SEARCH_ACTIVITY_NOUNS: Record<string, { found: string; none: string }> = {
+  deviceFileSearch: { found: "файлів", none: "файлів не знайдено" },
+  attachmentSearch: { found: "документів", none: "документів не знайдено" },
+  deviceSearch: { found: "пристроїв", none: "пристроїв не знайдено" },
+};
+
+function activityNames(label: string, values: unknown[], names: (value: unknown) => string | null, countLabel: string): string | null {
+  if (values.length === 0) return null;
+  const shown = values.map(names).filter(Boolean).slice(0, 2);
+  if (shown.length === 0) return `${countLabel}: ${values.length}`;
+  return `${label} «${shown.join("», «")}»${values.length > shown.length ? ` та ще ${values.length - shown.length}` : ""}`;
+}
+
+function searchActivityScope(
+  kind: string,
+  body: JsonObject,
+  groupNames: ReadonlyMap<string, string>,
+  deviceNames: ReadonlyMap<string, string>,
+): (string | null)[] {
+  const query = activityText(body.query);
+  const count = (value: unknown, label: string) =>
+    Array.isArray(value) && value.length ? `${label}: ${value.length}` : null;
+  const shared = [query ? `пошук «${query}»` : null];
+  if (kind === "deviceSearch")
+    return [
+      ...shared,
+      count(body.unitIds, "підрозділів"),
+      count(body.aorIds, "районів відповідальності"),
+      body.includeArchived === true ? "з архівними пристроями" : null,
+    ];
+  const format = activityText(body.format);
+  if (kind === "attachmentSearch") {
+    const period = activityRange(body.from, body.to);
+    return [
+      ...shared,
+      period ? (/^(від|до) /.test(period) ? period : `за ${period}`) : null,
+      activityGroups({ selected_groups: body.selectedGroups }, groupNames),
+      count(body.messageIds, "вибрано повідомлень"),
+      format ? `формат «${format}»` : null,
+    ];
+  }
+  const folder = activityText(body.pathPrefix);
+  const modified = activityRange(body.from, body.to);
+  return [
+    ...shared,
+    typeof body.scope === "string" ? (FILE_SEARCH_SCOPES[body.scope] ?? null) : null,
+    activityNames("пристрої", Array.isArray(body.deviceIds) ? body.deviceIds : [], (id) => activityText(deviceNames.get(String(id))), "пристроїв"),
+    folder ? `у теці «${folder}»` : null,
+    format ? `формат «${format}»` : null,
+    modified ? `змінено ${modified}` : null,
+    body.includeArchived === true ? "з архівними пристроями" : null,
+    body.history === true ? "з попередніми версіями" : null,
+  ];
+}
+
+function rememberActivityDevices(skill: string, value: unknown, deviceNames: Map<string, string>): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const body = value as JsonObject;
+  const devices = skill === "device_search" && Array.isArray(body.devices)
+    ? body.devices
+    : skill === "device_get"
+      ? [body.device && typeof body.device === "object" ? body.device : body]
+      : [];
+  for (const device of devices as JsonObject[]) {
+    if (typeof device?.id === "string" && typeof device.name === "string" && device.name)
+      deviceNames.set(device.id, device.name);
+  }
+}
+
+function searchResultItems(kind: string, value: unknown): unknown[] | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as JsonObject;
+  const result = (body.result && typeof body.result === "object" ? body.result : body) as JsonObject;
+  const items = kind === "deviceSearch" ? result.devices : result.documents;
+  return Array.isArray(items) ? items : null;
 }
 
 function activityGroups(
@@ -2951,8 +3322,12 @@ interface RouteActivity {
 
 export function createRouteActivityTracker() {
   const groupNames = new Map<string, string>();
+  const deviceNames = new Map<string, string>();
   const messageIds = new Set<number>();
-  const nextPages = new Map<string, Map<number, number>>();
+  const collected = new Map<string, Set<string>>();
+  const nextPages = new Map<string, Map<unknown, number>>();
+  const searchPage = (page: number | null, cursor: unknown) =>
+    cursor == null ? null : page === null ? "наступна добірка" : `добірка ${page}`;
   return {
     rememberGroups(groups: unknown): void {
       rememberActivityGroups(GROUP_LOOKUP_SKILL, groups, groupNames);
@@ -2964,17 +3339,31 @@ export function createRouteActivityTracker() {
         !Array.isArray(requestBody)
           ? (requestBody as JsonObject)
           : {};
+      const search = SEARCH_ACTIVITY_KINDS.has(route.requestKind);
       const query = JSON.stringify({
         ...body,
         before_id_noninclusive: undefined,
+        ...(search ? { cursor: undefined, limit: undefined } : {}),
       });
-      const cursor = body.before_id_noninclusive;
-      const page =
-        route.requestKind !== "inboxMessages"
+      const cursor = search ? body.cursor : body.before_id_noninclusive;
+      const page = search
+        ? cursor == null ? 1 : (nextPages.get(`${route.skill}:${query}`)?.get(cursor) ?? null)
+        : route.requestKind !== "inboxMessages"
           ? null
           : typeof cursor === "number"
             ? (nextPages.get(query)?.get(cursor) ?? null)
             : 1;
+      if (search)
+        return {
+          body,
+          query,
+          page,
+          label: activityLabel([
+            route.label,
+            ...searchActivityScope(route.requestKind, body, groupNames, deviceNames),
+            searchPage(page, cursor),
+          ]),
+        };
       return {
         body,
         query,
@@ -3000,7 +3389,40 @@ export function createRouteActivityTracker() {
       compacted: string,
     ): string {
       rememberActivityGroups(route.skill, response, groupNames);
+      rememberActivityDevices(route.skill, response, deviceNames);
       const delivered = JSON.parse(compacted) as unknown;
+      if (SEARCH_ACTIVITY_KINDS.has(route.requestKind)) {
+        const items = searchResultItems(route.requestKind, delivered) ?? [];
+        const retrieved = searchResultItems(route.requestKind, response)?.length ?? items.length;
+        const deliveredBody = delivered && typeof delivered === "object" ? delivered as JsonObject : {};
+        const nextCursor = ((deliveredBody.result && typeof deliveredBody.result === "object" ? deliveredBody.result : deliveredBody) as JsonObject).nextCursor;
+        if (nextCursor != null && activity.page !== null) {
+          const key = `${route.skill}:${activity.query}`;
+          const pages = nextPages.get(key) ?? new Map<unknown, number>();
+          pages.set(nextCursor, activity.page + 1);
+          nextPages.set(key, pages);
+        }
+        const seen = collected.get(route.requestKind) ?? new Set<string>();
+        collected.set(route.requestKind, seen);
+        for (const item of items as JsonObject[]) {
+          // Attachments of one message share its citation.
+          const key = item?.mediaId ?? item?.citation ?? item?.id;
+          if (typeof key === "string") seen.add(key);
+        }
+        const noun = SEARCH_ACTIVITY_NOUNS[route.requestKind];
+        // Results before filters: the label is capped and must keep its counts.
+        const [query, ...filters] = searchActivityScope(route.requestKind, activity.body, groupNames, deviceNames);
+        return activityLabel([
+          route.label,
+          query,
+          searchPage(activity.page, activity.body.cursor),
+          items.length > 0 ? `знайдено ${noun.found}: ${items.length}` : noun.none,
+          retrieved !== items.length ? `отримано: ${retrieved}; для перегляду: ${items.length}` : null,
+          seen.size > items.length ? `зібрано ${noun.found} для запиту: ${seen.size}` : null,
+          nextCursor != null ? "є наступна добірка" : null,
+          ...filters,
+        ]);
+      }
       const scope = activityScope(activity.body, groupNames);
       if (route.skill === "accessible_group_details") {
         const groups = Array.isArray(delivered)
@@ -3152,6 +3574,8 @@ function createRouteTools(
   research?: FlashResearch,
   recordRetrieval: (skill: string) => void = () => {},
   recordAggregate: (skill: string, request: unknown, text: string) => void = () => {},
+  recordHits: (hits: SearchHitEvidence[]) => void = () => {},
+  noteDeferred: (toolCallId: string) => void = () => {},
 ) {
   const activity = createRouteActivityTracker();
   const groupRoute = payload.skills.find((route) => route.skill === GROUP_LOOKUP_SKILL);
@@ -3172,8 +3596,18 @@ function createRouteTools(
       prepareArguments: (args: unknown) => prepareRouteArguments(route, args, (fields) => emit({
         type: "tool_diagnostic", tool: `echo_${route.skill}`, reason: "ignored_arguments", handledPrivately: false, fields,
       })) as any,
-      execute: async (_toolCallId, params, signal, onUpdate) => {
+      execute: async (toolCallId, params, signal, onUpdate) => {
         countInvocation();
+        // More calls than the batch can give a useful share: this one runs next turn (#4224).
+        if (!compactResponse.admit()) {
+          noteDeferred(toolCallId);
+          research?.noteDeferred(`echo_${route.skill}`, params);
+          return {
+            content: [{ type: "text", text: JSON.stringify({ deferred: true, message: TOOL_BATCH_DEFERRED }) }],
+            details: { skill: route.skill, activityLabel: activityLabel([route.label, "відкладено до наступного кроку"]) },
+          };
+        }
+        research?.noteRan(`echo_${route.skill}`, params);
         const requestBody = routeToolRequestBody(
           route,
           await groupScope.resolve(params, "selectedGroups" in ((routeParameters(route) as { properties?: object }).properties ?? {}), signal),
@@ -3195,6 +3629,7 @@ function createRouteTools(
           signal,
         );
         emit(sourceEvent(route, response.status));
+        if (route.requestKind === "uploadImage" || route.requestKind === "workRead") compactResponse.release();
         if (route.requestKind === "uploadImage") {
           const image = uploadImageContent(response.body);
           return {
@@ -3224,6 +3659,7 @@ function createRouteTools(
         const files = collectFileCitations(prepared.body).filter((citation) => text.includes(fileCitationHref(citation)));
         for (let offset = 0; offset < files.length; offset += 100) emit({ type: "file_citations", citations: files.slice(offset, offset + 100) });
         recordFiles(files, collectFileSections(JSON.parse(text)));
+        if (route.requestKind === "deviceFileSearch" || route.requestKind === "attachmentSearch") recordHits(searchHitEvidence(route.requestKind, text));
         const delivered = deliveredCitations(text, prepared.citations);
         recordCitations(delivered);
         recordMessages(
@@ -3954,6 +4390,7 @@ function isOutputTokenLimit(message: JsonObject | undefined): boolean {
 const NO_RETRIEVAL_NOTICE = " No ECHO data was searched in this request. Do not state or imply that ECHO has no matching data or that the attached files are all the available data; if the request needed ECHO data, say that the search did not run.";
 const NO_RETRIEVAL_RETRY_NOTICE = " The time budget ended before any search; add that the request can be repeated, in the deep mode if needed.";
 const NO_LIMIT_NOTICE = " No time, tool or budget limit stopped this work: never claim that one did, even if an earlier answer in the conversation says so.";
+const DEFERRED_CALLS_GUIDANCE = " deferredCalls lists ECHO calls that were requested but never run because one turn asked for more than the context holds: name them as not searched rather than as finding nothing.";
 const COVERAGE_GUIDANCE = "State remaining coverage limitations honestly without delaying the supported findings.";
 const FINAL_FINDINGS_GUIDANCE = "Report anything searched for and not found as a finding. Do not add a section about incomplete coverage.";
 const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference. groupsRead lists the groups really read, even when they returned nothing. groupProblems states group names that could not be read: report each as stated rather than as a failed search, unless groupsRead shows the same group under a corrected spelling. Never describe other groups as that group. Evidence records with statisticsFrom are ECHO statistics or lookups that the tool returned for its request: report their figures as statistics for that scope without message citations, and never present them as individual messages.";
@@ -4177,15 +4614,19 @@ async function completeLimitedResearch(options: {
     engine: options.selectedEngine,
     apiKey: payload.providerApiKey ?? "echo-local-tokenless",
     policy: budget.policy,
-    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}` : ""),
+    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}${options.research.deferredScope().deferredCalls ? DEFERRED_CALLS_GUIDANCE : ""}` : "") +
+      // The tool-free answer gets the same authorization framing as research (#4224).
+      (payload.rewriteModelName ? REFUSAL_FRAMING_SUFFIX : ""),
     prompt: JSON.stringify({
       // A quarter of the input leaves the rest for evidence.
       conversation: synthesisConversation(payload.history, Math.floor((options.selectedEngine.contextWindow - maxTokens) / 4)),
       request: payload.prompt,
-      ...(options.research ? { completedActions: options.research.completedActions(), ...options.research.groupScope(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
+      ...(options.research ? { completedActions: options.research.completedActions(), ...options.research.groupScope(), ...options.research.deferredScope(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence,
-    checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
+    // The model's saved draft and the compaction checkpoint each hold evidence the other
+    // may lack (#4224).
+    checkpoint: [options.research?.compactEvidence(), options.checkpoint].filter((text): text is string => Boolean(text)),
     maxTokens,
     signal,
     purpose: options.research && !payload.executionPolicy ? "research" : "synthesis",
@@ -4400,7 +4841,13 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         throw error;
       }
     };
-    const compactResponse = createContextToolResponseCompactor(payload.contextWindow);
+    const toolProfile = {
+      contextWindow: payload.contextWindow,
+      maxTokens: payload.maxTokens,
+      compactionReserveTokens: payload.compactionReserveTokens,
+      compactionKeepRecentTokens: payload.compactionKeepRecentTokens,
+    };
+    const compactResponse = createContextToolResponseCompactor(payload.contextWindow, toolProfile);
     const deliveredCitationsThisTurn: MessageCitation[] = [];
     const recordSources = (citations: MessageCitation[]) => {
       deliveredCitationsThisTurn.push(...citations);
@@ -4433,6 +4880,19 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     const recordMessages = (messages: CitedMessage[]) => {
       for (const message of messages) deliveredMessages.set(`${message.messageId}:${message.messageIdentifier}`, message);
     };
+    // Calls a batch could not admit: they never reached Echo, so they are no completed action.
+    const deferredToolCalls = new Set<string>();
+    const deliveredHits = new Map<string, SearchHitEvidence>();
+    const recordHits = (hits: SearchHitEvidence[]) => {
+      for (const hit of hits) {
+        deliveredHits.delete(hit.id);
+        deliveredHits.set(hit.id, hit);
+      }
+      for (const oldest of deliveredHits.keys()) {
+        if (deliveredHits.size <= MAX_SEARCH_HIT_EVIDENCE) break;
+        deliveredHits.delete(oldest);
+      }
+    };
     // Synthesis sees only delivered evidence, and statistics cite no message.
     const deliveredAggregates = new Map<string, AggregateEvidence>();
     const recordAggregate = (skill: string, request: unknown, text: string) => {
@@ -4460,6 +4920,19 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       (event) => emit({ type: "completion_diagnostic", ...event }),
       RESEARCH_TUNING,
     ) : undefined;
+    // The refusal rewrite layer on the bounded path (#4224): answers are written by a
+    // tool-free synthesis, so a declined one is retried there with the rewritten request.
+    const refusalRewrite = rewriteEngine ? {
+      engine: rewriteEngine,
+      apiKey: payload.providerApiKey,
+      maxTokens: payload.rewriteMaxTokens ?? 2_048,
+      signal: cancellation.signal,
+    } : undefined;
+    if (research && refusalRewrite)
+      research.recoverRefusals({
+        rewrite: (signal) => rewriteRefusalLogged({ ...refusalRewrite, signal }, payload.prompt, "synthesis"),
+        framing: REFUSAL_FRAMING_SUFFIX,
+      });
     const tools = [
       ...(research ? [research.tool(countInvocation)] : []),
       ...createRouteTools(
@@ -4475,6 +4948,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         research,
         recordRetrieval,
         recordAggregate,
+        recordHits,
+        (toolCallId) => deferredToolCalls.add(toolCallId),
       ),
       ...(payload.skills.some((route) => route.requestKind === "mapRecords") && payload.skills.some((route) => route.requestKind === "mapDocument")
         ? createMapTools(mapRegistry, async (path, body, signal) => {
@@ -4517,6 +4992,13 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       sessionManager,
       settingsManager,
     }));
+    // Measured once the system prompt and tool schemas are known (#4224).
+    const toolBudget = toolContextBudget({
+      ...toolProfile,
+      fixedTokens: fixedContextTokens(session.agent.state.systemPrompt ?? "", session.agent.state.tools ?? [], payload.prompt),
+    });
+    compactResponse.configure(toolBudget);
+    const routeToolNames = new Set(tools.filter((tool) => payload.skills.some((route) => tool.name === `echo_${route.skill}`)).map((tool) => tool.name));
     const researchSignal = budget
       ? AbortSignal.any([cancellation.signal, budget.research.signal])
       : cancellation.signal;
@@ -4534,7 +5016,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
             : researchSignal,
           headers: { ...options?.headers, [PURPOSE_HEADER]: "research" },
           ...(research?.updateRequired && context.tools?.some((tool: { name: string }) => tool.name === RESEARCH_TOOL_NAME)
-            ? { toolChoice: { type: "function", function: { name: RESEARCH_TOOL_NAME } } }
+            ? forcedResearchToolChoice(engine, options)
             : {}),
         });
     }
@@ -4547,7 +5029,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         research.noteToolRun();
         delete event.arguments;
       }
-      if (research && event.type === "tool_end")
+      if (research && event.type === "tool_end" && !deferredToolCalls.has(String(event.tool_call_id)))
         research.noteToolResult(String(event.tool), Boolean(event.is_error));
       emit(event);
     };
@@ -4565,6 +5047,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       ),
       (message) => {
         research?.researchCompleted(message, budget);
+        compactResponse.beginBatch(routeToolCalls(message, routeToolNames));
         currentTurnAssistantMessages.push(message);
         refusalHold?.onAssistantMessage();
         const errorMessage = (message as { errorMessage?: string })?.errorMessage;
@@ -4586,7 +5069,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     );
     const contextCompaction = installContextCompaction(
       session,
-      { ...payload, checkpointEngine, signal: researchSignal, saveCheckpoint: journal ? (summary) => journal.checkpoint(research?.checkpoint(summary) ?? summary) : undefined, toolContextNeedsCompaction: compactResponse.needsCompaction,
+      { ...payload, compactionKeepRecentTokens: toolBudget.keepRecentTokens, checkpointEngine, signal: researchSignal, saveCheckpoint: journal ? (summary) => journal.checkpoint(research?.checkpoint(summary) ?? summary) : undefined, toolContextNeedsCompaction: compactResponse.needsCompaction,
         beforeProvider: research ? (purpose, context) => research.beforeProvider(purpose, context, budget, maxToolInvocations - toolInvocations, purpose === "checkpoint" ? checkpointEngine?.contextWindow ?? payload.contextWindow : payload.contextWindow, purpose === "checkpoint" ? payload.checkpointMaxTokens : payload.maxTokens) : undefined,
         providerCompleted: research ? (purpose, duration) => research.completed(purpose, duration) : undefined, },
       () =>
@@ -4658,8 +5141,25 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         // The reply to the request itself: a Deep reminder to search that still runs no tool
         // only confirms it, and its own reply is the completion note that reminder asks for.
         // A failed or cut-off reply is none, so the reply to the re-prompt counts.
-        const researchReply = lastAssistantMessage(currentTurnAssistantMessages);
-        const reply = failedStart || cutOff(researchReply) ? undefined : assistantMessageText(researchReply);
+        let researchReply = lastAssistantMessage(currentTurnAssistantMessages);
+        let reply = failedStart || cutOff(researchReply) ? undefined : assistantMessageText(researchReply);
+        // Research declined before running any tool: rewrite the request and research it
+        // again with the tools, instead of synthesizing from nothing (#4224).
+        if (refusalRewrite && research.refuses(reply) && !requestedTools(currentTurnAssistantMessages) && research.hasTurnTime(budget)) {
+          // The research deadline bounds the rewrite, so it cannot eat the synthesis reserve.
+          const rewritten = await rewriteRefusalLogged({ ...refusalRewrite, signal: researchSignal }, payload.prompt, "research");
+          if (rewritten) {
+            session.agent.state.messages = session.agent.state.messages.filter((message) => message !== researchReply);
+            currentTurnAssistantMessages.length = 0;
+            await session.prompt(rewritten, { expandPromptTemplates: false, source: "rpc" });
+            if (journal?.failure) throw journal.failure;
+            if (toolLimitError) throw toolLimitError;
+            if (contextCompaction.failure()) throw contextCompaction.failure();
+            if (cancelled) return;
+            researchReply = lastAssistantMessage(currentTurnAssistantMessages);
+            reply = cutOff(researchReply) ? undefined : assistantMessageText(researchReply);
+          }
+        }
         await continueOpenResearch(session, research, budget);
         if (journal?.failure) throw journal.failure;
         if (toolLimitError) throw toolLimitError;
@@ -4684,7 +5184,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
           ? research.directAnswer(reply ?? uncutText(lastAssistantMessage(currentTurnAssistantMessages)), budget)
           : undefined);
         await completeLimitedResearch({ payload, budget, selectedEngine: selectedModel,
-          evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence, aggregates: [...deliveredAggregates.values()] },
+          evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence, aggregates: [...deliveredAggregates.values()], hits: [...deliveredHits.values()] },
           deliveredCitationsThisTurn, deliveredFiles, mapRegistry, documentRegistry, cancellation: cancellation.signal,
           checkpoint: contextCompaction.latestCheckpoint(), research, toolRemaining: maxToolInvocations - toolInvocations, images, retrieved: echoRetrievals > 0, answer });
         return;
@@ -4831,7 +5331,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       // model. Failing the request lets the chat say the provider did not answer and
       // offer a retry or another model (incident 01a1d35e).
       const noEvidence = !savedEvidence.length && !deliveredMessages.size && !deliveredFileSections.size &&
-        !deliveredAggregates.size && !images.length && !payload.uploads?.length;
+        !deliveredAggregates.size && !deliveredHits.size && !images.length && !payload.uploads?.length;
       if (research && budget.reason === "provider_error" && research.providerNeverAnswered && noEvidence && terminalProviderFailure(error))
         throw error;
       emitAssistant.current = false;
@@ -4845,6 +5345,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
           files: [...deliveredFileSections.values()],
           saved: savedEvidence,
           aggregates: [...deliveredAggregates.values()],
+          hits: [...deliveredHits.values()],
         },
         deliveredCitationsThisTurn,
         deliveredFiles,

@@ -94,6 +94,10 @@ describe('messenger contacts in the workspace', () => {
           accountMemberStatus: null,
           lastMessageDate: null,
           telegram: null,
+          oldestReadAt: null,
+          newestReadAt: null,
+          unreadCount: 0,
+          totalCount: 0,
         },
       ],
     });

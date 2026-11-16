@@ -16,6 +16,7 @@ import {
   type ResearchBudget,
 } from "./execution-policy.ts";
 import type { GroupOutcome } from "./group-scope.ts";
+import { isPolicyRefusal } from "./refusal-rewrite.ts";
 import type { WorkJournal } from "./work-memory.ts";
 
 export const FLASH_ENGINE = "glm-5.3-flash-uncensored";
@@ -78,25 +79,34 @@ export function isOpenAiModel(modelName: string): boolean {
   return OPENAI_MODEL_PREFIXES.some((prefix) => modelName.startsWith(prefix));
 }
 
+// OpenAI engines that run the bounded research harness; mirrors Rust
+// AI_AGENT_BOUNDED_RESEARCH_OPENAI_MODELS. GPT-6.1 Sol's generic path gave up a whole
+// Balanced request to one context overflow, with no budget status or cited draft (#4224).
+export const BOUNDED_OPENAI_MODELS: readonly string[] = ["gpt-6.1-sol"];
+
+function boundedEngine(modelName: string): boolean {
+  return !isOpenAiModel(modelName) || BOUNDED_OPENAI_MODELS.includes(modelName);
+}
+
 // Flash always uses the bounded research harness. Any other non-OpenAI engine (GLM,
-// Gemma) uses it when reasoning presets give the request a budget; without a budget
-// there is nothing to bound. OpenAI engines keep the generic path.
+// Gemma) and GPT-6.1 Sol use it when reasoning presets give the request a budget;
+// without a budget there is nothing to bound. Other OpenAI engines keep the generic path.
 export function usesBoundedResearch(
   modelName: string,
   executionPolicy?: ExecutionPolicy,
 ): boolean {
   return (
     modelName === FLASH_ENGINE ||
-    (!isOpenAiModel(modelName) && executionPolicy !== undefined)
+    (boundedEngine(modelName) && executionPolicy !== undefined)
   );
 }
 
-// Flash and the other non-OpenAI engines reserve twice the base finalization time.
+// Flash and the other bounded engines reserve twice the base finalization time.
 // Non-Flash engines also accept the base reserve so policies snapshotted before it
 // was raised (queued or running requests) still validate during a rollout.
 export function finalizationMultipliers(modelName: string): readonly number[] {
   if (modelName === FLASH_ENGINE) return [2];
-  return isOpenAiModel(modelName) ? [1] : [1, 2];
+  return boundedEngine(modelName) ? [1, 2] : [1];
 }
 
 export interface ResearchTuning {
@@ -256,13 +266,48 @@ export function normalizedResearchUpdate(value: unknown): ResearchUpdate {
 const markdownLinks = (text: string) =>
   [...text.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)].map((match) => match[1]);
 
+/** One call's identity, whatever order its arguments were written in. */
+function callKey(tool: string, args: unknown): string {
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical((value as Record<string, unknown>)[key])]))
+        : value;
+  return `${tool}:${JSON.stringify(canonical(args))}`;
+}
+
 type AnswerIssue = NonNullable<CompletionDiagnostic["draftIssue"]>;
 
 const ANSWER_ISSUES: Record<AnswerIssue, string> = {
   no_citation: "it cites none of the available sources.",
   unknown_link: "it links to something no tool returned.",
   bare_link: "it contains a source link outside Markdown link syntax.",
+  refusal: "it declines the request instead of reporting the collected evidence.",
 };
+
+/** Restates a declined request for one more synthesis attempt (#4224). */
+export interface RefusalRecovery {
+  /**
+   * The user's request rewritten as an evidence summary, or null when unusable. The
+   * signal is the synthesis deadline: a slow rewrite must not delay the fallback.
+   */
+  rewrite: (signal: AbortSignal) => Promise<string | null>;
+  /** Authorization framing added to the retried synthesis. */
+  framing: string;
+}
+
+/** The synthesis prompt with its request replaced; the prompt is a JSON object. */
+function withRequest(prompt: string, request: string): string {
+  try {
+    const fields = JSON.parse(prompt);
+    if (fields && typeof fields === "object" && !Array.isArray(fields))
+      return JSON.stringify({ ...fields, request });
+  } catch {
+    // Not the JSON synthesis prompt: the rewritten request replaces it.
+  }
+  return request;
+}
 
 function answerIssue(text: string, sources: Sources): AnswerIssue | undefined {
   const allowed = new Set([
@@ -358,6 +403,8 @@ function retrievalKey(tool: string, query: unknown): string {
 export class FlashResearch {
   private state?: ResearchState;
   private draft?: string;
+  private refusal?: RefusalRecovery;
+  private readonly deferredCalls = new Map<string, { tool: string; arguments: unknown }>();
   private retrievals = 0;
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
@@ -420,9 +467,11 @@ export class FlashResearch {
       execute: async (_id, update: ResearchUpdate) => {
         countInvocation();
         const candidate = update.draft ?? "";
-        const draft = validatedFlashAnswer(candidate, this.sources());
-        const issue =
-          candidate.trim() && !draft
+        const refused = this.refuses(candidate);
+        const draft = refused ? undefined : validatedFlashAnswer(candidate, this.sources());
+        const issue: AnswerIssue | undefined = refused
+          ? "refusal"
+          : candidate.trim() && !draft
             ? answerIssue(candidate, this.sources())
             : undefined;
         if (issue)
@@ -532,8 +581,26 @@ export class FlashResearch {
     );
   }
 
+  /**
+   * With the refusal rewrite layer armed, a draft, research text or synthesis that
+   * declines the request is never the answer; synthesis retries once with the rewritten
+   * request (#4224).
+   */
+  recoverRefusals(recovery: RefusalRecovery): void {
+    this.refusal = recovery;
+  }
+
+  /** The text declines the request while refusal recovery is armed. */
+  refuses(text: string | null | undefined): boolean {
+    return Boolean(this.refusal && text?.trim() && isPolicyRefusal(text));
+  }
+
   /** Research that called no tool wrote the answer itself, from the whole conversation. */
   directAnswer(text: string, budget: ResearchBudget): string | undefined {
+    if (this.refuses(text)) {
+      this.diagnostic({ stage: "research", outcome: "refusal" });
+      return undefined;
+    }
     const answer = validatedFlashAnswer(text, this.sources());
     if (answer)
       this.diagnostic({
@@ -568,8 +635,23 @@ export class FlashResearch {
       (this.state
         ? this.state.gaps.length > 0 ||
           this.state.checklist.some((item) => item.status !== "done")
-        : this.hasUnfinishedWork) || [...this.unread.values()].some(Boolean)
+        : this.hasUnfinishedWork) || [...this.unread.values()].some(Boolean) ||
+      this.deferredCalls.size > 0
     );
+  }
+
+  /** A call the batch budget deferred: unresolved until the same call runs (#4224). */
+  noteDeferred(tool: string, args: unknown): void {
+    this.deferredCalls.set(callKey(tool, args), { tool, arguments: args });
+  }
+
+  noteRan(tool: string, args: unknown): void {
+    this.deferredCalls.delete(callKey(tool, args));
+  }
+
+  /** Deferred calls that never ran, for synthesis to report as not searched. */
+  deferredScope(): { deferredCalls?: { tool: string; arguments: unknown }[] } {
+    return this.deferredCalls.size ? { deferredCalls: [...this.deferredCalls.values()] } : {};
   }
 
   noteProgress(): void {
@@ -628,6 +710,7 @@ export class FlashResearch {
   get hasUnfinishedWork(): boolean {
     return (
       this.hasPendingTasks ||
+      this.deferredCalls.size > 0 ||
       (!this.state &&
         (this.cutOff || (this.publicToolRuns === 0 && this.toolRunsAtProgress === 0)))
     );
@@ -637,6 +720,8 @@ export class FlashResearch {
   // a public promise of progress that no tool call followed, and a last turn the output
   // limit cut off, which may have been the plan for the whole request.
   private get unfinished(): boolean {
+    // Calls the batch budget deferred have not run, whatever the checklist says (#4224).
+    if (this.deferredCalls.size > 0) return true;
     return this.state
       ? this.hasPendingTasks
       : this.cutOff || this.toolRunsAtProgress === this.publicToolRuns;
@@ -676,6 +761,11 @@ export class FlashResearch {
     return this.startFailed && this.publicToolRuns === 0;
   }
 
+  /** Research time is left for another provider turn of the longest observed length. */
+  hasTurnTime(budget: ResearchBudget): boolean {
+    return budget.remainingResearchMs() > Math.max(0, ...this.observedMs.values()) + TURN_MARGIN_MS;
+  }
+
   shouldContinue(budget: ResearchBudget): boolean {
     const skippedTools =
       budget.policy.preset === "deep" && this.publicToolRuns === 0;
@@ -693,7 +783,9 @@ export class FlashResearch {
     if (!pending.length && !this.unfinished) return hint + DEEP_SEARCH_PROMPT;
     const reason = pending.length
       ? `these tasks are still pending: ${JSON.stringify(pending)}`
-      : "you announced work but ran no tool";
+      : this.deferredCalls.size
+        ? `these calls were deferred because one turn asked for more than the context holds, and have not run: ${JSON.stringify([...this.deferredCalls.values()])}`
+        : "you announced work but ran no tool";
     return `${hint}The work is not finished: ${reason}. Do the remaining work now by calling the tools it needs; a text reply does not do it. If a task cannot be done or needs no tool, mark it done or blocked with update_research, then finish with a brief completion message.`;
   }
 
@@ -742,9 +834,10 @@ export class FlashResearch {
     budget: ResearchBudget,
   ): Promise<string> {
     let correction = "";
+    let prompt = options.prompt;
     for (let attempt = 1; attempt <= 2; attempt++) {
       const result = await this.synthesisAttempt(
-        { ...options, systemPrompt: options.systemPrompt + correction },
+        { ...options, prompt, systemPrompt: options.systemPrompt + correction },
         budget,
         attempt,
       );
@@ -767,9 +860,15 @@ export class FlashResearch {
           "empty",
           "transient_error",
           "citation_rejected",
+          "refusal",
         ].includes(result.outcome)
       )
         break;
+      if (result.outcome === "refusal") {
+        const rewritten = await this.refusal!.rewrite(options.signal).catch(() => null);
+        if (options.signal.aborted) break;
+        if (rewritten) prompt = withRequest(options.prompt, rewritten);
+      }
       correction = this.correctionInstructions(result.outcome);
     }
     this.usedFallback = true;
@@ -794,6 +893,7 @@ export class FlashResearch {
   }
 
   private notePartial(text: string, outputLimit = false): void {
+    if (this.refuses(text)) return;
     const answer = validatedFlashAnswer(completedLines(text), this.sources());
     if (answer && answer.length > (this.partial?.length ?? 0)) {
       this.partial = answer;
@@ -832,6 +932,10 @@ export class FlashResearch {
         throw error;
       return null;
     });
+    if (this.refuses(candidate)) {
+      this.diagnostic({ stage: "synthesis", outcome: "refusal", attempt, durationMs, remainingMs: budget.remainingFinalizationMs() });
+      return { outcome: "refusal", durationMs };
+    }
     const answer = validatedFlashAnswer(candidate, this.sources());
     if (candidate && !answer) {
       outcome = "citation_rejected";
@@ -849,6 +953,8 @@ export class FlashResearch {
   }
 
   private correctionInstructions(outcome: CompletionStatus): string {
+    if (outcome === "refusal")
+      return `${this.refusal!.framing}\nThe previous synthesis declined the request. Report the collected evidence as requested, with exact source links beside each supported claim.`;
     return outcome === "citation_rejected"
       ? `\nThe previous synthesis did not pass citation validation. Write the answer again using only these exact source and registered artifact links: ${JSON.stringify(this.allowedLinks())}. Keep citations beside each supported claim; do not invent URLs.`
       : "\nThe previous synthesis did not complete. Produce a complete shorter answer now, at most 500 words, with headings and cited bullets. Include only the most relevant supported findings; omit preamble and research narration.";

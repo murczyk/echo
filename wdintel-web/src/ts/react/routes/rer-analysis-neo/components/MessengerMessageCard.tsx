@@ -17,6 +17,8 @@ type Props = {
   showSenderName: boolean;
   // The sender's name added in front of this message when a selection of a private chat is copied.
   copyPrefix: string | null;
+  // A line above this message that says where the read messages meet the unread ones: its label, or null for none.
+  unreadDivider?: string | null;
   onCopyLink: (messageId: string) => void;
   onCopyText: (text: string) => void;
 };
@@ -35,6 +37,7 @@ function MessengerMessageCardBase({
   senderName,
   showSenderName,
   copyPrefix,
+  unreadDivider = null,
   onCopyLink,
   onCopyText,
 }: Props) {
@@ -58,6 +61,15 @@ function MessengerMessageCardBase({
       : null;
   return (
     <MessageFeedItem id={message.id} data-message-id={message.id}>
+      {unreadDivider != null ? (
+        <div
+          role="separator"
+          data-messenger-unread-divider
+          className="flex items-center gap-3 px-4 py-2 text-xs text-[var(--echo-color-primary,var(--color-action,#3b82f6))] before:h-px before:flex-1 before:bg-current before:opacity-40 after:h-px after:flex-1 after:bg-current after:opacity-40"
+        >
+          {unreadDivider}
+        </div>
+      ) : null}
       <div
         className={`flex px-4 py-1 group-data-[mobile=true]/messenger:!px-1.5 group-data-[mobile=true]/messenger:!py-0.5 ${outgoing ? 'justify-end' : 'justify-start'}`}
         data-message-card-root
