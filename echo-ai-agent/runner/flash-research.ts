@@ -256,6 +256,17 @@ export function normalizedResearchUpdate(value: unknown): ResearchUpdate {
 const markdownLinks = (text: string) =>
   [...text.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)].map((match) => match[1]);
 
+/** One call's identity, whatever order its arguments were written in. */
+function callKey(tool: string, args: unknown): string {
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical((value as Record<string, unknown>)[key])]))
+        : value;
+  return `${tool}:${JSON.stringify(canonical(args))}`;
+}
+
 type AnswerIssue = NonNullable<CompletionDiagnostic["draftIssue"]>;
 
 const ANSWER_ISSUES: Record<AnswerIssue, string> = {
@@ -576,11 +587,11 @@ export class FlashResearch {
 
   /** A call the batch budget deferred: unresolved until the same call runs (#4224). */
   noteDeferred(tool: string, args: unknown): void {
-    this.deferredCalls.set(`${tool}:${JSON.stringify(args)}`, { tool, arguments: args });
+    this.deferredCalls.set(callKey(tool, args), { tool, arguments: args });
   }
 
   noteRan(tool: string, args: unknown): void {
-    this.deferredCalls.delete(`${tool}:${JSON.stringify(args)}`);
+    this.deferredCalls.delete(callKey(tool, args));
   }
 
   /** Deferred calls that never ran, for synthesis to report as not searched. */
@@ -644,6 +655,7 @@ export class FlashResearch {
   get hasUnfinishedWork(): boolean {
     return (
       this.hasPendingTasks ||
+      this.deferredCalls.size > 0 ||
       (!this.state &&
         (this.cutOff || (this.publicToolRuns === 0 && this.toolRunsAtProgress === 0)))
     );
@@ -653,6 +665,8 @@ export class FlashResearch {
   // a public promise of progress that no tool call followed, and a last turn the output
   // limit cut off, which may have been the plan for the whole request.
   private get unfinished(): boolean {
+    // Calls the batch budget deferred have not run, whatever the checklist says (#4224).
+    if (this.deferredCalls.size > 0) return true;
     return this.state
       ? this.hasPendingTasks
       : this.cutOff || this.toolRunsAtProgress === this.publicToolRuns;
@@ -709,7 +723,9 @@ export class FlashResearch {
     if (!pending.length && !this.unfinished) return hint + DEEP_SEARCH_PROMPT;
     const reason = pending.length
       ? `these tasks are still pending: ${JSON.stringify(pending)}`
-      : "you announced work but ran no tool";
+      : this.deferredCalls.size
+        ? `these calls were deferred because one turn asked for more than the context holds, and have not run: ${JSON.stringify([...this.deferredCalls.values()])}`
+        : "you announced work but ran no tool";
     return `${hint}The work is not finished: ${reason}. Do the remaining work now by calling the tools it needs; a text reply does not do it. If a task cannot be done or needs no tool, mark it done or blocked with update_research, then finish with a brief completion message.`;
   }
 
