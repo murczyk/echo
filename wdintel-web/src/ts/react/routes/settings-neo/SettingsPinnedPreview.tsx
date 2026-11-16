@@ -1,13 +1,59 @@
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
-import { Box, Button, Collapse, useMediaQuery, type Theme } from '@mui/material';
+import {
+  Box,
+  Button,
+  Collapse,
+  IconButton,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+  type Theme,
+} from '@mui/material';
 import { useId, useState, type ReactNode } from 'react';
 
+/** Shows or hides the pinned preview; icon-only on phones so the title row stays on one line. */
+function PreviewToggle({
+  hidden,
+  contentId,
+  onToggle,
+}: {
+  hidden: boolean;
+  contentId: string;
+  onToggle: () => void;
+}) {
+  const iconOnly = useMediaQuery((theme: Theme) => theme.breakpoints.down('sm'));
+  const label = hidden ? 'Показати перегляд картки' : 'Сховати перегляд картки';
+  const icon = hidden ? <VisibilityOutlinedIcon /> : <VisibilityOffOutlinedIcon />;
+  const toggleProps = {
+    'aria-label': label,
+    'aria-expanded': !hidden,
+    'aria-controls': contentId,
+    onClick: onToggle,
+  };
+  return iconOnly ? (
+    <Tooltip title={label}>
+      <IconButton size="small" color="primary" sx={{ my: -0.5 }} {...toggleProps}>
+        {icon}
+      </IconButton>
+    </Tooltip>
+  ) : (
+    <Button
+      size="small"
+      startIcon={icon}
+      sx={{ flexShrink: 0, textTransform: 'none', whiteSpace: 'nowrap' }}
+      {...toggleProps}
+    >
+      {hidden ? 'Показати' : 'Сховати'}
+    </Button>
+  );
+}
+
 /**
- * Keeps the card preview in view while the settings below it change.
- * Small screens can hide it to free the space it pins.
+ * Keeps the titled card preview in view while the settings below it change.
+ * Small screens can hide the preview to free the space it pins; the title row stays.
  */
-export function SettingsPinnedPreview({ children }: { children: ReactNode }) {
+export function SettingsPinnedPreview({ title, children }: { title: string; children: ReactNode }) {
   const smallScreen = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'));
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [hiddenOnSmallScreen, setHiddenOnSmallScreen] = useState(false);
@@ -19,18 +65,22 @@ export function SettingsPinnedPreview({ children }: { children: ReactNode }) {
       className="sticky top-[var(--app-shell-sticky-top,0px)] z-10 flex flex-col gap-echo-xs border-b border-echo-border py-echo-sm"
       sx={{ bgcolor: 'background.paper' }}
     >
-      {smallScreen ? (
-        <Button
-          size="small"
-          aria-expanded={!hidden}
-          aria-controls={contentId}
-          startIcon={hidden ? <VisibilityOutlinedIcon /> : <VisibilityOffOutlinedIcon />}
-          onClick={() => setHiddenOnSmallScreen((current) => !current)}
-          sx={{ alignSelf: 'flex-end', textTransform: 'none' }}
+      <div className="flex min-h-echo-control-sm items-center justify-between gap-echo-sm">
+        <Typography
+          variant="overline"
+          noWrap
+          sx={{ color: 'text.secondary', letterSpacing: 0.8, lineHeight: 1.5 }}
         >
-          {hidden ? 'Показати перегляд картки' : 'Сховати перегляд картки'}
-        </Button>
-      ) : null}
+          {title}
+        </Typography>
+        {smallScreen ? (
+          <PreviewToggle
+            hidden={hidden}
+            contentId={contentId}
+            onToggle={() => setHiddenOnSmallScreen((current) => !current)}
+          />
+        ) : null}
+      </div>
       <Collapse id={contentId} in={!hidden} timeout={reducedMotion ? 0 : 250}>
         {children}
       </Collapse>

@@ -39,9 +39,10 @@
   Unrelated saves omit `messageCardQuickAction` and
   `messageCardSecondQuickAction` so their server defaults stay unset.
 - The card preview shows the selected actions in slot order. It sits at the top
-  of the block and stays pinned to the top of the page while the block's
-  settings scroll; below the `md` breakpoint a «Сховати/Показати перегляд
-  картки» button collapses it. The settings card and `<settings-neo>` host use
+  of the block under the «Картка повідомлення» title row and, with that row,
+  stays pinned below the navbar while the block's settings scroll; below the
+  `md` breakpoint a «Сховати/Показати перегляд картки» button in the title row
+  collapses it. The settings card and `<settings-neo>` host use
   `overflow: clip` so the page stays the sticky scroll container.
 - Coverage: `wdintel-web/tests/e2e/message-card-quick-action.spec.ts` and
   `wdintel-rs/src/user_settings/functional_tests.rs`.

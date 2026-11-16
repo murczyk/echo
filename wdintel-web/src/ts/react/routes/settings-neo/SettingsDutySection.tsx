@@ -140,22 +140,6 @@ export function SettingsDutySection({
         {prefsLoadError ? <PowerAlert severity="warning">{prefsLoadError}</PowerAlert> : null}
         {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
         <Stack spacing={3} sx={{ minWidth: 0 }}>
-          {showClassicDutySetting ? (
-            <Box sx={cardSx}>
-              <FormControlLabel
-                sx={{ m: 0 }}
-                control={
-                  <Switch
-                    checked={showClassicDuty}
-                    onChange={(_, checked) => onShowClassicDutyChange(checked)}
-                    disabled={loadInProgress}
-                  />
-                }
-                label="Показувати класичний оперативний"
-              />
-            </Box>
-          ) : null}
-
           <SettingsMessageCard
             quickActions={quickActions}
             tagsLayout={tagsLayout}
@@ -305,6 +289,23 @@ export function SettingsDutySection({
               />
             </Stack>
           </Box>
+
+          {/* Last: the classic Duty page is going away. */}
+          {showClassicDutySetting ? (
+            <Box sx={cardSx}>
+              <FormControlLabel
+                sx={{ m: 0 }}
+                control={
+                  <Switch
+                    checked={showClassicDuty}
+                    onChange={(_, checked) => onShowClassicDutyChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label="Показувати класичний оперативний"
+              />
+            </Box>
+          ) : null}
         </Stack>
       </Stack>
     </Box>

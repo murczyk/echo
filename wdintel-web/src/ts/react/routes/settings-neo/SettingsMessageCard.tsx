@@ -76,11 +76,7 @@ export function SettingsMessageCard({
   return (
     <Box sx={cardSx}>
       <div className="flex flex-col gap-echo-xl">
-        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
-          Картка повідомлення
-        </Typography>
-
-        <SettingsPinnedPreview>
+        <SettingsPinnedPreview title="Картка повідомлення">
           <SettingsMessageCardPreview
             dutyCardVisibility={dutyCardVisibility?.value}
             messageCardQuickActions={messageCardQuickActionList(quickActions.value)}
