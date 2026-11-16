@@ -119,8 +119,8 @@ async fn probe_owned(
 /// rather than invalid; only WAV and MP3 are decoded afterwards.
 async fn media_metadata(source: &Path) -> anyhow::Result<Probe> {
     let options = ProbeOptions {
-        formats: Formats::AUDIO,
         timeout: DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT,
+        ..ProbeOptions::new(Formats::AUDIO)
     };
     let input = Input::file(source).c(h!())?;
     let media = crate::media_sandbox::ffmpeg().c(h!())?;

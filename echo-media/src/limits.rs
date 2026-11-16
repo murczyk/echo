@@ -6,6 +6,9 @@ use std::time::Duration;
 pub const ECHO_MEDIA_STDERR_TAIL_BYTES: usize = 64 * 1024;
 
 pub const ECHO_MEDIA_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+/// ffprobe JSON per probe; an input advertising thousands of streams fails
+/// instead of growing the parent's heap. Matches the former device audio cap.
+pub const ECHO_MEDIA_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 
 pub const ECHO_MEDIA_THUMBNAIL_TIMEOUT: Duration = Duration::from_secs(120);
 pub const ECHO_MEDIA_THUMBNAIL_THREADS: u32 = 1;

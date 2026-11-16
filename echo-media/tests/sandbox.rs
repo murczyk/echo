@@ -16,6 +16,7 @@ const SH: &str = "/bin/sh";
 const BASH: &str = "/bin/bash";
 const CAT: &str = "/usr/bin/cat";
 const TIMEOUT: Duration = Duration::from_secs(10);
+const STDOUT_BYTES: usize = 64 * 1024;
 
 async fn run(
     program: &str,
@@ -40,7 +41,7 @@ async fn run_for(
         capture_stdout: true,
         redact: Vec::new(),
     };
-    process::run(spec).await
+    process::capture(spec, STDOUT_BYTES).await
 }
 
 fn stdout(output: &Output) -> String {
@@ -136,6 +137,20 @@ async fn file_size_limit_kills_with_sigxfsz() {
 }
 
 #[tokio::test]
+async fn captured_stdout_is_capped() {
+    let policy =
+        Policy::for_programs(&[SH, "/usr/bin/head"]).read_file("/dev/zero");
+    let script = format!("exec head -c {} /dev/zero", STDOUT_BYTES + 1);
+    let result = run(SH, &script, policy).await;
+    assert!(matches!(result, Err(MediaError::OutputLimit)), "{result:?}");
+
+    let output = run(SH, "echo fits", Policy::for_programs(&[SH]))
+        .await
+        .unwrap();
+    assert_eq!(stdout(&output), "fits\n");
+}
+
+#[tokio::test]
 async fn environment_is_cleared() {
     std::env::set_var("ECHO_MEDIA_TEST_SECRET", "leaked");
     let spec = Spec {
@@ -148,7 +163,7 @@ async fn environment_is_cleared() {
         capture_stdout: true,
         redact: Vec::new(),
     };
-    let output = process::run(spec).await.unwrap();
+    let output = process::capture(spec, STDOUT_BYTES).await.unwrap();
     let mut lines: Vec<_> =
         stdout(&output).lines().map(str::to_owned).collect();
     lines.sort();
@@ -301,7 +316,7 @@ async fn disabled_mode_skips_isolation_but_clears_the_environment() {
         capture_stdout: true,
         redact: Vec::new(),
     };
-    let output = process::run(spec).await.unwrap();
+    let output = process::capture(spec, STDOUT_BYTES).await.unwrap();
     let stdout = stdout(&output);
     assert!(
         stdout.contains(&String::from_utf8_lossy(SECRET_MARKER).into_owned()),

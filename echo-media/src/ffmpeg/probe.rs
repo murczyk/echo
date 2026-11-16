@@ -11,6 +11,8 @@ use std::time::Duration;
 pub struct ProbeOptions {
     pub formats: Formats,
     pub timeout: Duration,
+    /// ffprobe JSON kept before the probe fails with `OutputLimit`.
+    pub max_output_bytes: usize,
 }
 
 impl ProbeOptions {
@@ -18,6 +20,7 @@ impl ProbeOptions {
         Self {
             formats,
             timeout: ECHO_MEDIA_PROBE_TIMEOUT,
+            max_output_bytes: ECHO_MEDIA_PROBE_OUTPUT_BYTES,
         }
     }
 }
@@ -96,7 +99,7 @@ impl Ffmpeg {
             write_dir: None,
             capture_stdout: true,
         });
-        let output = process::run(spec).await?;
+        let output = process::capture(spec, options.max_output_bytes).await?;
         serde_json::from_slice(&output.stdout).map_err(|error| {
             MediaError::invalid(format!("unreadable ffprobe output: {error}"))
         })

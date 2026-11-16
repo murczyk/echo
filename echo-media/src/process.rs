@@ -52,14 +52,25 @@ pub struct Running {
     redact: Vec<String>,
 }
 
-/// Run to completion, capturing all of stdout.
+/// Run to completion, expecting no stdout: any output is
+/// [`MediaError::OutputLimit`]. Use [`capture`] to keep stdout.
 pub async fn run(spec: Spec) -> Result<Output> {
+    capture(spec, 0).await
+}
+
+/// Run to completion, capturing stdout. More than `max_bytes` of it kills the
+/// process with [`MediaError::OutputLimit`], so a hostile input cannot grow
+/// the parent's memory through the decoder's stdout.
+pub async fn capture(spec: Spec, max_bytes: usize) -> Result<Output> {
     let mut stdout = Vec::new();
-    let capture = |chunk: &[u8]| {
+    let consume = |chunk: &[u8]| {
+        if stdout.len() + chunk.len() > max_bytes {
+            return Err(MediaError::OutputLimit);
+        }
         stdout.extend_from_slice(chunk);
         Ok(true)
     };
-    let mut output = run_with(spec, None, capture).await?;
+    let mut output = run_with(spec, None, consume).await?;
     output.stdout = stdout;
     Ok(output)
 }

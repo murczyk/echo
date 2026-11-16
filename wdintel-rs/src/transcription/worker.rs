@@ -197,10 +197,10 @@ async fn ensure_audio(path: &Path) -> Result<()> {
         .map_err(retryable_preparation)
         .context(h!())?;
     let options = ProbeOptions {
-        formats: Formats::AUDIO,
         timeout: Duration::from_secs(
             ECHO_AUDIO_TRANSCRIPTION_PROBE_TIMEOUT_SECS,
         ),
+        ..ProbeOptions::new(Formats::AUDIO)
     };
     let probed = crate::media_sandbox::ffmpeg()
         .map_err(retryable_preparation)

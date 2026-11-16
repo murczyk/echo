@@ -152,13 +152,17 @@ pub(super) async fn prepare(
 /// (corrupt, or a demuxer outside the whitelist) counts as unsupported.
 async fn supported_source(source: &Path) -> Result<bool> {
     let options = ProbeOptions {
-        formats: Formats::VIDEO,
         timeout: Duration::from_secs(
             MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS,
         ),
+        ..ProbeOptions::new(Formats::VIDEO)
     };
     let input = Input::file(source).c(h!())?;
-    let probe = match crate::media_sandbox::ffmpeg().c(h!())?.probe(&input, &options).await {
+    let probe = match crate::media_sandbox::ffmpeg()
+        .c(h!())?
+        .probe(&input, &options)
+        .await
+    {
         Ok(probe) => probe,
         Err(error) if error.is_terminal() => {
             warn!("video probe rejected {}: {error:#}", source.display());

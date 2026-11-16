@@ -101,10 +101,10 @@ pub(super) async fn info(
     let _slot = cache.slot().await.c(h!())?.ok_or(super::Busy).c(h!())?;
     let source = input(env, media).await.c(h!())?;
     let options = ProbeOptions {
-        formats: Formats::MOV,
         timeout: Duration::from_secs(
             MESSENGER_MEDIA_PREVIEW_PROBE_TIMEOUT_SECS,
         ),
+        ..ProbeOptions::new(Formats::MOV)
     };
     let probe = crate::media_sandbox::ffmpeg()
         .c(h!())?

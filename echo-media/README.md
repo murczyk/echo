@@ -141,8 +141,10 @@ that have not opted in to the sandbox (see [Wiring](#wiring)).
   async tasks, never from a short-lived `spawn_blocking` thread, or the child
   dies when that thread exits.
 - **Memory and CPU** are bounded only by the service cgroup and each job's
-  wall-clock timeout. Decoder stderr and ffprobe stdout are not capped, so a
-  decoder that floods its output grows the parent's memory until the timeout.
+  wall-clock timeout. The parent keeps only the last
+  `ECHO_MEDIA_STDERR_TAIL_BYTES` of decoder stderr, and ffprobe stdout over
+  `ProbeOptions::max_output_bytes` (`ECHO_MEDIA_PROBE_OUTPUT_BYTES`, 64 KiB)
+  fails the probe with `OutputLimit`.
 
 ## Input names
 
