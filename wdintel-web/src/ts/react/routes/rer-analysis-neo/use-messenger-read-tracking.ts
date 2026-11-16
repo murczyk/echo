@@ -45,8 +45,10 @@ export function useMessengerReadTracking({
   // until the stored span (the props) has caught up with it. One per write, so a failed one takes out only itself.
   const writes = useRef(new Map<number, { from: number; to: number }>());
   const timer = useRef<number | null>(null);
-  // Only the newest answer is shown: the server widens the span, so an older answer would show an older count.
+  // The number of the next write.
   const sequence = useRef(0);
+  // The span of the answer shown last. An answer is judged by its span, not by when its request was made (see `flush`).
+  const shown = useRef<{ from: number; to: number } | null>(null);
 
   const flush = useCallback(() => {
     if (timer.current != null) window.clearTimeout(timer.current);
@@ -63,7 +65,16 @@ export function useMessengerReadTracking({
       newestReadAt: range.to,
     })
       .then((state) => {
-        if (mine === sequence.current) latest.current.onReadState(chatId, state);
+        // The stored span only ever widens, so an answer that holds the span on screen is at least as current as it, whatever
+        // the order the requests ran in on the server: a later request can run first, and the earlier one then answers with
+        // the union. A narrower answer is an older state and is not shown.
+        const { oldestReadAt: oldest, newestReadAt: newest } = latest.current;
+        const onScreenFrom = Math.min(oldest ?? Infinity, shown.current?.from ?? Infinity);
+        const onScreenTo = Math.max(newest ?? -Infinity, shown.current?.to ?? -Infinity);
+        if (state.oldestReadAt == null || state.newestReadAt == null) return;
+        if (state.oldestReadAt > onScreenFrom || state.newestReadAt < onScreenTo) return;
+        shown.current = { from: state.oldestReadAt, to: state.newestReadAt };
+        latest.current.onReadState(chatId, state);
       })
       // The next scroll sends it again, and a failed write only leaves the badge as it was.
       .catch(() => {

@@ -283,20 +283,60 @@ describe('useMessengerReadTracking', () => {
     });
   });
 
-  it('shows only the newest answer', async () => {
-    let resolveFirst!: (state: MessengersChatReadState) => void;
-    apiMock.updateMessengersChatReadState
-      .mockReset()
-      .mockReturnValueOnce(new Promise((r) => (resolveFirst = r)))
-      .mockResolvedValueOnce({ oldestReadAt: 100, newestReadAt: 400, unreadCount: 0 });
-    await render({ messages: window100, oldestReadAt: null, newestReadAt: null });
-    await see('a');
-    await settle();
-    await see('d');
-    await settle();
-    await act(async () => resolveFirst({ oldestReadAt: 100, newestReadAt: 100, unreadCount: 3 }));
-    expect(onReadState).toHaveBeenCalledTimes(1);
-    expect(onReadState).toHaveBeenCalledWith('c1', expect.objectContaining({ unreadCount: 0 }));
+  describe('answers that arrive out of order', () => {
+    const answer = (oldestReadAt: number, newestReadAt: number, unreadCount: number) => ({
+      oldestReadAt,
+      newestReadAt,
+      unreadCount,
+    });
+    // Two writes in flight, the second one (n3 at 900) ran first on the server: it answers with its own span, the first
+    // one (n1 at 700) answers with the union.
+    const twoInFlight = async () => {
+      let first!: (state: MessengersChatReadState) => void;
+      let second!: (state: MessengersChatReadState) => void;
+      apiMock.updateMessengersChatReadState
+        .mockReset()
+        .mockReturnValueOnce(new Promise<MessengersChatReadState>((resolve) => (first = resolve)))
+        .mockReturnValueOnce(new Promise<MessengersChatReadState>((resolve) => (second = resolve)));
+      const window = [message('n1', 700), message('n2', 800), message('n3', 900)];
+      await render({ messages: window, oldestReadAt: null, newestReadAt: null });
+      await see('n1');
+      await settle();
+      await see('n3');
+      await settle();
+      expect(apiMock.updateMessengersChatReadState).toHaveBeenCalledTimes(2);
+      return { first, second };
+    };
+    const shownStates = () => onReadState.mock.calls.map(([, state]) => state);
+
+    it('shows the union even when it answers a request made earlier and arrives last', async () => {
+      const { first, second } = await twoInFlight();
+      await act(async () => second(answer(900, 900, 8)));
+      await act(async () => first(answer(700, 900, 6)));
+      expect(shownStates().at(-1)).toEqual(answer(700, 900, 6));
+    });
+
+    it('does not let a narrower answer replace the union that came first', async () => {
+      const { first, second } = await twoInFlight();
+      await act(async () => first(answer(700, 900, 6)));
+      await act(async () => second(answer(900, 900, 8)));
+      expect(shownStates()).toEqual([answer(700, 900, 6)]);
+    });
+
+    it('does not replace what is on screen, e.g. after a refresh, with a narrower answer', async () => {
+      let resolve!: (state: MessengersChatReadState) => void;
+      apiMock.updateMessengersChatReadState
+        .mockReset()
+        .mockReturnValueOnce(new Promise<MessengersChatReadState>((r) => (resolve = r)));
+      await render({ messages: window100, oldestReadAt: 300, newestReadAt: 300 });
+      await see('d');
+      await settle();
+      expect(apiMock.updateMessengersChatReadState).toHaveBeenCalledTimes(1);
+      // While the write is on its way, a refresh of the chat list brings a wider span.
+      await render({ messages: window100, oldestReadAt: 300, newestReadAt: 500 });
+      await act(async () => resolve(answer(300, 400, 5)));
+      expect(onReadState).not.toHaveBeenCalled();
+    });
   });
 
   it('leaves a failed write silent and sends the next one', async () => {
