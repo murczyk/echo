@@ -29,14 +29,20 @@
 
 ## Narrow-card quick actions
 
-- The «Картка повідомлення» block on the Duty and Analysis tabs has a shared
-  «Кількість швидких дій» toggle (1 or 2, default 2). With 2 it shows
-  «Швидка дія 1» and «Швидка дія 2» selectors; with 1, a single «Швидка дія».
+- The «Картка повідомлення» block on the Duty and Analysis tabs has shared
+  «Швидкі дії» selectors (count 1 or 2, default 2). With 2 it shows
+  «Швидка дія 1» and «Швидка дія 2», with a «−» button beside the second that
+  removes it; with 1, a single «Швидка дія» with a «+» button to its right that
+  adds the second. Focus moves to the new second selector, or back to «+».
   The second defaults to «Позначити як важливе».
 - Choosing the other slot's action swaps the two selectors and saves both.
   Unrelated saves omit `messageCardQuickAction` and
   `messageCardSecondQuickAction` so their server defaults stay unset.
-- The card preview shows the selected actions in slot order.
+- The card preview shows the selected actions in slot order. It sits at the top
+  of the block and stays pinned to the top of the page while the block's
+  settings scroll; below the `md` breakpoint a «Сховати/Показати перегляд
+  картки» button collapses it. The settings card and `<settings-neo>` host use
+  `overflow: clip` so the page stays the sticky scroll container.
 - Coverage: `wdintel-web/tests/e2e/message-card-quick-action.spec.ts` and
   `wdintel-rs/src/user_settings/functional_tests.rs`.
 - Original Echo issue: [#4219](https://github.com/echoua/echo/issues/4219)

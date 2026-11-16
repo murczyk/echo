@@ -1,11 +1,12 @@
-import { MenuItem, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
+import { IconButton, MenuItem, TextField, Tooltip, Typography } from '@mui/material';
+import { useEffect, useRef, type ReactNode, type Ref } from 'react';
 
 import {
-  MESSAGE_CARD_QUICK_ACTION_COUNTS,
   MESSAGE_CARD_QUICK_ACTION_OPTIONS,
   normalizeMessageCardQuickAction,
   type MessageCardQuickAction,
-  type MessageCardQuickActionCount,
   type MessageCardQuickActionSettings,
 } from '../../services/api/user-settings';
 import { MESSAGE_CARD_QUICK_ACTION_ICONS } from '../shared/message-card/MessageCardQuickAction';
@@ -16,6 +17,9 @@ const OTHER_SLOT: Record<QuickActionSlot, QuickActionSlot> = {
   messageCardQuickAction: 'messageCardSecondQuickAction',
   messageCardSecondQuickAction: 'messageCardQuickAction',
 };
+
+const ADD_SECOND_LABEL = 'Додати другу швидку дію';
+const REMOVE_SECOND_LABEL = 'Прибрати другу швидку дію';
 
 export type SettingsMessageCardQuickActionsProps = {
   value: MessageCardQuickActionSettings;
@@ -34,24 +38,51 @@ function slotChange(
     : { [slot]: action };
 }
 
+function SlotButton({
+  label,
+  icon,
+  disabled,
+  buttonRef,
+  onClick,
+}: {
+  label: string;
+  icon: ReactNode;
+  disabled: boolean;
+  buttonRef?: Ref<HTMLButtonElement>;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip title={label}>
+      <span className="inline-flex shrink-0">
+        <IconButton ref={buttonRef} aria-label={label} disabled={disabled} onClick={onClick}>
+          {icon}
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+}
+
 function QuickActionSelect({
   label,
   value,
   disabled,
+  selectRef,
   onChange,
+  slotButton,
 }: {
   label: string;
   value: MessageCardQuickAction;
   disabled: boolean;
+  selectRef?: Ref<{ focus: () => void }>;
   onChange: (value: MessageCardQuickAction) => void;
+  /** Adds or removes the second slot, to the right of the select. */
+  slotButton?: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-echo-sm">
-      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        {label}:
-      </Typography>
+    <div className="flex min-w-0 items-center gap-echo-xs">
       <TextField
         select
+        inputRef={selectRef}
         SelectProps={{ inputProps: { 'aria-label': label } }}
         value={value}
         onChange={(event) => {
@@ -60,7 +91,7 @@ function QuickActionSelect({
         }}
         disabled={disabled}
         size="small"
-        sx={{ width: 360, maxWidth: '100%', alignSelf: 'flex-start' }}
+        sx={{ width: 360 }}
       >
         {MESSAGE_CARD_QUICK_ACTION_OPTIONS.map((option) => {
           const Icon = MESSAGE_CARD_QUICK_ACTION_ICONS[option.value];
@@ -74,6 +105,7 @@ function QuickActionSelect({
           );
         })}
       </TextField>
+      {slotButton}
     </div>
   );
 }
@@ -83,51 +115,65 @@ export function SettingsMessageCardQuickActions({
   onChange,
   loadInProgress,
 }: SettingsMessageCardQuickActionsProps & { loadInProgress: boolean }) {
-  const count = value.messageCardQuickActionCount;
-  const slots: Array<{ slot: QuickActionSlot; label: string }> =
-    count === 1
-      ? [{ slot: 'messageCardQuickAction', label: 'Швидка дія' }]
-      : [
-          { slot: 'messageCardQuickAction', label: 'Швидка дія 1' },
-          { slot: 'messageCardSecondQuickAction', label: 'Швидка дія 2' },
-        ];
+  const twoSlots = value.messageCardQuickActionCount === 2;
+  const secondSelectRef = useRef<{ focus: () => void } | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Keeps keyboard focus on the control that replaces the clicked button.
+  const focusAfterCountChange = useRef<'second' | 'add' | null>(null);
+  useEffect(() => {
+    const target = focusAfterCountChange.current;
+    focusAfterCountChange.current = null;
+    if (target === 'second') secondSelectRef.current?.focus();
+    else if (target === 'add') addButtonRef.current?.focus();
+  }, [twoSlots]);
+
+  const changeSlot = (slot: QuickActionSlot) => (action: MessageCardQuickAction) =>
+    onChange(slotChange(value, slot, action));
   return (
-    <div className="flex min-w-0 flex-col gap-echo-md">
-      <div className="flex flex-col gap-echo-sm">
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Кількість швидких дій:
-        </Typography>
-        <ToggleButtonGroup
-          aria-label="Кількість швидких дій"
-          value={count}
-          exclusive
-          color="primary"
-          size="small"
-          disabled={loadInProgress}
-          onChange={(_, next: MessageCardQuickActionCount | null) => {
-            if (next != null && next !== count) onChange({ messageCardQuickActionCount: next });
-          }}
-          sx={{
-            alignSelf: 'flex-start',
-            '& .MuiToggleButton-root': { fontSize: 14, px: 2, py: 1, minWidth: 48 },
-          }}
-        >
-          {MESSAGE_CARD_QUICK_ACTION_COUNTS.map((option) => (
-            <ToggleButton key={option} value={option}>
-              {option}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-      </div>
-      {slots.map(({ slot, label }) => (
+    <div className="flex min-w-0 flex-col gap-echo-sm">
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        Швидкі дії:
+      </Typography>
+      <QuickActionSelect
+        label={twoSlots ? 'Швидка дія 1' : 'Швидка дія'}
+        value={value.messageCardQuickAction}
+        disabled={loadInProgress}
+        onChange={changeSlot('messageCardQuickAction')}
+        slotButton={
+          twoSlots ? null : (
+            <SlotButton
+              label={ADD_SECOND_LABEL}
+              icon={<AddIcon />}
+              disabled={loadInProgress}
+              buttonRef={addButtonRef}
+              onClick={() => {
+                focusAfterCountChange.current = 'second';
+                onChange({ messageCardQuickActionCount: 2 });
+              }}
+            />
+          )
+        }
+      />
+      {twoSlots ? (
         <QuickActionSelect
-          key={slot}
-          label={label}
-          value={value[slot]}
+          label="Швидка дія 2"
+          value={value.messageCardSecondQuickAction}
           disabled={loadInProgress}
-          onChange={(action) => onChange(slotChange(value, slot, action))}
+          selectRef={secondSelectRef}
+          onChange={changeSlot('messageCardSecondQuickAction')}
+          slotButton={
+            <SlotButton
+              label={REMOVE_SECOND_LABEL}
+              icon={<RemoveIcon />}
+              disabled={loadInProgress}
+              onClick={() => {
+                focusAfterCountChange.current = 'add';
+                onChange({ messageCardQuickActionCount: 1 });
+              }}
+            />
+          }
         />
-      ))}
+      ) : null}
       <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
         Обрані дії показуються у вузькій картці поруч із меню без дублювання. Якщо дія недоступна,
         кнопка приховується.

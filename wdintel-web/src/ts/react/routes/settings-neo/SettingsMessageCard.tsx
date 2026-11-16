@@ -21,6 +21,7 @@ import {
   type SettingsDutyCardVisibilityProps,
 } from './SettingsDutyCardVisibility';
 import { SettingsMessageCardPreview } from './SettingsMessageCardPreview';
+import { SettingsPinnedPreview } from './SettingsPinnedPreview';
 import {
   SettingsMessageCardQuickActions,
   type SettingsMessageCardQuickActionsProps,
@@ -78,6 +79,21 @@ export function SettingsMessageCard({
         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
           Картка повідомлення
         </Typography>
+
+        <SettingsPinnedPreview>
+          <SettingsMessageCardPreview
+            dutyCardVisibility={dutyCardVisibility?.value}
+            messageCardQuickActions={messageCardQuickActionList(quickActions.value)}
+            largeMessageCardText={largeMessageCardText}
+            tagsLayout={tagsLayout}
+            mediaSummaryEnabled={mediaSummaryEnabled}
+            attachmentPreviewMode={attachmentPreviewMode}
+            aiPositionHighlightsEnabled={
+              aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled
+            }
+            messageTextPreviewLines={messageTextPreviewLines}
+          />
+        </SettingsPinnedPreview>
 
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -235,19 +251,6 @@ export function SettingsMessageCard({
         {dutyCardVisibility ? (
           <SettingsDutyCardVisibility {...dutyCardVisibility} loadInProgress={loadInProgress} />
         ) : null}
-
-        <SettingsMessageCardPreview
-          dutyCardVisibility={dutyCardVisibility?.value}
-          messageCardQuickActions={messageCardQuickActionList(quickActions.value)}
-          largeMessageCardText={largeMessageCardText}
-          tagsLayout={tagsLayout}
-          mediaSummaryEnabled={mediaSummaryEnabled}
-          attachmentPreviewMode={attachmentPreviewMode}
-          aiPositionHighlightsEnabled={
-            aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled
-          }
-          messageTextPreviewLines={messageTextPreviewLines}
-        />
 
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>

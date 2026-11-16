@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, Children, cloneElement, isValidElement } from 'react';
+import { act, Children, cloneElement, forwardRef, isValidElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -121,6 +121,14 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  IconButton: forwardRef<
+    HTMLButtonElement,
+    { children: ReactNode; 'aria-label'?: string; disabled?: boolean; onClick?: () => void }
+  >(({ children, ...props }, ref) => (
+    <button type="button" ref={ref} {...props}>
+      {children}
+    </button>
+  )),
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));

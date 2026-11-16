@@ -270,7 +270,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           sx={{
             borderRadius: 0,
             boxShadow: 'none',
-            overflow: 'hidden',
+            // `clip` (not `hidden`) keeps the page the scroll container for the pinned card preview.
+            overflow: 'clip',
             backgroundColor: 'background.paper',
           }}
         >

@@ -213,7 +213,7 @@ for (const host of ['duty', 'analysis'] as const) {
     expect(fixture.settings().messageCardQuickAction).toBe('edit');
   });
 
-  test(`#4219 ${host}: the quick-action count shows one or two slots that never repeat @regression`, async ({
+  test(`#4219 ${host}: plus and minus switch between one and two quick actions that never repeat @regression`, async ({
     page,
   }) => {
     const fixture = await installFixture(page, host);
@@ -240,11 +240,10 @@ for (const host of ['duty', 'analysis'] as const) {
 
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto(`/settings-neo?section=${host}`);
-    const count = page.getByRole('group', { name: 'Кількість швидких дій' });
-    await expect(count.getByRole('button', { name: '2', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    const add = page.getByRole('button', { name: 'Додати другу швидку дію', exact: true });
+    const remove = page.getByRole('button', { name: 'Прибрати другу швидку дію', exact: true });
+    await expect(remove).toBeVisible();
+    await expect(add).toHaveCount(0);
     const first = page.getByRole('combobox', { name: 'Швидка дія 1', exact: true });
     const second = page.getByRole('combobox', { name: 'Швидка дія 2', exact: true });
     await expect(first).toHaveText('Створити розвіддонесення');
@@ -269,13 +268,23 @@ for (const host of ['duty', 'analysis'] as const) {
     });
     await expect(preview.locator('[data-message-card-quick-action-preview]')).toHaveCount(2);
 
-    await count.getByRole('button', { name: '1', exact: true }).click();
+    await remove.click();
     await expect.poll(() => fixture.settings().messageCardQuickActionCount).toBe(1);
-    await expect(page.getByRole('combobox', { name: 'Швидка дія', exact: true })).toHaveText(
-      'Додати в закладки',
-    );
+    const single = page.getByRole('combobox', { name: 'Швидка дія', exact: true });
+    await expect(single).toHaveText('Додати в закладки');
     await expect(second).toHaveCount(0);
+    await expect(add).toBeFocused();
     await expect(preview.locator('[data-message-card-quick-action-preview]')).toHaveCount(1);
+    // The plus sits to the right of the single quick action, on the same row.
+    const [selectBox, addBox] = await page.evaluate(() =>
+      [
+        document.querySelector('[role="combobox"][aria-label="Швидка дія"]')!,
+        document.querySelector('button[aria-label="Додати другу швидку дію"]')!,
+      ].map((element) => element.getBoundingClientRect().toJSON() as DOMRect),
+    );
+    expect(addBox.left).toBeGreaterThanOrEqual(selectBox.right);
+    expect(addBox.top).toBeLessThan(selectBox.bottom);
+    expect(addBox.bottom).toBeGreaterThan(selectBox.top);
 
     const actions = await openCard();
     await expect.poll(() => labels(actions)).toEqual(['Додати в закладки', 'Більше дій']);
@@ -301,4 +310,42 @@ test('#3927 failed quick-action saves show an error and retain the last persiste
   expect(fixture.settings().messageCardQuickAction).toBe('createReport');
   await page.reload();
   await expect(select).toHaveText('Створити розвіддонесення');
+});
+
+test('#4219 the card preview stays pinned while settings scroll and hides on small screens @regression', async ({
+  page,
+}) => {
+  await installFixture(page, 'duty');
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await page.goto('/settings-neo?section=duty');
+  const preview = page.getByRole('region', {
+    name: 'Попередній перегляд картки повідомлення',
+    exact: true,
+  });
+  const hide = page.getByRole('button', { name: 'Сховати перегляд картки', exact: true });
+  const show = page.getByRole('button', { name: 'Показати перегляд картки', exact: true });
+  await expect(preview).toBeVisible();
+  await expect(hide).toHaveCount(0);
+  // Pinned just below the fixed navbar, not under it.
+  const pinnedBelowNavbar = () =>
+    page.evaluate(() => {
+      const navbar = document.querySelector('nav')!.closest('.fixed')!.getBoundingClientRect();
+      const bar = document.querySelector('[data-settings-pinned-preview]')!.getBoundingClientRect();
+      return bar.top >= navbar.bottom - 1 && bar.top <= navbar.bottom + 4;
+    });
+  const scrollPastPreview = () =>
+    page.getByRole('button', { name: 'Без скорочення', exact: true }).scrollIntoViewIfNeeded();
+  await scrollPastPreview();
+  await expect.poll(pinnedBelowNavbar).toBe(true);
+  await expect(preview).toBeInViewport();
+
+  await page.setViewportSize({ width: 390, height: 800 });
+  await hide.click();
+  await expect(preview).toBeHidden();
+  await expect(show).toHaveAttribute('aria-expanded', 'false');
+  await scrollPastPreview();
+  await expect.poll(pinnedBelowNavbar).toBe(true);
+  await show.click();
+  await expect(preview).toBeVisible();
+  await expect(hide).toHaveAttribute('aria-expanded', 'true');
 });
