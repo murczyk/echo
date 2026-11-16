@@ -2705,7 +2705,7 @@ export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch",
     return [{
       kind: kind === "deviceFileSearch" ? "file" as const : "attachment" as const,
       id: kind === "deviceFileSearch" ? hit.citation : `${hit.citation}#${String(hit.mediaId ?? name)}`,
-      text: `${capText(`${name}${location}${state}`, SEARCH_HIT_NAME_MAX_CHARACTERS)}${details.length ? `: ${details.join(" — ")}` : ""}`,
+      text: `${capText(`${name}${location}`, SEARCH_HIT_NAME_MAX_CHARACTERS)}${state}${details.length ? `: ${details.join(" — ")}` : ""}`,
       citation: hit.citation,
     }];
   });
@@ -2764,6 +2764,8 @@ export function createToolResponseCompactor(
 ): ToolResponseCompactor {
   let totalCharacters = maxTotalCharacters;
   let responseCharacters = maxResponseCharacters;
+  // When to compact; one indivisible result (a large read section) may exceed it (#4224).
+  let thresholdCharacters = maxResponseCharacters;
   let batchCharacters = maxBatchCharacters;
   let remainingCharacters = totalCharacters;
   let remainingInvocations = maxInvocations;
@@ -2810,14 +2812,17 @@ export function createToolResponseCompactor(
       Number.isFinite(batchCharacters) ? Math.max(1, Math.floor(batchCharacters / MIN_TOOL_CALL_CHARACTERS)) : Number.POSITIVE_INFINITY,
     );
   };
-  compact.admit = () => batchSlots > 0;
+  // A call is admitted while slots remain and the batch still has a minimum share left:
+  // an oversized read may have used it up.
+  compact.admit = () =>
+    batchSlots > 0 && (!Number.isFinite(batchCharacters) || batchRemaining >= Math.min(MIN_TOOL_CALL_CHARACTERS, batchCharacters));
   compact.release = () => {
     batchSlots = Math.max(0, batchSlots - 1);
   };
   compact.configure = (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => {
     remainingCharacters = Math.max(0, remainingCharacters + budget.totalCharacters - totalCharacters);
     totalCharacters = budget.totalCharacters;
-    responseCharacters = budget.thresholdCharacters;
+    thresholdCharacters = budget.thresholdCharacters;
     batchCharacters = budget.batchCharacters;
     batchRemaining = batchCharacters;
     batchSlots = 1;
@@ -2832,7 +2837,7 @@ export function createToolResponseCompactor(
   };
   compact.needsCompaction = () =>
     remainingCharacters <
-    Math.min(responseCharacters, totalCharacters / 2) +
+    Math.min(thresholdCharacters, totalCharacters / 2) +
       Math.max(0, remainingInvocations - 1) * 2;
   return compact;
 }

@@ -1337,6 +1337,30 @@ test("#4224 search hit evidence keeps each attachment and its matched snippet", 
     { fileName: "KMSAuto.exe", current: false, complete: false, summaryState: "failed", snippet: "page 1: KMS", citation: "/devices/d?file=f&revision=1" },
   ] }));
   assert.equal(old.text, "KMSAuto.exe [earlier revision, incomplete extraction, summary failed]: page 1: KMS");
+  const [deep] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: `${"Дуже довга назва ".repeat(10)}.exe`, folder: "C:\\" + "Каталог\\".repeat(30), current: false, citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.match(deep.text, /… \[earlier revision\]$/, "a long name and folder never cut the qualifiers");
+});
+
+test("#4224 large reads fit small windows and later calls wait once the batch is used up", () => {
+  const read = { skill: "device_file_read", requestKind: "deviceFileRead" as const };
+  const source = { deviceId: "01999999-1111-7111-8111-111111111111", fileId: "01999999-2222-7222-8222-222222222222", revision: 1 };
+  const section = (ordinal: number) => ({ document: { ...source, fileName: "orders.xlsx" }, sections: [{ ordinal, locator: "sheet 1", markdown: "x".repeat(12_000) }], nextAfter: null });
+  // A 32k profile: one 12,000-character section is indivisible but fits the allowance.
+  const small = createContextToolResponseCompactor(32_768, { maxTokens: 4_096, compactionReserveTokens: 8_192, compactionKeepRecentTokens: 1_024, fixedTokens: 10_000 });
+  small.beginBatch(1);
+  assert.equal(JSON.parse(small(read, section(0), 64)).sections.length, 1);
+  // Eight such reads on the 64k profile: those admitted deliver, the rest wait.
+  const compact = createContextToolResponseCompactor(65_536, { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  compact.beginBatch(8);
+  let delivered = 0;
+  for (let call = 0; call < 8; call++) {
+    if (!compact.admit()) continue;
+    assert.equal(JSON.parse(compact(read, section(call), 64)).sections.length, 1);
+    delivered += 1;
+  }
+  assert.ok(delivered >= 2 && delivered < 8, `${delivered} reads delivered`);
 });
 
 test("#4224 an empty search page still delivers when its share is exhausted", () => {

@@ -339,7 +339,9 @@ even share of what is left, so the last of six parallel searches still delivers
 data on a 64k window (#4224). Calls beyond what the batch can give at least
 2,000 characters are not run; they return a notice to request them again in a
 later turn. A result that cannot be shortened into its share, such as one large
-read section, may use the call's whole allowance; the next turn compacts. Compaction keeps at most the recent context that
+read section, may use the call's whole allowance (up to the usual per-response
+ceiling); calls after it wait for a later turn once the batch is used up, and the
+next turn compacts. Compaction keeps at most the recent context that
 clears this allowance. Nearing the allowance triggers a checkpoint even if
 provider token headroom remains. Discarded allowance is released after
 compaction. File and attachment search hits reach the model without default
