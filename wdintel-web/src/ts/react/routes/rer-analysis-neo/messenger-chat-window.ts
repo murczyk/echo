@@ -45,6 +45,17 @@ export function aroundPage(
   return toPage(rsp, newerCount >= 0 && newerCount < Math.floor(limit / 2));
 }
 
+// The page around `sentAt` (`around_sent_at`): the older half ends with the messages sent at or before it, the newer
+// half starts with the first unread ones. A shorter newer side means the chat ends there.
+export function aroundSentAtPage(
+  rsp: MessengersMessagesListRsp,
+  sentAt: number,
+  limit: number,
+): MessengerChatPage {
+  const newerCount = rsp.items.filter((item) => item.sentAt > sentAt).length;
+  return toPage(rsp, newerCount < Math.floor(limit / 2));
+}
+
 export function prependOlder(
   pages: readonly MessengerChatPage[],
   rsp: MessengersMessagesListRsp,

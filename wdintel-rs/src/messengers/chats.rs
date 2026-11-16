@@ -4,13 +4,25 @@ use crate::h;
 use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
+use crate::messengers::read_state::with_read_state;
 use crate::messengers::types::{
     MessengersChatItem, MessengersChatsListReq, MessengersChatsListRsp,
     MessengersTelegramChatId,
 };
 use crate::types::ShortContext;
+use chrono::NaiveDateTime;
 use sea_orm::sea_query::NullOrdering;
 use sea_orm::*;
+
+/// A chat with the caller's read state of it, see `with_read_state`.
+#[derive(FromQueryResult)]
+struct ChatRow {
+    #[sea_orm(nested)]
+    chat: messenger_chat::Model,
+    oldest_read_at: Option<NaiveDateTime>,
+    newest_read_at: Option<NaiveDateTime>,
+    unread_count: i64,
+}
 
 pub(crate) async fn list_chats(
     dbx: &DatabaseConnection,
@@ -26,12 +38,14 @@ pub(crate) async fn list_chats(
             Order::Desc,
             NullOrdering::Last,
         )
-        .order_by_desc(messenger_chat::Column::Id)
+        .order_by_desc(messenger_chat::Column::Id);
+    let rows = with_read_state(chats, scope.login_id)
+        .into_model::<ChatRow>()
         .all(dbx)
         .await
         .c(h!())?;
     Ok(MessengersChatsListRsp {
-        items: chats.iter().map(chat_item).collect(),
+        items: rows.iter().map(chat_item).collect(),
     })
 }
 
@@ -53,7 +67,8 @@ pub(crate) async fn resolve_chat(
         .ok_or(AppError::NotFound)
 }
 
-fn chat_item(chat: &messenger_chat::Model) -> MessengersChatItem {
+fn chat_item(row: &ChatRow) -> MessengersChatItem {
+    let chat = &row.chat;
     MessengersChatItem {
         id: chat.id.to_string(),
         messenger_type: chat.messenger_type.clone(),
@@ -69,5 +84,13 @@ fn chat_item(chat: &messenger_chat::Model) -> MessengersChatItem {
         telegram: chat.telegram_chat_id.map(|id| MessengersTelegramChatId {
             chat_id: id.to_string(),
         }),
+        oldest_read_at: row
+            .oldest_read_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        newest_read_at: row
+            .newest_read_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        unread_count: row.unread_count,
+        total_count: chat.message_count,
     }
 }

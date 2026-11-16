@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMock = vi.hoisted(() => ({
   listMessengersChats: vi.fn(),
+  markAllMessengersChatsRead: vi.fn(),
   listMessengersChatMembers: vi.fn(),
   listMessengersMessages: vi.fn(),
   listMessengersContacts: vi.fn(),
@@ -31,6 +32,10 @@ const chat = (id: string, chatType: string, title: string, extra: object = {}) =
   accountMemberStatus: null,
   lastMessageDate: null,
   telegram: null,
+  oldestReadAt: null,
+  newestReadAt: null,
+  unreadCount: 0,
+  totalCount: 0,
   ...extra,
 });
 
@@ -79,6 +84,7 @@ describe('the account sidebar of the messenger workspace', () => {
         chat('b1', 'PRIVATE', 'HelperBot', { isBot: true }),
       ],
     });
+    apiMock.markAllMessengersChatsRead.mockReset().mockResolvedValue(undefined);
     apiMock.listMessengersChatMembers.mockReset().mockResolvedValue({ items: [] });
     apiMock.listMessengersMessages
       .mockReset()
@@ -424,15 +430,34 @@ describe('the account sidebar of the messenger workspace', () => {
       );
     });
 
-    it('has the unread filter and "read all" as icons that do nothing yet', async () => {
+    it('has the unread filter and "read all" as icons, disabled while nothing is unread', async () => {
       await mount();
       await collapse();
       const unread = rail().querySelector<HTMLButtonElement>('[data-messenger-rail-unread]')!;
       const readAll = rail().querySelector<HTMLButtonElement>('[data-messenger-rail-read-all]')!;
-      expect(unread.disabled).toBe(true);
+      expect(unread.disabled).toBe(false);
       expect(readAll.disabled).toBe(true);
       expect(unread.getAttribute('aria-label')).toBe('Лише непрочитані');
       expect(readAll.getAttribute('aria-label')).toBe('Прочитати всі');
+    });
+
+    it('shows the unread count on the avatar and filters to the unread chats', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 3 }), chat('p2', 'PRIVATE', 'Olena')],
+      });
+      await mount();
+      await collapse();
+      await click('[data-messenger-rail-section-toggle="private"]');
+      expect(rail().querySelectorAll('[data-messenger-rail-chat]')).toHaveLength(2);
+      expect(rail().querySelector('[data-messenger-rail-chat="p1"]')!.textContent).toContain('3');
+      // On the corner of the avatar, not in the flow of the row.
+      expect(
+        rail().querySelector('[data-messenger-rail-chat="p1"] [data-messenger-unread-badge]')!
+          .className,
+      ).toContain('absolute');
+      await click('[data-messenger-rail-unread]');
+      const rows = [...rail().querySelectorAll('[data-messenger-rail-chat]')];
+      expect(rows.map((row) => row.getAttribute('data-messenger-rail-chat'))).toEqual(['p1']);
     });
 
     it('does not list chats while they load or when the load failed', async () => {
@@ -558,18 +583,207 @@ describe('the account sidebar of the messenger workspace', () => {
       expect(contacts().dataset.selected).toBe('false');
     });
 
-    it('has the unread filter and "read all" under the search, taking their place and doing nothing yet', async () => {
+    it('has the unread filter and "read all" under the search, disabled "read all" while nothing is unread', async () => {
       await mount();
       const row = full().querySelector('[data-messenger-unread-row]')!;
       expect(row.textContent).toContain('Лише непрочитані');
       const toggle = row.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-      expect(toggle.disabled).toBe(true);
+      expect(toggle.disabled).toBe(false);
       expect(toggle.checked).toBe(false);
       expect(
         row.querySelector<HTMLButtonElement>('button[aria-label="Прочитати всі"]')?.disabled,
       ).toBe(true);
       const search = full().querySelector('input[aria-label="Пошук чату"]')!;
       expect(search.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('badges the chats with unread messages and lists only those when asked', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [
+          chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 1200 }),
+          chat('p2', 'PRIVATE', 'Olena'),
+          chat('g1', 'GROUP', 'Team', { unreadCount: 4 }),
+        ],
+      });
+      await mount();
+      const badges = [...full().querySelectorAll('[data-messenger-unread-badge]')];
+      expect(badges.map((badge) => badge.textContent)).toEqual(['1.2k', '4']);
+      // The exact number stays in the title.
+      expect(badges[0].getAttribute('title')?.replace(/\D/g, '')).toBe('1200');
+      await click('[data-messenger-unread-row] input[type="checkbox"]');
+      const titles = [...full().querySelectorAll('[data-messenger-chat]')].map(
+        (row) => row.textContent,
+      );
+      expect(titles).toHaveLength(2);
+      expect(titles.join('')).not.toContain('Olena');
+    });
+
+    it('shows the total and the unread count one under the other, the total plain and muted', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [
+          chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 3, totalCount: 1234 }),
+          chat('p2', 'PRIVATE', 'Olena', { totalCount: 56 }),
+          chat('p3', 'PRIVATE', 'Empty'),
+        ],
+      });
+      await mount();
+      const rows = [...full().querySelectorAll<HTMLElement>('[data-messenger-chat]')];
+      const countsOf = (row: HTMLElement) => ({
+        total: row.querySelector('[data-messenger-total-count]'),
+        unread: row.querySelector('[data-messenger-unread-badge]'),
+      });
+      const [ivan, olena, empty] = rows.map(countsOf);
+      // Total on top of unread, in one column.
+      expect(ivan.total?.textContent).toBe('1.2k');
+      expect(ivan.unread?.textContent).toBe('3');
+      expect(
+        ivan.total!.compareDocumentPosition(ivan.unread!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(ivan.total!.parentElement).toBe(ivan.unread!.parentElement);
+      expect(ivan.total!.parentElement!.className).toContain('flex-col');
+      // Muted and plain: no pill, the exact number in the tooltip.
+      expect(ivan.total!.className).toContain('opacity-60');
+      expect(ivan.total!.className).not.toContain('rounded-full');
+      expect(ivan.total!.getAttribute('title')?.replace(/\D/g, '')).toBe('1234');
+      // A read chat has the total only, a chat with no messages nothing.
+      expect(olena.total?.textContent).toBe('56');
+      expect(olena.unread).toBeNull();
+      expect(empty.total).toBeNull();
+      expect(empty.unread).toBeNull();
+    });
+
+    it('names the counts of a row for a screen reader, and the unread ones of a rail avatar', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [
+          chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 3, totalCount: 1234 }),
+          chat('p2', 'PRIVATE', 'Olena', { totalCount: 56 }),
+          chat('p3', 'PRIVATE', 'Empty'),
+        ],
+      });
+      await mount();
+      expect(
+        [...full().querySelectorAll('[data-messenger-chat]')].map((row) =>
+          row.getAttribute('aria-label'),
+        ),
+      ).toEqual([
+        'Ivan, усього повідомлень: 1234, непрочитаних: 3',
+        'Olena, усього повідомлень: 56',
+        'Empty',
+      ]);
+      await collapse();
+      await click('[data-messenger-rail-section-toggle="private"]');
+      expect(
+        [...rail().querySelectorAll('[data-messenger-rail-chat]')].map((button) =>
+          button.getAttribute('aria-label'),
+        ),
+      ).toEqual(['Ivan, непрочитаних: 3', 'Olena', 'Empty']);
+    });
+
+    it('marks the unread filter of the rail as a switch, not as the current item', async () => {
+      await mount();
+      await collapse();
+      const unread = () => rail().querySelector<HTMLButtonElement>('[data-messenger-rail-unread]')!;
+      expect(unread().getAttribute('aria-pressed')).toBe('false');
+      await click('[data-messenger-rail-unread]');
+      expect(unread().getAttribute('aria-pressed')).toBe('true');
+      expect(unread().hasAttribute('aria-current')).toBe(false);
+      // The pages stay "current items".
+      await click('[data-messenger-rail-nav="contacts"]');
+      expect(
+        rail().querySelector('[data-messenger-rail-nav="contacts"]')!.getAttribute('aria-current'),
+      ).toBe('true');
+      expect(
+        rail().querySelector('[data-messenger-rail-nav="contacts"]')!.hasAttribute('aria-pressed'),
+      ).toBe(false);
+    });
+
+    it('keeps the total out of the rail', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 3, totalCount: 1234 })],
+      });
+      await mount();
+      await collapse();
+      await click('[data-messenger-rail-section-toggle="private"]');
+      expect(rail().querySelector('[data-messenger-rail-chat="p1"]')).not.toBeNull();
+      expect(rail().querySelector('[data-messenger-total-count]')).toBeNull();
+      expect(rail().textContent).not.toContain('1.2k');
+    });
+
+    it('keeps the open chat in the unread list', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [chat('p1', 'PRIVATE', 'Ivan'), chat('p2', 'PRIVATE', 'Olena', { unreadCount: 2 })],
+      });
+      window.history.replaceState(
+        {},
+        '',
+        '/rer-analysis-neo?leftPanelTab=messenger&messengerAccount=a1&messengerChat=p1',
+      );
+      await mount();
+      await click('[data-messenger-unread-row] input[type="checkbox"]');
+      expect(full().querySelectorAll('[data-messenger-chat]')).toHaveLength(2);
+    });
+
+    // The dialog is in a portal, outside the container.
+    const answer = (label: 'Так' | 'Ні') =>
+      act(async () => {
+        [...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+          .find((button) => button.textContent === label)
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+    it('asks before marking everything read, and does nothing on "Ні"', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 5 })],
+      });
+      await mount();
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+      await click('button[aria-label="Прочитати всі"]');
+      expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+        'Прочитати всі чати?',
+      );
+      expect(apiMock.markAllMessengersChatsRead).not.toHaveBeenCalled();
+      await answer('Ні');
+      expect(apiMock.markAllMessengersChatsRead).not.toHaveBeenCalled();
+      expect(full().querySelectorAll('[data-messenger-unread-badge]')).toHaveLength(1);
+    });
+
+    it('asks from the rail too', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 5 })],
+      });
+      await mount();
+      await collapse();
+      await click('[data-messenger-rail-read-all]');
+      expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(apiMock.markAllMessengersChatsRead).not.toHaveBeenCalled();
+    });
+
+    it('marks every chat read and loads the counts again', async () => {
+      apiMock.listMessengersChats
+        .mockResolvedValueOnce({ items: [chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 5 })] })
+        .mockResolvedValueOnce({ items: [chat('p1', 'PRIVATE', 'Ivan')] });
+      await mount();
+      expect(full().querySelectorAll('[data-messenger-unread-badge]')).toHaveLength(1);
+      await click('button[aria-label="Прочитати всі"]');
+      await answer('Так');
+      expect(apiMock.markAllMessengersChatsRead).toHaveBeenCalledWith({ accountId: 'a1' });
+      expect(apiMock.listMessengersChats).toHaveBeenCalledTimes(2);
+      expect(full().querySelectorAll('[data-messenger-unread-badge]')).toHaveLength(0);
+      expect(
+        full().querySelector<HTMLButtonElement>('button[aria-label="Прочитати всі"]')!.disabled,
+      ).toBe(true);
+    });
+
+    it('keeps the counts and says so when "read all" fails', async () => {
+      apiMock.listMessengersChats.mockResolvedValue({
+        items: [chat('p1', 'PRIVATE', 'Ivan', { unreadCount: 5 })],
+      });
+      apiMock.markAllMessengersChatsRead.mockRejectedValue(new Error('boom'));
+      await mount();
+      await click('button[aria-label="Прочитати всі"]');
+      await answer('Так');
+      expect(apiMock.listMessengersChats).toHaveBeenCalledTimes(1);
+      expect(full().querySelectorAll('[data-messenger-unread-badge]')).toHaveLength(1);
     });
 
     it('floats the toggle over the top right of the account info instead of squashing the names', async () => {
@@ -636,20 +850,6 @@ describe('the account sidebar of the messenger workspace', () => {
       // A chat takes the mark.
       await click('[data-messenger-chat]');
       expect(contacts().dataset.selected).toBe('false');
-    });
-
-    it('has the unread filter and "read all" under the search, taking their place and doing nothing yet', async () => {
-      await mount();
-      const row = full().querySelector('[data-messenger-unread-row]')!;
-      expect(row.textContent).toContain('Лише непрочитані');
-      const toggle = row.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-      expect(toggle.disabled).toBe(true);
-      expect(toggle.checked).toBe(false);
-      expect(
-        row.querySelector<HTMLButtonElement>('button[aria-label="Прочитати всі"]')?.disabled,
-      ).toBe(true);
-      const search = full().querySelector('input[aria-label="Пошук чату"]')!;
-      expect(search.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('copies the username from the whole line', async () => {

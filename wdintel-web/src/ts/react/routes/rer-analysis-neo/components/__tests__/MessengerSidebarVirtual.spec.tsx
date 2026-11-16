@@ -44,6 +44,10 @@ const chats = (count: number) => ({
     accountMemberStatus: null,
     lastMessageDate: null,
     telegram: null,
+    oldestReadAt: null,
+    newestReadAt: null,
+    unreadCount: 0,
+    totalCount: 0,
   })),
 });
 

@@ -92,6 +92,50 @@ pub struct MessengersChatItem {
     pub account_member_status: Option<String>,
     pub last_message_date: Option<i64>,
     pub telegram: Option<MessengersTelegramChatId>,
+    /// The caller's read span of the chat timeline, epoch ms; `null` until
+    /// the chat is first read.
+    pub oldest_read_at: Option<i64>,
+    pub newest_read_at: Option<i64>,
+    /// Messages outside the read span; every message when there is none.
+    pub unread_count: i64,
+    /// Every stored message of the chat.
+    pub total_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersChatReadStateGetReq {
+    pub account_id: String,
+    pub chat_id: String,
+}
+
+/// Marks the messages sent within `[oldest_read_at, newest_read_at]` (epoch
+/// ms, bounds included) as read. The stored span only widens.
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersChatReadStateUpdateReq {
+    pub account_id: String,
+    pub chat_id: String,
+    pub oldest_read_at: i64,
+    pub newest_read_at: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersChatReadState {
+    pub oldest_read_at: Option<i64>,
+    pub newest_read_at: Option<i64>,
+    pub unread_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersChatsMarkAllReadReq {
+    pub account_id: String,
 }
 
 #[derive(
@@ -121,6 +165,9 @@ pub struct MessengersMessagesListReq {
     pub limit: Option<i64>,
     pub direction: Option<MessengersMessagesDirection>,
     pub around_message_id: Option<String>,
+    /// Epoch ms: the page around the end of that millisecond, e.g. a chat's
+    /// `newest_read_at` to open it at the first unread message.
+    pub around_sent_at: Option<i64>,
 }
 
 #[derive(
