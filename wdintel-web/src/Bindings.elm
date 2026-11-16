@@ -2733,6 +2733,10 @@ type alias MessengersChatItem =
     , accountMemberStatus : Maybe (String)
     , lastMessageDate : Maybe (Int)
     , telegram : Maybe (MessengersTelegramChatId)
+    , oldestReadAt : Maybe (Int)
+    , newestReadAt : Maybe (Int)
+    , unreadCount : Int
+    , totalCount : Int
     }
 
 
@@ -2749,6 +2753,10 @@ messengersChatItemEncoder struct =
         , ( "account_member_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.accountMemberStatus )
         , ( "last_message_date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastMessageDate )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramChatIdEncoder)) struct.telegram )
+        , ( "oldest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.oldestReadAt )
+        , ( "newest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.newestReadAt )
+        , ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        , ( "total_count", (Json.Encode.int) struct.totalCount )
         ]
 
 
@@ -2761,6 +2769,66 @@ messengersChatsListRspEncoder : MessengersChatsListRsp -> Json.Encode.Value
 messengersChatsListRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (messengersChatItemEncoder)) struct.items )
+        ]
+
+
+type alias MessengersChatReadStateGetReq =
+    { accountId : String
+    , chatId : String
+    }
+
+
+messengersChatReadStateGetReqEncoder : MessengersChatReadStateGetReq -> Json.Encode.Value
+messengersChatReadStateGetReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Json.Encode.string) struct.chatId )
+        ]
+
+
+type alias MessengersChatReadStateUpdateReq =
+    { accountId : String
+    , chatId : String
+    , oldestReadAt : Int
+    , newestReadAt : Int
+    }
+
+
+messengersChatReadStateUpdateReqEncoder : MessengersChatReadStateUpdateReq -> Json.Encode.Value
+messengersChatReadStateUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "chat_id", (Json.Encode.string) struct.chatId )
+        , ( "oldest_read_at", (Json.Encode.int) struct.oldestReadAt )
+        , ( "newest_read_at", (Json.Encode.int) struct.newestReadAt )
+        ]
+
+
+type alias MessengersChatReadState =
+    { oldestReadAt : Maybe (Int)
+    , newestReadAt : Maybe (Int)
+    , unreadCount : Int
+    }
+
+
+messengersChatReadStateEncoder : MessengersChatReadState -> Json.Encode.Value
+messengersChatReadStateEncoder struct =
+    Json.Encode.object
+        [ ( "oldest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.oldestReadAt )
+        , ( "newest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.newestReadAt )
+        , ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        ]
+
+
+type alias MessengersChatsMarkAllReadReq =
+    { accountId : String
+    }
+
+
+messengersChatsMarkAllReadReqEncoder : MessengersChatsMarkAllReadReq -> Json.Encode.Value
+messengersChatsMarkAllReadReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
         ]
 
 
@@ -2915,6 +2983,7 @@ type alias MessengersMessagesListReq =
     , limit : Maybe (Int)
     , direction : Maybe (MessengersMessagesDirection)
     , aroundMessageId : Maybe (String)
+    , aroundSentAt : Maybe (Int)
     }
 
 
@@ -2927,6 +2996,7 @@ messengersMessagesListReqEncoder struct =
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "direction", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersMessagesDirectionEncoder)) struct.direction )
         , ( "around_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aroundMessageId )
+        , ( "around_sent_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aroundSentAt )
         ]
 
 
@@ -24418,12 +24488,46 @@ messengersChatItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_member_status" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_message_date" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramChatIdDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_read_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_read_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unread_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
 
 
 messengersChatsListRspDecoder : Json.Decode.Decoder MessengersChatsListRsp
 messengersChatsListRspDecoder =
     Json.Decode.succeed MessengersChatsListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersChatItemDecoder))))
+
+
+messengersChatReadStateGetReqDecoder : Json.Decode.Decoder MessengersChatReadStateGetReq
+messengersChatReadStateGetReqDecoder =
+    Json.Decode.succeed MessengersChatReadStateGetReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.string)))
+
+
+messengersChatReadStateUpdateReqDecoder : Json.Decode.Decoder MessengersChatReadStateUpdateReq
+messengersChatReadStateUpdateReqDecoder =
+    Json.Decode.succeed MessengersChatReadStateUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chat_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_read_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_read_at" (Json.Decode.int)))
+
+
+messengersChatReadStateDecoder : Json.Decode.Decoder MessengersChatReadState
+messengersChatReadStateDecoder =
+    Json.Decode.succeed MessengersChatReadState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_read_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_read_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unread_count" (Json.Decode.int)))
+
+
+messengersChatsMarkAllReadReqDecoder : Json.Decode.Decoder MessengersChatsMarkAllReadReq
+messengersChatsMarkAllReadReqDecoder =
+    Json.Decode.succeed MessengersChatsMarkAllReadReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
 
 
 messengersChatMembersListReqDecoder : Json.Decode.Decoder MessengersChatMembersListReq
@@ -24531,6 +24635,7 @@ messengersMessagesListReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.nullable (messengersMessagesDirectionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_message_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_sent_at" (Json.Decode.nullable (Json.Decode.int))))
 
 
 messengersTelegramMessageIdDecoder : Json.Decode.Decoder MessengersTelegramMessageId

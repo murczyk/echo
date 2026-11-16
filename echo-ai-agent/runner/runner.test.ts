@@ -19,6 +19,9 @@ import {
   createToolLifecycleGuard,
   createToolInvocationGuard,
   createToolResponseCompactor,
+  createContextToolResponseCompactor,
+  searchHitEvidence,
+  toolContextBudget,
   createRouteActivityTracker,
   dailyActivityRequestBody,
   directionFindingsRequestBody,
@@ -1224,6 +1227,164 @@ test("#3724 bounds tool context and reports exhaustion instead of empty data", (
   assert.throws(() => compact(route, { items: Array(100).fill("z".repeat(100)) }, 64), /tool context budget exhausted/);
 });
 
+// Regression: https://github.com/echoua/echo/issues/4224
+test("#4224 tool context budget leaves room for the window's fixed context and clears after compaction", () => {
+  for (const contextWindow of [32_768, 65_536, 131_072, 262_144, 1_050_000])
+    for (const keep of [1_024, 8_192, 49_152])
+      for (const fixedTokens of [0, 20_000]) {
+        const maxTokens = Math.min(65_536, Math.floor(contextWindow / 8));
+        const reserve = Math.min(131_072, Math.floor(contextWindow / 4));
+        const budget = toolContextBudget({ contextWindow, maxTokens, compactionReserveTokens: reserve, compactionKeepRecentTokens: keep, fixedTokens });
+        assert.ok(budget.totalCharacters >= 2 * budget.batchCharacters);
+        assert.ok(budget.thresholdCharacters <= budget.batchCharacters);
+        assert.ok(budget.keepRecentTokens * 4 <= budget.totalCharacters - budget.thresholdCharacters);
+        assert.ok(budget.keepRecentTokens <= keep);
+      }
+  // GPT-6.1 Sol on the government gateway: a batch fits well inside the 45k-token trigger.
+  const sol = toolContextBudget({ contextWindow: 65_536, maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  assert.ok(sol.batchCharacters / 3 < 65_536 - 4_096 - 16_384 - 20_000);
+  assert.equal(sol.keepRecentTokens, 8_192);
+  // GLM keeps its per-call ceiling.
+  const glm = toolContextBudget({ contextWindow: 262_144, maxTokens: 16_384, compactionReserveTokens: 32_768, compactionKeepRecentTokens: 16_384, fixedTokens: 20_000 });
+  assert.equal(glm.thresholdCharacters, 96_000);
+});
+
+test("#4224 parallel tool calls share one batch so the last call still delivers data", () => {
+  const route = { skill: "device_file_search", requestKind: "deviceFileSearch" as const };
+  const compact = createContextToolResponseCompactor(65_536, { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  const hits = (query: number) => ({
+    documents: Array.from({ length: 50 }, (_, index) => ({
+      deviceId: "01999999-1111-7111-8111-111111111111",
+      fileId: `01999999-2222-7222-8222-${String(query * 100 + index).padStart(12, "0")}`,
+      revision: 1, fileName: `file-${query}-${index}.exe`, path: `C:\\Activators\\file-${query}-${index}.exe`,
+      state: "completed", current: true, hasContent: true, complete: true, summaryState: "completed",
+      summary: "Опис файлу. ".repeat(150), citation: `/devices/d?file=${query}-${index}&revision=1`,
+    })),
+    nextCursor: null,
+  });
+  const budget = toolContextBudget({ contextWindow: 65_536, maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  compact.beginBatch(6);
+  const outputs = Array.from({ length: 6 }, (_, query) => compact(route, hits(query), 64));
+  assert.ok(outputs.every((output) => JSON.parse(output).documents.length > 0));
+  assert.ok(outputs.reduce((total, output) => total + output.length, 0) <= budget.batchCharacters);
+  assert.equal(compact.needsCompaction(), false);
+  compact.beginBatch(1);
+  assert.ok(compact(route, hits(7), 64).length > outputs[0].length, "a single call may use the whole batch");
+});
+
+test("#4224 a batch wider than its minimum shares defers the excess calls instead of overrunning", () => {
+  const route = { skill: "device_file_search", requestKind: "deviceFileSearch" as const };
+  const profile = { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 };
+  const budget = toolContextBudget({ contextWindow: 65_536, ...profile });
+  const compact = createContextToolResponseCompactor(65_536, profile);
+  const page = (query: number) => ({
+    documents: Array.from({ length: 50 }, (_, index) => ({
+      deviceId: "01999999-1111-7111-8111-111111111111", fileId: `01999999-2222-7222-8222-${String(query * 100 + index).padStart(12, "0")}`,
+      revision: 1, fileName: `file-${query}-${index}.exe`, state: "completed", summary: "Опис. ".repeat(40), citation: `/devices/d?file=${query}-${index}&revision=1`,
+    })),
+    nextCursor: null,
+  });
+  compact.beginBatch(64);
+  let delivered = 0;
+  let deferred = 0;
+  for (let call = 0; call < 64; call++) {
+    if (!compact.admit()) {
+      deferred += 1;
+      continue;
+    }
+    delivered += compact(route, page(call), 64).length;
+  }
+  assert.ok(delivered <= budget.batchCharacters, `${delivered} > ${budget.batchCharacters}`);
+  assert.equal(deferred, 64 - Math.floor(budget.batchCharacters / 2_000));
+  assert.equal(compact.needsCompaction(), false);
+  compact.beginBatch(2);
+  assert.ok(compact.admit(), "the next turn runs again");
+});
+
+test("#4224 a read section larger than its batch share still delivers", () => {
+  const route = { skill: "device_file_read", requestKind: "deviceFileRead" as const };
+  const compact = createContextToolResponseCompactor(65_536, { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  compact.beginBatch(6);
+  const source = { deviceId: "01999999-1111-7111-8111-111111111111", fileId: "01999999-2222-7222-8222-222222222222", revision: 1 };
+  const read = { document: { ...source, fileName: "orders.xlsx" }, sections: [{ ordinal: 0, locator: "sheet 1", markdown: "| row |\n".repeat(1_400) }], nextAfter: null };
+  for (let call = 0; call < 6; call++) {
+    const text = compact(route, read, 64);
+    assert.equal(JSON.parse(text).sections.length, 1, `call ${call}`);
+  }
+});
+
+test("#4224 search hit evidence keeps each attachment and its matched snippet", () => {
+  const citation = "/rer-analysis-neo?m=source-7";
+  const hits = searchHitEvidence("attachmentSearch", JSON.stringify({ documents: [
+    { mediaId: "media-1", fileName: "orders.pdf", text: "orders.pdf", snippet: "page 2: KMSAuto activation key", citation },
+    { mediaId: "media-2", fileName: "notes.docx", text: "Нотатки про активатори", snippet: "AAct portable", citation },
+  ] }));
+  assert.equal(new Set(hits.map((hit) => hit.id)).size, 2);
+  assert.equal(hits[0].text, "orders.pdf: page 2: KMSAuto activation key");
+  assert.equal(hits[1].text, "notes.docx: Нотатки про активатори — AAct portable");
+  const [file] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: "KMSAuto.exe", folder: "C:\\Activators", summary: "KMS activator", snippet: "page 1: activation", citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.equal(file.text, "KMSAuto.exe (C:\\Activators): KMS activator — page 1: activation");
+  // A long summary cannot push the matched snippet out.
+  const [long] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: "KMSAuto.exe", folder: "C:\\Activators", summary: "Опис файлу. ".repeat(100), snippet: "page 3: HWID activation key", citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.ok(long.text.endsWith(" — page 3: HWID activation key"), long.text);
+  assert.ok(long.text.length < 700);
+  // Non-default revision and coverage states qualify the finding for synthesis.
+  const [old] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: "KMSAuto.exe", current: false, complete: false, summaryState: "failed", snippet: "page 1: KMS", citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.equal(old.text, "KMSAuto.exe [earlier revision, incomplete extraction, summary failed]: page 1: KMS");
+  const [deep] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: `${"Дуже довга назва ".repeat(10)}.exe`, folder: "C:\\" + "Каталог\\".repeat(30), current: false, citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.match(deep.text, /… \[earlier revision\]$/, "a long name and folder never cut the qualifiers");
+  const [ocr] = searchHitEvidence("attachmentSearch", JSON.stringify({ documents: [
+    { mediaId: "m1", fileName: "scan.pdf", quality: "degraded", text: "OCR summary", citation: "/rer-analysis-neo?m=source-7" },
+  ] }));
+  assert.equal(ocr.text, "scan.pdf [degraded quality]: OCR summary");
+});
+
+test("#4224 large reads fit small windows and later calls wait once the batch is used up", () => {
+  const read = { skill: "device_file_read", requestKind: "deviceFileRead" as const };
+  const source = { deviceId: "01999999-1111-7111-8111-111111111111", fileId: "01999999-2222-7222-8222-222222222222", revision: 1 };
+  const section = (ordinal: number) => ({ document: { ...source, fileName: "orders.xlsx" }, sections: [{ ordinal, locator: "sheet 1", markdown: "x".repeat(12_000) }], nextAfter: null });
+  // A 32k profile: one 12,000-character section is indivisible but fits the allowance.
+  const small = createContextToolResponseCompactor(32_768, { maxTokens: 4_096, compactionReserveTokens: 8_192, compactionKeepRecentTokens: 1_024, fixedTokens: 10_000 });
+  small.beginBatch(1);
+  assert.equal(JSON.parse(small(read, section(0), 64)).sections.length, 1);
+  // Eight such reads on the 64k profile: those admitted deliver, the rest wait.
+  const compact = createContextToolResponseCompactor(65_536, { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  compact.beginBatch(8);
+  let delivered = 0;
+  for (let call = 0; call < 8; call++) {
+    if (!compact.admit()) continue;
+    assert.equal(JSON.parse(compact(read, section(call), 64)).sections.length, 1);
+    delivered += 1;
+  }
+  assert.ok(delivered >= 2 && delivered < 8, `${delivered} reads delivered`);
+});
+
+test("#4224 a share too small for one source record retries with the call allowance", () => {
+  const route = { skill: "device_search", requestKind: "deviceSearch" as const };
+  const compact = createToolResponseCompactor(100_000, 50_000, 128, 2_500);
+  compact.beginBatch(1);
+  const device = { id: "01999999-1111-7111-8111-111111111111", name: "Ноутбук", description: "x".repeat(2_600) };
+  const delivered = JSON.parse(compact(route, { devices: [device], nextCursor: null }, 64));
+  assert.equal(delivered.devices.length, 1);
+});
+
+test("#4224 an empty search page still delivers when its share is exhausted", () => {
+  const route = { skill: "device_file_search", requestKind: "deviceFileSearch" as const };
+  // Earlier reads left this call a share smaller than the empty page itself.
+  const compact = createToolResponseCompactor(100_000, 50_000, 128, 10);
+  compact.beginBatch(1);
+  assert.deepEqual(JSON.parse(compact(route, { documents: [], nextCursor: null }, 64)), { documents: [], nextCursor: null });
+  assert.throws(() => compactToolResponse(route, { documents: [], nextCursor: null }, 64, 2), /exceeds available context/);
+});
+
 test("keeps the strongest callsign relations within the item cap", () => {
   const compacted = JSON.parse(
     compactToolResponse(
@@ -1330,7 +1491,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.14.2",
+    harnessRelease: "2026.11.16.2",
   });
 });
 
@@ -1494,6 +1655,52 @@ test("streams individual tool steps before the whole batch finishes", () => {
 });
 
 // Regression: https://github.com/echoua/echo/issues/3064
+// Regression: https://github.com/echoua/echo/issues/4224
+test("#4224 device file, device and attachment searches report their query and results", () => {
+  const tracker = createRouteActivityTracker();
+  const fileRoute = validateSkill({ method: "POST", path: "/api/device/files/ai/search", skill: "device_file_search", label: "Шукаю файли пристроїв", requestKind: "deviceFileSearch" });
+  const deviceRoute = validateSkill({ method: "POST", path: "/api/device/ai/search", skill: "device_search", label: "Шукаю пристрої", requestKind: "deviceSearch" });
+  const attachmentRoute = validateSkill({ method: "POST", path: "/api/attachments/search", skill: "attachment_search", label: "Шукаю документи", requestKind: "attachmentSearch" });
+  const deviceIds = ["01a01968-4b8e-7aa3-95b9-c1d954217f04", "01a01968-6046-7760-bbe7-883ad24817e3", "01a15873-1eb7-7373-91c5-cdd7eca30ac8"];
+  const devices = tracker.start(deviceRoute, { query: "ноутбук", unitIds: [3, 4], limit: 50 });
+  assert.equal(devices.label, "Шукаю пристрої · пошук «ноутбук» · підрозділів: 2");
+  const deviceResponse = { devices: deviceIds.map((id, index) => ({ id, name: `Ноутбук-${index + 1}` })), nextCursor: null };
+  assert.equal(tracker.finish(deviceRoute, devices, deviceResponse, JSON.stringify(deviceResponse)), "Шукаю пристрої · пошук «ноутбук» · знайдено пристроїв: 3 · підрозділів: 2");
+
+  const body = { query: "KMS", scope: "name", deviceIds, pathPrefix: "C:\\Activators", format: "exe", from: Date.UTC(2026, 10, 1) - 2 * 3_600_000, to: Date.UTC(2026, 10, 16) - 2 * 3_600_000 - 1, history: true, limit: 50 };
+  const first = tracker.start(fileRoute, body);
+  // Dates are matched loosely: ICU range formatting differs between Node releases.
+  assert.match(first.label, /^Шукаю файли пристроїв · пошук «KMS» · у назвах · пристрої «Ноутбук-1», «Ноутбук-2» та ще 1 · у теці «C:\\Activators» · формат «exe» · змінено 1\D{1,3}15\sлист\.\s2026\sр\. · з попередніми версіями$/);
+  const hit = (index: number) => ({ fileName: `KMSAuto-${index}.exe`, citation: `/devices/${deviceIds[0]}?file=f${index}&revision=1` });
+  const response = { documents: [hit(1), hit(2), hit(3)], nextCursor: "WyIwMWExYTc4OS1hMDI5LTcxOTAtYjdhMS1hMzFkM2Y3M2Q5N2EiLDFd" };
+  const finished = tracker.finish(fileRoute, first, response, JSON.stringify({ documents: [hit(1), hit(2)], nextCursor: response.nextCursor }));
+  assert.match(finished, /^Шукаю файли пристроїв · пошук «KMS» · знайдено файлів: 2 · отримано: 3; для перегляду: 2 · є наступна добірка · у назвах · пристрої «Ноутбук-1»/);
+  const second = tracker.start(fileRoute, { ...body, cursor: response.nextCursor });
+  assert.match(second.label, / · добірка 2$/);
+  const last = tracker.finish(fileRoute, second, { documents: [hit(4)], nextCursor: null }, JSON.stringify({ documents: [hit(4)], nextCursor: null }));
+  assert.match(last, /^Шукаю файли пристроїв · пошук «KMS» · добірка 2 · знайдено файлів: 1 · зібрано файлів для запиту: 3 · у назвах/);
+  const unknown = tracker.start(fileRoute, { query: "crack", cursor: "WyJ1bmtub3duIiwxXQ" });
+  assert.equal(unknown.label, "Шукаю файли пристроїв · пошук «crack» · наступна добірка");
+  assert.equal(tracker.finish(fileRoute, unknown, { documents: [], nextCursor: null }, JSON.stringify({ documents: [], nextCursor: null })), "Шукаю файли пристроїв · пошук «crack» · наступна добірка · файлів не знайдено · зібрано файлів для запиту: 3");
+  const anonymous = createRouteActivityTracker().start(fileRoute, { deviceIds, includeArchived: true });
+  assert.equal(anonymous.label, "Шукаю файли пристроїв · пристроїв: 3 · з архівними пристроями");
+
+  tracker.rememberGroups([{ master_key: "private-group-key", name: "Радіомережа А" }]);
+  const attachments = tracker.start(attachmentRoute, { query: "activator", selectedGroups: ["private-group-key"], from: Date.UTC(2026, 10, 1) - 2 * 3_600_000, limit: 50 });
+  assert.match(attachments.label, /^Шукаю документи · пошук «activator» · від\s1\sлист\.\s2026\sр\. · джерела «Радіомережа А»$/);
+  assert.match(tracker.finish(attachmentRoute, attachments, { documents: [] }, JSON.stringify({ documents: [] })), /^Шукаю документи · пошук «activator» · документів не знайдено · від\s1\sлист\.\s2026\sр\. · джерела «Радіомережа А»$/);
+  // Attachments of one message share its citation; each still counts.
+  const shared = "/rer-analysis-neo?m=source-7";
+  const page = (ids: string[]) => JSON.stringify({ documents: ids.map((mediaId) => ({ mediaId, fileName: `${mediaId}.pdf`, text: "x", citation: shared })) });
+  tracker.finish(attachmentRoute, attachments, JSON.parse(page(["m1", "m2"])), page(["m1", "m2"]));
+  assert.match(tracker.finish(attachmentRoute, attachments, JSON.parse(page(["m3"])), page(["m3"])), /зібрано документів для запиту: 3/);
+
+  for (const label of [first.label, finished, second.label, last, unknown.label, attachments.label]) {
+    assert.doesNotMatch(label, /[0-9a-f]{8}-[0-9a-f]{4}-/);
+    assert.doesNotMatch(label, /WyI|\/devices\/|https?:/);
+  }
+});
+
 test("reports validated query scope and actual delivered message counts", () => {
   const tracker = createRouteActivityTracker();
   const route = validateSkill({
@@ -2043,6 +2250,45 @@ test('#3064 attachment tools reject arbitrary routes and malformed selectors', a
   assert.throws(() => attachmentRequest('attachmentSearch', { url: 'http://localhost' }));
   assert.throws(() => validateSkill({ method: 'POST', path: '/api/admin/attachments/settings', skill: 'attachment_search', label: 'Search', requestKind: 'attachmentSearch' }));
   assert.deepEqual(attachmentRequest('attachmentSearch', { query: 'позиції', limit: 5 }), { query: 'позиції', limit: 5 });
+});
+
+// Regression: https://github.com/echoua/echo/issues/4224
+test("#4224 attachment search hits drop the duplicate summary and keep delivered citations", async () => {
+  const { prepareMessageCitations, deliveredCitations } = await import("./citations.ts");
+  const body = {
+    documents: Array.from({ length: 30 }, (_, index) => ({
+      mediaId: `01999999-4444-7444-8444-${String(index).padStart(12, "0")}`,
+      messageId: index + 1,
+      messageUuid: `01999999-5555-7555-8555-${String(index).padStart(12, "0")}`,
+      fileName: `report-${index}.pdf`,
+      contentType: "application/pdf",
+      state: "completed",
+      quality: null,
+      complete: true,
+      revision: null,
+      summary: "Звіт про активатори. ".repeat(80),
+      summaryState: "completed",
+      positionState: "completed",
+      chunkCount: 12,
+      lastError: null,
+      snippet: "page 2: " + "activator ".repeat(70),
+      citation: "",
+    })),
+    nextCursor: null,
+  };
+  const prepared = prepareMessageCitations("attachment_search", body);
+  const original = JSON.stringify(prepared.body).length;
+  const text = compactToolResponse({ skill: "attachment_search", requestKind: "attachmentSearch" }, prepared.body, 64, 96_000);
+  assert.ok(text.length * 2 <= original, `${text.length} vs ${original}`);
+  const [hit] = JSON.parse(text).documents;
+  for (const omitted of ["summary", "messageUuid", "contentType", "chunkCount", "positionState", "state", "complete", "summaryState"])
+    assert.ok(!(omitted in hit), omitted);
+  assert.ok(hit.text.startsWith("Звіт про активатори."));
+  assert.equal(deliveredCitations(text, prepared.citations).length, 30);
+  const trimmed = JSON.parse(compactToolResponse({ skill: "attachment_search", requestKind: "attachmentSearch" }, prepared.body, 64, 3_000));
+  assert.ok(trimmed.documents.length < 30);
+  assert.equal(trimmed.nextCursor, trimmed.documents.at(-1).mediaId);
+  assert.match(trimmed.warnings[0], /follow nextCursor/);
 });
 
 test("#3913 retains allowlisted provider failures after HTTP 200 SSE", async () => {

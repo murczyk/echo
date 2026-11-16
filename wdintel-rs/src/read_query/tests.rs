@@ -232,7 +232,9 @@ async fn source_read_admission_keeps_capacity_for_another_login_3780() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn fresh_tail_reads_skip_source_admission_3978() {
+// #4222: id-bounded reads (a message opened by id, candidate hydration) skip
+// the slots too, so they cannot wait behind the login's heavy stats reads.
+async fn bounded_reads_skip_source_admission_3978_4222() {
     let env = crate::functest::tests::cleanup().await.unwrap();
     let db = test_pool(&env, 4).await;
     let lock = uuid::Uuid::new_v4().as_u128() as i64;
@@ -278,7 +280,7 @@ async fn fresh_tail_reads_skip_source_admission_3978() {
     }).await.unwrap();
     let select =
         || Statement::from_string(DbBackend::Postgres, "SELECT 42 AS value");
-    let (admitted, tail) = scope(
+    let (admitted, tail, id_bounded) = scope(
         uuid::Uuid::new_v4().to_string(),
         vec![pool_identity(&db)],
         async {
@@ -293,13 +295,20 @@ async fn fresh_tail_reads_skip_source_admission_3978() {
                 fresh_tail_connection(&db).query_one_raw(select()),
             )
             .await;
-            (admitted.is_err(), tail)
+            let id_bounded = tokio::time::timeout(
+                Duration::from_secs(3),
+                id_bounded_connection(&db).query_one_raw(select()),
+            )
+            .await;
+            (admitted.is_err(), tail, id_bounded)
         },
     )
     .await;
     assert!(admitted, "an ordinary read must wait for the login's slots");
-    let row = tail.unwrap().unwrap().unwrap();
-    assert_eq!(row.try_get::<i32>("", "value").unwrap(), 42);
+    for row in [tail, id_bounded] {
+        let row = row.unwrap().unwrap().unwrap();
+        assert_eq!(row.try_get::<i32>("", "value").unwrap(), 42);
+    }
     assert!(readers.iter().all(|reader| !reader.is_finished()));
     blocker.rollback().await.unwrap();
     for reader in readers {

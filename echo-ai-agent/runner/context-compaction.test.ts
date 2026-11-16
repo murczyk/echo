@@ -13,7 +13,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { installContextCompaction } from "./context-compaction.ts";
+import { installContextCompaction, shortenedToolText } from "./context-compaction.ts";
 import { assistantSnapshotEvent } from "./citations.ts";
 import {
   createToolResponseCompactor,
@@ -650,7 +650,9 @@ test("#3724 checkpointed a large retained batch after a non-reducing prefix", as
     assert.ifError(value.contextFailure());
     validateFinalAssistantMessage(value.session.messages);
     assert.deepEqual(value.cursors, [0, 20, 40, 60]);
-    assert.ok(value.checkpointCalls() >= 4);
+    // #4224: a prefix that cannot free enough room is not summarized on its own; each
+    // compaction checkpoints all evidence at once.
+    assert.ok(value.checkpointCalls() >= 2);
     assert.ok(value.resetCalls() >= 2);
     assert.equal(
       value.session.sessionManager
@@ -973,3 +975,170 @@ for (const mode of ["length", "empty", "unchanged", "cancel"]) {
     }
   });
 }
+
+// Regression: https://github.com/echoua/echo/issues/4224
+// GPT-6.1 Sol (65,536 / 8,192 / 16,384 / 8,192) ran six full searches in its first turn.
+// The batch alone exceeded the window, the checkpoint summarized only the prompt, and
+// research stopped with context_limit.
+async function freshBatchFixture(resultCharacters: number) {
+  const directory = await mkdtemp(join(tmpdir(), "echo-fresh-batch-"));
+  const checkpointRequests: string[] = [];
+  const researchRequests: string[] = [];
+  const errors: unknown[] = [];
+  const citation = (index: number) => `/devices/d0?file=f${index}&revision=1`;
+  const server = createServer(async (request, response) => {
+    try {
+      let text = "";
+      for await (const chunk of request) text += chunk;
+      const body = JSON.parse(text);
+      const summary = body.messages[0].content.includes("Create a concise evidence checkpoint");
+      let delta: any;
+      let finishReason = "stop";
+      if (summary) {
+        checkpointRequests.push(body.messages[1].content);
+        delta = { role: "assistant", content: `KMSAuto found on device d0 [джерело](${citation(0)}). Search coverage: six queries read.` };
+      } else {
+        researchRequests.push(JSON.stringify(body.messages));
+        if (researchRequests.length === 1) {
+          delta = {
+            role: "assistant",
+            tool_calls: Array.from({ length: 6 }, (_, index) => ({
+              index,
+              id: `call_${index}`,
+              type: "function",
+              function: { name: "echo_device_file_search", arguments: JSON.stringify({ query: `activator ${index}` }) },
+            })),
+          };
+          finishReason = "tool_calls";
+        } else delta = { role: "assistant", content: `KMSAuto [джерело](${citation(0)})` };
+      }
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
+      response.end(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: finishReason }] })}\n\ndata: [DONE]\n\n`);
+    } catch (error) {
+      errors.push(error);
+      response.writeHead(500);
+      response.end("fixture failed");
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const modelsPath = join(directory, "models.json");
+  await writeFile(modelsPath, JSON.stringify({ providers: { fixture: {
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    api: "openai-completions",
+    apiKey: "fixture",
+    compat: { supportsDeveloperRole: false },
+    models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 65_536, maxTokens: 8_192, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+  } } }));
+  const modelRuntime = await ModelRuntime.create({ modelsPath, allowModelNetwork: false });
+  const selectedEngine = modelRuntime.getModel("fixture", "fixture");
+  assert.ok(selectedEngine);
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 8_192 }, retry: { enabled: false } });
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: directory, agentDir: directory, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    // About the production system prompt and tool schemas: 15k tokens.
+    systemPrompt: "Device file research fixture. ".repeat(2_000),
+  });
+  await resourceLoader.reload();
+  const tool = defineTool({
+    name: "echo_device_file_search",
+    label: "Шукаю файли пристроїв",
+    description: "Search fixture device files.",
+    parameters: Type.Object({ query: Type.String() }),
+    executionMode: "sequential",
+    execute: async (id) => {
+      const index = Number(String(id).replace("call_", ""));
+      const hit = (hitIndex: number) => JSON.stringify({ fileName: `KMSAuto-${index}-${hitIndex}.exe`, folder: "C:\\Activators", fileId: `f${index}-${hitIndex}`, revision: 1, citation: citation(index * 100 + hitIndex) });
+      const hits: string[] = [];
+      for (let hitIndex = 0; hits.join(",").length < resultCharacters; hitIndex++) hits.push(hit(hitIndex));
+      return { content: [{ type: "text", text: `{"documents":[${hits.join(",")}],"nextCursor":"c${index}"}` }] };
+    },
+  });
+  const { session } = await createAgentSession({
+    cwd: directory, agentDir: directory, modelRuntime, model: selectedEngine, thinkingLevel: "off",
+    noTools: "all", tools: [tool.name], customTools: [tool], resourceLoader,
+    sessionManager: SessionManager.inMemory(directory), settingsManager,
+  });
+  const compaction = installContextCompaction(session, {
+    prompt: "Знайди серед файлів активатори віндоус",
+    maxTokens: 8_192,
+    compactionReserveTokens: 16_384,
+    compactionKeepRecentTokens: 8_192,
+    providerApiKey: "fixture",
+    timeContext: { requestStartedAtUtc: "2026-11-15T21:17:01Z" },
+  }, () => undefined, () => undefined);
+  return {
+    session, compaction, checkpointRequests, researchRequests, errors,
+    close: async () => {
+      session.dispose();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+test("#4224 checkpoints an oversized fresh search batch whole instead of stopping research", async () => {
+  const value = await freshBatchFixture(40_000);
+  try {
+    await value.session.prompt("Знайди серед файлів активатори віндоус");
+    assert.deepEqual(value.errors, []);
+    assert.equal(value.compaction.failure(), undefined);
+    validateFinalAssistantMessage(value.session.messages);
+    assert.equal(value.checkpointRequests.length, 1, "no checkpoint of the prompt alone");
+    const [checkpoint] = value.checkpointRequests;
+    for (let index = 0; index < 6; index++) assert.ok(checkpoint.includes(`"call_${index}"`), `result ${index} reaches the checkpoint`);
+    // Each page keeps its envelope; its cursor resumes at the first omitted hit.
+    const pages = [...checkpoint.matchAll(/\[Tool result\]: "echo_device_file_search" "call_\d+"\n(.*)/g)].map((match) => JSON.parse(match[1]));
+    assert.equal(pages.length, 6);
+    for (const page of pages) {
+      assert.match(page.checkpointOmitted, /records omitted for the checkpoint; nextCursor continues from the first omitted record/);
+      const last = page.documents.at(-1);
+      assert.deepEqual(JSON.parse(Buffer.from(page.nextCursor, "base64url").toString()), [last.fileId, 1]);
+    }
+    assert.ok(checkpoint.length < 65_536 * 3);
+    assert.equal(value.researchRequests.length, 2);
+    assert.ok(value.researchRequests[1].includes("KMSAuto found on device d0"));
+  } finally {
+    await value.close();
+  }
+});
+
+test("#4224 a fresh search batch that fits the checkpoint is summarized unshortened", async () => {
+  const value = await freshBatchFixture(25_000);
+  try {
+    await value.session.prompt("Знайди серед файлів активатори віндоус");
+    assert.equal(value.compaction.failure(), undefined);
+    assert.equal(value.checkpointRequests.length, 1);
+    assert.doesNotMatch(value.checkpointRequests[0], /omitted for the checkpoint/);
+  } finally {
+    await value.close();
+  }
+});
+
+test("#4224 a shortened checkpoint result never keeps a continuation that skips omitted records", () => {
+  const sections = JSON.stringify({ result: { document: { fileName: "orders.xlsx" }, sections: [0, 1, 2, 3, 4, 5].map((ordinal) => ({ ordinal, markdown: "row ".repeat(200) })), nextAfter: 5 } });
+  for (const tool of ["echo_device_file_read", "echo_device_file_get", "echo_attachment_get"]) {
+    const read = JSON.parse(shortenedToolText(tool, sections, 2_500)).result;
+    assert.ok(read.sections.length < 6, tool);
+    assert.equal(read.nextAfter, read.sections.at(-1).ordinal, tool);
+  }
+  const read = JSON.parse(shortenedToolText("echo_device_file_read", sections, 2_500)).result;
+  assert.match(read.checkpointOmitted, /nextAfter continues from the first omitted record/);
+  const unknown = JSON.stringify({ items: Array.from({ length: 40 }, (_, index) => ({ index, text: "x".repeat(100) })), nextCursor: "page-2" });
+  const list = JSON.parse(shortenedToolText("echo_frequency_lookup", unknown, 1_500));
+  assert.ok(list.items.length < 40);
+  assert.equal(list.nextCursor, null, "the page cursor would skip the omitted items");
+  assert.match(list.checkpointOmitted, /repeat a narrower request/);
+  // An original inspection has no cursor: none is invented for it.
+  const inspection = JSON.stringify({ result: { status: "completed", sections: [0, 1, 2, 3].map((ordinal) => ({ ordinal, markdown: "cell ".repeat(200) })) } });
+  const inspected = JSON.parse(shortenedToolText("echo_attachment_inspection_status", inspection, 2_000)).result;
+  assert.ok(inspected.sections.length < 4);
+  assert.ok(!("nextAfter" in inspected));
+  assert.match(inspected.checkpointOmitted, /repeat a narrower request/);
+  const fits = JSON.stringify({ documents: [{ fileName: "a.exe" }], nextCursor: "next" });
+  assert.equal(shortenedToolText("echo_device_file_search", fits, 1_000), fits);
+});

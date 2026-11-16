@@ -767,8 +767,12 @@ pub const AI_AGENT_REFUSAL_REWRITE_MAX_TOKENS: i32 = 2_048;
 pub const AI_AGENT_REFUSAL_REWRITE_PROMPT_MAX_CHARS: usize = 8_192;
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
+/// OpenAI engines that also run the bounded research harness (#4224); mirrors
+/// the runner's `BOUNDED_OPENAI_MODELS`.
+pub const AI_AGENT_BOUNDED_RESEARCH_OPENAI_MODELS: &[&str] =
+    &[AI_AGENT_OPENAI_GPT_6_1_SOL];
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.14.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.16.2";
 /// How often the bgworker compares the namespace harness with
 /// `AI_AGENT_HARNESS_RELEASE` (#4186). The first check waits longer, because a
 /// deploy restarts the bgworker before it upgrades the harness.
@@ -1980,6 +1984,7 @@ UPDATE messenger_contact SET avatar_id = NULL;
 DELETE FROM messenger_avatar;
 DELETE FROM messenger_chat_member;
 DELETE FROM messenger_contact;
+DELETE FROM messenger_chat_read_state;
 DELETE FROM messenger_chat;
 DELETE FROM messenger_account;
 DELETE FROM signal_message_media;
@@ -2259,6 +2264,9 @@ pub const ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN: usize = 2;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_CONCURRENT: usize = 4;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_PER_LOGIN: usize = 2;
 pub const ANALYSIS_SOURCE_READ_LOGIN_QUEUE_MAX_ENTRIES: usize = 2_048;
+/// Largest message-id list whose source read skips the shared SQL slots
+/// (`read_query::id_bounded_connection`); equals the candidate hydration chunk.
+pub const ANALYSIS_SOURCE_ID_BOUNDED_READ_MAX_IDS: usize = 1_000;
 pub const ANALYSIS_SOURCE_READ_QUEUE_ERROR: &str =
     "analysis source read admission exhausted";
 pub const POSTGRES_READ_CANCEL_TIMEOUT_MS: u64 = 3_000;

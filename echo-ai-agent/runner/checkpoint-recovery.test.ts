@@ -253,7 +253,9 @@ for (const api of ["openai-responses", "openai-completions"]) {
           assert.equal(synthesis, 1);
           assert.ok(!body.tools?.length);
           assert.ok(!JSON.stringify(body).includes("Unfinished checkpoint"));
-          assert.ok(JSON.stringify(body).includes("Record 1:"));
+          // #4224 sizes pages to the free context, so more, shorter pages are read and the
+          // newest delivered records fill the synthesis first.
+          assert.match(JSON.stringify(body), /Record \d+: synthetic document received/);
           if (outcome === "after-checkpoint")
             assert.ok(JSON.stringify(body).includes("Earlier checkpoint:"));
           if (outcome.endsWith("-synthesis"))

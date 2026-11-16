@@ -101,6 +101,9 @@ and bounded section reads. All derived data is stored in `wd_files`. File times
 are not observation times; position lookup retains undated evidence and current
 AOR boundaries. See [device documents](../wdintel-rs/src/devices/documents/README.md)
 for permissions, search semantics, pipeline controls and rollout/recovery.
+Since `2026.11.16.1` (#4224), search hits omit default states and the full path,
+and synthesis can cite file and attachment search hits even when no file was
+read, so a search-only request is no longer reported as having no evidence.
 
 Release `2026.10.04.1` requires the matching Echo build, including the AI
 position migrations. Release `2026.09.28.1` added no database migration.

@@ -98,6 +98,10 @@ describe('MessengerWorkspace', () => {
       accountMemberStatus: null,
       lastMessageDate: Date.UTC(2026, 8, 12, 12),
       telegram: null,
+      oldestReadAt: null,
+      newestReadAt: null,
+      unreadCount: 0,
+      totalCount: 0,
     });
     vi.mocked(listMessengersChats).mockResolvedValue({
       items: [
@@ -132,6 +136,9 @@ describe('MessengerWorkspace', () => {
       title: 'Ivan',
       messengerType: 'Telegram',
       externalId: '1',
+      oldestReadAt: null,
+      newestReadAt: null,
+      unreadCount: 0,
     };
     vi.mocked(listMessengersChats).mockResolvedValueOnce({ items: [item as never] });
     const render = (id: string) =>
@@ -160,6 +167,10 @@ describe('MessengerWorkspace', () => {
             accountMemberStatus: null,
             lastMessageDate: null,
             telegram: null,
+            oldestReadAt: null,
+            newestReadAt: null,
+            unreadCount: 0,
+            totalCount: 0,
           },
         ],
       });
@@ -198,6 +209,10 @@ describe('MessengerWorkspace', () => {
       accountMemberStatus: null,
       lastMessageDate: null,
       telegram: null,
+      oldestReadAt: null,
+      newestReadAt: null,
+      unreadCount: 0,
+      totalCount: 0,
     };
     vi.mocked(listMessengersChats).mockResolvedValue({ items: [chat] });
     vi.mocked(listMessengersChatMembers).mockResolvedValue({ items: [] });

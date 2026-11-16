@@ -314,7 +314,14 @@ Interrupted checkpoint streams are retried once with the same input and output
 cap. Partial checkpoints never replace evidence; cancellation, content filters,
 and other provider failures end the checkpoint without this retry.
 A non-reducing prefix checkpoint can fall back once to all completed evidence,
-including the latest tool batch, within the same input and output guards.
+including the latest tool batch, within the same input and output guards. When
+the earlier turns cannot free enough room on their own (for example, only the
+prompt precedes an oversized first batch), the checkpoint summarizes all
+evidence at once. If that transcript exceeds the checkpoint request, the largest
+tool results are shortened to a common length (#4224). JSON results keep their
+envelope and drop records from the end, stating how many were omitted; search
+pages get a cursor that resumes at the first omitted record. Other results are
+cut at a line boundary with a marker.
 An optional gateway checkpoint engine keeps the primary report engine unchanged;
 it can also reuse the primary engine without replacing its runtime profile.
 Both use the same request-scoped capability.
@@ -324,10 +331,23 @@ deadline and limits. Its focused synthesis prompt preserves tenant instructions,
 request time, scope and citation rules without the tool workflow guidance.
 Checkpoint generation has a separate `checkpointMaxTokens` output cap, defaulting
 to the normal answer cap. Its failure cause survives SDK error conversion.
-Each tool response remains bounded. The retained tool allowance scales with the
-selected engine's context window, and nearing that allowance triggers a
-checkpoint even if provider token headroom remains. Discarded allowance is
-released after compaction. The gateway also supplies its provider request-byte
+Each tool response remains bounded. The retained tool allowance is sized to the
+free context: the window minus the system prompt and tool schemas, the larger of
+the output allowance and compaction reserve, the safety margin and a checkpoint.
+All Echo calls of one assistant turn share half of that room, each getting an
+even share of what is left, so the last of six parallel searches still delivers
+data on a 64k window (#4224). Calls beyond what the batch can give at least
+2,000 characters are not run; they return a notice to request them again in a
+later turn. A result that cannot be shortened into its share, such as one large
+read section, may use the call's whole allowance (up to the usual per-response
+ceiling); calls after it wait for a later turn once the batch is used up, and the
+next turn compacts. Compaction keeps at most the recent context that
+clears this allowance. Nearing the allowance triggers a checkpoint even if
+provider token headroom remains. Discarded allowance is released after
+compaction. File and attachment search hits reach the model without default
+states or the full path, with shorter summaries and snippets before any hit is
+dropped; a trimmed page says how many hits it shows and continues with
+`nextCursor`. The gateway also supplies its provider request-byte
 limit; primary requests and checkpoints reserve room for serialization overhead
 and compact before exceeding that transport limit. The runner
 also emits normalized

@@ -6,6 +6,7 @@ pub mod contacts;
 pub mod members;
 pub mod messages;
 pub mod paging;
+pub mod read_state;
 pub mod types;
 
 use crate::error::AppError;
@@ -16,8 +17,10 @@ use crate::messengers::types::{
     MessengersAccountsListRsp, MessengersAttachmentsCountsReq,
     MessengersAttachmentsCountsRsp, MessengersAttachmentsListReq,
     MessengersAttachmentsListRsp, MessengersChatMembersListReq,
-    MessengersChatMembersListRsp, MessengersChatsListReq,
-    MessengersChatsListRsp, MessengersContactsListReq,
+    MessengersChatMembersListRsp, MessengersChatReadState,
+    MessengersChatReadStateGetReq, MessengersChatReadStateUpdateReq,
+    MessengersChatsListReq, MessengersChatsListRsp,
+    MessengersChatsMarkAllReadReq, MessengersContactsListReq,
     MessengersContactsListRsp, MessengersMessagesListReq,
     MessengersMessagesListRsp,
 };
@@ -63,6 +66,45 @@ pub async fn chats_list(
         .await
         .c(h!())?;
     Ok(Json(rsp))
+}
+
+#[post("/api/messengers/chats/read-state/get")]
+pub async fn chat_read_state_get(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengersChatReadStateGetReq>,
+) -> Result<Json<MessengersChatReadState>, AppError> {
+    let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
+    let rsp = read_state::get_read_state(&env.dbx, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messengers/chats/read-state/update")]
+pub async fn chat_read_state_update(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengersChatReadStateUpdateReq>,
+) -> Result<Json<MessengersChatReadState>, AppError> {
+    let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
+    let rsp = read_state::update_read_state(&env.dbx, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messengers/chats/mark-all-read")]
+pub async fn chats_mark_all_read(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengersChatsMarkAllReadReq>,
+) -> Result<Json<()>, AppError> {
+    let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
+    read_state::mark_all_read(&env.dbx, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(()))
 }
 
 #[post("/api/messengers/chats/members/list")]

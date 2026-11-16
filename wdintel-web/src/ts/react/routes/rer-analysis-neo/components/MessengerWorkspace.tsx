@@ -105,7 +105,12 @@ function MessengerAccountWorkspace({
     return () => onBusyChange?.(false);
   }, [busy, onBusyChange]);
   // The analysis messenger chat and its position come from the URL once, on mount; after that the chat view owns them.
-  const [selected, setSelected] = useState(() => parseMessengerChatQueryFromWindow(account.id));
+  // `viaLink`: the chat came from the address bar (a shared link, a reload), not from a choice in the list, so it opens where
+  // the link says (a message, or the end) and not at the first unread message.
+  const [selected, setSelected] = useState(() => ({
+    ...parseMessengerChatQueryFromWindow(account.id),
+    viaLink: true,
+  }));
   const chat = chatsState.chats.find((item) => item.id === selected.chatId) ?? null;
   // A failed chat list proves nothing, so a shared link survives it and opens after a retry.
   const chatMissing =
@@ -123,7 +128,7 @@ function MessengerAccountWorkspace({
     parseMessengerViewFromWindow(account.id),
   );
   const selectChat = (chatId: string | null) => {
-    setSelected({ chatId, anchorMessageId: null });
+    setSelected({ chatId, anchorMessageId: null, viaLink: false });
     if (chatId == null) {
       replaceMessengerChatQueryInUrl({ chatId: null, anchorMessageId: null });
     } else {
@@ -133,7 +138,7 @@ function MessengerAccountWorkspace({
     }
   };
   const openView = (next: MessengerView | null) => {
-    setSelected({ chatId: null, anchorMessageId: null });
+    setSelected({ chatId: null, anchorMessageId: null, viaLink: false });
     setView(next);
     replaceMessengerViewInUrl(next);
     // The table of a view starts clean, whatever another table left in the URL, and leaves nothing behind.
@@ -146,7 +151,7 @@ function MessengerAccountWorkspace({
   const staleJumpRef = useRef(jumpTo);
   // Opens a chat at a message, from the media tab or from the gallery of the account.
   const openMessage = useCallback((chatId: string, messageId: string) => {
-    setSelected({ chatId, anchorMessageId: messageId });
+    setSelected({ chatId, anchorMessageId: messageId, viaLink: false });
     setView(null);
     replaceMessengerViewInUrl(null);
     clearTableQueryInUrl();
@@ -191,9 +196,11 @@ function MessengerAccountWorkspace({
           chat={chat}
           title={chatLabel(chat)}
           initialAnchorId={selected.anchorMessageId}
+          openAtUnread={!selected.viaLink}
           refreshToken={refreshToken}
           onBusyChange={setChatBusy}
           onBack={() => selectChat(null)}
+          onReadState={chatsState.patchReadState}
           mobile={mobile}
         />
       ) : selected.chatId != null && chatsState.loading ? (

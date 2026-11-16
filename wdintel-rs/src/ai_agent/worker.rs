@@ -1607,7 +1607,10 @@ fn next_model_failure(
             "complete" | "output_limit" | "empty" | "citation_rejected"
             | "no_evidence" | "research_text" | "partial",
         ) => None,
-        Some("content_filter") => Some(AI_AGENT_REASON_MODEL_REFUSAL),
+        // A refused answer the rewrite layer could not recover (#4224).
+        Some("content_filter" | "refusal") => {
+            Some(AI_AGENT_REASON_MODEL_REFUSAL)
+        }
         Some("provider_error" | "transient_error") => {
             Some(AI_AGENT_REASON_PROVIDER_ERROR)
         }
@@ -1625,21 +1628,26 @@ fn keeps_runner_metadata(
 }
 
 /// Research that only fell back to a saved draft because the provider kept
-/// failing reports the provider, not unfinished research, so the chat
-/// offers another model instead of a Deep continuation on the same one.
+/// failing, or kept declining the request (#4224), reports that model
+/// failure, not unfinished research, so the chat offers another model
+/// instead of a Deep continuation on the same one.
 fn provider_limited_metadata(
     metadata: Option<super::types::AiAgentCompletionMetadata>,
     model_failure: Option<&str>,
 ) -> Option<super::types::AiAgentCompletionMetadata> {
-    match metadata {
-        Some(mut metadata)
+    match (metadata, model_failure) {
+        (Some(mut metadata), Some(failure))
             if metadata.reason == "incomplete_research"
-                && model_failure == Some(AI_AGENT_REASON_PROVIDER_ERROR) =>
+                && matches!(
+                    failure,
+                    AI_AGENT_REASON_PROVIDER_ERROR
+                        | AI_AGENT_REASON_MODEL_REFUSAL
+                ) =>
         {
-            metadata.reason = AI_AGENT_REASON_PROVIDER_ERROR.to_string();
+            metadata.reason = failure.to_string();
             Some(metadata)
         }
-        metadata => metadata,
+        (metadata, _) => metadata,
     }
 }
 
@@ -2365,6 +2373,23 @@ mod tests {
             Some("model_refusal")
         );
         assert_eq!(
+            after(&[
+                json!({"outcome": "complete", "stage": "synthesis"}),
+                json!({"outcome": "refusal", "stage": "synthesis"}),
+                json!({"outcome": "inability", "stage": "answer"})
+            ]),
+            Some("model_refusal"),
+            "#4224: an unrecovered refusal"
+        );
+        assert_eq!(
+            after(&[
+                json!({"outcome": "refusal", "stage": "synthesis"}),
+                json!({"outcome": "complete", "stage": "synthesis"})
+            ]),
+            None,
+            "#4224: the rewritten retry answered"
+        );
+        assert_eq!(
             after(&[failed.clone(), json!({"outcome": "continued"})]),
             Some("provider_error"),
             "progress keeps the failure"
@@ -2453,6 +2478,15 @@ mod tests {
         assert_eq!(
             super::provider_limited_metadata(None, Some("provider_error")),
             None
+        );
+        // #4224: a refusal the rewrite layer could not recover offers another
+        // model too.
+        assert_eq!(
+            super::provider_limited_metadata(
+                metadata("incomplete_research"),
+                Some("model_refusal")
+            ),
+            metadata("model_refusal")
         );
     }
 

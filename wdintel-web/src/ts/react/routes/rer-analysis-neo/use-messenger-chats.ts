@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import type { MessengersChatItem } from '../../../../Bindings';
+import type { MessengersChatItem, MessengersChatReadState } from '../../../../Bindings';
 import { isAbortError } from '../../services/api/client';
-import { listMessengersChats } from '../../services/api/analysis-messengers';
+import {
+  listMessengersChats,
+  markAllMessengersChatsRead,
+} from '../../services/api/analysis-messengers';
 import { toErrorMessage } from './use-analysis-data.shared';
 
 export type MessengerChatSection = 'private' | 'group' | 'channel' | 'bot';
@@ -31,6 +34,8 @@ export function useMessengerChats(accountId: string, refreshToken = 0) {
   const [result, setResult] = useState<Result | null>(null);
   // True while a request is in flight, the header refresh stays disabled meanwhile.
   const [fetching, setFetching] = useState(false);
+  // Bumped after "read all" to load the counts again without showing the loading state.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -55,7 +60,27 @@ export function useMessengerChats(accountId: string, refreshToken = 0) {
       controller.abort();
       setFetching(false);
     };
-  }, [accountId, attempt, refreshToken]);
+  }, [accountId, attempt, refreshToken, reloadKey]);
+
+  // The read state of one chat as the server answered it, so its badge follows the reader without a reload.
+  const patchReadState = useCallback((chatId: string, state: MessengersChatReadState) => {
+    setResult((previous) =>
+      previous == null
+        ? previous
+        : {
+            ...previous,
+            chats: previous.chats.map((chat) =>
+              chat.id === chatId ? { ...chat, ...state } : chat,
+            ),
+          },
+    );
+  }, []);
+
+  // Marks every chat of the account read, then loads the counts. Rejects when the request failed.
+  const markAllRead = useCallback(async () => {
+    await markAllMessengersChatsRead({ accountId });
+    setReloadKey((value) => value + 1);
+  }, [accountId]);
 
   // A result counts only for the account and attempt it was loaded for, so another account never
   // shows the previous chats, and a retry shows loading again.
@@ -66,5 +91,7 @@ export function useMessengerChats(accountId: string, refreshToken = 0) {
     fetching,
     error: current?.error ?? null,
     retry: () => setAttempt((value) => value + 1),
+    patchReadState,
+    markAllRead,
   };
 }

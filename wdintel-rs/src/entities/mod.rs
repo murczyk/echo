@@ -167,6 +167,7 @@ pub mod messenger_alert_settings;
 pub mod messenger_avatar;
 pub mod messenger_chat;
 pub mod messenger_chat_member;
+pub mod messenger_chat_read_state;
 pub mod messenger_contact;
 pub mod messenger_media_meta;
 pub mod modulation;
