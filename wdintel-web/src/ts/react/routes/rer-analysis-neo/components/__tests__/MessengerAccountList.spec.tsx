@@ -30,7 +30,7 @@ describe('MessengerAccountList', () => {
             id: '1',
             name: 'Ivan Petrenko',
             phone: '',
-            avatarUrl: '/api/messengers/avatars/a1',
+            avatarId: 'a1',
           }}
         />,
       ),

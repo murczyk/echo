@@ -11,7 +11,7 @@ export type ContactRow = {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
-  avatarUrl?: string | null;
+  avatarId?: string | null;
   // A chat member that left the chat but is still referenced by old messages.
   deleted?: boolean;
 };
@@ -24,7 +24,7 @@ export function toContactRow(contact: MessengersContactItem): ContactRow {
     firstName: contact.firstName,
     lastName: contact.lastName,
     phone: contact.phone,
-    avatarUrl: contact.avatarUrl,
+    avatarId: contact.avatarId,
   };
 }
 
@@ -36,7 +36,7 @@ export function toMemberRow(member: MessengersChatMemberItem): ContactRow {
     firstName: member.firstName,
     lastName: member.lastName,
     phone: member.phone,
-    avatarUrl: member.avatarUrl,
+    avatarId: member.avatarId,
     deleted: member.deleted,
   };
 }
@@ -56,7 +56,7 @@ export function withAccountRow(
     lastName: null,
     // Contacts carry the number without the plus sign.
     phone: account.phone ? account.phone.replace(/^\+/, '') : null,
-    avatarUrl: account.avatarUrl ?? null,
+    avatarId: account.avatarId ?? null,
   };
   return [self, ...rows];
 }

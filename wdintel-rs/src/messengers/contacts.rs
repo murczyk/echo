@@ -6,7 +6,6 @@ use crate::error::AppError;
 use crate::h;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
-use crate::messengers::avatars::avatar_url;
 use crate::messengers::paging::page_limit;
 use crate::messengers::types::{
     MessengersContactItem, MessengersContactsListReq,
@@ -73,7 +72,7 @@ fn contact_item(contact: &messenger_contact::Model) -> MessengersContactItem {
         is_close_friend: contact.is_close_friend,
         created_at: contact.created_at.and_utc().timestamp_millis(),
         updated_at: contact.updated_at.and_utc().timestamp_millis(),
-        avatar_url: avatar_url(contact.avatar_id),
+        avatar_id: contact.avatar_id.map(|id| id.to_string()),
         telegram: contact.telegram_user_id.map(|id| {
             MessengersTelegramAccountId {
                 user_id: id.to_string(),

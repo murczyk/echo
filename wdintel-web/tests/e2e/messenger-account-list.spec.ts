@@ -8,11 +8,13 @@ const AVATAR_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
   'base64',
 );
-const AVATAR_OK = '/api/messengers/avatars/ok';
+const AVATAR_OK_ID = 'ok';
+const AVATAR_OK = `/api/messengers/avatars/${AVATAR_OK_ID}`;
 // The server answers 404 for it, as for an avatar that is gone or not the caller's.
-const AVATAR_GONE = '/api/messengers/avatars/gone';
+const AVATAR_GONE_ID = 'gone';
+const AVATAR_GONE = `/api/messengers/avatars/${AVATAR_GONE_ID}`;
 
-const account = (id: string, displayName: string, username: string, avatarUrl: string | null) => ({
+const account = (id: string, displayName: string, username: string, avatarId: string | null) => ({
   id,
   messengerType: 'Telegram',
   externalId: id,
@@ -31,14 +33,14 @@ const account = (id: string, displayName: string, username: string, avatarUrl: s
   notes: null,
   internalNotes: null,
   externalUrl: null,
-  avatarUrl,
+  avatarId,
   telegram: null,
   datasourceGroup: { id: 'g1', name: 'Група' },
 });
 
 const accounts = [
-  account('a1', 'Альфа', 'alpha_user', AVATAR_OK),
-  account('a2', 'Браво', 'bravo_user', AVATAR_GONE),
+  account('a1', 'Альфа', 'alpha_user', AVATAR_OK_ID),
+  account('a2', 'Браво', 'bravo_user', AVATAR_GONE_ID),
   account('a3', 'Чарлі', 'charlie_user', null),
 ];
 
@@ -47,7 +49,7 @@ const chat = (
   title: string,
   chatType: string,
   isBot: boolean | null,
-  avatarUrl: string | null,
+  avatarId: string | null,
 ) => ({
   id,
   messengerType: 'Telegram',
@@ -59,7 +61,7 @@ const chat = (
   accountMemberStatus: null,
   lastMessageDate: T0,
   isBot,
-  avatarUrl,
+  avatarId,
   telegram: null,
   oldestReadAt: null,
   newestReadAt: null,
@@ -68,7 +70,7 @@ const chat = (
 });
 
 const chats = [
-  chat('c1', 'Помічник', 'PRIVATE', true, AVATAR_OK),
+  chat('c1', 'Помічник', 'PRIVATE', true, AVATAR_OK_ID),
   chat('c2', 'Іван', 'PRIVATE', false, null),
   chat('c3', 'Команда', 'GROUP', null, null),
 ];

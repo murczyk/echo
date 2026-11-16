@@ -1,6 +1,4 @@
-use crate::config::{
-    MESSENGERS_AVATAR_CACHE_CONTROL, MESSENGERS_AVATAR_PATH_BASE,
-};
+use crate::config::MESSENGERS_AVATAR_CACHE_CONTROL;
 use crate::entities::{
     messenger_avatar, messenger_chat, messenger_chat_member, messenger_contact,
 };
@@ -13,11 +11,6 @@ use actix_web::http::header;
 use actix_web::HttpResponse;
 use sea_orm::*;
 use uuid::Uuid;
-
-/// The URL a client loads an owner's current avatar from.
-pub(crate) fn avatar_url(avatar_id: Option<Uuid>) -> Option<String> {
-    avatar_id.map(|id| format!("{MESSENGERS_AVATAR_PATH_BASE}/{id}"))
-}
 
 /// The avatar's content. An avatar is visible to the logins that can see the
 /// account that owns it; anything else is a `404`. Not ranged: avatars are at
@@ -158,16 +151,6 @@ mod tests {
     use chrono::Utc;
     use serial_test::serial;
     use std::collections::BTreeMap;
-
-    #[test]
-    fn avatar_url_points_at_the_avatar_route() {
-        let id = Uuid::now_v7();
-        assert_eq!(avatar_url(None), None);
-        assert_eq!(
-            avatar_url(Some(id)),
-            Some(format!("/api/messengers/avatars/{id}"))
-        );
-    }
 
     async fn avatar_of(
         dbx: &DatabaseConnection,

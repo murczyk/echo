@@ -36,7 +36,7 @@ const contact = (id: string, userId: string | null): MessengersContactItem => ({
   isCloseFriend: null,
   createdAt: 0,
   updatedAt: 0,
-  avatarUrl: null,
+  avatarId: null,
   telegram: userId == null ? null : { userId },
 });
 
@@ -48,24 +48,24 @@ describe('messenger contacts export', () => {
     });
 
     it('carries the avatar of a contact, a member and the account itself', () => {
-      const url = '/api/messengers/avatars/av1';
-      expect(toContactRow({ ...contact('c1', '7'), avatarUrl: url }).avatarUrl).toBe(url);
+      const id = 'av1';
+      expect(toContactRow({ ...contact('c1', '7'), avatarId: id }).avatarId).toBe(id);
       expect(
         toMemberRow({
           id: 'm1',
           externalId: '9',
           deleted: false,
-          avatarUrl: url,
-        } as MessengersChatMemberItem).avatarUrl,
-      ).toBe(url);
+          avatarId: id,
+        } as MessengersChatMemberItem).avatarId,
+      ).toBe(id);
       const rows = withAccountRow([], {
         id: 'a1',
         name: 'Me',
         phone: '',
         userId: '1',
-        avatarUrl: url,
+        avatarId: id,
       });
-      expect(rows[0].avatarUrl).toBe(url);
+      expect(rows[0].avatarId).toBe(id);
     });
 
     it('lists the account first, with its phone as contacts have it', () => {

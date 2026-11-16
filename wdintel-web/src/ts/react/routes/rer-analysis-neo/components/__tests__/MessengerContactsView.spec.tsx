@@ -19,7 +19,7 @@ const contact = (
   id: string,
   firstName: string | null,
   userId: string,
-  avatarUrl: string | null = null,
+  avatarId: string | null = null,
 ): MessengersContactItem => ({
   id,
   messengerType: 'Telegram',
@@ -32,7 +32,7 @@ const contact = (
   isCloseFriend: null,
   createdAt: 0,
   updatedAt: 0,
-  avatarUrl,
+  avatarId,
   telegram: { userId },
 });
 
@@ -135,10 +135,7 @@ describe('MessengerContactsView', () => {
 
   it('shows the avatar of a contact before its name, the initials when it has none', async () => {
     apiMock.listMessengersContacts.mockResolvedValueOnce(
-      page([
-        contact('c1', 'Сестра', '333', '/api/messengers/avatars/av1'),
-        contact('c2', 'Брат', '444'),
-      ]),
+      page([contact('c1', 'Сестра', '333', 'av1'), contact('c2', 'Брат', '444')]),
     );
     await mount();
     const avatars = [...container.querySelectorAll('[data-messenger-account-avatar]')];

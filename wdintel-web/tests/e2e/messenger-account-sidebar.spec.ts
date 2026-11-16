@@ -24,7 +24,7 @@ const makeAccount = (externalUrl: string | null = EXTERNAL_URL) => ({
   notes: null,
   internalNotes: null,
   externalUrl,
-  avatarUrl: null,
+  avatarId: null,
   telegram: null,
   datasourceGroup: { id: 'g1', name: 'Група' },
 });
@@ -41,7 +41,7 @@ const chat = (id: string, title: string, chatType: string, options: ChatOptions 
   accountMemberStatus: null,
   lastMessageDate: T0,
   isBot: options.isBot ?? null,
-  avatarUrl: null,
+  avatarId: null,
   telegram: null,
   oldestReadAt: null,
   newestReadAt: null,

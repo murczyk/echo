@@ -247,7 +247,7 @@ function ChatSection({
                     id: chat.id,
                     name: chatLabel(chat),
                     phone: '',
-                    avatarUrl: chat.avatarUrl,
+                    avatarId: chat.avatarId,
                   }}
                 />
                 <span className="flex min-w-0 flex-col">
@@ -753,7 +753,7 @@ function CollapsedSidebar({
                               id: chat.id,
                               name: chatLabel(chat),
                               phone: '',
-                              avatarUrl: chat.avatarUrl,
+                              avatarId: chat.avatarId,
                             }}
                             className={RAIL_AVATAR_SIZE}
                           />

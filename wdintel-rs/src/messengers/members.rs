@@ -3,7 +3,6 @@ use crate::error::AppError;
 use crate::h;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
-use crate::messengers::avatars::avatar_url;
 use crate::messengers::chats::resolve_chat;
 use crate::messengers::types::{
     MessengersChatMemberItem, MessengersChatMembersListReq,
@@ -48,7 +47,7 @@ fn chat_member_item(
             .joined_date
             .map(|dt| dt.and_utc().timestamp_millis()),
         deleted: member.deleted,
-        avatar_url: avatar_url(member.avatar_id),
+        avatar_id: member.avatar_id.map(|id| id.to_string()),
         telegram: member.telegram_user_id.map(|id| {
             MessengersTelegramAccountId {
                 user_id: id.to_string(),

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import '../../../components/selectable-list.css';
+import { messengerAvatarUrl } from '../../../services/api/analysis-messengers';
 
 export type MessengerAccountItem = {
   id: string;
@@ -12,7 +13,7 @@ export type MessengerAccountItem = {
   notes?: string | null;
   // Internal description, editable by the operator.
   internalNotes?: string | null;
-  avatarUrl?: string | null;
+  avatarId?: string | null;
   // The account's id inside the external messenger app itself (Telegram user id).
   userId?: string | null;
   // The account's id in the external system.
@@ -68,7 +69,8 @@ export function MessengerAccountAvatar({
 }) {
   // An image that does not load (gone, no access) gives way to the initials, not to an empty circle.
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const avatarUrl = account.avatarUrl && account.avatarUrl !== failedUrl ? account.avatarUrl : null;
+  const candidateUrl = account.avatarId ? messengerAvatarUrl(account.avatarId) : null;
+  const avatarUrl = candidateUrl !== failedUrl ? candidateUrl : null;
   return (
     <span
       className={`group-navigation-avatar overflow-hidden ${className}`}

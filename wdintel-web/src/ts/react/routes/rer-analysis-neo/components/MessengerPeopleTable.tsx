@@ -177,7 +177,7 @@ function PersonName({ person }: { person: ContactRow }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
       <MessengerAccountAvatar
-        account={{ id: person.id, name, phone: '', avatarUrl: person.avatarUrl }}
+        account={{ id: person.id, name, phone: '', avatarId: person.avatarId }}
         className="!size-7 !text-xs"
       />
       <span className="min-w-0">{text}</span>

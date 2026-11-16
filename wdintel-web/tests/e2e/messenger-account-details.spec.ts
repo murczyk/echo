@@ -27,7 +27,7 @@ const makeAccount = (overrides: Record<string, unknown> = {}) => ({
   notes: 'Опис від джерела',
   internalNotes: 'Приватна примітка',
   externalUrl: EXTERNAL_URL,
-  avatarUrl: null,
+  avatarId: null,
   telegram: { userId: '7012345678' },
   datasourceGroup: { id: 'g1', name: 'Група' },
   ...overrides,

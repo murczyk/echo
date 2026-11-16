@@ -3,7 +3,6 @@ use crate::error::AppError;
 use crate::h;
 use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
-use crate::messengers::avatars::avatar_url;
 use crate::messengers::types::{
     MessengersAccountItem, MessengersAccountUpdateReq,
     MessengersAccountsListRsp, MessengersDatasourceGroup,
@@ -127,7 +126,7 @@ fn account_item(
         notes: account.notes.clone(),
         internal_notes: account.internal_notes.clone(),
         external_url: account.external_url.clone(),
-        avatar_url: avatar_url(account.avatar_id),
+        avatar_id: account.avatar_id.map(|id| id.to_string()),
         telegram: account.telegram_user_id.map(|id| {
             MessengersTelegramAccountId {
                 user_id: id.to_string(),
