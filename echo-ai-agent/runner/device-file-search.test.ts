@@ -224,3 +224,97 @@ test("#4224 calls a batch defers are not reported to synthesis as completed sear
   assert.ok(JSON.stringify(synthesisBody).includes("never run because one turn asked for more"));
   assert.ok(events.some((event) => event.type === "completion_metadata" && event.coverageLimited === true));
 });
+
+test("#4224 GPT-6.1 Sol runs bounded research over Responses with a forced update_research turn", async (t) => {
+  const events: any[] = [];
+  const errors: unknown[] = [];
+  const researchBodies: any[] = [];
+  let synthesisBody: any;
+  const firstCitation = fileHit("activator", 0).citation;
+  const draftText = `## KMS-активатори\n\n- KMSAuto у C:\\Users\\operator\\Downloads\\Activators [джерело](${firstCitation})`;
+  const write = process.stdout.write.bind(process.stdout);
+  t.mock.method(process.stdout, "write", (chunk: string, ...args: any[]) => {
+    if (typeof chunk === "string" && chunk.startsWith('{"type":')) {
+      events.push(JSON.parse(chunk));
+      return true;
+    }
+    return write(chunk, ...args);
+  });
+  const fetch = async (url: unknown, init: any) => {
+    const path = new URL(String(url)).pathname;
+    if (path === "/api/ai-agent/bootstrap/exchange")
+      return Response.json({ correlationId }, { headers: { "set-cookie": "session=fixture; HttpOnly" } });
+    if (path === "/api/device/files/ai/search") {
+      const { query } = JSON.parse(init.body);
+      return Response.json({ documents: Array.from({ length: 50 }, (_, index) => fileHit(query, index)), nextCursor: "next" });
+    }
+    if (path === "/api/attachments/search") return Response.json({ documents: [], nextCursor: null });
+    if (path === "/api/device/ai/search") return Response.json({ devices: [], nextCursor: null });
+    assert.ok(path.endsWith("/responses"), path);
+    const purpose = new Headers(init.headers).get("x-echo-ai-purpose") ?? "";
+    const body = JSON.parse(init.body);
+    if (purpose === "checkpoint") return responsesStream([message(`KMSAuto [джерело](${firstCitation}).`)]);
+    if (purpose === "synthesis") {
+      synthesisBody = body;
+      return responsesStream([message(draftText)]);
+    }
+    assert.equal(purpose, "research");
+    researchBodies.push(body);
+    if (researchBodies.length === 1)
+      return responsesStream(SEARCHES.map((call, index) => ({
+        id: `fc_${index}`, type: "function_call", call_id: `call_${index}`, name: call.name, status: "completed", arguments: JSON.stringify(call.arguments),
+      })));
+    if (body.tool_choice)
+      return responsesStream([{
+        id: "fc_update", type: "function_call", call_id: "call_update", name: "update_research", status: "completed",
+        arguments: JSON.stringify({ checklist: [{ task: "Find activators", status: "done" }], draft: draftText, gaps: [] }),
+      }]);
+    return responsesStream([message("Research complete.")]);
+  };
+  t.mock.method(globalThis, "fetch", async (url: unknown, init: any) => {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      errors.push(error);
+      throw error;
+    }
+  });
+  await runAgent(validatePayload({
+    prompt: "Знайди серед файлів активатори віндоус та інші, опиши на твою думку де який",
+    modelName: "gpt-6.1-sol",
+    checkpointModelName: "gpt-6.1-sol",
+    providerTransport: "echo_gateway",
+    providerApiKey: "fixture-capability",
+    echoPublicHost: "echo.example.test",
+    bootstrapToken: "A".repeat(43),
+    correlationId,
+    contextWindow: 65_536,
+    maxTokens: 8192,
+    checkpointMaxTokens: 8192,
+    compactionReserveTokens: 16_384,
+    compactionKeepRecentTokens: 8_192,
+    executionPolicy: { preset: "balanced", api: "openai-responses", reasoningEffort: "medium", checkpointEffort: "low", synthesisEffort: "low", maxRuntimeSeconds: 600, finalizationSeconds: 120 },
+    deadlineAt: Date.now() + 600_000,
+    timeContext: { timeZone: "Europe/Kyiv", requestStartedAtUtc: "2026-11-15T21:17:01Z" },
+    skills: [
+      { method: "POST", path: "/api/device/files/ai/search", skill: "device_file_search", label: "Шукаю файли пристроїв", requestKind: "deviceFileSearch" },
+      { method: "POST", path: "/api/attachments/search", skill: "attachment_search", label: "Шукаю документи", requestKind: "attachmentSearch" },
+      { method: "POST", path: "/api/device/ai/search", skill: "device_search", label: "Шукаю пристрої", requestKind: "deviceSearch" },
+    ],
+  }, false));
+  assert.deepEqual(errors, []);
+  const forced = researchBodies.filter((body) => body.tool_choice);
+  assert.ok(forced.length >= 1, "the research refresh is forced after the batch");
+  for (const body of forced) {
+    assert.deepEqual(body.tool_choice, { type: "function", name: "update_research" });
+    assert.ok(body.tools.some((tool: any) => tool.name === "update_research"));
+  }
+  assert.ok(researchBodies.some((body) => JSON.stringify(body.input).includes("Private budget status")), "bounded research reports its budget");
+  assert.ok(synthesisBody, "the answer comes from the tool-free synthesis");
+  assert.ok(!synthesisBody.tools?.length);
+  assert.ok(!events.some((event) => event.type === "completion_metadata" && event.reason === "context_limit"));
+  assert.ok(!events.some((event) => event.type === "tool_end" && event.is_error));
+  const answer = events.findLast((event) => event.type === "assistant_snapshot")?.text ?? "";
+  assert.ok(answer.includes(firstCitation), answer);
+  assert.ok(!answer.includes("Не вдалося підготувати"));
+});

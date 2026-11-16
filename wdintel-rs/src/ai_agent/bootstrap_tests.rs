@@ -825,6 +825,8 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
     gemma.model_name = "gemma-4".to_string();
     let mut sol = engine.clone();
     sol.model_name = crate::config::AI_AGENT_OPENAI_GPT_6_SOL.to_string();
+    let mut sol_6_1 = engine.clone();
+    sol_6_1.model_name = crate::config::AI_AGENT_OPENAI_GPT_6_1_SOL.to_string();
     let openai_engines: Vec<_> = ["o1", "o3-mini", "o4-mini"]
         .into_iter()
         .map(|name| {
@@ -857,6 +859,13 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
             reserve / 2,
             "gpt"
         );
+        // #4224: GPT-6.1 Sol runs the bounded research workflow.
+        assert_eq!(
+            reasoning::resolve(&config, &sol_6_1, preset, false)
+                .finalization_seconds,
+            reserve,
+            "gpt-6.1-sol"
+        );
         for openai in &openai_engines {
             assert_eq!(
                 reasoning::resolve(&config, openai, preset, false)
@@ -878,6 +887,7 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
             .max_runtime_seconds
     };
     assert_eq!(balanced_runtime(&gemma), 600, "gemma");
+    assert_eq!(balanced_runtime(&sol_6_1), 600, "gpt-6.1-sol");
     assert_eq!(balanced_runtime(&sol), 300, "gpt");
     for openai in &openai_engines {
         assert_eq!(balanced_runtime(openai), 300, "{}", openai.model_name);
