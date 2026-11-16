@@ -382,7 +382,7 @@ async fn issue_3572_maintenance_refreshed_existing_scope_without_relaxing_bootst
     )
     .await
     .unwrap();
-    assert_eq!(second.link.slot, 1);
+    assert_eq!(second.link.slot, Some(1));
     assert_ne!(second.login.id, linked.login.id);
     assert_eq!(
         second.login.login,
@@ -418,6 +418,21 @@ async fn issue_3572_maintenance_refreshed_existing_scope_without_relaxing_bootst
         .exec(&env.dbx)
         .await
         .unwrap();
+    // A link made before slots has none and is the main one, so the user
+    // can't get another main link.
+    assert_eq!(linked.link.slot, None);
+    let now = chrono::Utc::now().naive_utc();
+    assert!(ai_agent_user_link::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        human_login_id: Set(fixture.human.id),
+        agent_login_id: Set(second.login.id),
+        created_at: Set(now),
+        updated_at: Set(now),
+        slot: Set(Some(AI_AGENT_MAIN_CONTAINER_SLOT)),
+    }
+    .insert(&env.dbx)
+    .await
+    .is_err());
     for reason in ["human_blocked", "human_role_revoked", "organism_disabled"] {
         let fixture = AgentFixture::new(&env).await;
         crate::ai_agent::lifecycle::ensure_linked_agent_in_slot(

@@ -15,7 +15,7 @@ pub struct Model {
     pub agent_login_id: Uuid,
     pub created_at: DateTime,
     pub updated_at: DateTime,
-    pub slot: i16,
+    pub slot: Option<i16>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

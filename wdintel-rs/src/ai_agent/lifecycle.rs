@@ -23,7 +23,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
     Condition, ConnectionTrait, DatabaseBackend, DatabaseConnection,
     DatabaseTransaction, EntityTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
+    QueryFilter, QuerySelect, Statement, TransactionTrait,
 };
 use serde_json::json;
 use std::time::Instant;
@@ -133,6 +133,23 @@ pub(crate) fn linked_login_name(human_login: &str, slot: i16) -> String {
     }
 }
 
+/// The container slot `link` runs; links made before #4232 have none and run
+/// the main one.
+pub(crate) fn link_slot(link: &ai_agent_user_link::Model) -> i16 {
+    link.slot.unwrap_or(AI_AGENT_MAIN_CONTAINER_SLOT)
+}
+
+/// Selects the links of container `slot`, counting unset ones as the main.
+pub(crate) fn link_slot_condition(slot: i16) -> Condition {
+    let condition =
+        Condition::any().add(ai_agent_user_link::Column::Slot.eq(slot));
+    if slot == AI_AGENT_MAIN_CONTAINER_SLOT {
+        condition.add(ai_agent_user_link::Column::Slot.is_null())
+    } else {
+        condition
+    }
+}
+
 pub(crate) async fn ensure_linked_agent_in_slot(
     env: &Env,
     human_login_id: Uuid,
@@ -149,7 +166,7 @@ pub(crate) async fn ensure_linked_agent_in_slot(
         .ok_or(AppError::NotFound)?;
     let existing_link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human.id))
-        .filter(ai_agent_user_link::Column::Slot.eq(slot))
+        .filter(link_slot_condition(slot))
         .one(&txn)
         .await
         .c(h!())?;
@@ -189,7 +206,7 @@ async fn reconcile_linked_login_name(
     agent: &login::Model,
     human_login: &str,
 ) -> Result<login::Model, AppError> {
-    let linked_name = linked_login_name(human_login, link.slot);
+    let linked_name = linked_login_name(human_login, link_slot(link));
     let linked_name = linked_name.as_str();
     let name_owner = login::Entity::find()
         .filter(login::Column::Login.eq(linked_name))
@@ -260,7 +277,7 @@ async fn create_link(
         agent_login_id: Set(agent.id),
         created_at: Set(now),
         updated_at: Set(now),
-        slot: Set(slot),
+        slot: Set(Some(slot)),
     }
     .insert(txn)
     .await
@@ -538,7 +555,7 @@ async fn start_or_join_locked(
     let views = agents
         .iter()
         .map(|agent| SlotView {
-            slot: agent.link.slot,
+            slot: link_slot(&agent.link),
             busy: busy_agents.contains(&agent.login.id),
             container: &agent.container,
         })
@@ -551,7 +568,7 @@ async fn start_or_join_locked(
         SlotPlan::Join(slot) => {
             let linked = agents
                 .into_iter()
-                .find(|agent| agent.link.slot == slot)
+                .find(|agent| link_slot(&agent.link) == slot)
                 .ok_or(AppError::NotFound)
                 .c(h!())?;
             if let Some(linked) = join_running_agent(env, linked, &need)
@@ -1355,7 +1372,9 @@ pub async fn stop_container_if_idle(
         .context(h!())?;
     let mut failures = StopFailures::default();
     stop_linked_agent_locked(env, &linked, &mut failures).await;
-    if link.slot != AI_AGENT_MAIN_CONTAINER_SLOT && !failures.has_failures() {
+    if link_slot(link) != AI_AGENT_MAIN_CONTAINER_SLOT
+        && !failures.has_failures()
+    {
         if let Err(err) =
             destroy_instance(env, &linked.container, link.agent_login_id).await
         {
@@ -1905,11 +1924,10 @@ pub(crate) async fn touch_container_activity_in_transaction(
     let link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
         .filter(match agent_login_id {
-            Some(agent_login_id) => {
-                ai_agent_user_link::Column::AgentLoginId.eq(agent_login_id)
-            }
-            None => ai_agent_user_link::Column::Slot
-                .eq(AI_AGENT_MAIN_CONTAINER_SLOT),
+            Some(agent_login_id) => Condition::all().add(
+                ai_agent_user_link::Column::AgentLoginId.eq(agent_login_id),
+            ),
+            None => link_slot_condition(AI_AGENT_MAIN_CONTAINER_SLOT),
         })
         .one(txn)
         .await
@@ -1950,7 +1968,7 @@ pub async fn destroy_container(
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(());
     };
-    if !container_expired(&container, link.slot, Utc::now().naive_utc())
+    if !container_expired(&container, link_slot(&link), Utc::now().naive_utc())
         || container_in_demand(
             &lifecycle_lock,
             link.human_login_id,
@@ -2017,7 +2035,7 @@ where
 {
     let link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
-        .filter(ai_agent_user_link::Column::Slot.eq(slot))
+        .filter(link_slot_condition(slot))
         .one(dbx)
         .await
         .c(h!())?
@@ -2038,14 +2056,14 @@ where
     let Some(agent_login_id) = agent_login_id else {
         return Ok(AI_AGENT_MAIN_CONTAINER_SLOT);
     };
-    Ok(ai_agent_user_link::Entity::find()
+    let link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
         .filter(ai_agent_user_link::Column::AgentLoginId.eq(agent_login_id))
         .one(dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?
-        .slot)
+        .ok_or(AppError::NotFound)?;
+    Ok(link_slot(&link))
 }
 
 /// Every container slot the user has, main first.
@@ -2056,12 +2074,12 @@ async fn load_user_agents_on<C>(
 where
     C: ConnectionTrait,
 {
-    let links = ai_agent_user_link::Entity::find()
+    let mut links = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
-        .order_by_asc(ai_agent_user_link::Column::Slot)
         .all(dbx)
         .await
         .c(h!())?;
+    links.sort_by_key(link_slot);
     let mut agents = Vec::with_capacity(links.len());
     for link in links {
         agents.push(linked_agent_for_link(dbx, link).await.context(h!())?);
@@ -3347,7 +3365,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
-            slot: Set(0),
+            slot: Set(None),
         }
         .insert(&txn)
         .await
@@ -3418,7 +3436,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
-            slot: Set(0),
+            slot: Set(None),
         }
         .insert(&txn)
         .await
@@ -3473,7 +3491,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(old_activity),
             updated_at: Set(old_activity),
-            slot: Set(0),
+            slot: Set(None),
         }
         .insert(&txn)
         .await

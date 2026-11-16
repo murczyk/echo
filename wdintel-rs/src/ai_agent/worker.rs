@@ -2211,6 +2211,7 @@ async fn maintenance_once(env: &Env) -> Result<(), AppError> {
     // e.g. after an idle stop whose destruction failed.
     let secondary_link_ids =
         crate::entities::ai_agent_user_link::Entity::find()
+            // `<>` also skips unset slots, which are the main one.
             .filter(
                 crate::entities::ai_agent_user_link::Column::Slot
                     .ne(AI_AGENT_MAIN_CONTAINER_SLOT),

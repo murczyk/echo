@@ -869,7 +869,7 @@ pub async fn list_containers(
             .ok_or(AppError::NotFound)?;
         items.push(AiAgentContainerItem {
             linked_agent_id: link.id.to_string(),
-            slot: i32::from(link.slot),
+            slot: i32::from(lifecycle::link_slot(&link)),
             human_login_id: human.id.to_string(),
             human_login: human.login,
             agent_login_id: agent.id.to_string(),
@@ -1307,7 +1307,7 @@ async fn requested_slot(
     .await
     .c(h!())?
     .ok_or(AppError::NotFound)?;
-    Ok(link.slot)
+    Ok(lifecycle::link_slot(&link))
 }
 
 async fn user_item(
@@ -1349,10 +1349,9 @@ async fn user_item(
         .collect();
     let link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human.id))
-        .filter(
-            ai_agent_user_link::Column::Slot
-                .eq(crate::config::AI_AGENT_MAIN_CONTAINER_SLOT),
-        )
+        .filter(lifecycle::link_slot_condition(
+            crate::config::AI_AGENT_MAIN_CONTAINER_SLOT,
+        ))
         .one(&env.dbx)
         .await
         .c(h!())?;

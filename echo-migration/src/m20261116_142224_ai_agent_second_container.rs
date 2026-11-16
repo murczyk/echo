@@ -17,17 +17,16 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
 -- A user's conversations on another model backend run in a second agent
--- container with its own agent login (#4232); slot 0 is the main one.
+-- container with its own agent login (#4232). Slot 0 is the main one; links
+-- made before it have no slot and are the main one too.
 alter table ai_agent_user_link
-    add column if not exists slot smallint default 0 not null
-        check (slot >= 0);
+    add column if not exists slot smallint check (slot >= 0);
 
 alter table ai_agent_user_link
     drop constraint if exists ai_agent_user_link_human_login_id_key;
 
-alter table ai_agent_user_link
-    add constraint ai_agent_user_link_human_login_id_slot_key
-        unique (human_login_id, slot);
+create unique index if not exists ai_agent_user_link_human_login_id_slot_idx
+    on ai_agent_user_link (human_login_id, coalesce(slot, 0));
                 "#,
             )
             .await
@@ -42,8 +41,7 @@ alter table ai_agent_user_link
                 r#"
 -- Fails while second-slot links exist; destroy those containers and delete
 -- their links first.
-alter table ai_agent_user_link
-    drop constraint if exists ai_agent_user_link_human_login_id_slot_key;
+drop index if exists ai_agent_user_link_human_login_id_slot_idx;
 
 alter table ai_agent_user_link
     add constraint ai_agent_user_link_human_login_id_key
