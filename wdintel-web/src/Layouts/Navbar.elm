@@ -253,6 +253,7 @@ view user activeName shared route { toContentMsg, model, content } =
                   , Encode.object
                         [ ( "name", Encode.string user.name )
                         , ( "roles", Encode.list Encode.string user.roles )
+                        , ( "administeredOrganismIds", Encode.list Encode.int user.administeredOrganismIds )
                         , ( "goiFullAccessForOrganism", Encode.bool user.goiFullAccessForOrganism )
                         , ( "goiIntegrations"
                           , Encode.list

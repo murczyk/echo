@@ -13,6 +13,7 @@ pub struct Organism {
     pub enabled: bool,
     pub aor_ids: Vec<i64>,
     pub logins_count: i64,
+    pub admin_logins: Vec<String>,
 }
 
 #[derive(
@@ -40,6 +41,7 @@ pub struct CreateOrganismReq {
     pub parent_id: Option<i64>,
     pub roles: Vec<String>,
     pub aor_ids: Option<Vec<i64>>,
+    pub admin_logins: Option<Vec<String>>,
 }
 
 #[derive(
@@ -52,6 +54,7 @@ pub struct UpdateOrganismReq {
     pub roles: Option<Vec<String>>,
     pub enabled: bool,
     pub aor_ids: Option<Vec<i64>>,
+    pub admin_logins: Option<Vec<String>>,
 }
 
 #[derive(

@@ -131,6 +131,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Organism,
+    #[sea_orm(has_many = "super::organism_admin::Entity")]
+    OrganismAdmin,
     #[sea_orm(has_many = "super::organism_keyword_set::Entity")]
     OrganismKeywordSet,
     #[sea_orm(has_one = "super::organism_message_stats_exclusion::Entity")]
@@ -462,6 +464,12 @@ impl Related<super::notification_receipt::Entity> for Entity {
 impl Related<super::organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Organism.def()
+    }
+}
+
+impl Related<super::organism_admin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrganismAdmin.def()
     }
 }
 

@@ -21,19 +21,27 @@ pub async fn aor_list(
     env: Data<Env>,
     req: Json<ListAreasOfResponsibilityReq>,
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
-    has_any_role(
+    let role_access = has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
         vec![
             "Admin",
-            crate::config::ROLE_ORGANISM_ADMIN,
             "UnitsEditor",
             "Rer",
             ROLE_CYBER_VIEWER_RESTRICTED,
             "Api",
         ],
     )
-    .await?;
+    .await;
+    match role_access {
+        Ok(()) => (),
+        Err(AppError::Forbidden(_)) => {
+            crate::organism::access::management_scope(&env.dbx, &user)
+                .await
+                .context(h!())?;
+        }
+        Err(error) => Err(error).context(h!())?,
+    }
 
     Ok(Json(read_aors(&env.dbx, &req).await?))
 }

@@ -206,3 +206,4 @@ public.organism_user_label
 public.organism_user_label_assignment
 public.organism_user_label_revision
 public.organism_message_stats_exclusion
+public.organism_admin

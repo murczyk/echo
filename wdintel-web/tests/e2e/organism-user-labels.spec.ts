@@ -1,17 +1,21 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
-async function install(page: Page, role = 'OrganismAdmin') {
-  await installAnalysisNeoApiMocks(page, { userRoles: [role] });
+async function install(page: Page, role = 'Basic') {
+  await installAnalysisNeoApiMocks(page, {
+    userRoles: [role],
+    administeredOrganismIds: role === 'Admin' ? [] : [2],
+  });
   const organism = {
     id: 2,
     parent_id: null,
     name: 'Свій організм',
-    roles: ['Basic', 'Rer', 'OrganismAdmin'],
+    roles: ['Basic', 'Rer'],
     enabled: true,
     created_at: 0,
     aor_ids: [11],
     logins_count: 1,
+    admin_logins: ['analysis-tester'],
   };
   const member = {
     id: '019a0fd8-a021-7f19-ab9b-a9d432052648',
@@ -215,17 +219,25 @@ test('@regression #3873 keeps organism management usable on a narrow screen', as
   );
 });
 
-for (const role of ['Admin', 'OrganismAdmin']) {
-  test(`@regression #3873 keeps remote GOI worker operations restricted for ${role}`, async ({
+for (const role of ['Admin', 'Basic']) {
+  test(`@regression #3873 restricts GOI administration to system Admin for ${role}`, async ({
     page,
+    context,
   }) => {
-    await installAnalysisNeoApiMocks(page, { userRoles: [role] });
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await installAnalysisNeoApiMocks(page, {
+      userRoles: [role],
+      administeredOrganismIds: role === 'Admin' ? [] : [2],
+    });
     await page.route('**/api/organisms', (route) =>
       route.fulfill({ json: [{ id: 2, name: 'Свій організм', enabled: true }] }),
     );
     await page.route('**/api/logins', (route) => route.fulfill({ json: { users: [] } }));
-    await page.route('**/api/admin/goi/integrations', (route) =>
-      route.fulfill({
+    let integrationReads = 0;
+    await page.route('**/api/admin/goi/integrations', (route) => {
+      integrationReads += 1;
+      return route.fulfill({
         json: {
           items: [
             {
@@ -251,9 +263,19 @@ for (const role of ['Admin', 'OrganismAdmin']) {
             },
           ],
         },
-      }),
-    );
+      });
+    });
     await page.goto('/admin/goi-integrations-neo');
+    if (role !== 'Admin') {
+      await expect(page).not.toHaveURL(/\/admin\/goi-integrations-neo/);
+      await expect(page.getByRole('button', { name: 'Редагувати', exact: true })).toHaveCount(0);
+      expect(integrationReads).toBe(0);
+      await install(page);
+      await page.goto('/admin/organisms-neo/edit?id=2');
+      await expect(page.getByRole('tab', { name: 'Користувачі', exact: true })).toBeVisible();
+      await expect(page.getByRole('tab', { name: 'ГОІ', exact: true })).toHaveCount(0);
+      return;
+    }
     await page.getByRole('button', { name: 'Редагувати', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Редагувати інтеграцію ГОІ', exact: true }),
@@ -262,8 +284,7 @@ for (const role of ['Admin', 'OrganismAdmin']) {
     await expect(editor.getByRole('button', { name: 'Зберегти', exact: true })).toBeVisible();
     for (const name of ["Перевірити з'єднання", 'Налаштувати воркер']) {
       const action = editor.getByRole('button', { name, exact: true });
-      if (role === 'Admin') await expect(action).toBeVisible();
-      else await expect(action).toHaveCount(0);
+      await expect(action).toBeVisible();
     }
   });
 }
@@ -337,7 +358,7 @@ test('@regression #3873 reuses user forms within organism administrator permissi
   await expect(page.getByRole('row').filter({ hasText: 'new-member' })).toHaveCount(0);
 });
 
-for (const role of ['Admin', 'OrganismAdmin']) {
+for (const role of ['Admin', 'Basic']) {
   test(`@regression #3873 organism settings respect ${role} and preserve hidden configuration`, async ({
     page,
   }) => {
@@ -365,10 +386,61 @@ for (const role of ['Admin', 'OrganismAdmin']) {
         expect.objectContaining({
           id: 2,
           name: 'Нова назва',
-          roles: ['Basic', 'Rer', 'OrganismAdmin'],
+          roles: ['Basic', 'Rer'],
           aor_ids: [11],
           parent_id: null,
         }),
       ]);
   });
 }
+
+for (const create of [true, false]) {
+  test(`@regression #3873 ${create ? 'creates' : 'edits'} an organism with assigned administrators`, async ({
+    page,
+  }) => {
+    await install(page, 'Admin');
+    let saved: Record<string, unknown> | null = null;
+    await page.route(`**/api/organism/${create ? 'create' : 'update'}`, (route) => {
+      saved = route.request().postDataJSON();
+      return route.fulfill({
+        json: { ...saved, id: create ? 3 : 2, created_at: 0, logins_count: 1 },
+      });
+    });
+    await page.goto(`/admin/organisms-neo/edit${create ? '' : '?id=2'}`);
+    const admins = page.getByRole('combobox', { name: 'Адміністратори', exact: true });
+    await admins.fill('member');
+    await page.getByRole('option', { name: 'member-one', exact: true }).click();
+    await page.getByRole('textbox', { name: /^Назва/ }).fill('Організм з адміністратором');
+    await page.getByRole('button', { name: create ? 'Створити' : 'Зберегти', exact: true }).click();
+    await expect
+      .poll(() => saved)
+      .toEqual(
+        expect.objectContaining({
+          name: 'Організм з адміністратором',
+          admin_logins: create
+            ? ['019a0fd8-a021-7f19-ab9b-a9d432052648']
+            : ['analysis-tester', '019a0fd8-a021-7f19-ab9b-a9d432052648'],
+        }),
+      );
+  });
+}
+
+test('@regression #3873 a removed OrganismAdmin role grants no administration access', async ({
+  page,
+}) => {
+  await installAnalysisNeoApiMocks(page, { userRoles: ['OrganismAdmin'] });
+  await page.goto('/admin/organisms-neo/edit?id=2');
+  await expect(page).not.toHaveURL(/\/admin\//);
+  await expect(page.getByRole('textbox', { name: /^Назва/ })).toHaveCount(0);
+  await expect(page.locator('organisms-neo-edit')).toHaveCount(0);
+});
+
+test('@regression #3873 assigned administration reaches the navbar through Elm', async ({
+  page,
+}) => {
+  await install(page);
+  await page.goto('/admin/organisms-neo/edit?id=2');
+  await expect(page.getByRole('textbox', { name: /^Назва/ })).toBeVisible();
+  await expect(page.locator('app-navbar a[href="/admin/organisms-neo"]')).toHaveCount(1);
+  await expect(page.locator('app-navbar a[href="/admin/users-neo"]')).toHaveCount(0);
+});

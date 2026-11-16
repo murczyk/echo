@@ -18,6 +18,11 @@
         }
       ]
     },
+    "echo:m20261116_093333_organism_admins": {
+      "changes": [
+        { "table": "public.organism_admin", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261116_063906_operator_echo_unit_id": {
       "changes": [
         { "table": "public.signal_message", "strategy": "cdc_additive" }

@@ -4,7 +4,6 @@ export type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
 export const ROLE_OPTIONS = [
   'Admin',
-  'OrganismAdmin',
   'Api',
   'ApiAgent',
   'Rer',

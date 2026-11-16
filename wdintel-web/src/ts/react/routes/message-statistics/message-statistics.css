@@ -296,6 +296,49 @@ button.message-statistics-children {
   left: 0;
   transform: translateY(-100%);
 }
+.message-statistics-chart-empty {
+  position: absolute;
+  inset: 20px 0 0;
+  display: grid;
+  place-items: center;
+  padding: var(--echo-spacing-xl);
+  color: var(--message-statistics-secondary);
+  text-align: center;
+  pointer-events: none;
+}
+.message-statistics-chart-empty p {
+  margin: 0;
+  max-width: 48ch;
+}
+.message-statistics-chart-frame {
+  --message-statistics-chart-height: 380px;
+  display: grid;
+  grid-template-columns: var(--message-statistics-axis-width) minmax(0, 1fr);
+}
+.message-statistics-chart-frame[data-empty='true'] {
+  visibility: hidden;
+}
+.message-statistics-y-axis {
+  position: relative;
+  height: var(--message-statistics-chart-height);
+  color: var(--message-statistics-secondary);
+  font-size: var(--echo-typography-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.message-statistics-y-axis-ticks {
+  position: absolute;
+  top: var(--message-statistics-plot-top);
+  right: 8px;
+  bottom: var(--message-statistics-plot-bottom);
+  left: 0;
+}
+.message-statistics-y-axis-ticks span {
+  position: absolute;
+  right: 0;
+  line-height: 1;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
 .message-statistics-chart-notices {
   position: absolute;
   inset: 0;
@@ -318,6 +361,7 @@ button.message-statistics-children {
   letter-spacing: 0.4px;
 }
 .message-statistics-chart-viewport {
+  min-width: 0;
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -329,7 +373,7 @@ button.message-statistics-children {
   outline-offset: var(--echo-spacing-xs);
 }
 .message-statistics-chart {
-  height: 380px;
+  height: var(--message-statistics-chart-height);
 }
 .message-statistics-pagination {
   display: flex;

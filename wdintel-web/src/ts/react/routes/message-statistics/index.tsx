@@ -28,7 +28,7 @@ export function MessageStatisticsPage() {
   }, []);
   return (
     <main
-      className="message-statistics-page app-shell-fill-height"
+      className="message-statistics-page"
       style={
         {
           '--message-statistics-secondary': theme.palette.text.secondary,

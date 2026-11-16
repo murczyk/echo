@@ -1,6 +1,7 @@
 module Pages.Admin.OrganismsNeo.Edit exposing (Model, Msg, page)
 
 import Auth
+import Core.Auth
 import Dict
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
@@ -82,7 +83,7 @@ view user route _ =
     { title = "Адмін: організми (neo)"
     , body =
         [ div [ class "box-border min-w-0 px-6 pt-6 pb-6 w-full" ]
-            [ node "organisms-neo-edit" (organismIdAttrs ++ [ attribute "data-auth-user-id" user.id, attribute "data-auth-user-roles" (String.join "," user.roles) ]) [] ]
+            [ node "organisms-neo-edit" (organismIdAttrs ++ [ attribute "data-auth-user-id" user.id, attribute "data-auth-user-roles" (String.join "," user.roles), attribute "data-can-manage-organisms" (if Core.Auth.canManageOrganisms user then "true" else "false") ]) [] ]
         ]
     }
 

@@ -14,6 +14,7 @@ use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 
 pub mod access;
+pub mod admins;
 pub mod bl;
 pub mod goi;
 pub mod keyword_sets;
@@ -300,6 +301,17 @@ pub async fn update_organism(
         .await
         .context(h!())?;
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
+    admins::replace_admin_logins(
+        &txn,
+        req.id,
+        req.admin_logins.as_deref(),
+        scope.organism_ids.is_some(),
+    )
+    .await
+    .context(h!())?;
+    let mut admin_logins = admins::collect_admin_logins(&txn, &[req.id])
+        .await
+        .c(h!())?;
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
         .c(h!())?;
@@ -313,6 +325,7 @@ pub async fn update_organism(
         name: organism.name,
         created_at: organism.created_at.and_utc().timestamp_millis(),
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
+        admin_logins: admin_logins.remove(&organism.id).unwrap_or_default(),
         enabled: req.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
         logins_count: login_counts
@@ -329,14 +342,19 @@ pub async fn group_list(
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
     let scope = access::management_scope(&env.dbx, &user).await.c(h!())?;
 
-    let allowed = match scope.organism_id {
-        Some(id) => Some(
-            load_organism_group_ids(&env.dbx, id)
-                .await
-                .c(h!())?
-                .available_keys,
-        ),
-        None => None,
+    let allowed = if let Some(ids) = &scope.organism_ids {
+        let mut keys = HashSet::new();
+        for id in ids {
+            keys.extend(
+                load_organism_group_ids(&env.dbx, *id)
+                    .await
+                    .c(h!())?
+                    .available_keys,
+            );
+        }
+        Some(keys.into_iter().collect::<Vec<_>>())
+    } else {
+        None
     };
     Ok(Json(
         signal_group::Entity::find()
@@ -366,8 +384,8 @@ pub async fn organism_group_list(
 
     Ok(Json(
         organism_group::Entity::find()
-            .apply_if(scope.organism_id, |query, id| {
-                query.filter(organism_group::Column::OrganismId.eq(id))
+            .apply_if(scope.organism_ids.clone(), |query, ids| {
+                query.filter(organism_group::Column::OrganismId.eq_any(ids))
             })
             .all(&env.dbx)
             .await
@@ -545,12 +563,17 @@ pub async fn create_organism(
 
     let organism = bl::create_organism(&env.dbx, &req).await.c(h!())?;
 
+    let mut admin_logins =
+        admins::collect_admin_logins(&env.dbx, &[organism.id])
+            .await
+            .c(h!())?;
     Ok(Json(Organism {
         id: organism.id,
         parent_id: organism.parent_id,
         name: organism.name,
         created_at: organism.created_at.and_utc().timestamp_millis(),
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
+        admin_logins: admin_logins.remove(&organism.id).unwrap_or_default(),
         enabled: organism.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
         logins_count: 0,
@@ -585,8 +608,8 @@ pub async fn list_organisms(
     let organisms = organism::Entity::find()
         .find_with_related(organism_aor::Entity)
         .filter(organism::Column::DeletedPermanently.eq(false))
-        .apply_if(scope.organism_id, |query, id| {
-            query.filter(organism::Column::Id.eq(id))
+        .apply_if(scope.organism_ids.clone(), |query, ids| {
+            query.filter(organism::Column::Id.eq_any(ids))
         })
         .order_by(sort_by, order)
         .all(&env.dbx)
@@ -597,11 +620,16 @@ pub async fn list_organisms(
     let login_counts =
         fetch_login_counts(&env.dbx, &organism_ids).await.c(h!())?;
 
+    let mut admin_logins =
+        admins::collect_admin_logins(&env.dbx, &organism_ids)
+            .await
+            .c(h!())?;
     let mut list = vec![];
     for (o, aors) in organisms {
         let aor_ids = aors.into_iter().map(|a| a.aor_id).collect::<Vec<_>>();
         let org = Organism {
             aor_ids,
+            admin_logins: admin_logins.remove(&o.id).unwrap_or_default(),
             id: o.id,
             parent_id: o.parent_id,
             name: o.name,
