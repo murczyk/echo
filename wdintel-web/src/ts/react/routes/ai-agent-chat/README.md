@@ -100,7 +100,8 @@ Regression coverage: `wdintel-web/tests/e2e/ai-agent-documents.spec.ts`.
 
 `CitationMarkdown` renders each code block (`CopyControls.tsx`) with its language
 and a **Копіювати** button that copies only the code. Once an answer has finished,
-a copy button under it opens a menu (#4182): **Копіювати текст** writes the
+a **⋯** button («Дії з відповіддю») at the top right of the answer, beside its
+«ЕХО Агент» caption, opens a menu (#4182): **Копіювати текст** writes the
 rendered answer as HTML plus a plain-text alternative (`answer-copy.ts`), so Word
 and Google Docs keep formatting and messengers get clean text with bullets and
 tab-separated table cells; **Копіювати як Markdown** copies the stored source.
