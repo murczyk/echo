@@ -417,6 +417,168 @@ mod tests {
         .is_empty());
     }
 
+    // Regression: https://github.com/echoua/echo/issues/4227
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn document_with_repeated_known_names_keeps_one_position_4227() {
+        use sea_orm::ConnectionTrait;
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let group = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                id_uuid: Set(Some(uuid::Uuid::now_v7())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(group.master_key.clone())),
+            created_at: Set(message.created_at),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("application/vnd.ms-excel".to_string()),
+            size_bytes: Set(1),
+            created_at: Set(now),
+            is_encrypted: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        // More mention ids than PostgreSQL's 65,535 bind parameters.
+        assert!(crate::ai_position::list::load_coordinates(
+            &env.dbx,
+            (0..70_000).map(|_| uuid::Uuid::now_v7()).collect(),
+        )
+        .await
+        .unwrap()
+        .is_empty());
+        // A document repeating two spellings of a name whose location is known.
+        env.dbx
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "insert into ai_position_mention
+                     (media_id, name, name_key, kind, begin_char, end_char,
+                      message_at, group_master_key, model_name)
+                 select $1,
+                        case when n % 2 = 0 then 'Циркон 9' else 'ЦИРКОН-9' end,
+                        'циркон 9', 'position', n * 10, n * 10 + 8, $2, $3, 'test'
+                 from generate_series(0, 5) n",
+                [
+                    media.id.into(),
+                    now.into(),
+                    group.master_key.clone().into(),
+                ],
+            ))
+            .await
+            .unwrap();
+        for (index, mgrs) in ["36TXT7573468963", "36TXT7600069000"]
+            .into_iter()
+            .enumerate()
+        {
+            let mention = ai_position_mention::ActiveModel {
+                media_id: Set(Some(media.id)),
+                name: Set("Циркон 9".to_string()),
+                name_key: Set("циркон 9".to_string()),
+                kind: Set("position".to_string()),
+                begin_char: Set(100 + index as i32 * 10),
+                end_char: Set(108 + index as i32 * 10),
+                message_at: Set(now),
+                group_master_key: Set(Some(group.master_key.clone())),
+                group_is_secret: Set(group.is_secret),
+                aor_ids: Set(vec![]),
+                model_name: Set("test".to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            ai_position_coordinate::ActiveModel {
+                mention_id: Set(mention.id),
+                coordinate_text: Set(mgrs.to_string()),
+                coordinate_system: Set("mgrs".to_string()),
+                mgrs: Set(mgrs.to_string()),
+                lat: Set(47.55),
+                lng: Set(35.33),
+                certainty: Set("high".to_string()),
+                evidence: Set("Циркон 9".to_string()),
+                message_at: Set(now),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        ai_position_knowledge::ActiveModel {
+            scope_kind: Set("group".to_string()),
+            scope_key: Set(group.master_key.clone()),
+            name_key: Set("циркон 9".to_string()),
+            name: Set("Циркон 9".to_string()),
+            kind: Set("position".to_string()),
+            mgrs: Set("36TXT7573468963".to_string()),
+            lat: Set(47.55),
+            lng: Set(35.33),
+            certainty: Set("high".to_string()),
+            fact_count: Set(2),
+            conflicting: Set(false),
+            first_fact_at: Set(now),
+            last_fact_at: Set(now),
+            source_group_keys: Set(vec![group.master_key.clone()]),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let positions = crate::ai_position::list::positions_by_media(
+            &env.dbx,
+            vec![media.id],
+            &std::iter::once(group.master_key.clone()).collect(),
+        )
+        .await
+        .unwrap();
+        let positions = &positions[&media.id];
+        let mut known_names: Vec<_> = positions
+            .iter()
+            .filter(|position| position.mgrs.is_empty())
+            .map(|position| {
+                assert_eq!(
+                    position.known_mgrs.as_deref(),
+                    Some("36TXT7573468963")
+                );
+                position.text.as_str()
+            })
+            .collect();
+        known_names.sort_unstable();
+        assert_eq!(known_names, ["ЦИРКОН-9", "Циркон 9"]);
+        let mut located: Vec<_> = positions
+            .iter()
+            .filter(|position| !position.mgrs.is_empty())
+            .map(|position| {
+                assert_eq!(position.coordinate_sources.len(), 1);
+                position.mgrs.join(",")
+            })
+            .collect();
+        located.sort_unstable();
+        assert_eq!(located, ["36TXT7573468963", "36TXT7600069000"]);
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn finds_known_located_and_other_mentions_in_allowed_groups_3064() {
