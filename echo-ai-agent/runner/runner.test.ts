@@ -20,6 +20,7 @@ import {
   createToolInvocationGuard,
   createToolResponseCompactor,
   createContextToolResponseCompactor,
+  searchHitEvidence,
   toolContextBudget,
   createRouteActivityTracker,
   dailyActivityRequestBody,
@@ -1269,6 +1270,50 @@ test("#4224 parallel tool calls share one batch so the last call still delivers 
   assert.equal(compact.needsCompaction(), false);
   compact.beginBatch(1);
   assert.ok(compact(route, hits(7), 64).length > outputs[0].length, "a single call may use the whole batch");
+});
+
+test("#4224 a batch wider than its minimum shares defers the excess calls instead of overrunning", () => {
+  const route = { skill: "device_file_search", requestKind: "deviceFileSearch" as const };
+  const profile = { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 };
+  const budget = toolContextBudget({ contextWindow: 65_536, ...profile });
+  const compact = createContextToolResponseCompactor(65_536, profile);
+  const page = (query: number) => ({
+    documents: Array.from({ length: 50 }, (_, index) => ({
+      deviceId: "01999999-1111-7111-8111-111111111111", fileId: `01999999-2222-7222-8222-${String(query * 100 + index).padStart(12, "0")}`,
+      revision: 1, fileName: `file-${query}-${index}.exe`, state: "completed", summary: "Опис. ".repeat(40), citation: `/devices/d?file=${query}-${index}&revision=1`,
+    })),
+    nextCursor: null,
+  });
+  compact.beginBatch(64);
+  let delivered = 0;
+  let deferred = 0;
+  for (let call = 0; call < 64; call++) {
+    if (!compact.admit()) {
+      deferred += 1;
+      continue;
+    }
+    delivered += compact(route, page(call), 64).length;
+  }
+  assert.ok(delivered <= budget.batchCharacters, `${delivered} > ${budget.batchCharacters}`);
+  assert.equal(deferred, 64 - Math.floor(budget.batchCharacters / 2_000));
+  assert.equal(compact.needsCompaction(), false);
+  compact.beginBatch(2);
+  assert.ok(compact.admit(), "the next turn runs again");
+});
+
+test("#4224 search hit evidence keeps each attachment and its matched snippet", () => {
+  const citation = "/rer-analysis-neo?m=source-7";
+  const hits = searchHitEvidence("attachmentSearch", JSON.stringify({ documents: [
+    { mediaId: "media-1", fileName: "orders.pdf", text: "orders.pdf", snippet: "page 2: KMSAuto activation key", citation },
+    { mediaId: "media-2", fileName: "notes.docx", text: "Нотатки про активатори", snippet: "AAct portable", citation },
+  ] }));
+  assert.equal(new Set(hits.map((hit) => hit.id)).size, 2);
+  assert.equal(hits[0].text, "orders.pdf: page 2: KMSAuto activation key");
+  assert.equal(hits[1].text, "notes.docx: Нотатки про активатори — AAct portable");
+  const [file] = searchHitEvidence("deviceFileSearch", JSON.stringify({ documents: [
+    { fileName: "KMSAuto.exe", folder: "C:\\Activators", summary: "KMS activator", snippet: "page 1: activation", citation: "/devices/d?file=f&revision=1" },
+  ] }));
+  assert.equal(file.text, "KMSAuto.exe (C:\\Activators): KMS activator — page 1: activation");
 });
 
 test("keeps the strongest callsign relations within the item cap", () => {

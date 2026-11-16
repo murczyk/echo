@@ -142,6 +142,7 @@ const TOOL_RESULT_CHARACTERS_PER_TOKEN = 3;
 const TOOL_BATCH_CONTEXT_SHARE = 0.5;
 const MIN_TOOL_BATCH_CHARACTERS = 8_000;
 const MIN_TOOL_CALL_CHARACTERS = 2_000;
+const TOOL_BATCH_DEFERRED = "Not run: this turn requested more ECHO calls than the context holds at once. Request it again in a later turn, after reviewing the results already returned.";
 const TOOL_DEFAULT_MAX_ITEMS = 64;
 const FREQUENCY_SUMMARY_LISTS = ["callsigns", "units", "locations"];
 const FREQUENCY_SUMMARY_LIST_LIMITS = [32, 16, 8, 4];
@@ -2679,12 +2680,15 @@ export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch",
   return documents.flatMap((hit) => {
     if (typeof hit.citation !== "string" || !hit.citation) return [];
     const name = String(hit.fileName ?? "");
-    const detail = String((kind === "deviceFileSearch" ? hit.summary ?? hit.snippet : hit.text ?? hit.snippet) ?? "");
+    // The summary says what the file is; the snippet holds the matched text.
+    const summary = kind === "deviceFileSearch" ? hit.summary : hit.text;
+    const details = [summary, hit.snippet].filter((value): value is string => typeof value === "string" && value.trim() !== "" && value !== name);
     const location = kind === "deviceFileSearch" && typeof hit.folder === "string" && hit.folder ? ` (${hit.folder})` : "";
     const state = typeof hit.state === "string" ? ` [${hit.state}]` : "";
     return [{
       kind: kind === "deviceFileSearch" ? "file" as const : "attachment" as const,
-      text: capText(`${name}${location}${state}${detail && detail !== name ? `: ${detail}` : ""}`, SEARCH_HIT_EVIDENCE_MAX_CHARACTERS),
+      id: kind === "deviceFileSearch" ? hit.citation : `${hit.citation}#${String(hit.mediaId ?? name)}`,
+      text: capText(`${name}${location}${state}${details.length ? `: ${details.join(" — ")}` : ""}`, SEARCH_HIT_EVIDENCE_MAX_CHARACTERS),
       citation: hit.citation,
     }];
   });
@@ -2727,6 +2731,10 @@ type ToolResponseCompactor = ((
   needsCompaction: () => boolean;
   /** An assistant turn requested `calls` tool results: they share one batch budget. */
   beginBatch: (calls: number) => void;
+  /** Whether another call of this batch fits; calls past the batch's minimum shares wait. */
+  admit: () => boolean;
+  /** An admitted call that returned without a compacted result. */
+  release: () => void;
   /** Applies a budget measured once the session's fixed context is known. */
   configure: (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => void;
 };
@@ -2743,12 +2751,15 @@ export function createToolResponseCompactor(
   let remainingCharacters = totalCharacters;
   let remainingInvocations = maxInvocations;
   let batchRemaining = batchCharacters;
-  let batchCalls = 1;
+  // Calls of the current batch that may still run: each gets at least the minimum share.
+  let batchSlots = 1;
   const compact = (route: Pick<SkillDefinition, "skill" | "requestKind">, value: unknown, maxItems: number) => {
     const reservedForLater = Math.max(0, remainingInvocations - 1) * 2;
     // Calls run one after another: an even share keeps the last calls of a batch from
-    // getting nothing (#4224).
-    const batchShare = Math.max(MIN_TOOL_CALL_CHARACTERS, Math.floor(batchRemaining / batchCalls));
+    // getting nothing (#4224). Shares never exceed what the batch has left.
+    const batchShare = Number.isFinite(batchRemaining)
+      ? Math.floor(batchRemaining / Math.max(1, batchSlots))
+      : Number.POSITIVE_INFINITY;
     const maxCharacters = Math.max(
       2,
       Math.min(responseCharacters, batchShare, remainingCharacters - reservedForLater),
@@ -2765,12 +2776,19 @@ export function createToolResponseCompactor(
     remainingCharacters = Math.max(0, remainingCharacters - compacted.length);
     remainingInvocations = Math.max(0, remainingInvocations - 1);
     batchRemaining = Math.max(0, batchRemaining - compacted.length);
-    batchCalls = Math.max(1, batchCalls - 1);
+    batchSlots = Math.max(0, batchSlots - 1);
     return compacted;
   };
   compact.beginBatch = (calls: number) => {
     batchRemaining = batchCharacters;
-    batchCalls = Math.max(1, calls);
+    batchSlots = Math.min(
+      Math.max(1, calls),
+      Number.isFinite(batchCharacters) ? Math.max(1, Math.floor(batchCharacters / MIN_TOOL_CALL_CHARACTERS)) : Number.POSITIVE_INFINITY,
+    );
+  };
+  compact.admit = () => batchSlots > 0;
+  compact.release = () => {
+    batchSlots = Math.max(0, batchSlots - 1);
   };
   compact.configure = (budget: Pick<ToolContextBudget, "totalCharacters" | "thresholdCharacters" | "batchCharacters">) => {
     remainingCharacters = Math.max(0, remainingCharacters + budget.totalCharacters - totalCharacters);
@@ -2778,6 +2796,7 @@ export function createToolResponseCompactor(
     responseCharacters = budget.thresholdCharacters;
     batchCharacters = budget.batchCharacters;
     batchRemaining = batchCharacters;
+    batchSlots = 1;
   };
   compact.reset = (messages: unknown[]) => {
     const retained = messages.reduce<number>((total, message) => {
@@ -3496,6 +3515,12 @@ function createRouteTools(
       })) as any,
       execute: async (_toolCallId, params, signal, onUpdate) => {
         countInvocation();
+        // More calls than the batch can give a useful share: this one runs next turn (#4224).
+        if (!compactResponse.admit())
+          return {
+            content: [{ type: "text", text: JSON.stringify({ deferred: true, message: TOOL_BATCH_DEFERRED }) }],
+            details: { skill: route.skill, activityLabel: activityLabel([route.label, "відкладено до наступного кроку"]) },
+          };
         const requestBody = routeToolRequestBody(
           route,
           await groupScope.resolve(params, "selectedGroups" in ((routeParameters(route) as { properties?: object }).properties ?? {}), signal),
@@ -3517,6 +3542,7 @@ function createRouteTools(
           signal,
         );
         emit(sourceEvent(route, response.status));
+        if (route.requestKind === "uploadImage" || route.requestKind === "workRead") compactResponse.release();
         if (route.requestKind === "uploadImage") {
           const image = uploadImageContent(response.body);
           return {
@@ -4767,8 +4793,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     const deliveredHits = new Map<string, SearchHitEvidence>();
     const recordHits = (hits: SearchHitEvidence[]) => {
       for (const hit of hits) {
-        deliveredHits.delete(hit.citation);
-        deliveredHits.set(hit.citation, hit);
+        deliveredHits.delete(hit.id);
+        deliveredHits.set(hit.id, hit);
       }
       for (const oldest of deliveredHits.keys()) {
         if (deliveredHits.size <= MAX_SEARCH_HIT_EVIDENCE) break;

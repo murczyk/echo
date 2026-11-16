@@ -1051,7 +1051,7 @@ async function freshBatchFixture(resultCharacters: number) {
     executionMode: "sequential",
     execute: async (id) => {
       const index = Number(String(id).replace("call_", ""));
-      const hit = (hitIndex: number) => JSON.stringify({ fileName: `KMSAuto-${index}-${hitIndex}.exe`, folder: "C:\\Activators", citation: citation(index * 100 + hitIndex) });
+      const hit = (hitIndex: number) => JSON.stringify({ fileName: `KMSAuto-${index}-${hitIndex}.exe`, folder: "C:\\Activators", fileId: `f${index}-${hitIndex}`, revision: 1, citation: citation(index * 100 + hitIndex) });
       const hits: string[] = [];
       for (let hitIndex = 0; hits.join(",").length < resultCharacters; hitIndex++) hits.push(hit(hitIndex));
       return { content: [{ type: "text", text: `{"documents":[${hits.join(",")}],"nextCursor":"c${index}"}` }] };
@@ -1091,7 +1091,14 @@ test("#4224 checkpoints an oversized fresh search batch whole instead of stoppin
     assert.equal(value.checkpointRequests.length, 1, "no checkpoint of the prompt alone");
     const [checkpoint] = value.checkpointRequests;
     for (let index = 0; index < 6; index++) assert.ok(checkpoint.includes(`"call_${index}"`), `result ${index} reaches the checkpoint`);
-    assert.match(checkpoint, /characters omitted for the checkpoint; repeat a narrower search or follow its cursor/);
+    // Each page keeps its envelope; its cursor resumes at the first omitted hit.
+    const pages = [...checkpoint.matchAll(/\[Tool result\]: "echo_device_file_search" "call_\d+"\n(.*)/g)].map((match) => JSON.parse(match[1]));
+    assert.equal(pages.length, 6);
+    for (const page of pages) {
+      assert.match(page.checkpointOmitted, /records omitted for the checkpoint; nextCursor continues from the first omitted record/);
+      const last = page.documents.at(-1);
+      assert.deepEqual(JSON.parse(Buffer.from(page.nextCursor, "base64url").toString()), [last.fileId, 1]);
+    }
     assert.ok(checkpoint.length < 65_536 * 3);
     assert.equal(value.researchRequests.length, 2);
     assert.ok(value.researchRequests[1].includes("KMSAuto found on device d0"));
@@ -1106,7 +1113,7 @@ test("#4224 a fresh search batch that fits the checkpoint is summarized unshorte
     await value.session.prompt("Знайди серед файлів активатори віндоус");
     assert.equal(value.compaction.failure(), undefined);
     assert.equal(value.checkpointRequests.length, 1);
-    assert.doesNotMatch(value.checkpointRequests[0], /characters omitted for the checkpoint/);
+    assert.doesNotMatch(value.checkpointRequests[0], /omitted for the checkpoint/);
   } finally {
     await value.close();
   }

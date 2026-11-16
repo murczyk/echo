@@ -187,6 +187,8 @@ export interface BudgetEvidence {
 
 export interface SearchHitEvidence {
   kind: "file" | "attachment";
+  /** One file revision or attachment: attachments of a message share its citation. */
+  id: string;
   text: string;
   citation: string;
 }

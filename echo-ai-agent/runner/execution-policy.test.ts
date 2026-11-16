@@ -318,8 +318,8 @@ test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds co
 // Regression: https://github.com/echoua/echo/issues/4224
 // A search-only run (six file searches, no reads) ended "no_evidence" in 1 ms.
 test("#4224 file and attachment search hits are synthesis evidence", async () => {
-  const fileHit = { kind: "file" as const, text: "KMSAuto++.exe (C:\\Activators): KMS activator for Windows and Office", citation: "/devices/d1?file=f1&revision=1" };
-  const attachmentHit = { kind: "attachment" as const, text: "activators.rar", citation: "/rer-analysis-neo?m=source-7" };
+  const fileHit = { kind: "file" as const, id: "/devices/d1?file=f1&revision=1", text: "KMSAuto++.exe (C:\\Activators): KMS activator for Windows and Office", citation: "/devices/d1?file=f1&revision=1" };
+  const attachmentHit = { kind: "attachment" as const, id: "/rer-analysis-neo?m=source-7#media-1", text: "activators.rar", citation: "/rer-analysis-neo?m=source-7" };
   const hitsOnly = { messages: [], files: [], hits: [fileHit, attachmentHit] };
   let request = "";
   const answer = await synthesizeBudgetEvidence(

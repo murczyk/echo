@@ -13,6 +13,7 @@ import {
 } from "@earendil-works/pi-ai/compat";
 import { isProviderAuthorizationError, PURPOSE_HEADER, type ExecutionPolicy } from "./execution-policy.ts";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
+import { fileSearchCursor } from "./devices.ts";
 
 type AgentMessage = AgentSession["messages"][number];
 type AgentContext = Parameters<
@@ -116,9 +117,64 @@ function smallerCut(entries: SessionEntry[], cut: number): number {
   );
 }
 
+// Where a shortened search page continues: the cursor after its last kept record.
+const RESUME_CURSORS: Record<string, (last: Record<string, unknown>) => unknown> = {
+  echo_device_file_search: (last) => typeof last.fileId === "string" ? fileSearchCursor(last) : undefined,
+  echo_attachment_search: (last) => last.mediaId,
+  echo_device_search: (last) => last.id,
+  echo_inbox_messages: (last) => last.id,
+};
+const RECORD_KEYS = ["documents", "messages", "devices", "sections", "items"];
+
+/**
+ * A JSON result with its record list cut to fit. The envelope (cursor, warnings, states)
+ * stays, and the omitted records get a continuation point where the tool's cursor is known.
+ */
+function shortenedJsonResult(toolName: string, text: string, maxCharacters: number): string | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  const nested = body.result && typeof body.result === "object" && !Array.isArray(body.result);
+  const container = (nested ? body.result : body) as Record<string, unknown>;
+  const key = RECORD_KEYS.find((name) => Array.isArray(container[name]) && (container[name] as unknown[]).length > 0);
+  if (!key) return null;
+  const records = container[key] as Record<string, unknown>[];
+  const render = (count: number) => {
+    const omitted = records.length - count;
+    const resume = omitted && count ? RESUME_CURSORS[toolName]?.(records[count - 1] ?? {}) : undefined;
+    const shortened = {
+      ...container,
+      [key]: records.slice(0, count),
+      ...(omitted
+        ? {
+            ...(resume !== undefined ? { nextCursor: resume } : {}),
+            checkpointOmitted: `${omitted} of ${records.length} records omitted for the checkpoint; ${resume !== undefined ? "nextCursor continues from the first omitted record" : "repeat a narrower search to see them"}`,
+          }
+        : {}),
+    };
+    return JSON.stringify(nested ? { ...body, result: shortened } : shortened);
+  };
+  let low = 0;
+  let high = records.length;
+  if (render(low).length > maxCharacters) return null;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (render(middle).length <= maxCharacters) low = middle;
+    else high = middle - 1;
+  }
+  return render(low);
+}
+
 /** Cuts a tool result at a record or line boundary and says what was left out. */
-function shortenedToolText(text: string, maxCharacters: number): string {
+function shortenedToolText(toolName: string, text: string, maxCharacters: number): string {
   if (text.length <= maxCharacters) return text;
+  const json = shortenedJsonResult(toolName, text, maxCharacters);
+  if (json !== null) return json;
   const head = text.slice(0, maxCharacters);
   const boundary = Math.max(head.lastIndexOf("},{"), head.lastIndexOf("\n"));
   const kept = boundary >= maxCharacters / 2 ? head.slice(0, boundary + 1) : head;
@@ -128,14 +184,14 @@ function shortenedToolText(text: string, maxCharacters: number): string {
 function checkpointTranscript(messages: Context["messages"], maxCharacters = Number.POSITIVE_INFINITY): string | null {
   const parts = messages.map((message) => {
     if (message.role !== "toolResult")
-      return { fixed: serializeConversation([message]), text: undefined };
+      return { fixed: serializeConversation([message]), text: undefined, toolName: "" };
     const text = message.content
       .flatMap((block) => (block.type === "text" ? [block.text] : []))
       .join("\n");
-    return { fixed: `[Tool result]: ${JSON.stringify(message.toolName)} ${JSON.stringify(message.toolCallId)}\n`, text };
+    return { fixed: `[Tool result]: ${JSON.stringify(message.toolName)} ${JSON.stringify(message.toolCallId)}\n`, text, toolName: message.toolName };
   });
   const render = (limit: number) => parts
-    .map(({ fixed, text }) => fixed + (text === undefined ? "" : shortenedToolText(text, limit)))
+    .map(({ fixed, text, toolName }) => fixed + (text === undefined ? "" : shortenedToolText(toolName, text, limit)))
     .join("\n\n");
   const full = render(Number.POSITIVE_INFINITY);
   if (full.length <= maxCharacters) return full;
