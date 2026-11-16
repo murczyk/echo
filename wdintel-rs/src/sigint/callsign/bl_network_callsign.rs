@@ -734,7 +734,7 @@ pub async fn bl_delete_network_callsign(
     id: i64,
     user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
-) -> Result<sigint_network_callsign::Model, AppError> {
+) -> Result<NetworkCallsign, AppError> {
     let network_callsign = sigint_network_callsign::Entity::find_by_id(id)
         .one(txn)
         .await
@@ -744,8 +744,7 @@ pub async fn bl_delete_network_callsign(
         get_network_callsign_rec_json(id, txn).await.context(h!())?;
     let mut network_callsign_rec = network_callsign.into_active_model();
     network_callsign_rec.deleted = Set(true);
-    let network_callsign =
-        network_callsign_rec.update(txn).await.context(h!())?;
+    network_callsign_rec.update(txn).await.context(h!())?;
 
     let network_callsign_json_new =
         get_network_callsign_rec_json(id, txn).await.context(h!())?;
@@ -762,7 +761,14 @@ pub async fn bl_delete_network_callsign(
     .await
     .context(h!())?;
 
-    Ok(network_callsign)
+    let network_callsign =
+        find_network_callsigns_batch_for_period(vec![id], txn)
+            .await
+            .context(h!())?
+            .into_iter()
+            .next()
+            .ok_or(AppError::NotFound)?;
+    Ok(render_network_callsign(&network_callsign, None).context(h!())?)
 }
 
 pub async fn bl_get_network_callsigns_list(
