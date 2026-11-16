@@ -1130,6 +1130,12 @@ test("#4224 a shortened checkpoint result never keeps a continuation that skips 
   assert.ok(list.items.length < 40);
   assert.equal(list.nextCursor, null, "the page cursor would skip the omitted items");
   assert.match(list.checkpointOmitted, /repeat a narrower request/);
+  // An original inspection has no cursor: none is invented for it.
+  const inspection = JSON.stringify({ result: { status: "completed", sections: [0, 1, 2, 3].map((ordinal) => ({ ordinal, markdown: "cell ".repeat(200) })) } });
+  const inspected = JSON.parse(shortenedToolText("echo_attachment_inspection_status", inspection, 2_000)).result;
+  assert.ok(inspected.sections.length < 4);
+  assert.ok(!("nextAfter" in inspected));
+  assert.match(inspected.checkpointOmitted, /repeat a narrower request/);
   const fits = JSON.stringify({ documents: [{ fileName: "a.exe" }], nextCursor: "next" });
   assert.equal(shortenedToolText("echo_device_file_search", fits, 1_000), fits);
 });

@@ -124,6 +124,8 @@ const RESUME_CURSORS: Record<string, (last: Record<string, unknown>) => unknown>
   echo_device_search: (last) => last.id,
   echo_inbox_messages: (last) => last.id,
 };
+// Reads whose sections continue with `after`; inspection results have no such cursor.
+const SECTION_READS = new Set(["echo_device_file_read", "echo_attachment_read", "echo_upload_read"]);
 const RECORD_KEYS = ["documents", "messages", "devices", "sections", "items"];
 
 /**
@@ -153,16 +155,17 @@ function shortenedJsonResult(toolName: string, text: string, maxCharacters: numb
     const resume = !omitted || !count
       ? undefined
       : key === "sections"
-        ? (typeof last?.ordinal === "number" ? last.ordinal : undefined)
+        ? (SECTION_READS.has(toolName) && typeof last?.ordinal === "number" ? last.ordinal : undefined)
         : RESUME_CURSORS[toolName]?.(last ?? {});
     const shortened = {
       ...container,
       [key]: records.slice(0, count),
       ...(omitted
         ? {
-            // A continuation that would skip the omitted records is never kept.
-            [continuation]: resume ?? null,
-            checkpointOmitted: `${omitted} of ${records.length} records omitted for the checkpoint; ${resume !== undefined ? `${continuation} continues from the first omitted record` : "repeat a narrower request to see them"}`,
+            // A continuation that would skip the omitted records is never kept, and none
+            // is invented for a result that has no cursor.
+            ...(resume !== undefined || continuation in container ? { [continuation]: resume ?? null } : {}),
+            checkpointOmitted: `${omitted} of ${records.length} records omitted for the checkpoint; ${resume !== undefined ? `${continuation} continues from the first omitted record` : "repeat a narrower request (a narrower search, member, page or locator) to see them"}`,
           }
         : {}),
     };

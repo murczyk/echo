@@ -2767,18 +2767,25 @@ export function createToolResponseCompactor(
     const batchShare = Number.isFinite(batchRemaining)
       ? Math.floor(batchRemaining / Math.max(1, batchSlots))
       : Number.POSITIVE_INFINITY;
-    const maxCharacters = Math.max(
-      2,
-      Math.min(responseCharacters, batchShare, remainingCharacters - reservedForLater),
-    );
-    const compacted = compactToolResponse(
-      route,
-      value,
-      maxItems,
-      maxCharacters,
-    );
-    if (compacted === "{}" && JSON.stringify(value) !== "{}") {
-      throw new Error("tool context budget exhausted before delivering source data");
+    const callCharacters = Math.max(2, Math.min(responseCharacters, remainingCharacters - reservedForLater));
+    const maxCharacters = Math.max(2, Math.min(callCharacters, batchShare));
+    const attempt = (limit: number): string | null => {
+      try {
+        const result = compactToolResponse(route, value, maxItems, limit);
+        return result === "{}" && JSON.stringify(value) !== "{}" ? null : result;
+      } catch {
+        return null;
+      }
+    };
+    // The batch share is a fair split, not a hard limit: a result that cannot be shortened
+    // into it (one large read section) may use the call's whole allowance, and the next
+    // turn compacts. Only that allowance failing is an error.
+    let compacted = attempt(maxCharacters) ?? (maxCharacters < callCharacters ? attempt(callCharacters) : null);
+    if (compacted === null) {
+      batchSlots = Math.max(0, batchSlots - 1);
+      compacted = compactToolResponse(route, value, maxItems, callCharacters);
+      if (compacted === "{}" && JSON.stringify(value) !== "{}")
+        throw new Error("tool context budget exhausted before delivering source data");
     }
     remainingCharacters = Math.max(0, remainingCharacters - compacted.length);
     remainingInvocations = Math.max(0, remainingInvocations - 1);
@@ -3331,7 +3338,8 @@ export function createRouteActivityTracker() {
         const seen = collected.get(route.requestKind) ?? new Set<string>();
         collected.set(route.requestKind, seen);
         for (const item of items as JsonObject[]) {
-          const key = item?.citation ?? item?.id;
+          // Attachments of one message share its citation.
+          const key = item?.mediaId ?? item?.citation ?? item?.id;
           if (typeof key === "string") seen.add(key);
         }
         const noun = SEARCH_ACTIVITY_NOUNS[route.requestKind];

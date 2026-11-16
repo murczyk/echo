@@ -1301,6 +1301,18 @@ test("#4224 a batch wider than its minimum shares defers the excess calls instea
   assert.ok(compact.admit(), "the next turn runs again");
 });
 
+test("#4224 a read section larger than its batch share still delivers", () => {
+  const route = { skill: "device_file_read", requestKind: "deviceFileRead" as const };
+  const compact = createContextToolResponseCompactor(65_536, { maxTokens: 8_192, compactionReserveTokens: 16_384, compactionKeepRecentTokens: 8_192, fixedTokens: 20_000 });
+  compact.beginBatch(6);
+  const source = { deviceId: "01999999-1111-7111-8111-111111111111", fileId: "01999999-2222-7222-8222-222222222222", revision: 1 };
+  const read = { document: { ...source, fileName: "orders.xlsx" }, sections: [{ ordinal: 0, locator: "sheet 1", markdown: "| row |\n".repeat(1_400) }], nextAfter: null };
+  for (let call = 0; call < 6; call++) {
+    const text = compact(route, read, 64);
+    assert.equal(JSON.parse(text).sections.length, 1, `call ${call}`);
+  }
+});
+
 test("#4224 search hit evidence keeps each attachment and its matched snippet", () => {
   const citation = "/rer-analysis-neo?m=source-7";
   const hits = searchHitEvidence("attachmentSearch", JSON.stringify({ documents: [
@@ -1625,6 +1637,11 @@ test("#4224 device file, device and attachment searches report their query and r
   const attachments = tracker.start(attachmentRoute, { query: "activator", selectedGroups: ["private-group-key"], from: Date.UTC(2026, 10, 1) - 2 * 3_600_000, limit: 50 });
   assert.equal(attachments.label, "Шукаю документи · пошук «activator» · від 1 лист. 2026 р. · джерела «Радіомережа А»");
   assert.equal(tracker.finish(attachmentRoute, attachments, { documents: [] }, JSON.stringify({ documents: [] })), "Шукаю документи · пошук «activator» · документів не знайдено · від 1 лист. 2026 р. · джерела «Радіомережа А»");
+  // Attachments of one message share its citation; each still counts.
+  const shared = "/rer-analysis-neo?m=source-7";
+  const page = (ids: string[]) => JSON.stringify({ documents: ids.map((mediaId) => ({ mediaId, fileName: `${mediaId}.pdf`, text: "x", citation: shared })) });
+  tracker.finish(attachmentRoute, attachments, JSON.parse(page(["m1", "m2"])), page(["m1", "m2"]));
+  assert.match(tracker.finish(attachmentRoute, attachments, JSON.parse(page(["m3"])), page(["m3"])), /зібрано документів для запиту: 3/);
 
   for (const label of [first.label, finished, second.label, last, unknown.label, attachments.label]) {
     assert.doesNotMatch(label, /[0-9a-f]{8}-[0-9a-f]{4}-/);
