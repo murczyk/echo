@@ -19,6 +19,8 @@ pub struct User {
     pub name: String,
     pub display_name: Option<String>,
     pub roles: Vec<String>,
+    #[serde(default)]
+    pub administered_organism_ids: Vec<i64>,
     pub sigint_zone_id: Option<i64>,
     pub organism_id: Option<i64>,
     pub delta_login: Option<String>,

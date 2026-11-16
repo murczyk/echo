@@ -4,12 +4,14 @@ import { useOrganismManagement } from '../admin-organisms-neo/management-context
 
 import {
   AreaOfResponsibility,
+  Login,
   CreateOrganismReq,
   Organism,
   OrganismGroup,
   SignalGroupFull,
   UpdateOrganismReq,
 } from '../../../../Bindings';
+import { listLogins } from '../../services/api/logins';
 import { listAors } from '../../services/api/aor';
 import {
   addGroupToOrganism,
@@ -49,6 +51,7 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
   const [status, setStatus] = useState<StatusMessage>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [logins, setLogins] = useState<Login[]>([]);
   const [organisms, setOrganisms] = useState<Organism[]>([]);
   const [groups, setGroups] = useState<SignalGroupFull[]>([]);
   const [organismGroups, setOrganismGroups] = useState<OrganismGroup[]>([]);
@@ -88,15 +91,18 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
       setLoadStatus('loading');
       setLoadError(null);
       try {
-        const [organismsData, groupsData, organismGroupsData, aorData] = await Promise.all([
-          listOrganisms({ sortBy: null }),
-          globalAdmin ? listSignalGroups() : Promise.resolve([]),
-          globalAdmin ? listOrganismGroups() : Promise.resolve([]),
-          globalAdmin ? listAors({ sortBy: null }) : Promise.resolve([]),
-        ]);
+        const [organismsData, groupsData, organismGroupsData, aorData, loginsData] =
+          await Promise.all([
+            listOrganisms({ sortBy: null }),
+            globalAdmin ? listSignalGroups() : Promise.resolve([]),
+            globalAdmin ? listOrganismGroups() : Promise.resolve([]),
+            globalAdmin ? listAors({ sortBy: null }) : Promise.resolve([]),
+            listLogins({ sortBy: null, filterByRoles: null }),
+          ]);
         if (isCancelled) return;
 
         setOrganisms(organismsData);
+        setLogins(loginsData.users);
         setGroups(groupsData);
         setOrganismGroups(organismGroupsData);
         setAors(aorData);
@@ -131,6 +137,7 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
           name: target.name,
           parentId: target.parentId,
           roles: target.roles,
+          adminLogins: target.adminLogins,
           aorIds: target.aorIds,
           enabled: target.enabled,
           limitGroups: groupKeys.length > 0,
@@ -183,6 +190,7 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
             name: form.name,
             parentId: form.parentId,
             roles: form.roles,
+            adminLogins: null,
             aorIds: form.aorIds,
           };
           const data = await computeAvailableGroupsForNew(req);
@@ -201,6 +209,7 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
             parentId: form.parentId,
             name: form.name,
             roles: form.roles.length > 0 ? form.roles : null,
+            adminLogins: null,
             enabled: form.enabled,
             aorIds: form.aorIds,
           };
@@ -301,6 +310,7 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
           name: nextForm.name,
           parentId: nextForm.parentId,
           roles: nextForm.roles,
+          adminLogins: nextForm.adminLogins,
           aorIds: nextForm.aorIds.length > 0 ? nextForm.aorIds : null,
         };
         const created = await createOrganism(createReq);
@@ -326,6 +336,7 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
           parentId: nextForm.parentId,
           name: nextForm.name,
           roles: nextForm.roles.length > 0 ? nextForm.roles : null,
+          adminLogins: nextForm.adminLogins,
           enabled: nextForm.enabled,
           aorIds: nextForm.aorIds,
         };
@@ -379,6 +390,7 @@ export function useOrganismEditor(props: AdminOrganismsNeoEditPageProps) {
     form,
     formErrors,
     organisms,
+    logins,
     groups,
     availableGroups,
     aors,

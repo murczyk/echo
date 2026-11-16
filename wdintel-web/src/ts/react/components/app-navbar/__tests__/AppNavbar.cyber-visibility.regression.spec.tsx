@@ -101,6 +101,7 @@ describe('AppNavbar', () => {
     user: {
       name: 'Test',
       roles: ['Basic'],
+      administeredOrganismIds: [],
       goiFullAccessForOrganism: false,
       goiIntegrations: [],
     },
@@ -390,6 +391,16 @@ describe('AppNavbar', () => {
       user: { ...defaultProps.user, roles: ['Admin'] },
     });
     expect(container.textContent).toContain('Адмін');
+  });
+
+  it('#3873 shows assigned administrators only organism management', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Basic'], administeredOrganismIds: [2] },
+    });
+    expect(container.querySelector('a[href="/admin/organisms-neo"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/admin/users-neo"]')).toBeNull();
+    expect(container.querySelector('a[href="/admin/directions-neo"]')).toBeNull();
   });
 
   it('renders admin groups as right-side flyout menus', () => {

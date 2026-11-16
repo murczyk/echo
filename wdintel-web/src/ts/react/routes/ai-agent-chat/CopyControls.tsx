@@ -1,6 +1,16 @@
 import CheckIcon from '@mui/icons-material/Check';
+import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
-import { IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import {
+  IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import {
   isValidElement,
   useCallback,
@@ -82,7 +92,12 @@ export function CodeBlock({ node: _node, children, ...props }: ComponentProps<'p
   );
 }
 
-/** Copy menu under an answer: formatted text of what is shown, or the Markdown source. */
+const ANSWER_ACTIONS_LABEL = 'Дії з відповіддю';
+
+/**
+ * «⋯» menu at the top right of an answer: copies the formatted text of what is
+ * shown, or the Markdown source. Briefly shows a check after a copy.
+ */
 export function AnswerCopyMenu({
   markdown,
   contentRef,
@@ -99,18 +114,19 @@ export function AnswerCopyMenu({
   }
   return (
     <>
-      <Tooltip title={copied ? 'Скопійовано' : 'Копіювати відповідь'}>
+      <Tooltip title={copied ? 'Скопійовано' : ANSWER_ACTIONS_LABEL}>
         <IconButton
           id={buttonId}
           type="button"
           size="small"
-          aria-label="Копіювати відповідь"
+          aria-label={ANSWER_ACTIONS_LABEL}
           aria-haspopup="menu"
           aria-expanded={Boolean(anchor)}
           onClick={(event) => setAnchor(event.currentTarget)}
-          sx={{ color: 'text.secondary' }}
+          // Negative margins keep the header row as tall as its caption.
+          sx={{ color: 'text.secondary', my: -0.75, mr: -1 }}
         >
-          {copied ? <CheckIcon fontSize="small" /> : <ContentCopyOutlinedIcon fontSize="small" />}
+          {copied ? <CheckIcon fontSize="small" /> : <MoreHorizIcon fontSize="small" />}
         </IconButton>
       </Tooltip>
       {/* Plain MUI Menu: PowerMenu wraps items in a div, which breaks arrow-key focus. */}
@@ -118,15 +134,21 @@ export function AnswerCopyMenu({
         anchorEl={anchor}
         open={Boolean(anchor)}
         onClose={() => setAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{ list: { 'aria-labelledby': buttonId } }}
       >
         <MenuItem onClick={() => choose(() => copyRenderedAnswer(contentRef.current))}>
-          Копіювати текст
+          <ListItemIcon>
+            <ContentCopyOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Копіювати текст</ListItemText>
         </MenuItem>
         <MenuItem onClick={() => choose(() => copyTextToClipboardInPlace(markdown))}>
-          Копіювати як Markdown
+          <ListItemIcon>
+            <CodeOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Копіювати як Markdown</ListItemText>
         </MenuItem>
       </Menu>
     </>

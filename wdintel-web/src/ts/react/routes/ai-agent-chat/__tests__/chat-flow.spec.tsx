@@ -709,11 +709,15 @@ describe('AiAgentChat request queue', () => {
       '[data-testid="live-request-request-copy"]',
     ) as HTMLElement;
     expect(request.querySelector('.ai-code-block button')?.textContent).toBe('Копіювати');
-    expect(request.querySelector('button[aria-label="Копіювати відповідь"]')).toBeNull();
+    expect(request.querySelector('button[aria-label="Дії з відповіддю"]')).toBeNull();
 
     await act(async () => streamEvent('request-copy', 2, 'completion', ''));
     await flush();
-    await act(async () => clickAriaButton('Копіювати відповідь', request));
+    // The «⋯» menu sits in the answer header, after the «ЕХО Агент» caption.
+    const actions = request.querySelector('button[aria-label="Дії з відповіддю"]');
+    expect(actions?.parentElement?.firstElementChild?.textContent).toContain('ЕХО Агент');
+    expect(actions?.parentElement?.lastElementChild).toBe(actions);
+    await act(async () => clickAriaButton('Дії з відповіддю', request));
     await flush();
     const menu = document.body.querySelector('[role="menu"]') as HTMLElement;
     expect(
@@ -723,7 +727,7 @@ describe('AiAgentChat request queue', () => {
     await flush();
     expect(writeText).toHaveBeenCalledWith(markdown);
 
-    await act(async () => clickAriaButton('Копіювати відповідь', request));
+    await act(async () => clickAriaButton('Дії з відповіддю', request));
     await flush();
     await act(async () =>
       (document.body.querySelector('[role="menuitem"]') as HTMLElement).click(),

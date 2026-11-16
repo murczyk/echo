@@ -23,10 +23,22 @@ labels would otherwise be squeezed, without widening the page. On first render,
 each chart starts at the right end, showing the latest dates. Background refreshes
 and viewport resizing preserve the user's scroll position. Series paging
 sits below the chart card.
+The page grows naturally with its panels and uses the document's single vertical
+scroll. Scrolling over a chart or its card moves that same page; the plot scrolls
+only horizontally. Reaching the last panel leaves only the page's bottom padding,
+without a second scroll range or an empty viewport below the content.
+The message-count scale stays outside the horizontally scrolling plot and remains
+visible at either end. Column spacing accommodates message-count labels. Tooltip
+dates use `DD.MM.YYYY`; technical group/sender identifiers are not appended to names.
 
 The card and plotting area keep the same height across periods, grouping modes,
 loading, refreshes, empty results and errors. Both legend explanations reserve
 their space; progress and notices do not move the plot or its baseline.
+Empty results use plain centered text in the plotting area rather than an alert
+banner; the empty plot hides its axes while preserving the card's dimensions.
+Counterpart counts remain inside bars with enough height; short bars show them
+above the bar on the series color, below the message total. Bar heights retain
+their quantitative proportions.
 
 Filter buttons open separate panels with a search field, checkbox rows,
 selection totals and a reset action scoped to that filter. Group rows display
@@ -100,6 +112,13 @@ visible data when current access changes. User identity and role changes remount
 the React page, including transitions between users with identical roles.
 Access and hierarchy revisions reject late responses from an obsolete scope.
 Chart refresh failures retain the current result with a stale-data explanation;
+date/filter/grouping changes retain the previous chart with an update indicator
+until the replacement result arrives. The displayed legend and tooltip grouping
+follow that result. ECharts instances and SVG roots survive data, grouping, theme
+and size updates; only unmounting or scope invalidation disposes them.
+The refresh progress line appears only after 250 ms of continuous loading with an
+existing result. Finishing sooner cancels its appearance; completion hides it
+immediately. The plot's `aria-busy` state still reflects the request immediately.
 401/403 remove statistics and cached filter data. Initial failures, empty access, empty results, and background
 refresh states remain distinct and API errors use shared notifications.
 

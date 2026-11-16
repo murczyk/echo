@@ -6,7 +6,6 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-pub const ROLE_ORGANISM_ADMIN: &str = "OrganismAdmin";
 pub const USER_LABEL_UNASSIGNED_ID: i64 = -1;
 pub const USER_LABEL_NAME_MAX_CHARS: usize = 80;
 
@@ -1235,6 +1234,9 @@ pub const CORRELATED_FREQS_MAX_DAYS: i64 = 30;
 pub const ANALYSIS_AOR_FILTER_ENABLED_DEFAULT: bool = true;
 pub const IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT: bool = true;
 pub const DUTY_SELECTED_GROUPS_ENABLED_DEFAULT: bool = true;
+pub const USER_SETTINGS_MESSAGE_CARD_QUICK_ACTION_COUNT_DEFAULT: u8 = 2;
+pub const USER_SETTINGS_MESSAGE_CARD_QUICK_ACTION_COUNT_MIN: u8 = 1;
+pub const USER_SETTINGS_MESSAGE_CARD_QUICK_ACTION_COUNT_MAX: u8 = 2;
 pub const ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT: u64 = 200;
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT: u64 = 50;
 pub const DAILY_MESSAGE_STATS_MAX_DAYS: i64 = 90;
@@ -2013,6 +2015,7 @@ DELETE FROM comp_freq;
 DELETE FROM comp_freq_callsign;
 DELETE FROM sigint_zone_aor;
 DELETE FROM sigint_zone_datasource;
+DELETE FROM organism_admin;
 DELETE FROM organism_group;
 DELETE FROM goi_association;
 DELETE FROM goi_knowledge;

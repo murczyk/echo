@@ -450,6 +450,7 @@ test.describe('Duty characterization workflows @regression', () => {
     page,
   }) => {
     await installRerDutyShortStateMocks(page, {
+      administeredOrganismIds: [],
       rerReportEligible: true,
       rerReportEnabled: true,
       inboxResponse: buildInboxResponse([99]),

@@ -166,7 +166,13 @@ export function StatisticsPanels({
           state={state}
           update={() => undefined}
           catalog={catalog}
-          resource={{ data: null, error: null, loading: true, refresh: () => undefined }}
+          resource={{
+            data: null,
+            dataGrouping: state.grouping,
+            error: null,
+            loading: true,
+            refresh: () => undefined,
+          }}
         />
       ) : null}
       {panels.map((panel) => (

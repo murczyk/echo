@@ -340,9 +340,6 @@ pub(crate) fn role_matches(
 ) -> Result<bool, AppError> {
     Ok(match role {
         "Admin" => roles.contains(&"Admin".to_string()),
-        crate::config::ROLE_ORGANISM_ADMIN => roles.iter().any(|role| {
-            role == "Admin" || role == crate::config::ROLE_ORGANISM_ADMIN
-        }),
         "Api" => roles.contains(&ROLE_API.to_string()),
         "ApiAgent" => roles.contains(&AI_AGENT_ROLE_API.to_string()),
         "Full" => {
@@ -488,7 +485,7 @@ pub async fn update_login(
         .await
         .context(h!())?;
     scope
-        .ensure_user_zone(&txn, req.sigint_zone_id)
+        .ensure_user_zone(&txn, req.organism_id, req.sigint_zone_id)
         .await
         .context(h!())?;
     let login_name = normalize_login_value(&req.login);
@@ -637,7 +634,7 @@ pub async fn update_login(
         login_totp::clear_secret(&txn, login_id).await.c(h!())?;
     }
     let res = login_obj.update(&txn).await.c(h!())?;
-    if let Some(delta_id) = delta_id.filter(|_| scope.organism_id.is_none()) {
+    if let Some(delta_id) = delta_id.filter(|_| scope.organism_ids.is_none()) {
         unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
             .await
             .c(h!())?;
@@ -763,7 +760,7 @@ pub async fn create_login(
         .context(h!())?;
     let mut req = req.into_inner();
     req.sigint_zone_id = scope
-        .creation_zone(&env.dbx, req.sigint_zone_id)
+        .creation_zone(&env.dbx, req.organism_id, req.sigint_zone_id)
         .await
         .context(h!())?;
     Ok(Json(create_login_1(&env.dbx, req).await.c(h!())?))
@@ -912,6 +909,8 @@ pub async fn create_delta_login(
         .await
         .c(h!())?;
     let login = req.login.clone();
+    crate::organism::access::ensure_supported_roles(Some(&req.roles))
+        .context(h!())?;
     let roles = req.roles.clone();
     let sigint_zone = req.sigint_zone_id;
     let organism_id = Some(req.organism_id);
@@ -964,8 +963,8 @@ pub async fn list_logins(
     }
 
     let users_iter = login::Entity::find()
-        .apply_if(scope.organism_id, |query, id| {
-            query.filter(login::Column::OrganismId.eq(id))
+        .apply_if(scope.organism_ids.clone(), |query, ids| {
+            query.filter(login::Column::OrganismId.eq_any(ids))
         })
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
@@ -1103,6 +1102,13 @@ async fn api_user(
         delta_login,
         name: login_obj.login.clone(),
         display_name: login_obj.display_name.clone(),
+        administered_organism_ids:
+            crate::organism::access::administered_organism_ids(
+                &env.dbx,
+                login_obj.id,
+            )
+            .await
+            .c(h!())?,
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
@@ -1189,6 +1195,13 @@ async fn api_user_info(
         delta_login,
         name: username.clone(),
         display_name: login_obj.display_name.clone(),
+        administered_organism_ids:
+            crate::organism::access::administered_organism_ids(
+                &env.dbx,
+                login_obj.id,
+            )
+            .await
+            .c(h!())?,
         roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,

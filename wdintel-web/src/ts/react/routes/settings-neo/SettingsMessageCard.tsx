@@ -2,10 +2,8 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Box,
   FormControlLabel,
-  MenuItem,
   Stack,
   Switch,
-  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -14,14 +12,20 @@ import { isPresent } from '../../utils/misc';
 
 import {
   MessageAttachmentPreviewMode,
-  MESSAGE_CARD_QUICK_ACTION_OPTIONS,
-  normalizeMessageCardQuickAction,
-  type MessageCardQuickAction,
   type MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
-import { MESSAGE_CARD_QUICK_ACTION_ICONS } from '../shared/message-card/MessageCardQuickAction';
+import { messageCardQuickActionList } from '../shared/message-card/MessageCardQuickAction';
+import {
+  SettingsDutyCardVisibility,
+  type SettingsDutyCardVisibilityProps,
+} from './SettingsDutyCardVisibility';
 import { SettingsMessageCardPreview } from './SettingsMessageCardPreview';
+import { SettingsPinnedPreview } from './SettingsPinnedPreview';
+import {
+  SettingsMessageCardQuickActions,
+  type SettingsMessageCardQuickActionsProps,
+} from './SettingsMessageCardQuickActions';
 
 const cardSx = {
   border: 1,
@@ -32,8 +36,7 @@ const cardSx = {
 };
 
 export type SettingsMessageCardProps = {
-  messageCardQuickAction: MessageCardQuickAction;
-  onMessageCardQuickActionChange: (value: MessageCardQuickAction) => void;
+  quickActions: SettingsMessageCardQuickActionsProps;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -48,11 +51,12 @@ export type SettingsMessageCardProps = {
   onLargeMessageCardTextChange: (value: boolean) => void;
   onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
   loadInProgress: boolean;
+  /** Duty-only card parts; omitted on the Analysis tab. */
+  dutyCardVisibility?: SettingsDutyCardVisibilityProps;
 };
 
 export function SettingsMessageCard({
-  messageCardQuickAction,
-  onMessageCardQuickActionChange,
+  quickActions,
   tagsLayout,
   onTagsLayoutChange,
   messageTextPreviewLines,
@@ -67,13 +71,25 @@ export function SettingsMessageCard({
   onLargeMessageCardTextChange,
   onAttachmentPreviewModeChange,
   loadInProgress,
+  dutyCardVisibility,
 }: SettingsMessageCardProps) {
   return (
     <Box sx={cardSx}>
       <div className="flex flex-col gap-echo-xl">
-        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
-          Картка повідомлення
-        </Typography>
+        <SettingsPinnedPreview title="Картка повідомлення">
+          <SettingsMessageCardPreview
+            dutyCardVisibility={dutyCardVisibility?.value}
+            messageCardQuickActions={messageCardQuickActionList(quickActions.value)}
+            largeMessageCardText={largeMessageCardText}
+            tagsLayout={tagsLayout}
+            mediaSummaryEnabled={mediaSummaryEnabled}
+            attachmentPreviewMode={attachmentPreviewMode}
+            aiPositionHighlightsEnabled={
+              aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled
+            }
+            messageTextPreviewLines={messageTextPreviewLines}
+          />
+        </SettingsPinnedPreview>
 
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -105,36 +121,7 @@ export function SettingsMessageCard({
           </Box>
         </Stack>
 
-        <Stack spacing={1}>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Швидка дія для вузької картки:
-          </Typography>
-          <TextField
-            select
-            SelectProps={{ inputProps: { 'aria-label': 'Швидка дія для вузької картки' } }}
-            value={messageCardQuickAction}
-            onChange={(event) => {
-              const value = normalizeMessageCardQuickAction(event.target.value);
-              if (value !== messageCardQuickAction) onMessageCardQuickActionChange(value);
-            }}
-            disabled={loadInProgress}
-            size="small"
-            sx={{ width: 360, maxWidth: '100%', alignSelf: 'flex-start' }}
-            helperText="Обрана дія показується поруч із меню без дублювання. Якщо дія недоступна, кнопка приховується."
-          >
-            {MESSAGE_CARD_QUICK_ACTION_OPTIONS.map((option) => {
-              const Icon = MESSAGE_CARD_QUICK_ACTION_ICONS[option.value];
-              return (
-                <MenuItem key={option.value} value={option.value}>
-                  <span className="inline-flex max-w-full items-center gap-echo-sm align-middle">
-                    <Icon fontSize="small" className="shrink-0" />
-                    <span className="truncate">{option.label}</span>
-                  </span>
-                </MenuItem>
-              );
-            })}
-          </TextField>
-        </Stack>
+        <SettingsMessageCardQuickActions {...quickActions} loadInProgress={loadInProgress} />
 
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -257,17 +244,9 @@ export function SettingsMessageCard({
           </Typography>
         </fieldset>
 
-        <SettingsMessageCardPreview
-          messageCardQuickAction={messageCardQuickAction}
-          largeMessageCardText={largeMessageCardText}
-          tagsLayout={tagsLayout}
-          mediaSummaryEnabled={mediaSummaryEnabled}
-          attachmentPreviewMode={attachmentPreviewMode}
-          aiPositionHighlightsEnabled={
-            aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled
-          }
-          messageTextPreviewLines={messageTextPreviewLines}
-        />
+        {dutyCardVisibility ? (
+          <SettingsDutyCardVisibility {...dutyCardVisibility} loadInProgress={loadInProgress} />
+        ) : null}
 
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -310,7 +289,9 @@ export function SettingsMessageCard({
         <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Спільні налаштування для Оперативного та Аналізу.
+            {dutyCardVisibility
+              ? 'Крім «Показувати в Оперативному», налаштування спільні для Оперативного та Аналізу.'
+              : 'Спільні налаштування для Оперативного та Аналізу.'}
           </Typography>
         </Stack>
       </div>

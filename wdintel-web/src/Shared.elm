@@ -172,6 +172,7 @@ init flagsResult route =
                 { id = ""
                 , name = "anonymous"
                 , displayName = Nothing
+                , administeredOrganismIds = []
                 , roles = []
                 , sigintZoneId = Nothing
                 , organismId = Nothing

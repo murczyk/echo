@@ -8,14 +8,18 @@ import { createRoot, Root } from 'react-dom/client';
 import { AdminOrganismsNeoEditPage } from './routes/admin-organisms-neo-edit';
 import { useNeoMuiTheme } from './mui-theme';
 
-function OrganismsNeoEditRoot(props: { organismId: string | null; roles: string[] }) {
+function OrganismsNeoEditRoot(props: {
+  organismId: string | null;
+  roles: string[];
+  canManage: boolean;
+}) {
   const theme = useNeoMuiTheme();
 
   return (
     <ThemeProvider theme={theme}>
       <PowerSnackbarProvider>
         <OrganismManagementContext.Provider value={{ globalAdmin: hasRole(props.roles, 'Admin') }}>
-          {hasRole(props.roles, 'OrganismAdmin') ? (
+          {props.canManage ? (
             <AdminOrganismsNeoEditPage organismId={props.organismId} />
           ) : (
             <PowerAlert severity="error">Немає доступу до організмів.</PowerAlert>
@@ -30,7 +34,12 @@ class OrganismsNeoEditElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['data-organism-id', 'data-auth-user-id', 'data-auth-user-roles'];
+    return [
+      'data-organism-id',
+      'data-auth-user-id',
+      'data-auth-user-roles',
+      'data-can-manage-organisms',
+    ];
   }
 
   connectedCallback() {
@@ -57,9 +66,10 @@ class OrganismsNeoEditElement extends HTMLElement {
     const roles = this.getAttribute('data-auth-user-roles')?.split(',') ?? [];
     this.root.render(
       <OrganismsNeoEditRoot
-        key={`${this.getAttribute('data-auth-user-id')}:${roles.join(',')}`}
+        key={`${this.getAttribute('data-auth-user-id')}:${roles.join(',')}:${this.getAttribute('data-can-manage-organisms')}`}
         organismId={organismId}
         roles={roles}
+        canManage={this.getAttribute('data-can-manage-organisms') === 'true'}
       />,
     );
   }

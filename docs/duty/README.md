@@ -20,8 +20,8 @@ invariant, not a user preference. Analysis alone retains the event/creation-time
   Local sorting, pagination/unread cursors, pending buffers, and notification
   selection use `createdAtOrder` (microseconds), falling back only to
   `createdAt * 1000` for older payloads. Event time is never an ordering fallback.
-- Cards always show the message's event date/time in the header, independently of
-  sorting. Their system creation-time footer uses `createdAt`: `HH:mm` today,
+- Cards show the message's event date/time in the header, independently of
+  sorting, unless the user hides the Duty card header in Settings. Their system creation-time footer uses `createdAt`: `HH:mm` today,
   `DD.MM, HH:mm` on other dates this year, and `DD.MM.YYYY, HH:mm` in other years
   (Kyiv calendar). The header date always includes the year; date-only events
   omit the time. Event dates remain message metadata, and editing an event date

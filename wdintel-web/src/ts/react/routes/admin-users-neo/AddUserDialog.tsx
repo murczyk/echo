@@ -56,9 +56,7 @@ export function AddUserDialog(props: {
         ...EMPTY_ADD_FORM,
         organismId: organism.id,
         passwordAuthEnabled: true,
-        roles: roleOptions.includes('Basic')
-          ? ['Basic']
-          : roleOptions.filter((role) => role !== 'OrganismAdmin').slice(0, 1),
+        roles: roleOptions.includes('Basic') ? ['Basic'] : roleOptions.slice(0, 1),
       }
     : { ...EMPTY_ADD_FORM, organismId: props.initialOrganismId ?? null };
   const [form, setForm] = useState<AddUserForm>(initialForm);

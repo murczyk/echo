@@ -1,4 +1,4 @@
-import { MessageCardQuickActionContext } from '../shared/message-card/MessageCardQuickAction';
+import { MessageCardQuickActionsContext } from '../shared/message-card/MessageCardQuickAction';
 import {
   MessageRepliesProvider,
   ReplyMessageEditor,
@@ -11,6 +11,7 @@ import {
 } from '../shared/message-card/MessageWriteAccess';
 import { canWriteMessages, hasRole } from '../../utils/roles';
 import { DutyExcludeMenuContext } from '../shared/message-card/DutyExcludeMenu';
+import { DutyMessageCardVisibilityContext } from '../shared/message-card/DutyMessageCardVisibility';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { canUseRadioFeatures } from '../../utils/roles';
 import { Box, useMediaQuery, useTheme } from '@mui/material';
@@ -132,12 +133,13 @@ export function RerDutyNeoPage({
     collapseMediaPreviews,
     largeMediaPreviews,
     largeMessageCardText,
-    messageCardQuickAction,
+    messageCardQuickActions,
     mediaSummaryEnabled,
     messageTextPreviewLines,
     minimalReportWindowEnabled,
     rememberReportGroup,
     importantOnlyMyOrganism,
+    cardVisibility,
   } = useRerDutyPageSettings();
   const requestEditorIntent = useCallback(
     (
@@ -967,9 +969,11 @@ export function RerDutyNeoPage({
           )}
           currentUser={currentUser}
         >
-          <MessageCardQuickActionContext.Provider value={messageCardQuickAction}>
-            {content}
-          </MessageCardQuickActionContext.Provider>
+          <MessageCardQuickActionsContext.Provider value={messageCardQuickActions}>
+            <DutyMessageCardVisibilityContext.Provider value={cardVisibility}>
+              {content}
+            </DutyMessageCardVisibilityContext.Provider>
+          </MessageCardQuickActionsContext.Provider>
         </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>

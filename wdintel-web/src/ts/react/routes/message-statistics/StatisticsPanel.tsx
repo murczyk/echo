@@ -1,5 +1,5 @@
 import { Button, ButtonGroup, LinearProgress, Skeleton } from '@mui/material';
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import type { DailyMessageStatsPanel } from '../../../../Bindings';
 import dayjs from 'dayjs';
 import { APP_TIME_ZONE } from '../../utils/misc';
@@ -7,7 +7,12 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { StatsChart } from './StatsChart';
 import type { useStatsCatalog } from './use-stats-catalog';
 import type { useDailyMessageStats } from './use-daily-message-stats';
-import { today, STATS_SERIES_PAGE_SIZE, type StatsState } from './state';
+import {
+  today,
+  STATS_SERIES_PAGE_SIZE,
+  STATS_REFRESH_INDICATOR_DELAY_MS,
+  type StatsState,
+} from './state';
 
 type Props = {
   panel: DailyMessageStatsPanel;
@@ -16,9 +21,31 @@ type Props = {
   catalog: ReturnType<typeof useStatsCatalog>;
   resource: ReturnType<typeof useDailyMessageStats>;
 };
+
+function useDelayedRefreshProgress(loading: boolean) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setVisible(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setVisible(true), STATS_REFRESH_INDICATOR_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+  return loading && visible;
+}
+
 export function StatisticsPanel({ panel, state, update, catalog, resource }: Props) {
   const byGroups = state.grouping === 'Groups';
   const data = resource.data;
+  const showRefreshProgress = useDelayedRefreshProgress(resource.loading && !!data);
+  const chartByGroups = resource.dataGrouping === 'Groups';
+  const emptyMessage =
+    !resource.loading && !catalog.loading && catalog.groups.length <= 1 && !catalog.error
+      ? 'Немає доступних груп.'
+      : data && !data.series.some((series) => series.points.some((point) => point.messages > 0))
+        ? 'За вибраними фільтрами повідомлень немає.'
+        : null;
   const pageNumber = state.cursors.length;
   return (
     <section
@@ -37,16 +64,16 @@ export function StatisticsPanel({ panel, state, update, catalog, resource }: Pro
               Відправниках
             </Button>
           </ButtonGroup>
-          <p>Висота колонки і число над нею — повідомлень за день</p>
+          <p>Висота колонки і верхнє число — повідомлень за день</p>
         </div>
         <p className="message-statistics-legend">
           <span className="message-statistics-legend-swatch" aria-hidden="true" />
           <span className="message-statistics-legend-text">
-            <span data-active={byGroups} aria-hidden={!byGroups}>
-              Число в колонці — скільки відправників працювало над групою
+            <span data-active={chartByGroups} aria-hidden={!chartByGroups}>
+              Число на кольоровому тлі — скільки відправників працювало над групою
             </span>
-            <span data-active={!byGroups} aria-hidden={byGroups}>
-              Число в колонці — скільки груп обробив відправник
+            <span data-active={!chartByGroups} aria-hidden={chartByGroups}>
+              Число на кольоровому тлі — скільки груп обробив відправник
             </span>
           </span>
         </p>
@@ -61,13 +88,18 @@ export function StatisticsPanel({ panel, state, update, catalog, resource }: Pro
           {resource.loading && !data ? (
             <Skeleton variant="rounded" height="100%" aria-label="Завантаження статистики" />
           ) : null}
-          {resource.loading && data ? (
+          {showRefreshProgress ? (
             <LinearProgress
               className="message-statistics-chart-progress"
               aria-label="Оновлення статистики"
             />
           ) : null}
-          {data && data.series.length > 0 ? <StatsChart data={data} byGroups={byGroups} /> : null}
+          {data ? <StatsChart data={data} byGroups={chartByGroups} /> : null}
+          {emptyMessage && !resource.error ? (
+            <div className="message-statistics-chart-empty" role="status">
+              <p>{emptyMessage}</p>
+            </div>
+          ) : null}
           <div className="message-statistics-chart-notices">
             {resource.error ? (
               <PowerAlert severity="error" dismissible={false}>
@@ -75,23 +107,6 @@ export function StatisticsPanel({ panel, state, update, catalog, resource }: Pro
                 {data ? ' Показано попередні дані.' : ''}
                 <Button onClick={resource.refresh}>Повторити</Button>
               </PowerAlert>
-            ) : null}
-            {!resource.loading &&
-            !catalog.loading &&
-            catalog.groups.length <= 1 &&
-            !catalog.error ? (
-              <PowerAlert severity="info">Немає доступних груп.</PowerAlert>
-            ) : null}
-            {data && data.series.length > 0 ? (
-              data.series.every((series) =>
-                series.points.every((point) => point.messages === 0),
-              ) ? (
-                <PowerAlert severity="info">
-                  За вибраними фільтрами в цих групах повідомлень немає.
-                </PowerAlert>
-              ) : null
-            ) : data && catalog.groups.length > 1 ? (
-              <PowerAlert severity="info">За вибраними фільтрами повідомлень немає.</PowerAlert>
             ) : null}
           </div>
         </div>

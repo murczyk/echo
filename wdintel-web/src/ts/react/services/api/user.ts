@@ -8,6 +8,8 @@ type UserLike = {
   displayName?: string | null;
   display_name?: string | null;
   roles?: string[] | null;
+  administeredOrganismIds?: number[];
+  administered_organism_ids?: number[];
   sigintZoneId?: number | null;
   sigint_zone_id?: number | null;
   organismId?: number | null;
@@ -38,6 +40,7 @@ function normalizeUser(raw: UserLike | null | undefined): User {
     name: raw?.name ?? '',
     displayName: raw?.displayName ?? raw?.display_name ?? null,
     roles: raw?.roles ?? [],
+    administeredOrganismIds: raw?.administeredOrganismIds ?? raw?.administered_organism_ids ?? [],
     sigintZoneId: raw?.sigintZoneId ?? raw?.sigint_zone_id ?? null,
     organismId: raw?.organismId ?? raw?.organism_id ?? null,
     deltaLogin: raw?.deltaLogin ?? raw?.delta_login ?? null,
