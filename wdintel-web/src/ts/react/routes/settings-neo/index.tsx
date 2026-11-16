@@ -20,6 +20,7 @@ import { canUseRadioFeatures } from '../../utils/roles';
 import type { DutyMessageCardVisibility } from '../shared/message-card/DutyMessageCardVisibility';
 import {
   MessageAttachmentPreviewMode,
+  type MessageCardQuickActionSettings,
   type UserDutySettings,
 } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
@@ -131,6 +132,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       dutyHideCardHeader: dutySettings.dutyHideCardHeader,
       dutyHideCardFrequency: dutySettings.dutyHideCardFrequency,
       dutyHideCardUnit: dutySettings.dutyHideCardUnit,
+      messageCardQuickActionCount: dutySettings.messageCardQuickActionCount,
       ...overrides,
     });
   };
@@ -139,11 +141,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
     : dutySettings.largeMediaPreviews
       ? MessageAttachmentPreviewMode.Large
       : MessageAttachmentPreviewMode.Compact;
-  const handleMessageCardQuickActionChange = (
-    messageCardQuickAction: UserDutySettings['messageCardQuickAction'],
-  ) => {
-    dutySettings.setMessageCardQuickAction(messageCardQuickAction);
-    scheduleDutySettingsSave({ messageCardQuickAction });
+  const quickActions = {
+    value: {
+      messageCardQuickActionCount: dutySettings.messageCardQuickActionCount,
+      messageCardQuickAction: dutySettings.messageCardQuickAction,
+      messageCardSecondQuickAction: dutySettings.messageCardSecondQuickAction,
+    },
+    onChange: (patch: Partial<MessageCardQuickActionSettings>) => {
+      dutySettings.setMessageCardQuickActions(patch);
+      scheduleDutySettingsSave(patch);
+    },
   };
   const handleLargeMessageCardTextChange = (largeMessageCardText: boolean) => {
     dutySettings.setLargeMessageCardText(largeMessageCardText);
@@ -324,8 +331,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
           {settingsSection === 'profile' ? <SettingsProfileSection /> : null}
           {settingsSection === 'duty' ? (
             <SettingsDutySection
-              messageCardQuickAction={dutySettings.messageCardQuickAction}
-              onMessageCardQuickActionChange={handleMessageCardQuickActionChange}
+              quickActions={quickActions}
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
               saveError={dutySettings.saveError ?? dutyFilterPersistenceError}
@@ -471,8 +477,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                   />
 
                   <SettingsMessageCard
-                    messageCardQuickAction={dutySettings.messageCardQuickAction}
-                    onMessageCardQuickActionChange={handleMessageCardQuickActionChange}
+                    quickActions={quickActions}
                     tagsLayout={dutySettings.tagsLayout}
                     onTagsLayoutChange={(layout) => {
                       dutySettings.setTagsLayout(layout);

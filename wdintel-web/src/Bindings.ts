@@ -8801,4 +8801,6 @@ export type UserDutySettingsDto = {
   dutyHideCardHeader: boolean;
   dutyHideCardFrequency: boolean;
   dutyHideCardUnit: boolean;
+  messageCardQuickActionCount: number;
+  messageCardSecondQuickAction: MessageCardQuickAction;
 };

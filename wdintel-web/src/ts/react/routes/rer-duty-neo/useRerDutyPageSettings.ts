@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { User } from '../../../../Bindings';
 import {
   DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   DEFAULT_MEDIA_SUMMARY_ENABLED,
   DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
+  DEFAULT_MESSAGE_CARD_QUICK_ACTION_COUNT,
+  DEFAULT_MESSAGE_CARD_SECOND_QUICK_ACTION,
 } from '../../hooks/duty-settings-defaults';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchCurrentUser } from '../../services/api/user';
@@ -12,12 +14,15 @@ import {
   fetchUserSettings,
   type MessageTextPreviewLineLimit,
   type MessageCardQuickAction,
+  type MessageCardQuickActionCount,
+  type MessageCardQuickActionSettings,
 } from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import {
   DEFAULT_DUTY_MESSAGE_CARD_VISIBILITY,
   type DutyMessageCardVisibility,
 } from '../shared/message-card/DutyMessageCardVisibility';
+import { messageCardQuickActionList } from '../shared/message-card/MessageCardQuickAction';
 import { canUseMessageDevices } from '../../utils/roles';
 
 export type RerDutyPageSettings = {
@@ -35,13 +40,19 @@ export type RerDutyPageSettings = {
   collapseMediaPreviews: boolean;
   largeMediaPreviews: boolean;
   largeMessageCardText: boolean;
-  messageCardQuickAction: MessageCardQuickAction;
+  messageCardQuickActions: readonly MessageCardQuickAction[];
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   minimalReportWindowEnabled: boolean;
   rememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
   cardVisibility: DutyMessageCardVisibility;
+};
+
+const DEFAULT_QUICK_ACTION_SETTINGS: MessageCardQuickActionSettings = {
+  messageCardQuickActionCount: DEFAULT_MESSAGE_CARD_QUICK_ACTION_COUNT,
+  messageCardQuickAction: 'createReport',
+  messageCardSecondQuickAction: DEFAULT_MESSAGE_CARD_SECOND_QUICK_ACTION,
 };
 
 export type DeviceAccess =
@@ -73,8 +84,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   );
   const [largeMediaPreviews, setLargeMediaPreviews] = useState(false);
   const [largeMessageCardText, setLargeMessageCardText] = useState(false);
-  const [messageCardQuickAction, setMessageCardQuickAction] =
-    useState<MessageCardQuickAction>('createReport');
+  const [quickActionSettings, setQuickActionSettings] = useState(DEFAULT_QUICK_ACTION_SETTINGS);
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
@@ -98,7 +108,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         );
         setLargeMediaPreviews(prefs.largeMediaPreviews ?? false);
         setLargeMessageCardText(prefs.largeMessageCardText ?? false);
-        setMessageCardQuickAction(prefs.messageCardQuickAction ?? 'createReport');
+        setQuickActionSettings((current) => mergeQuickActionSettings(current, prefs));
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
         setMinimalReportWindowEnabled(prefs.minimalReportWindowEnabled ?? false);
@@ -112,7 +122,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(true);
         setLargeMediaPreviews(false);
         setLargeMessageCardText(false);
-        setMessageCardQuickAction('createReport');
+        setQuickActionSettings(DEFAULT_QUICK_ACTION_SETTINGS);
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
         setMinimalReportWindowEnabled(false);
@@ -137,6 +147,8 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           largeMediaPreviews?: boolean;
           largeMessageCardText?: boolean;
           messageCardQuickAction?: MessageCardQuickAction;
+          messageCardQuickActionCount?: MessageCardQuickActionCount;
+          messageCardSecondQuickAction?: MessageCardQuickAction;
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
           minimalReportWindowEnabled?: boolean;
@@ -159,9 +171,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       if (typeof detail?.largeMediaPreviews === 'boolean') {
         setLargeMediaPreviews(detail.largeMediaPreviews);
       }
-      if (detail?.messageCardQuickAction != null) {
-        setMessageCardQuickAction(detail.messageCardQuickAction);
-      }
+      if (detail) setQuickActionSettings((current) => mergeQuickActionSettings(current, detail));
       if (typeof detail?.largeMessageCardText === 'boolean') {
         setLargeMessageCardText(detail.largeMessageCardText);
       }
@@ -255,6 +265,11 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         : canUseMessageDevices(currentUser?.roles, devicesSectionEnabled)
           ? { status: 'allowed' }
           : { status: 'denied' };
+  const messageCardQuickActions = useMemo(
+    () => messageCardQuickActionList(quickActionSettings),
+    [quickActionSettings],
+  );
+
   return {
     currentUser,
     cyberEchoEnabled: canUseMessageDevices(currentUser?.roles, devicesSectionEnabled),
@@ -270,7 +285,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     collapseMediaPreviews,
     largeMediaPreviews,
     largeMessageCardText,
-    messageCardQuickAction,
+    messageCardQuickActions,
     mediaSummaryEnabled,
     messageTextPreviewLines,
     minimalReportWindowEnabled,
@@ -278,6 +293,25 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     importantOnlyMyOrganism,
     cardVisibility,
   };
+}
+
+/** Applies stored quick-action choices, keeping the object stable when nothing changed. */
+function mergeQuickActionSettings(
+  current: MessageCardQuickActionSettings,
+  settings: Partial<MessageCardQuickActionSettings>,
+): MessageCardQuickActionSettings {
+  const next = {
+    messageCardQuickActionCount:
+      settings.messageCardQuickActionCount ?? current.messageCardQuickActionCount,
+    messageCardQuickAction: settings.messageCardQuickAction ?? current.messageCardQuickAction,
+    messageCardSecondQuickAction:
+      settings.messageCardSecondQuickAction ?? current.messageCardSecondQuickAction,
+  };
+  return next.messageCardQuickActionCount === current.messageCardQuickActionCount &&
+    next.messageCardQuickAction === current.messageCardQuickAction &&
+    next.messageCardSecondQuickAction === current.messageCardSecondQuickAction
+    ? current
+    : next;
 }
 
 /** Applies the stored Duty card choices, keeping the object stable when nothing changed. */

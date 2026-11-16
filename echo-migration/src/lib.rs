@@ -557,6 +557,7 @@ mod m20261112_141106_attachment_order;
 mod m20261113_093453_report_group_preferences;
 mod m20261113_114713_legacy_replay_marker_index;
 mod m20261115_181951_duty_card_visibility;
+mod m20261116_110507_message_card_quick_action_count;
 mod m20261113_124500_messenger_account_external_url;
 mod m20261114_170500_ai_agent_refusal_rewrite;
 
@@ -1275,6 +1276,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261113_095232_organism_message_stats_exclusion::Migration),
             Box::new(m20261113_114713_legacy_replay_marker_index::Migration),
             Box::new(m20261115_181951_duty_card_visibility::Migration),
+            Box::new(m20261116_110507_message_card_quick_action_count::Migration),
         ]
     }
 }

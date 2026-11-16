@@ -4,13 +4,13 @@ import { Box, FormControlLabel, Stack, Switch, Tooltip, Typography } from '@mui/
 import { PowerAlert } from '../../components/PowerAlert';
 import type {
   MessageAttachmentPreviewMode,
-  MessageCardQuickAction,
   MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import type { SettingsDutyCardVisibilityProps } from './SettingsDutyCardVisibility';
 import { SettingsMessageCard } from './SettingsMessageCard';
+import type { SettingsMessageCardQuickActionsProps } from './SettingsMessageCardQuickActions';
 
 const cardSx = {
   border: 1,
@@ -49,8 +49,7 @@ function ImportantOnlyMyOrganismLabel() {
 }
 
 export type SettingsDutySectionProps = {
-  messageCardQuickAction: MessageCardQuickAction;
-  onMessageCardQuickActionChange: (value: MessageCardQuickAction) => void;
+  quickActions: SettingsMessageCardQuickActionsProps;
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
@@ -88,8 +87,7 @@ export type SettingsDutySectionProps = {
 };
 
 export function SettingsDutySection({
-  messageCardQuickAction,
-  onMessageCardQuickActionChange,
+  quickActions,
   loadInProgress,
   prefsLoadError,
   saveError,
@@ -159,8 +157,7 @@ export function SettingsDutySection({
           ) : null}
 
           <SettingsMessageCard
-            messageCardQuickAction={messageCardQuickAction}
-            onMessageCardQuickActionChange={onMessageCardQuickActionChange}
+            quickActions={quickActions}
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}

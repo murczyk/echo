@@ -1,5 +1,4 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -34,7 +33,7 @@ function PreviewLines({ widths }: { widths: number[] }) {
 
 export function SettingsMessageCardPreview({
   dutyCardVisibility,
-  messageCardQuickAction,
+  messageCardQuickActions,
   largeMessageCardText,
   tagsLayout,
   mediaSummaryEnabled,
@@ -44,7 +43,8 @@ export function SettingsMessageCardPreview({
 }: {
   /** Duty tab only: previews the Duty-only hidden card parts. */
   dutyCardVisibility?: DutyMessageCardVisibility;
-  messageCardQuickAction: MessageCardQuickAction;
+  /** Narrow-card direct actions in slot order. */
+  messageCardQuickActions: readonly MessageCardQuickAction[];
   largeMessageCardText: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled: boolean;
@@ -55,7 +55,6 @@ export function SettingsMessageCardPreview({
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const duration = reducedMotion ? 0 : 250;
   const attachmentsExpanded = attachmentPreviewMode !== MessageAttachmentPreviewMode.Collapsed;
-  const QuickActionIcon = MESSAGE_CARD_QUICK_ACTION_ICONS[messageCardQuickAction];
   return (
     <section
       aria-label="Попередній перегляд картки повідомлення"
@@ -79,17 +78,18 @@ export function SettingsMessageCardPreview({
             </Collapse>
           </div>
           <div className="message-card-action-group pointer-events-none">
-            <span
-              data-message-card-quick-action-preview={messageCardQuickAction}
-              className="message-card-action-btn"
-            >
-              <QuickActionIcon className="message-card-action-btn__icon" />
-            </span>
-            {messageCardQuickAction === 'important' ? null : (
-              <span data-message-card-important-preview="true" className="message-card-action-btn">
-                <FlagOutlinedIcon className="message-card-action-btn__icon" />
-              </span>
-            )}
+            {messageCardQuickActions.map((action) => {
+              const QuickActionIcon = MESSAGE_CARD_QUICK_ACTION_ICONS[action];
+              return (
+                <span
+                  key={action}
+                  data-message-card-quick-action-preview={action}
+                  className="message-card-action-btn"
+                >
+                  <QuickActionIcon className="message-card-action-btn__icon" />
+                </span>
+              );
+            })}
             <span className="message-card-action-btn">
               <MoreVertIcon className="message-card-action-btn__icon" />
             </span>

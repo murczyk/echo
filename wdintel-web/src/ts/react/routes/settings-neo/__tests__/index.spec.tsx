@@ -602,6 +602,7 @@ describe('SettingsNeoPage', () => {
       dutyHideCardHeader: false,
       dutyHideCardFrequency: false,
       dutyHideCardUnit: false,
+      messageCardQuickActionCount: 2,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });

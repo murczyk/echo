@@ -42,6 +42,9 @@ pub struct Model {
     pub duty_hide_card_header: Option<bool>,
     pub duty_hide_card_frequency: Option<bool>,
     pub duty_hide_card_unit: Option<bool>,
+    pub message_card_quick_action_count: Option<i16>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub message_card_second_quick_action: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

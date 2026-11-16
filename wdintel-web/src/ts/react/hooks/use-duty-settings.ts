@@ -7,6 +7,8 @@ import {
   DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
   DEFAULT_DUTY_REMEMBER_REPORT_GROUP,
   DEFAULT_ANALYSIS_REMEMBER_REPORT_GROUP,
+  DEFAULT_MESSAGE_CARD_QUICK_ACTION_COUNT,
+  DEFAULT_MESSAGE_CARD_SECOND_QUICK_ACTION,
 } from './duty-settings-defaults';
 import {
   USER_SETTINGS_UPDATED_EVENT,
@@ -14,7 +16,7 @@ import {
   saveUserSettings,
   type UserDutySettings,
   type UserDutySettingsUpdate,
-  type MessageCardQuickAction,
+  type MessageCardQuickActionSettings,
   type MessageTextPreviewLineLimit,
   type MessageTimeBasis,
 } from '../services/api/user-settings';
@@ -33,7 +35,7 @@ export type DutySettingsHook = DutySettingsValue & {
   loadError: string | null;
   saveError: string | null;
   saveInProgress: boolean;
-  setMessageCardQuickAction: (value: MessageCardQuickAction) => void;
+  setMessageCardQuickActions: (value: Partial<MessageCardQuickActionSettings>) => void;
   setTagsLayout: (value: TagsLayoutVariant) => void;
   setDisableAutoScroll: (value: boolean) => void;
   setAnalysisMapInSidebar: (value: boolean) => void;
@@ -66,6 +68,10 @@ function normalizeDutySettings(
 
   return {
     messageCardQuickAction: settings?.messageCardQuickAction ?? 'createReport',
+    messageCardQuickActionCount:
+      settings?.messageCardQuickActionCount ?? DEFAULT_MESSAGE_CARD_QUICK_ACTION_COUNT,
+    messageCardSecondQuickAction:
+      settings?.messageCardSecondQuickAction ?? DEFAULT_MESSAGE_CARD_SECOND_QUICK_ACTION,
     messageSortBy: settings?.messageSortBy === 'creation' ? 'creation' : 'interception',
     messageTextPreviewLines: messageTextPreviewLines === undefined ? 20 : messageTextPreviewLines,
     tagsLayout: settings?.tagsLayout ?? DEFAULT_DUTY_TAGS_LAYOUT,
@@ -194,6 +200,9 @@ export function useDutySettings(): DutySettingsHook {
         ...nextSettings,
         messageCardQuickAction:
           nextSettings.messageCardQuickAction ?? pendingSaveRef.current?.messageCardQuickAction,
+        messageCardSecondQuickAction:
+          nextSettings.messageCardSecondQuickAction ??
+          pendingSaveRef.current?.messageCardSecondQuickAction,
       };
       void flushSaveQueue();
     },
@@ -206,8 +215,7 @@ export function useDutySettings(): DutySettingsHook {
     loadError,
     saveError,
     saveInProgress,
-    setMessageCardQuickAction: (value) =>
-      setSettings((current) => ({ ...current, messageCardQuickAction: value })),
+    setMessageCardQuickActions: (value) => setSettings((current) => ({ ...current, ...value })),
     setTagsLayout: (value) => setSettings((current) => ({ ...current, tagsLayout: value })),
     setDisableAutoScroll: (value) =>
       setSettings((current) => ({ ...current, disableAutoScroll: value })),

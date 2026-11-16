@@ -6,6 +6,7 @@ import {
 } from '../shared/message-replies/thread-analysis-link';
 import { canWriteMessages } from '../../utils/roles';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { messageCardQuickActionList } from '../shared/message-card/MessageCardQuickAction';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -340,6 +341,17 @@ export function useRerAnalysisNeoPage(
     );
   }, []);
   const dutySettings = useDutySettings();
+  const { messageCardQuickActionCount, messageCardQuickAction, messageCardSecondQuickAction } =
+    dutySettings;
+  const messageCardQuickActions = useMemo(
+    () =>
+      messageCardQuickActionList({
+        messageCardQuickActionCount,
+        messageCardQuickAction,
+        messageCardSecondQuickAction,
+      }),
+    [messageCardQuickActionCount, messageCardQuickAction, messageCardSecondQuickAction],
+  );
   const deviceAccess: DeviceAccess =
     currentUserStatus === 'error' || systemSettingsStatus === 'error'
       ? { status: 'error' }
@@ -1850,7 +1862,7 @@ export function useRerAnalysisNeoPage(
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     largeMediaPreviews: dutySettings.largeMediaPreviews,
     largeMessageCardText: dutySettings.largeMessageCardText,
-    messageCardQuickAction: dutySettings.messageCardQuickAction,
+    messageCardQuickActions,
     rememberReportGroup: dutySettings.analysisRememberReportGroup,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,

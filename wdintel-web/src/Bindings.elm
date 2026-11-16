@@ -36369,6 +36369,8 @@ type alias UserDutySettingsDto =
     , dutyHideCardHeader : Bool
     , dutyHideCardFrequency : Bool
     , dutyHideCardUnit : Bool
+    , messageCardQuickActionCount : Int
+    , messageCardSecondQuickAction : MessageCardQuickAction
     }
 
 
@@ -36399,3 +36401,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardHeader" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardFrequency" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "dutyHideCardUnit" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "messageCardQuickActionCount" (Json.Decode.int), Json.Decode.succeed 2 ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "messageCardSecondQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionImportant ]))

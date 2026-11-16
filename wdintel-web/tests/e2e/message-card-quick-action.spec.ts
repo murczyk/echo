@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
@@ -77,12 +77,13 @@ for (const host of ['duty', 'analysis'] as const) {
     const fixture = await installFixture(page, host);
     fixture.settings().messageCardQuickAction = 'copyText';
     await page.goto(`/settings-neo?section=${host}`);
-    const select = page.getByRole('combobox', { name: 'Швидка дія для вузької картки' });
+    const select = page.getByRole('combobox', { name: 'Швидка дія 1', exact: true });
     await expect(select).toHaveText('Копіювати повідомлення');
     const releaseSave = fixture.blockNextSave();
     await page.getByRole('button', { name: 'Збільшений', exact: true }).click();
     await expect.poll(() => fixture.saves.length).toBe(1);
     expect(fixture.saves[0]).not.toHaveProperty('messageCardQuickAction');
+    expect(fixture.saves[0]).not.toHaveProperty('messageCardSecondQuickAction');
     await select.click();
     await page.getByRole('option', { name: 'Створити розвіддонесення', exact: true }).click();
     await expect(select).toHaveText('Створити розвіддонесення');
@@ -109,10 +110,11 @@ for (const host of ['duty', 'analysis'] as const) {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.setViewportSize({ width: 1920, height: 1080 });
     const fixture = await installFixture(page, host);
+    fixture.settings().messageCardQuickActionCount = 1;
     for (const [value, label] of choices) {
       await page.setViewportSize({ width: 1920, height: 1080 });
       await page.goto(`/settings-neo?section=${host}`);
-      const select = page.getByRole('combobox', { name: 'Швидка дія для вузької картки' });
+      const select = page.getByRole('combobox', { name: 'Швидка дія', exact: true });
       await select.click();
       const listbox = page.getByRole('listbox');
       await expect(listbox.getByRole('option')).toHaveCount(choices.length);
@@ -151,17 +153,15 @@ for (const host of ['duty', 'analysis'] as const) {
       const actions = card.locator('[aria-label="Дії повідомлення"]');
       const quickAction = actions.getByRole('button', { name: label, exact: true });
       await expect(quickAction).toBeVisible();
-      // #4219: the important toggle stays beside the quick action on narrow cards.
-      await expect(
-        actions.getByRole('button', { name: 'Позначити як важливе', exact: true }),
-      ).toBeVisible();
-      await expect(actions.getByRole('button')).toHaveCount(value === 'important' ? 2 : 3);
+      await expect(actions.getByRole('button')).toHaveCount(2);
       await actions.getByRole('button', { name: 'Більше дій', exact: true }).click();
       const menu = page.getByRole('menu', { name: 'Додаткові дії повідомлення' });
       await expect(menu.getByRole('menuitem', { name: label, exact: true })).toHaveCount(0);
-      await expect(
-        menu.getByRole('menuitem', { name: 'Позначити як важливе', exact: true }),
-      ).toHaveCount(0);
+      // #4219: with one quick action, importance stays in the menu.
+      if (value !== 'important')
+        await expect(
+          menu.getByRole('menuitem', { name: 'Позначити як важливе', exact: true }),
+        ).toBeVisible();
       if (value !== 'createReport')
         await expect(
           menu.getByRole('menuitem', { name: 'Створити розвіддонесення', exact: true }),
@@ -205,11 +205,86 @@ for (const host of ['duty', 'analysis'] as const) {
     const actions = card.locator('[aria-label="Дії повідомлення"]');
     await expect(actions.getByRole('button')).toHaveCount(2);
     await expect(actions.getByRole('button', { name: 'Редагувати', exact: true })).toHaveCount(0);
+    // The default second quick action (importance) is still shown.
     await expect(
       actions.getByRole('button', { name: 'Позначити як важливе', exact: true }),
     ).toBeVisible();
     await expect(actions.getByRole('button', { name: 'Більше дій', exact: true })).toBeVisible();
     expect(fixture.settings().messageCardQuickAction).toBe('edit');
+  });
+
+  test(`#4219 ${host}: the quick-action count shows one or two slots that never repeat @regression`, async ({
+    page,
+  }) => {
+    const fixture = await installFixture(page, host);
+    const openCard = async () => {
+      await page.setViewportSize({ width: 390, height: 1080 });
+      await page.goto(`/rer-${host}-neo${host === 'analysis' ? '?filterPanelOpen=false' : ''}`);
+      const closeFilters = page.getByRole('button', { name: 'Закрити фільтри', exact: true });
+      if (await closeFilters.isVisible()) await closeFilters.click();
+      const card = page.locator('.message-card-root').first();
+      await expect(card).toBeVisible();
+      return card.locator('[aria-label="Дії повідомлення"]').getByRole('button');
+    };
+    const labels = (buttons: Locator) =>
+      buttons.evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')));
+    const pick = async (slot: string, label: string) => {
+      await page.getByRole('combobox', { name: slot, exact: true }).click();
+      await page.getByRole('option', { name: label, exact: true }).click();
+    };
+
+    const defaultActions = await openCard();
+    await expect
+      .poll(() => labels(defaultActions))
+      .toEqual(['Створити розвіддонесення', 'Позначити як важливе', 'Більше дій']);
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/settings-neo?section=${host}`);
+    const count = page.getByRole('group', { name: 'Кількість швидких дій' });
+    await expect(count.getByRole('button', { name: '2', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const first = page.getByRole('combobox', { name: 'Швидка дія 1', exact: true });
+    const second = page.getByRole('combobox', { name: 'Швидка дія 2', exact: true });
+    await expect(first).toHaveText('Створити розвіддонесення');
+    await expect(second).toHaveText('Позначити як важливе');
+
+    await pick('Швидка дія 2', 'Додати в закладки');
+    await expect.poll(() => fixture.saves.length).toBe(1);
+    expect(fixture.saves[0]).toMatchObject({ messageCardSecondQuickAction: 'bookmark' });
+    expect(fixture.saves[0]).not.toHaveProperty('messageCardQuickAction');
+
+    await pick('Швидка дія 1', 'Додати в закладки');
+    await expect(first).toHaveText('Додати в закладки');
+    await expect(second).toHaveText('Створити розвіддонесення');
+    await expect.poll(() => fixture.saves.length).toBe(2);
+    expect(fixture.saves[1]).toMatchObject({
+      messageCardQuickAction: 'bookmark',
+      messageCardSecondQuickAction: 'createReport',
+    });
+    const preview = page.getByRole('region', {
+      name: 'Попередній перегляд картки повідомлення',
+      exact: true,
+    });
+    await expect(preview.locator('[data-message-card-quick-action-preview]')).toHaveCount(2);
+
+    await count.getByRole('button', { name: '1', exact: true }).click();
+    await expect.poll(() => fixture.settings().messageCardQuickActionCount).toBe(1);
+    await expect(page.getByRole('combobox', { name: 'Швидка дія', exact: true })).toHaveText(
+      'Додати в закладки',
+    );
+    await expect(second).toHaveCount(0);
+    await expect(preview.locator('[data-message-card-quick-action-preview]')).toHaveCount(1);
+
+    const actions = await openCard();
+    await expect.poll(() => labels(actions)).toEqual(['Додати в закладки', 'Більше дій']);
+    await actions.last().click();
+    await expect(
+      page
+        .getByRole('menu', { name: 'Додаткові дії повідомлення' })
+        .getByRole('menuitem', { name: 'Позначити як важливе', exact: true }),
+    ).toBeVisible();
   });
 }
 
@@ -219,7 +294,7 @@ test('#3927 failed quick-action saves show an error and retain the last persiste
   const fixture = await installFixture(page, 'analysis');
   await page.goto('/settings-neo?section=analysis');
   fixture.failSave();
-  const select = page.getByRole('combobox', { name: 'Швидка дія для вузької картки' });
+  const select = page.getByRole('combobox', { name: 'Швидка дія 1', exact: true });
   await select.click();
   await page.getByRole('option', { name: 'Копіювати повідомлення', exact: true }).click();
   await expect(page.getByText(/^Помилка збереження:/)).toBeVisible();

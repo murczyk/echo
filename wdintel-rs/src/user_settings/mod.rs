@@ -38,10 +38,63 @@ async fn default_message_card_quick_action(
     })
 }
 
+fn parse_stored_quick_action(
+    value: Option<&str>,
+) -> Option<MessageCardQuickAction> {
+    serde_json::from_value(serde_json::Value::String(value?.to_owned())).ok()
+}
+
+fn quick_action_column(
+    action: MessageCardQuickAction,
+) -> anyhow::Result<Option<String>> {
+    Ok(serde_json::to_value(action)
+        .c(h!())?
+        .as_str()
+        .map(str::to_owned))
+}
+
+fn is_valid_quick_action_count(count: u8) -> bool {
+    (crate::config::USER_SETTINGS_MESSAGE_CARD_QUICK_ACTION_COUNT_MIN
+        ..=crate::config::USER_SETTINGS_MESSAGE_CARD_QUICK_ACTION_COUNT_MAX)
+        .contains(&count)
+}
+
+/// Keeps the second narrow-card action distinct from the first: a clash falls
+/// back to importance, or to the server default when the first is importance.
+fn resolve_second_quick_action(
+    preferred: MessageCardQuickAction,
+    first: MessageCardQuickAction,
+    default_first: MessageCardQuickAction,
+) -> MessageCardQuickAction {
+    let default_second = types::default_message_card_second_quick_action();
+    if preferred != first {
+        preferred
+    } else if first != default_second {
+        default_second
+    } else {
+        default_first
+    }
+}
+
+fn validate_quick_action_count(
+    dto: &UserDutySettingsDto,
+) -> Result<(), AppError> {
+    if is_valid_quick_action_count(dto.message_card_quick_action_count) {
+        Ok(())
+    } else {
+        Err(AppError::BL {
+            msg: "Кількість швидких дій має бути 1 або 2".to_string(),
+        })
+    }
+}
+
 fn model_to_dto(
     m: &user_settings::Model,
     default_quick_action: MessageCardQuickAction,
 ) -> UserDutySettingsDto {
+    let message_card_quick_action =
+        parse_stored_quick_action(m.message_card_quick_action.as_deref())
+            .unwrap_or(default_quick_action);
     UserDutySettingsDto {
         tags_layout: match m.tags_layout {
             DbTagsLayout::Full => DutyTagsLayout::Full,
@@ -67,16 +120,7 @@ fn model_to_dto(
         duty_collapse_media_previews: m.duty_collapse_media_previews,
         large_media_previews: m.large_media_previews.unwrap_or(false),
         large_message_card_text: m.large_message_card_text.unwrap_or(false),
-        message_card_quick_action: m
-            .message_card_quick_action
-            .as_ref()
-            .and_then(|action| {
-                serde_json::from_value::<MessageCardQuickAction>(
-                    serde_json::Value::String(action.clone()),
-                )
-                .ok()
-            })
-            .unwrap_or(default_quick_action),
+        message_card_quick_action,
         media_summary_enabled: m.media_summary_enabled,
         ai_position_highlights_enabled: m
             .ai_position_highlights_enabled
@@ -103,6 +147,19 @@ fn model_to_dto(
         duty_hide_card_header: m.duty_hide_card_header.unwrap_or(false),
         duty_hide_card_frequency: m.duty_hide_card_frequency.unwrap_or(false),
         duty_hide_card_unit: m.duty_hide_card_unit.unwrap_or(false),
+        message_card_quick_action_count: m
+            .message_card_quick_action_count
+            .and_then(|count| u8::try_from(count).ok())
+            .filter(|count| is_valid_quick_action_count(*count))
+            .unwrap_or_else(types::default_message_card_quick_action_count),
+        message_card_second_quick_action: resolve_second_quick_action(
+            parse_stored_quick_action(
+                m.message_card_second_quick_action.as_deref(),
+            )
+            .unwrap_or_else(types::default_message_card_second_quick_action),
+            message_card_quick_action,
+            default_quick_action,
+        ),
     }
 }
 
@@ -156,6 +213,14 @@ fn preserve_omitted_compatibility_fields(
     if body.get("dutyHideCardUnit").is_none() {
         incoming.duty_hide_card_unit = existing.duty_hide_card_unit;
     }
+    if body.get("messageCardQuickActionCount").is_none() {
+        incoming.message_card_quick_action_count =
+            existing.message_card_quick_action_count;
+    }
+    if body.get("messageCardSecondQuickAction").is_none() {
+        incoming.message_card_second_quick_action =
+            existing.message_card_second_quick_action;
+    }
 }
 
 #[get("/api/user/settings")]
@@ -192,6 +257,8 @@ pub async fn user_settings_put(
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let body = req.into_inner();
     let quick_action_changed = body.get("messageCardQuickAction").is_some();
+    let second_quick_action_changed =
+        body.get("messageCardSecondQuickAction").is_some();
     let needs_existing = body.get("largeMessageCardText").is_none()
         || body.get("messageCardQuickAction").is_none()
         || body.get("largeMediaPreviews").is_none()
@@ -204,12 +271,15 @@ pub async fn user_settings_put(
         || body.get("analysisRememberReportGroup").is_none()
         || body.get("dutyHideCardHeader").is_none()
         || body.get("dutyHideCardFrequency").is_none()
-        || body.get("dutyHideCardUnit").is_none();
+        || body.get("dutyHideCardUnit").is_none()
+        || body.get("messageCardQuickActionCount").is_none()
+        || !second_quick_action_changed;
     let mut dto: UserDutySettingsDto =
         serde_json::from_value(body.clone()).c(h!())?;
+    validate_quick_action_count(&dto)?;
+    let default_quick_action =
+        default_message_card_quick_action(&env.dbx).await.c(h!())?;
     if needs_existing {
-        let default_quick_action =
-            default_message_card_quick_action(&env.dbx).await.c(h!())?;
         let existing = user_settings::Entity::find()
             .filter(user_settings::Column::LoginId.eq(login_id))
             .one(&env.dbx)
@@ -222,6 +292,11 @@ pub async fn user_settings_put(
             });
         preserve_omitted_compatibility_fields(&body, &mut dto, &existing);
     }
+    dto.message_card_second_quick_action = resolve_second_quick_action(
+        dto.message_card_second_quick_action,
+        dto.message_card_quick_action,
+        default_quick_action,
+    );
     let now = Utc::now().naive_utc();
     user_settings::Entity::insert(user_settings::ActiveModel {
         id: NotSet,
@@ -255,10 +330,16 @@ pub async fn user_settings_put(
         large_media_previews: Set(Some(dto.large_media_previews)),
         large_message_card_text: Set(Some(dto.large_message_card_text)),
         message_card_quick_action: if quick_action_changed {
-            Set(serde_json::to_value(dto.message_card_quick_action)
-                .c(h!())?
-                .as_str()
-                .map(str::to_owned))
+            Set(quick_action_column(dto.message_card_quick_action).c(h!())?)
+        } else {
+            NotSet
+        },
+        message_card_quick_action_count: Set(Some(i16::from(
+            dto.message_card_quick_action_count,
+        ))),
+        message_card_second_quick_action: if second_quick_action_changed {
+            Set(quick_action_column(dto.message_card_second_quick_action)
+                .c(h!())?)
         } else {
             NotSet
         },
@@ -311,11 +392,17 @@ pub async fn user_settings_put(
                 user_settings::Column::DutyHideCardHeader,
                 user_settings::Column::DutyHideCardFrequency,
                 user_settings::Column::DutyHideCardUnit,
+                user_settings::Column::MessageCardQuickActionCount,
                 user_settings::Column::UpdatedAt,
             ])
             .update_columns(
                 quick_action_changed
                     .then_some(user_settings::Column::MessageCardQuickAction),
+            )
+            .update_columns(
+                second_quick_action_changed.then_some(
+                    user_settings::Column::MessageCardSecondQuickAction,
+                ),
             )
             .to_owned(),
     )
@@ -409,5 +496,66 @@ mod tests {
             incoming.message_sort_by,
             MessageTimeBasis::MessageInterception
         );
+    }
+
+    #[test]
+    fn issue_4219_second_quick_action_never_repeats_the_first() {
+        use MessageCardQuickAction::*;
+        let cases = [
+            (
+                QuickActionImportant,
+                QuickActionCopyText,
+                QuickActionImportant,
+            ),
+            (
+                QuickActionBookmark,
+                QuickActionCopyText,
+                QuickActionBookmark,
+            ),
+            (
+                QuickActionBookmark,
+                QuickActionBookmark,
+                QuickActionImportant,
+            ),
+            (
+                QuickActionImportant,
+                QuickActionImportant,
+                QuickActionCopyText,
+            ),
+        ];
+        for (preferred, first, expected) in cases {
+            assert_eq!(
+                resolve_second_quick_action(
+                    preferred,
+                    first,
+                    QuickActionCopyText
+                ),
+                expected,
+                "{preferred:?} after {first:?}"
+            );
+        }
+        assert_eq!(
+            resolve_second_quick_action(
+                QuickActionImportant,
+                QuickActionImportant,
+                QuickActionCreateReport
+            ),
+            QuickActionCreateReport
+        );
+    }
+
+    #[test]
+    fn issue_4219_quick_action_count_accepts_only_one_or_two() {
+        for (count, valid) in [(0, false), (1, true), (2, true), (3, false)] {
+            let dto = UserDutySettingsDto {
+                message_card_quick_action_count: count,
+                ..UserDutySettingsDto::default()
+            };
+            assert_eq!(
+                validate_quick_action_count(&dto).is_ok(),
+                valid,
+                "count {count}"
+            );
+        }
     }
 }

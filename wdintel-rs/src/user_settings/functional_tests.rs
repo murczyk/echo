@@ -660,3 +660,162 @@ async fn issue_4219_duty_card_visibility_persists_and_survives_older_clients() {
     assert!(!loaded.duty_hide_card_frequency);
     assert!(loaded.duty_hide_card_unit);
 }
+
+async fn stored_quick_actions(
+    dbx: &DatabaseConnection,
+    login_id: uuid::Uuid,
+) -> (Option<i16>, Option<String>) {
+    let row = user_settings::Entity::find()
+        .filter(user_settings::Column::LoginId.eq(login_id))
+        .one(dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    (
+        row.message_card_quick_action_count,
+        row.message_card_second_quick_action,
+    )
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_4219_quick_action_count_and_second_action_persist() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let login = crate::functest::tests::find_test_login(&env.dbx)
+        .await
+        .unwrap();
+    let sessions =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(sessions, Key::generate()))
+            .route("/test/login/{login}", web::post().to(sign_in))
+            .service(user_settings_get)
+            .service(user_settings_put),
+    )
+    .await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{}", login.id))
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let get = || {
+        test::TestRequest::get()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .to_request()
+    };
+    let put = |body: &serde_json::Value| {
+        test::TestRequest::put()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .set_json(body)
+            .to_request()
+    };
+
+    let mut settings: serde_json::Value =
+        test::call_and_read_body_json(&app, get()).await;
+    assert_eq!(settings["messageCardQuickActionCount"], 2);
+    assert_eq!(settings["messageCardSecondQuickAction"], "important");
+    user_settings::Entity::insert(user_settings::ActiveModel {
+        login_id: Set(login.id),
+        ..Default::default()
+    })
+    .exec(&env.dbx)
+    .await
+    .unwrap();
+    let loaded: serde_json::Value =
+        test::call_and_read_body_json(&app, get()).await;
+    assert_eq!(loaded["messageCardQuickActionCount"], 2);
+    assert_eq!(loaded["messageCardSecondQuickAction"], "important");
+
+    // Users whose only quick action was importance get the server default.
+    env.dbx
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "update user_settings set message_card_quick_action = 'important' where login_id = $1",
+            vec![login.id.into()],
+        ))
+        .await
+        .unwrap();
+    let loaded: serde_json::Value =
+        test::call_and_read_body_json(&app, get()).await;
+    assert_eq!(loaded["messageCardQuickAction"], "important");
+    assert_eq!(loaded["messageCardSecondQuickAction"], "copyText");
+
+    settings["messageCardQuickAction"] = "reply".into();
+    settings["messageCardQuickActionCount"] = 1.into();
+    settings["messageCardSecondQuickAction"] = "bookmark".into();
+    let saved: serde_json::Value =
+        test::call_and_read_body_json(&app, put(&settings)).await;
+    assert_eq!(saved["messageCardQuickActionCount"], 1);
+    assert_eq!(saved["messageCardSecondQuickAction"], "bookmark");
+    assert_eq!(
+        stored_quick_actions(&env.dbx, login.id).await,
+        (Some(1), Some("bookmark".to_owned()))
+    );
+
+    let mut legacy = settings.clone();
+    for field in [
+        "messageCardQuickAction",
+        "messageCardQuickActionCount",
+        "messageCardSecondQuickAction",
+    ] {
+        legacy.as_object_mut().unwrap().remove(field);
+    }
+    legacy["tagsLayout"] = "hidden".into();
+    let _: serde_json::Value =
+        test::call_and_read_body_json(&app, put(&legacy)).await;
+    let loaded: serde_json::Value =
+        test::call_and_read_body_json(&app, get()).await;
+    assert_eq!(loaded["tagsLayout"], "hidden");
+    assert_eq!(loaded["messageCardQuickAction"], "reply");
+    assert_eq!(loaded["messageCardQuickActionCount"], 1);
+    assert_eq!(loaded["messageCardSecondQuickAction"], "bookmark");
+
+    // The first action wins a clash; the second falls back to importance.
+    for (body, expected_stored) in [
+        (
+            serde_json::json!({ "messageCardQuickAction": "bookmark" }),
+            "bookmark",
+        ),
+        (
+            serde_json::json!({
+                "messageCardQuickAction": "bookmark",
+                "messageCardSecondQuickAction": "bookmark",
+            }),
+            "important",
+        ),
+    ] {
+        let mut request = legacy.clone();
+        request
+            .as_object_mut()
+            .unwrap()
+            .extend(body.as_object().unwrap().clone());
+        let saved: serde_json::Value =
+            test::call_and_read_body_json(&app, put(&request)).await;
+        assert_eq!(saved["messageCardSecondQuickAction"], "important");
+        let loaded: serde_json::Value =
+            test::call_and_read_body_json(&app, get()).await;
+        assert_eq!(loaded["messageCardSecondQuickAction"], "important");
+        assert_eq!(
+            stored_quick_actions(&env.dbx, login.id).await.1.as_deref(),
+            Some(expected_stored)
+        );
+    }
+
+    for count in [0, 3] {
+        let mut request = legacy.clone();
+        request["messageCardQuickActionCount"] = count.into();
+        let response = test::call_service(&app, put(&request)).await;
+        assert!(!response.status().is_success(), "count {count}");
+    }
+    assert_eq!(stored_quick_actions(&env.dbx, login.id).await.0, Some(1));
+}

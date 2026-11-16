@@ -53,7 +53,7 @@ import {
   type MessageCardNavigationMenuItem,
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
-import { MessageCardQuickActionContext } from './MessageCardQuickAction';
+import { MessageCardQuickActionsContext } from './MessageCardQuickAction';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
 import { useMessageCardDateDisplayMs } from './useMessageCardDateDisplayMs';
 
@@ -393,7 +393,7 @@ function ActionIconsRow({
   headerRowRef,
   onCompactChange,
 }: ActionIconsRowProps) {
-  const messageCardQuickAction = useContext(MessageCardQuickActionContext) ?? 'createReport';
+  const messageCardQuickActions = useContext(MessageCardQuickActionsContext);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const excludeMenuId = useId();
   const copyMenuId = useId();
@@ -532,16 +532,13 @@ function ActionIconsRow({
   const availableActions = overflowMenuItemCandidates.filter(
     (item): item is OverflowMenuItem => item != null,
   );
-  const quickAction = mobileActions
-    ? availableActions.find((item) => item.key === messageCardQuickAction)
-    : undefined;
-  // Narrow cards keep the important toggle beside the quick action instead of in the menu.
+  // Unavailable quick actions are skipped without a replacement.
+  const quickActions = mobileActions
+    ? messageCardQuickActions.flatMap((key) => availableActions.filter((item) => item.key === key))
+    : [];
+  const isQuickAction = (key: string) => quickActions.some((item) => item.key === key);
   const overflowMenuItems = availableActions.filter(
-    (item) =>
-      item.key !== quickAction?.key &&
-      item.key !== 'important' &&
-      item.key !== 'copyText' &&
-      item.key !== 'copyLink',
+    (item) => !isQuickAction(item.key) && item.key !== 'copyText' && item.key !== 'copyLink',
   );
   const canShowOverflowMenu =
     overflowMenuItems.length > 0 ||
@@ -618,7 +615,7 @@ function ActionIconsRow({
   }
 
   if (
-    !quickAction &&
+    quickActions.length === 0 &&
     !canShowCreateReport &&
     !canShowReply &&
     !canShowPrimaryActions &&
@@ -630,9 +627,9 @@ function ActionIconsRow({
   }
 
   const buttons = [
-    quickAction ? (
+    ...quickActions.map((quickAction) => (
       <ActionIconButton
-        key="quick-action"
+        key={`quick-action-${quickAction.key}`}
         title={quickAction.title}
         icon={cloneElement(quickAction.icon, { className: 'message-card-action-btn__icon' })}
         onClick={quickAction.onClick}
@@ -644,7 +641,7 @@ function ActionIconsRow({
             : undefined
         }
       />
-    ) : null,
+    )),
     !mobileActions && canShowCreateReport ? (
       <ActionIconButton
         key="report"
@@ -661,7 +658,7 @@ function ActionIconsRow({
         onClick={(event) => onReply(event.currentTarget)}
       />
     ) : null,
-    canShowPrimaryActions && (!mobileActions || quickAction?.key !== 'important') ? (
+    canShowPrimaryActions && !mobileActions ? (
       <ActionIconButton
         key="important"
         title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
@@ -863,7 +860,7 @@ function ActionIconsRow({
                 onCopyLocation,
                 onCopyEtalon,
                 onClose: closeOverflowMenu,
-              }).filter((item) => item.key !== quickAction?.key)
+              }).filter((item) => !isQuickAction(String(item.key)))
             : [],
           mobileActions && canShowNavigationMenu
             ? renderNavigationMenuItems({ items: navigationMenuItems, onClose: closeOverflowMenu })

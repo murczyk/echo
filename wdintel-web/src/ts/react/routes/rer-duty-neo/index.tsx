@@ -1,4 +1,4 @@
-import { MessageCardQuickActionContext } from '../shared/message-card/MessageCardQuickAction';
+import { MessageCardQuickActionsContext } from '../shared/message-card/MessageCardQuickAction';
 import {
   MessageRepliesProvider,
   ReplyMessageEditor,
@@ -133,7 +133,7 @@ export function RerDutyNeoPage({
     collapseMediaPreviews,
     largeMediaPreviews,
     largeMessageCardText,
-    messageCardQuickAction,
+    messageCardQuickActions,
     mediaSummaryEnabled,
     messageTextPreviewLines,
     minimalReportWindowEnabled,
@@ -969,11 +969,11 @@ export function RerDutyNeoPage({
           )}
           currentUser={currentUser}
         >
-          <MessageCardQuickActionContext.Provider value={messageCardQuickAction}>
+          <MessageCardQuickActionsContext.Provider value={messageCardQuickActions}>
             <DutyMessageCardVisibilityContext.Provider value={cardVisibility}>
               {content}
             </DutyMessageCardVisibilityContext.Provider>
-          </MessageCardQuickActionContext.Provider>
+          </MessageCardQuickActionsContext.Provider>
         </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>

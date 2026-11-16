@@ -1,4 +1,4 @@
-import { MessageCardQuickActionContext } from '../shared/message-card/MessageCardQuickAction';
+import { MessageCardQuickActionsContext } from '../shared/message-card/MessageCardQuickAction';
 import {
   MessageRepliesProvider,
   ReplyMessageEditor,
@@ -779,9 +779,9 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
           }
           currentUser={page.currentUser}
         >
-          <MessageCardQuickActionContext.Provider value={page.messageCardQuickAction}>
+          <MessageCardQuickActionsContext.Provider value={page.messageCardQuickActions}>
             {content}
-          </MessageCardQuickActionContext.Provider>
+          </MessageCardQuickActionsContext.Provider>
         </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>

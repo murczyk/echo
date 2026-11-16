@@ -24,7 +24,7 @@ import {
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from '../MessageCardMedia.tsx';
-import { MessageCardQuickActionContext } from '../MessageCardQuickAction';
+import { MessageCardQuickActionsContext } from '../MessageCardQuickAction';
 import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
 import { DutyExcludeMenuContext } from '../DutyExcludeMenu.ts';
 import { DutyMessageCardVisibilityContext } from '../DutyMessageCardVisibility.ts';
@@ -85,7 +85,9 @@ async function renderCard(
     canWrite?: boolean;
     canDelete?: boolean;
     dutyExcludeMenuEnabled?: boolean;
+    /** Single quick action, as with «Кількість швидких дій» set to 1. */
     quickAction?: MessageCardQuickAction;
+    quickActions?: readonly MessageCardQuickAction[];
   } = {},
 ) {
   const container = document.createElement('div');
@@ -117,13 +119,15 @@ async function renderCard(
     onDelete: vi.fn(),
     ...overrides,
   } as ComponentProps<typeof MessageCard>;
+  const quickActions =
+    access.quickActions ?? (access.quickAction == null ? undefined : [access.quickAction]);
   const card =
-    access.quickAction == null ? (
+    quickActions == null ? (
       <MessageCard {...props} />
     ) : (
-      <MessageCardQuickActionContext.Provider value={access.quickAction ?? 'createReport'}>
+      <MessageCardQuickActionsContext.Provider value={quickActions}>
         <MessageCard {...props} />
-      </MessageCardQuickActionContext.Provider>
+      </MessageCardQuickActionsContext.Provider>
     );
   await act(async () =>
     root.render(
@@ -309,6 +313,38 @@ describe('MessageCard', () => {
       expect(button.getAttribute('aria-pressed')).toBe('true');
       await click(button);
       expect(handler).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    {
+      quickActions: ['bookmark', 'copyLink'] as const,
+      visible: ['Додати в закладки', 'Копіювати посилання на повідомлення'],
+      inMenu: ['Створити розвіддонесення', 'Позначити як важливе'],
+    },
+    {
+      quickActions: ['createReport'] as const,
+      visible: ['Створити розвіддонесення'],
+      inMenu: ['Позначити як важливе', 'Додати в закладки'],
+    },
+  ])(
+    '#4219 shows $quickActions directly in order and keeps the rest in the narrow menu',
+    async ({ quickActions, visible, inMenu }) => {
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+      const view = await renderCard(
+        { onCopyMessageLink: vi.fn() },
+        { canDelete: true, quickActions },
+      );
+      const visibleActions = Array.from(
+        view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
+      ).map((action) => action.getAttribute('aria-label'));
+      expect(visibleActions).toEqual([...visible, 'Більше дій']);
+      await openOverflowMenu(view.container);
+      const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) =>
+        item.textContent?.trim(),
+      );
+      for (const label of visible) expect(labels).not.toContain(label);
+      for (const label of inMenu) expect(labels).toContain(label);
     },
   );
 

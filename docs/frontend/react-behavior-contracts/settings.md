@@ -25,8 +25,21 @@
 - `dutyHideCardHeader`, `dutyHideCardFrequency` and `dutyHideCardUnit` persist
   through `/api/user/settings`; older clients that omit them preserve the stored
   values. Analysis cards and the Analysis tab ignore them.
-- On the Duty tab the card preview reflects the three choices; the narrow-card
-  preview also shows the importance toggle beside the quick action.
+- On the Duty tab the card preview reflects the three choices.
+
+## Narrow-card quick actions
+
+- The «Картка повідомлення» block on the Duty and Analysis tabs has a shared
+  «Кількість швидких дій» toggle (1 or 2, default 2). With 2 it shows
+  «Швидка дія 1» and «Швидка дія 2» selectors; with 1, a single «Швидка дія».
+  The second defaults to «Позначити як важливе».
+- Choosing the other slot's action swaps the two selectors and saves both.
+  Unrelated saves omit `messageCardQuickAction` and
+  `messageCardSecondQuickAction` so their server defaults stay unset.
+- The card preview shows the selected actions in slot order.
+- Coverage: `wdintel-web/tests/e2e/message-card-quick-action.spec.ts` and
+  `wdintel-rs/src/user_settings/functional_tests.rs`.
+- Original Echo issue: [#4219](https://github.com/echoua/echo/issues/4219)
 - Coverage: `wdintel-web/tests/e2e/rer-duty-card-visibility.spec.ts`,
   `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
   and `wdintel-rs/src/user_settings/functional_tests.rs`.
@@ -131,7 +144,7 @@
 - **Behavior ID:** `react-user-settings-compatibility-defaults`
 - **Status:** operational compatibility
 - **Affected route/component:** user-settings API boundary
-- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `importantOnlyMyOrganism: false`, `dutyHideCardHeader: false`, `dutyHideCardFrequency: false`, `dutyHideCardUnit: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
+- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `importantOnlyMyOrganism: false`, `dutyHideCardHeader: false`, `dutyHideCardFrequency: false`, `dutyHideCardUnit: false`, `messageCardQuickActionCount: 2`, `messageCardSecondQuickAction: important`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/user-settings.ts`
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 

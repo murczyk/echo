@@ -2531,6 +2531,14 @@ fn patch_backward_compatible_decoders(
             r#"Json.Decode.oneOf [ Json.Decode.field "dutyHideCardUnit" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
         .replace(
+            r#"Json.Decode.field "messageCardQuickActionCount" (Json.Decode.int)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "messageCardQuickActionCount" (Json.Decode.int), Json.Decode.succeed 2 ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "messageCardSecondQuickAction" (messageCardQuickActionDecoder)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "messageCardSecondQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionImportant ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
