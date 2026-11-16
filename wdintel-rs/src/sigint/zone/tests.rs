@@ -406,6 +406,7 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
         agent_login_id: Set(agent.id),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(Utc::now().naive_utc()),
+        slot: Set(0),
     }
     .insert(&txn)
     .await
@@ -515,6 +516,7 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
         agent_login_id: Set(new_agent.id),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(Utc::now().naive_utc()),
+        slot: Set(0),
     }
     .insert(&txn)
     .await

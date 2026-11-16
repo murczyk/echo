@@ -246,6 +246,7 @@ async fn create_link(
         agent_login_id: Set(agent.id),
         created_at: Set(now),
         updated_at: Set(now),
+        slot: Set(0),
     }
     .insert(txn)
     .await
@@ -2834,6 +2835,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
+            slot: Set(0),
         }
         .insert(&txn)
         .await
@@ -2904,6 +2906,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
+            slot: Set(0),
         }
         .insert(&txn)
         .await
@@ -2958,6 +2961,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(old_activity),
             updated_at: Set(old_activity),
+            slot: Set(0),
         }
         .insert(&txn)
         .await

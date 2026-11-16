@@ -561,6 +561,7 @@ mod m20261114_111044_messenger_chat_read_state;
 mod m20261114_170500_ai_agent_refusal_rewrite;
 mod m20261115_100000_messenger_chat_message_count;
 mod m20261116_124020_ai_agent_parallel_conversations;
+mod m20261116_142224_ai_agent_second_container;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1279,6 +1280,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261114_111044_messenger_chat_read_state::Migration),
             Box::new(m20261115_100000_messenger_chat_message_count::Migration),
             Box::new(m20261116_124020_ai_agent_parallel_conversations::Migration),
+            Box::new(m20261116_142224_ai_agent_second_container::Migration),
         ]
     }
 }

@@ -239,6 +239,7 @@ async fn native_group_edit_preserves_inactive_ai_managed_access() {
         agent_login_id: Set(agent.id),
         created_at: Set(Utc::now().naive_utc()),
         updated_at: Set(Utc::now().naive_utc()),
+        slot: Set(0),
     }
     .insert(&txn)
     .await

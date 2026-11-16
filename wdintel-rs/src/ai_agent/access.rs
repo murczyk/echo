@@ -396,6 +396,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(chrono::Utc::now().naive_utc()),
             updated_at: Set(chrono::Utc::now().naive_utc()),
+            slot: Set(0),
         }
         .insert(&txn)
         .await
