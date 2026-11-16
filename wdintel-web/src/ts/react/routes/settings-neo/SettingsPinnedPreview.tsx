@@ -12,6 +12,9 @@ import {
 } from '@mui/material';
 import { useId, useState, type ReactNode } from 'react';
 
+/** Below this window height the pinned preview can crowd out the settings it previews. */
+const SHORT_WINDOW_MAX_HEIGHT_PX = 900;
+
 /** Shows or hides the pinned preview; icon-only on phones so the title row stays on one line. */
 function PreviewToggle({
   hidden,
@@ -51,14 +54,16 @@ function PreviewToggle({
 
 /**
  * Keeps the titled card preview in view while the settings below it change.
- * Small screens can hide the preview to free the space it pins; the title row stays.
+ * Narrow or short windows can hide the preview to free the space it pins; the title row stays.
  */
 export function SettingsPinnedPreview({ title, children }: { title: string; children: ReactNode }) {
-  const smallScreen = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'));
+  const narrowWindow = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'));
+  const shortWindow = useMediaQuery(`(max-height: ${SHORT_WINDOW_MAX_HEIGHT_PX - 0.05}px)`);
+  const canHide = narrowWindow || shortWindow;
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const [hiddenOnSmallScreen, setHiddenOnSmallScreen] = useState(false);
+  const [hiddenByUser, setHiddenByUser] = useState(false);
   const contentId = useId();
-  const hidden = smallScreen && hiddenOnSmallScreen;
+  const hidden = canHide && hiddenByUser;
   return (
     <Box
       data-settings-pinned-preview="true"
@@ -73,11 +78,11 @@ export function SettingsPinnedPreview({ title, children }: { title: string; chil
         >
           {title}
         </Typography>
-        {smallScreen ? (
+        {canHide ? (
           <PreviewToggle
             hidden={hidden}
             contentId={contentId}
-            onToggle={() => setHiddenOnSmallScreen((current) => !current)}
+            onToggle={() => setHiddenByUser((current) => !current)}
           />
         ) : null}
       </div>

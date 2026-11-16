@@ -312,11 +312,11 @@ test('#3927 failed quick-action saves show an error and retain the last persiste
   await expect(select).toHaveText('Створити розвіддонесення');
 });
 
-test('#4219 the card preview stays pinned while settings scroll and hides on small screens @regression', async ({
+test('#4219 the card preview stays pinned while settings scroll and hides in narrow or short windows @regression', async ({
   page,
 }) => {
   await installFixture(page, 'duty');
-  await page.setViewportSize({ width: 1280, height: 700 });
+  await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto('/settings-neo?section=duty');
   const preview = page.getByRole('region', {
     name: 'Попередній перегляд картки повідомлення',
@@ -338,6 +338,10 @@ test('#4219 the card preview stays pinned while settings scroll and hides on sma
   await scrollPastPreview();
   await expect.poll(pinnedBelowNavbar).toBe(true);
   await expect(preview).toBeInViewport();
+
+  // Short but wide windows can hide it too.
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await expect(hide).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 800 });
   await hide.click();
