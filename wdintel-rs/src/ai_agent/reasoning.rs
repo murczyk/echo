@@ -237,10 +237,12 @@ pub fn resolve(
     }
 }
 
-/// Every non-OpenAI engine (GLM, Gemma) runs the runner's bounded research
-/// harness, which reserves twice the base finalization time for synthesis.
+/// Every non-OpenAI engine (GLM, Gemma) and GPT-6.1 Sol run the runner's
+/// bounded research harness, which reserves twice the base finalization time
+/// for synthesis.
 fn bounded_research(model_name: &str) -> bool {
     !openai_model(model_name)
+        || config::AI_AGENT_BOUNDED_RESEARCH_OPENAI_MODELS.contains(&model_name)
 }
 
 /// OpenAI-family engines are the ones the refusal rewrite layer serves: only
@@ -295,6 +297,17 @@ mod tests {
             );
         }
         assert_eq!(ProviderPurpose::parse(Some("other")), None);
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4224
+    #[test]
+    fn gpt_6_1_sol_runs_bounded_research_unlike_other_openai_engines() {
+        assert!(bounded_research(crate::config::AI_AGENT_OPENAI_GPT_6_1_SOL));
+        assert!(bounded_research(crate::config::AI_AGENT_GLM_5_3));
+        assert!(bounded_research("gemma-4"));
+        for name in ["gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "o3-mini"] {
+            assert!(!bounded_research(name), "{name}");
+        }
     }
 
     #[test]

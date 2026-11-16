@@ -115,7 +115,7 @@ import {
 } from "./documents.ts";
 import { SidcResolver } from "./sidc-resolver.ts";
 import { ContextCheckpointProviderError, ContextCompactionLimitError, installContextCompaction, type ContextCompaction } from "./context-compaction.ts";
-import { REFUSAL_FRAMING_SUFFIX, createRefusalHold, recoverFinalRefusal } from "./refusal-rewrite.ts";
+import { REFUSAL_FRAMING_SUFFIX, createRefusalHold, recoverFinalRefusal, rewriteRefusedAsk, type RefusalRewriteEngine } from "./refusal-rewrite.ts";
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -123,7 +123,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.16.1";
+const HARNESS_RELEASE = "2026.11.16.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2701,6 +2701,35 @@ export function searchHitEvidence(kind: "deviceFileSearch" | "attachmentSearch",
   });
 }
 
+/**
+ * Forces the research checkpoint tool. pi-ai's Responses streamSimple drops `toolChoice`,
+ * so that transport sets the flat Responses form, which the gateway accepts (#4224).
+ */
+export function forcedResearchToolChoice(engine: { api?: string }, options: any): JsonObject {
+  if (engine.api !== "openai-responses")
+    return { toolChoice: { type: "function", function: { name: RESEARCH_TOOL_NAME } } };
+  const previous = options?.onPayload;
+  return {
+    onPayload: async (params: JsonObject, model: unknown) => ({
+      ...((await previous?.(params, model)) ?? params),
+      tool_choice: { type: "function", name: RESEARCH_TOOL_NAME },
+    }),
+  };
+}
+
+/** The rewritten request, logged like the generic path's rewrite, or null when unusable. */
+async function rewriteRefusalLogged(rewrite: RefusalRewriteEngine, prompt: string, stage: "research" | "synthesis"): Promise<string | null> {
+  let rewritten: string | null = null;
+  try {
+    rewritten = await rewriteRefusedAsk(rewrite, prompt);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "refusal_rewrite", stage, outcome: "error", error: String(error) }));
+    return null;
+  }
+  console.error(JSON.stringify({ event: "refusal_rewrite", stage, outcome: rewritten ? "rewritten" : "unusable" }));
+  return rewritten;
+}
+
 /** Echo route calls an assistant turn requested; they share one tool batch budget. */
 function routeToolCalls(message: unknown, routeToolNames: ReadonlySet<string>): number {
   const content = (message as JsonObject | undefined)?.content;
@@ -4544,7 +4573,9 @@ async function completeLimitedResearch(options: {
     engine: options.selectedEngine,
     apiKey: payload.providerApiKey ?? "echo-local-tokenless",
     policy: budget.policy,
-    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}` : ""),
+    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}` : "") +
+      // The tool-free answer gets the same authorization framing as research (#4224).
+      (payload.rewriteModelName ? REFUSAL_FRAMING_SUFFIX : ""),
     prompt: JSON.stringify({
       // A quarter of the input leaves the rest for evidence.
       conversation: synthesisConversation(payload.history, Math.floor((options.selectedEngine.contextWindow - maxTokens) / 4)),
@@ -4848,6 +4879,19 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       (event) => emit({ type: "completion_diagnostic", ...event }),
       RESEARCH_TUNING,
     ) : undefined;
+    // The refusal rewrite layer on the bounded path (#4224): answers are written by a
+    // tool-free synthesis, so a declined one is retried there with the rewritten request.
+    const refusalRewrite = rewriteEngine ? {
+      engine: rewriteEngine,
+      apiKey: payload.providerApiKey,
+      maxTokens: payload.rewriteMaxTokens ?? 2_048,
+      signal: cancellation.signal,
+    } : undefined;
+    if (research && refusalRewrite)
+      research.recoverRefusals({
+        rewrite: (signal) => rewriteRefusalLogged({ ...refusalRewrite, signal }, payload.prompt, "synthesis"),
+        framing: REFUSAL_FRAMING_SUFFIX,
+      });
     const tools = [
       ...(research ? [research.tool(countInvocation)] : []),
       ...createRouteTools(
@@ -4931,7 +4975,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
             : researchSignal,
           headers: { ...options?.headers, [PURPOSE_HEADER]: "research" },
           ...(research?.updateRequired && context.tools?.some((tool: { name: string }) => tool.name === RESEARCH_TOOL_NAME)
-            ? { toolChoice: { type: "function", function: { name: RESEARCH_TOOL_NAME } } }
+            ? forcedResearchToolChoice(engine, options)
             : {}),
         });
     }
@@ -5056,8 +5100,25 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         // The reply to the request itself: a Deep reminder to search that still runs no tool
         // only confirms it, and its own reply is the completion note that reminder asks for.
         // A failed or cut-off reply is none, so the reply to the re-prompt counts.
-        const researchReply = lastAssistantMessage(currentTurnAssistantMessages);
-        const reply = failedStart || cutOff(researchReply) ? undefined : assistantMessageText(researchReply);
+        let researchReply = lastAssistantMessage(currentTurnAssistantMessages);
+        let reply = failedStart || cutOff(researchReply) ? undefined : assistantMessageText(researchReply);
+        // Research declined before running any tool: rewrite the request and research it
+        // again with the tools, instead of synthesizing from nothing (#4224).
+        if (refusalRewrite && research.refuses(reply) && !requestedTools(currentTurnAssistantMessages) && research.hasTurnTime(budget)) {
+          // The research deadline bounds the rewrite, so it cannot eat the synthesis reserve.
+          const rewritten = await rewriteRefusalLogged({ ...refusalRewrite, signal: researchSignal }, payload.prompt, "research");
+          if (rewritten) {
+            session.agent.state.messages = session.agent.state.messages.filter((message) => message !== researchReply);
+            currentTurnAssistantMessages.length = 0;
+            await session.prompt(rewritten, { expandPromptTemplates: false, source: "rpc" });
+            if (journal?.failure) throw journal.failure;
+            if (toolLimitError) throw toolLimitError;
+            if (contextCompaction.failure()) throw contextCompaction.failure();
+            if (cancelled) return;
+            researchReply = lastAssistantMessage(currentTurnAssistantMessages);
+            reply = cutOff(researchReply) ? undefined : assistantMessageText(researchReply);
+          }
+        }
         await continueOpenResearch(session, research, budget);
         if (journal?.failure) throw journal.failure;
         if (toolLimitError) throw toolLimitError;

@@ -44,6 +44,7 @@ mkdir -p "$test_root/template"
 cp -a "$BUNDLE_DIR/template/python" "$test_root/template/python"
 npm ci --prefix "$test_root" --ignore-scripts --no-audit --no-fund
 ECHO_AI_AGENT_ROUTE_REGISTRY="$BUNDLE_DIR/../wdintel-rs/src/ai_agent/route_registry.rs" \
+  ECHO_AI_AGENT_BACKEND_CONFIG="$BUNDLE_DIR/../wdintel-rs/src/config.rs" \
   ECHO_AI_AGENT_REQUEST_SCHEMAS="$BUNDLE_DIR/../wdintel-rs/src/ai_agent/request_schemas.json" \
   npm test --prefix "$test_root"
 if command -v shellcheck >/dev/null 2>&1; then
