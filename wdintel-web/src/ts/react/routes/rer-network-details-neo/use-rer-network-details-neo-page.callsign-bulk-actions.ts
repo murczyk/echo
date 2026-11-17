@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type { NetworkCallsign } from '../../../../Bindings';
 import { deleteNetworkCallsigns } from '../../services/api/callsigns';
@@ -15,6 +15,7 @@ type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
+  currentNetworkIdRef: MutableRefObject<number | null>;
   reloadCallsignsData: () => Promise<void>;
 };
 
@@ -36,6 +37,7 @@ export function selectNetworkCallsignsByIds(
 export function useRerNetworkDetailsNeoPageCallsignBulkActions({
   state,
   setState,
+  currentNetworkIdRef,
   reloadCallsignsData,
 }: Args) {
   const canManageCallsignActions = canManageNetworkCallsignActions(state.currentUser);
@@ -129,6 +131,8 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
 
     const idSet = new Set(ids);
     const withoutDeletedIds = (inFlightIds: number[]) => inFlightIds.filter((id) => !idSet.has(id));
+    // The page may have moved to another network while the request was running.
+    const isStale = () => currentNetworkIdRef.current !== network.id;
 
     setState((current) => ({
       ...current,
@@ -144,6 +148,7 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
         ids,
         alsoDeleteFromCatalog: canDeleteFromCatalog && state.callsignBulkDeleteAlsoFromCatalog,
       });
+      if (isStale()) return;
       setState((current) => ({
         ...current,
         callsignSelectionMode: false,
@@ -154,6 +159,7 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
       }));
       await reloadCallsignsData();
     } catch (error) {
+      if (isStale()) return;
       setState((current) => ({
         ...current,
         callsignBulkDeleteSubmitting: false,
@@ -165,6 +171,7 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
   }, [
     canDeleteFromCatalog,
     canManageCallsignActions,
+    currentNetworkIdRef,
     reloadCallsignsData,
     setState,
     state.callsignBulkDeleteAlsoFromCatalog,

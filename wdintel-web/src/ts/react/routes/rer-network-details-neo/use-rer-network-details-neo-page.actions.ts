@@ -138,6 +138,7 @@ export function useRerNetworkDetailsNeoPageActions({
   const callsignBulkActions = useRerNetworkDetailsNeoPageCallsignBulkActions({
     state,
     setState,
+    currentNetworkIdRef,
     reloadCallsignsData: callsignActions.reloadCallsignsData,
   });
 

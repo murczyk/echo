@@ -112,7 +112,7 @@ test('@regression #4242 selects several network callsigns and unlinks them at on
   expect([...(deleteRequests[0].ids as number[])].sort()).toEqual([7, 8]);
   await expect(page.getByRole('row', { name: /СОКІЛ/ })).toHaveCount(0);
   await expect(page.getByRole('row', { name: /ЛИС/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Вибрати', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Вибрати', exact: true })).toBeFocused();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 });
 

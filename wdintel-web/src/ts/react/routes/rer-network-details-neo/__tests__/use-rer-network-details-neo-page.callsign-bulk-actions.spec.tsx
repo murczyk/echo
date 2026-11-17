@@ -27,6 +27,7 @@ let root: Root | null = null;
 let latestActions: HookResult | null = null;
 let latestState: NetworkDetailsNeoPageState | null = null;
 const reloadCallsignsData = vi.fn(() => Promise.resolve());
+const currentNetworkIdRef = { current: 17 as number | null };
 
 function createNetworkCallsign(id: number, overrides: Partial<NetworkCallsign> = {}) {
   return {
@@ -57,6 +58,7 @@ function Harness({
   latestActions = useRerNetworkDetailsNeoPageCallsignBulkActions({
     state,
     setState,
+    currentNetworkIdRef,
     reloadCallsignsData,
   });
 
@@ -90,6 +92,7 @@ afterEach(() => {
   latestActions = null;
   latestState = null;
   document.body.innerHTML = '';
+  currentNetworkIdRef.current = 17;
   vi.clearAllMocks();
 });
 
@@ -231,6 +234,33 @@ describe('useRerNetworkDetailsNeoPageCallsignBulkActions', () => {
     expect(latestState?.selectedNetworkCallsignIds).toEqual([2]);
     expect(latestState?.callsignDeleteInFlightIds).toEqual([]);
     expect(reloadCallsignsData).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores the result when the page has moved to another network', async () => {
+    let resolveDelete: () => void = () => undefined;
+    vi.mocked(deleteNetworkCallsigns).mockReturnValue(
+      new Promise((resolve) => {
+        resolveDelete = () => resolve({ deletedIds: [2], deletedCatalogCallsignIds: [] });
+      }),
+    );
+    renderHarness({
+      networkCallsigns: NETWORK_CALLSIGNS,
+      callsignSelectionMode: true,
+      selectedNetworkCallsignIds: [2],
+    });
+    act(() => latestActions?.openCallsignBulkDeleteDialog());
+
+    let deletion: Promise<void> | undefined;
+    act(() => {
+      deletion = latestActions?.deleteSelectedCallsigns();
+    });
+    currentNetworkIdRef.current = 43;
+    await act(async () => {
+      resolveDelete();
+      await deletion;
+    });
+
+    expect(reloadCallsignsData).not.toHaveBeenCalled();
   });
 
   it('treats only catalog-linked rows outside further reconnaissance as catalog deletable', () => {

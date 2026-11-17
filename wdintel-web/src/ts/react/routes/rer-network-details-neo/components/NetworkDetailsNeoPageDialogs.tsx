@@ -6,6 +6,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { NetworkDescriptionDrawer } from './NetworkDescriptionDrawer';
 import { NetworkEditDrawer } from './NetworkEditDrawer';
 import { NetworkCallsignDrawer } from './NetworkCallsignDrawer';
+import { NETWORK_CALLSIGNS_SELECT_BUTTON_ID } from './NetworkCallsignsNetworkTable';
 import { NetworkFreqCreateDrawer } from './NetworkFreqCreateDrawer';
 import { NetworkFreqEditDrawer } from './NetworkFreqEditDrawer';
 import { NetworkEtalonkaReportDialog } from './NetworkEtalonkaReportDialog';
@@ -213,6 +214,15 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
   );
 }
 
+/**
+ * Cancelling returns focus to «Видалити обрані»; after a delete that button is gone, so
+ * focus moves to «Вибрати» instead of being left on the page body.
+ */
+function focusSelectModeButtonIfFocusLost() {
+  if (document.activeElement !== null && document.activeElement !== document.body) return;
+  document.getElementById(NETWORK_CALLSIGNS_SELECT_BUTTON_ID)?.focus();
+}
+
 function NetworkCallsignBulkDeleteDialog({ page }: Props) {
   const selectedCallsigns = page.callsignBulkDeleteTargets;
   const catalogDeletableCount = selectedCallsigns.filter(isCatalogDeletableNetworkCallsign).length;
@@ -222,7 +232,10 @@ function NetworkCallsignBulkDeleteDialog({ page }: Props) {
       open={page.callsignBulkDeleteDialogOpen}
       onClose={page.closeCallsignBulkDeleteDialog}
       onConfirm={page.deleteSelectedCallsigns}
-      onExited={page.resetCallsignBulkDeleteDialog}
+      onExited={() => {
+        page.resetCallsignBulkDeleteDialog();
+        focusSelectModeButtonIfFocusLost();
+      }}
       restoreFocus
       title="Відв'язати позивні"
       summaryText={`Відв'язати від мережі позивних: ${selectedCallsigns.length}?`}

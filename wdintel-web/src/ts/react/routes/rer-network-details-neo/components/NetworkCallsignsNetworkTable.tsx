@@ -72,6 +72,8 @@ const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps =
   typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 const ROW_SELECT_COLUMN_ID = 'mrt-row-select';
+/** Focus target after a bulk delete, when the «Видалити обрані» button is gone. */
+export const NETWORK_CALLSIGNS_SELECT_BUTTON_ID = 'network-callsigns-select-mode';
 const NETWORK_DATA_COLUMN_IDS = [
   'callsign',
   'position',
@@ -750,6 +752,7 @@ function NetworkCallsignSelectionControls({
   if (!selectionActive) {
     return (
       <Button
+        id={NETWORK_CALLSIGNS_SELECT_BUTTON_ID}
         variant="outlined"
         size="small"
         startIcon={<ChecklistIcon fontSize="small" />}

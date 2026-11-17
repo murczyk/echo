@@ -875,7 +875,13 @@ async fn delete_linked_catalog_callsigns(
 
     let mut deleted_catalog_callsign_ids = vec![];
     for callsign_id in catalog_callsign_ids {
-        let callsign = find_callsign(txn, callsign_id).await.context(h!())?;
+        // Locked so a concurrent catalog edit cannot change the flags checked below.
+        let callsign = sigint_callsign::Entity::find_by_id(callsign_id)
+            .lock_exclusive()
+            .one(txn)
+            .await
+            .context(h!())?
+            .ok_or(AppError::NotFound)?;
         // A developing catalog callsign shows its network row as developing too, which
         // the UI excludes from catalog deletion.
         if callsign.deleted || callsign.developing {
