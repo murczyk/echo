@@ -2334,6 +2334,9 @@ keyRulesFromModulationName modulationName =
         Just "TYT (128 bit)" ->
             { keyAllowed = True, requiredLen = Just 32 }
 
+        Just "TYT380Enhanced" ->
+            { keyAllowed = True, requiredLen = Just 32 }
+
         Just "Без шифрування" ->
             { keyAllowed = False, requiredLen = Nothing }
 
