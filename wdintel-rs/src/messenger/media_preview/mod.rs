@@ -9,7 +9,7 @@ use anyhow::{bail, Result};
 use echo_media::ffmpeg::{HlsOptions, HlsSegments};
 use echo_media::process::Running;
 use echo_media::Formats;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Duration;
 use tokio::fs;

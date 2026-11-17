@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessagesReq, InboxMessagesRsp } from '../../../../../Bindings';
 import { useDutySearch } from '../useDutySearch';
 import { buildInboxReq, emptyFilter, type MessageFeedState, type MessageItem } from '../utils';
-import { minimalInboxMessage } from '../inbox-message-mocks';
+import { minimalInboxMessage, mockImageMediaEntry } from '../inbox-message-mocks';
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
@@ -67,8 +67,7 @@ describe('#3571 independent Duty search concurrency and membership', () => {
   };
   const refresh = async () =>
     act(async () => {
-      window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [5] } }));
-      await vi.advanceTimersByTimeAsync(2000);
+      column().onRefresh();
     });
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -80,7 +79,6 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     dependencies = {
       messageFeeds: [feed],
       enabled: true,
-      pollIntervalMs: 2000,
       buildReqForFeed: (feed, opts) =>
         buildInboxReq({ filter: feed.filter, sinceDateInclusiveMs: feed.historySinceMs, ...opts }),
       navigate: vi.fn(),
@@ -230,7 +228,7 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     expect(dependencies.cancelNavigation).not.toHaveBeenCalled();
     await act(async () => column().onVisibilityChange?.(true));
     await tick();
-    expect(api.list.mock.calls.length).toBeGreaterThan(requests);
+    expect(api.list).toHaveBeenCalledTimes(requests);
     expect(column().state).toMatchObject({
       search: 'needle',
       selectedId: 5,
@@ -240,7 +238,7 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     expect(dependencies.navigate).toHaveBeenCalledOnce();
   });
 
-  it('#3571 refreshes on inbox changes rather than idle feed polling or browser focus', async () => {
+  it('#3571 keeps cached results through inbox changes, polling, focus and reopening until manual refresh', async () => {
     await open();
     const calls = api.list.mock.calls.length;
     await act(async () => {
@@ -253,9 +251,153 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     messages.push(item(6));
     await act(async () => {
       window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [6] } }));
+      await vi.advanceTimersByTimeAsync(10000);
     });
+    expect(api.list).toHaveBeenCalledTimes(calls);
+    expect(api.count).toHaveBeenCalledTimes(1);
+    expect(api.matching).not.toHaveBeenCalled();
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    expect(column().state.total).toBe(5);
+    await act(async () => column().onClose());
+    await act(async () => column().onOpen());
+    await tick();
+    expect(api.list).toHaveBeenCalledTimes(calls);
+    await refresh();
     expect(api.list.mock.calls.length).toBeGreaterThan(calls);
     expect(column().state.items.map(([id]) => id)).toContain(6);
+    expect(column().state.total).toBe(6);
+  });
+
+  it('#3571 does not queue automatic refreshes during a manual request or initial debounce', async () => {
+    let release!: (value: ReturnType<typeof response>) => void;
+    api.list.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    await act(async () => column().onOpen());
+    await act(async () => column().onChange({ search: 'needle' }));
+    await refresh();
+    expect(column().state.loading).toBe(true);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [6] } }));
+    });
+    await tick();
+    await act(async () => release(response([item(5), item(4)])));
+    await tick();
+    expect(api.list).toHaveBeenCalledOnce();
+    expect(api.count).toHaveBeenCalledOnce();
+    expect(column().state.loading).toBe(false);
+  });
+
+  it.each([{ search: 'needle' }, { searchMode: 'Fuzzy' as const }])(
+    '#3571 keeps the first search loading when unchanged query settings are submitted (%j)',
+    async (changes) => {
+      let release!: (value: ReturnType<typeof response>) => void;
+      api.list.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      await open();
+      const signal = api.list.mock.calls[0][1].signal;
+      expect(column().state.loading).toBe(true);
+      await act(async () => column().onChange(changes));
+      await tick();
+      expect(signal.aborted).toBe(false);
+      expect(column().state.loading).toBe(true);
+      await act(async () => release(response([item(5), item(4)])));
+      expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+      expect(api.list).toHaveBeenCalledOnce();
+      await act(async () => column().onSelect(column().state.items[0]));
+      const cached = column().state;
+      vi.mocked(dependencies.cancelNavigation).mockClear();
+      await act(async () => column().onChange(changes));
+      await tick();
+      expect(column().state).toBe(cached);
+      expect(dependencies.cancelNavigation).not.toHaveBeenCalled();
+      expect(api.list).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('#3571 keeps attachment OCR search membership and counts unchanged until manual refresh', async () => {
+    let ocr = 'needle in attachment';
+    const matches = (): MessageItem[] =>
+      ocr.includes('needle')
+        ? [
+            [
+              6,
+              minimalInboxMessage({
+                text: 'Image attachment',
+                media: [mockImageMediaEntry({ ocr })],
+              }),
+            ],
+          ]
+        : [];
+    api.list.mockImplementation(async () => response(matches()));
+    api.count.mockImplementation(async () => ({
+      quantity: matches().length,
+      firstElementTs: null,
+    }));
+    api.matching.mockImplementation(async () => matches());
+    await open();
+    const notifyAttachmentChanged = async () =>
+      act(async () => {
+        window.dispatchEvent(
+          new CustomEvent('echo-inbox-changed', {
+            detail: { events: [{ messageId: 6, origin: null, intelligenceReport: false }] },
+          }),
+        );
+        await vi.advanceTimersByTimeAsync(10000);
+      });
+
+    ocr = 'replacement attachment text';
+    await notifyAttachmentChanged();
+    expect(api.list).toHaveBeenCalledOnce();
+    expect(api.count).toHaveBeenCalledOnce();
+    expect(api.matching).not.toHaveBeenCalled();
+    expect(column().state.total).toBe(1);
+    expect(column().state.items[0][1].media[0].ocr).toBe('needle in attachment');
+    await refresh();
+    expect(column().state.items).toEqual([]);
+    expect(column().state.total).toBe(0);
+
+    ocr = 'needle in updated attachment';
+    await notifyAttachmentChanged();
+    expect(api.list).toHaveBeenCalledTimes(2);
+    expect(api.count).toHaveBeenCalledTimes(2);
+    expect(column().state.items).toEqual([]);
+    expect(column().state.total).toBe(0);
+    await refresh();
+    expect(column().state.items.map(([id]) => id)).toEqual([6]);
+    expect(column().state.items[0][1].media[0].ocr).toBe(ocr);
+    expect(column().state.total).toBe(1);
+  });
+
+  it('#3571 cancels a hidden manual refresh without leaving cached results loading on restore', async () => {
+    await open();
+    let release!: (value: ReturnType<typeof response>) => void;
+    api.list.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    await refresh();
+    const signal = api.list.mock.calls.at(-1)![1].signal;
+    expect(column().state.loading).toBe(true);
+    await act(async () => column().onVisibilityChange?.(false));
+    expect(signal.aborted).toBe(true);
+    expect(column().state.loading).toBe(false);
+    await act(async () => release(response([item(6), item(5)])));
+    await act(async () => column().onVisibilityChange?.(true));
+    await tick();
+    expect(api.list).toHaveBeenCalledTimes(2);
+    expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
+    await refresh();
+    expect(api.list).toHaveBeenCalledTimes(3);
   });
 
   it('discards a late response after query replacement and cancels hidden requests', async () => {
@@ -358,6 +500,7 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     await act(async () => {
       window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [3] } }));
     });
+    await refresh();
     expect(column().state.pendingItems.map(([id]) => id)).toEqual([3]);
     expect(column().state.items.map(([id]) => id)).toEqual([5, 4, 2, 1]);
     expect(column().state.total).toBe(5);
@@ -446,7 +589,7 @@ describe('#3571 independent Duty search concurrency and membership', () => {
   });
 
   it.each(['reopen', 'inbox change'] as const)(
-    '#3571 discovers historical edits on %s',
+    '#3571 discovers historical edits on manual refresh after %s',
     async (mode) => {
       messages = Array.from({ length: 50 }, (_, index) =>
         item(550 + index, 550 + index === 570 ? 'other text' : `needle ${550 + index}`),
@@ -493,7 +636,16 @@ describe('#3571 independent Duty search concurrency and membership', () => {
         ]).toEqual(calls);
         await act(async () => column().onOpen());
         await tick();
-      } else await refresh();
+        expect(api.list).toHaveBeenCalledTimes(calls[0]);
+      } else {
+        await act(async () => {
+          window.dispatchEvent(
+            new CustomEvent('echo-inbox-changed', { detail: { messageIds: [570] } }),
+          );
+        });
+      }
+      expect(column().state.total).toBe(49);
+      await refresh();
       expect(column().state.total).toBe(50);
       expect(column().state.pendingItems.map(([id]) => id)).toEqual([570]);
       expect(column().state.items.map(([id]) => id)).toEqual(cachedIds);
@@ -517,6 +669,8 @@ describe('#3571 independent Duty search concurrency and membership', () => {
     await act(async () => {
       window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [1] } }));
     });
+    expect(api.list).not.toHaveBeenCalled();
+    await tick();
     expect(column().state.items.map(([id]) => id)).toEqual([5, 4]);
     expect(column().state.total).toBe(5);
     expect(column().state.hasMore).toBe(true);
