@@ -465,6 +465,45 @@ pub(crate) fn message_headline_pattern(
     })
 }
 
+/// The `text` expression with every match of `query` between `start` and
+/// `stop`, as the inbox highlights a search: `ts_headline` with
+/// `HighlightAll=true` for `Fuzzy`, otherwise the literal patterns. The
+/// query, pattern and markers are bound values; `None` when no term can be
+/// highlighted.
+pub(crate) fn search_headline_sql(
+    text: &'static str,
+    query: &str,
+    search_mode: AnalysisSearchMode,
+    start: &str,
+    stop: &str,
+) -> anyhow::Result<Option<SimpleExpr>> {
+    Ok(match search_mode {
+        AnalysisSearchMode::Fuzzy => Some(Expr::cust_with_values(
+            format!(
+                "ts_headline('russian', {text}, \
+                 websearch_to_tsquery('russian', $1), $2)"
+            ),
+            [
+                Value::from(query),
+                Value::from(format!(
+                    "HighlightAll=true, StartSel=\"{start}\", StopSel=\"{stop}\""
+                )),
+            ],
+        )),
+        search_mode => message_headline_pattern(query, search_mode)
+            .c(h!())?
+            .map(|pattern| {
+                Expr::cust_with_values(
+                    format!("regexp_replace({text}, $1, $2, 'gi')"),
+                    [
+                        Value::from(pattern),
+                        Value::from(format!("{start}\\&{stop}")),
+                    ],
+                )
+            }),
+    })
+}
+
 fn literal_operator(
     pattern: &str,
     search_mode: AnalysisSearchMode,
@@ -656,6 +695,34 @@ pub(crate) fn message_filter_with_mode(
         search_mode,
         None,
         false,
+        None,
+    )
+    .c(h!())?;
+    Ok(Expr::cust_with_values(sql, values))
+}
+
+/// The analysis search over message text only, for messages a query has
+/// already narrowed, such as one chat: each term is an `exists` on
+/// `signal_message.id`. Every token is text, so a frequency or message uid
+/// matches the text rather than being left to other filters. The tsquery
+/// stays inline, not a `(select …)`, so the planner estimates each term from
+/// the `search_tsv` statistics to choose between `sigint_search_tsv_idx` and
+/// probing the narrowed messages by id.
+pub(crate) fn body_message_filter(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+) -> anyhow::Result<SimpleExpr> {
+    let mut values = Vec::new();
+    let sql = text_predicate_with_correlation(
+        query,
+        "signal_message.id",
+        "body",
+        false,
+        &mut values,
+        true,
+        search_mode,
+        None,
+        true,
         None,
     )
     .c(h!())?;

@@ -1,8 +1,9 @@
+use crate::attachments::search::{body_message_filter, search_headline_sql};
 use crate::config::{
     MESSENGERS_HEADLINE_START, MESSENGERS_HEADLINE_STOP,
     MESSENGERS_MESSAGES_DEFAULT_LIMIT, MESSENGERS_MESSAGES_MAX_LIMIT,
 };
-use crate::entities::{sigint_chat_message, sigint_search, signal_message};
+use crate::entities::{sigint_chat_message, signal_message};
 use crate::error::AppError;
 use crate::h;
 use crate::messenger_ingest::refs::parse_echo_uuid;
@@ -15,6 +16,7 @@ use crate::messengers::types::{
     MessengersAttachment, MessengersMessageItem, MessengersMessagesListReq,
     MessengersMessagesListRsp, MessengersTelegramMessageId,
 };
+use crate::rer_importer::types::AnalysisSearchMode;
 use crate::types::{Env, ShortContext};
 use chrono::{DateTime, Duration, NaiveDateTime};
 use sea_orm::sea_query::{Expr, SimpleExpr};
@@ -128,11 +130,15 @@ pub(crate) async fn list_messages(
         .c(h!())?;
     let timeline = ChatTimeline {
         chat_id: chat.id,
-        query: req
+        search: req
             .query
             .as_deref()
             .map(str::trim)
-            .filter(|q| !q.is_empty()),
+            .filter(|q| !q.is_empty())
+            .map(|query| ChatSearch {
+                query,
+                mode: req.search_mode.unwrap_or_default(),
+            }),
     };
     let page = load_page(&env.dbx, &timeline, page_request, limit)
         .await
@@ -286,7 +292,7 @@ async fn load_older_rows(
     filter: Option<SimpleExpr>,
     limit: u64,
 ) -> Result<(Vec<MessageRow>, Option<TimelinePosition>), AppError> {
-    let mut query = timeline.messages();
+    let mut query = timeline.messages().c(h!())?;
     if let Some(filter) = filter {
         query = query.filter(filter);
     }
@@ -312,7 +318,7 @@ async fn load_newer_rows(
     after: Option<TimelinePosition>,
     limit: u64,
 ) -> Result<Vec<MessageRow>, AppError> {
-    let mut query = timeline.messages();
+    let mut query = timeline.messages().c(h!())?;
     if let Some(after) = after {
         query = query.filter(timeline_filter(">", after));
     }
@@ -335,6 +341,7 @@ async fn find_message_position(
 ) -> Result<TimelinePosition, AppError> {
     let row = timeline
         .messages()
+        .c(h!())?
         .filter(signal_message::Column::IdUuid.eq(message_id))
         .into_model::<MessageRow>()
         .one(dbx)
@@ -347,11 +354,13 @@ async fn find_message_position(
 /// The messages of one chat, all of them or only those matching a search.
 struct ChatTimeline<'a> {
     chat_id: Uuid,
-    query: Option<&'a str>,
+    search: Option<ChatSearch<'a>>,
 }
 
 impl ChatTimeline<'_> {
-    fn messages(&self) -> Select<sigint_chat_message::Entity> {
+    fn messages(
+        &self,
+    ) -> Result<Select<sigint_chat_message::Entity>, AppError> {
         let signal_message_relation =
             sigint_chat_message::Entity::belongs_to(signal_message::Entity)
                 .from(sigint_chat_message::Column::Id)
@@ -377,50 +386,49 @@ impl ChatTimeline<'_> {
                 sigint_chat_message::Column::MessengerChatId.eq(self.chat_id),
             )
             .filter(signal_message::Column::Deleted.eq(false));
-        match self.query {
-            Some(search) => matching_messages(query, search),
+        Ok(match &self.search {
+            Some(search) => search.matching_messages(query).c(h!())?,
             None => query.column_as(Expr::cust("null::text"), "headline"),
-        }
+        })
     }
 }
 
-/// `sigint_search.id` is the message id, so the search joins the timeline
-/// directly. PostgreSQL picks the GIN index `sigint_search_tsv_idx` and
-/// hash-joins it to the chat's range of
-/// `sigint_chat_message_chat_timeline_idx`, or probes the chat messages by id
-/// for a rare term. `ts_headline` runs only on the rows of the page.
-fn matching_messages(
-    query: Select<sigint_chat_message::Entity>,
-    search: &str,
-) -> Select<sigint_chat_message::Entity> {
-    let sigint_search_relation =
-        sigint_chat_message::Entity::belongs_to(sigint_search::Entity)
-            .from(sigint_chat_message::Column::Id)
-            .to(sigint_search::Column::Id)
-            .into();
-    query
-        .column_as(
-            Expr::cust_with_values(
-                "ts_headline('russian', coalesce(signal_message.body, ''), \
-                 plainto_tsquery('russian', $1), $2)",
-                [Value::from(search), Value::from(headline_options())],
-            ),
-            "headline",
-        )
-        .join(JoinType::InnerJoin, sigint_search_relation)
-        .filter(Expr::cust_with_values(
-            "sigint_search.search_tsv @@ plainto_tsquery('russian', $1)",
-            [Value::from(search)],
-        ))
+/// A search in a chat with the analysis search syntax and modes, over the
+/// text analysis searches (`sigint_inbox_item`, `sigint_search`).
+struct ChatSearch<'a> {
+    query: &'a str,
+    mode: AnalysisSearchMode,
 }
 
-/// One short fragment around the first match.
-fn headline_options() -> String {
-    format!(
-        "MaxWords=10, MinWords=3, ShortWord=3, HighlightAll=false, \
-         MaxFragments=1, StartSel=\"{MESSENGERS_HEADLINE_START}\", \
-         StopSel=\"{MESSENGERS_HEADLINE_STOP}\""
-    )
+impl ChatSearch<'_> {
+    /// Each term is an `exists` on the message id, which PostgreSQL turns
+    /// into a semi-join with the chat's range of
+    /// `sigint_chat_message_chat_timeline_idx`. The headline runs only on the
+    /// rows of the page.
+    fn matching_messages(
+        &self,
+        query: Select<sigint_chat_message::Entity>,
+    ) -> Result<Select<sigint_chat_message::Entity>, AppError> {
+        let filter =
+            body_message_filter(self.query, Some(self.mode)).c(h!())?;
+        let headline = self.headline().c(h!())?;
+        Ok(query.column_as(headline, "headline").filter(filter))
+    }
+
+    /// The whole text with every match between `MESSENGERS_HEADLINE_START`
+    /// and `MESSENGERS_HEADLINE_STOP`, as the inbox highlights a search.
+    fn headline(&self) -> Result<SimpleExpr, AppError> {
+        const BODY: &str = "coalesce(signal_message.body, '')";
+        let headline = search_headline_sql(
+            BODY,
+            self.query,
+            self.mode,
+            MESSENGERS_HEADLINE_START,
+            MESSENGERS_HEADLINE_STOP,
+        )
+        .c(h!())?;
+        Ok(headline.unwrap_or_else(|| Expr::cust(BODY)))
+    }
 }
 
 /// A row comparison, so PostgreSQL applies it as a single range on
@@ -642,6 +650,16 @@ mod tests {
         cursor: Option<String>,
         limit: i64,
     ) -> MessengersMessagesListRsp {
+        list_in_mode(fixture, query, None, cursor, limit).await
+    }
+
+    async fn list_in_mode(
+        fixture: &Fixture,
+        query: Option<&str>,
+        search_mode: Option<AnalysisSearchMode>,
+        cursor: Option<String>,
+        limit: i64,
+    ) -> MessengersMessagesListRsp {
         list_messages(
             &fixture.env,
             &fixture.scope,
@@ -654,6 +672,7 @@ mod tests {
                 around_message_id: None,
                 around_sent_at: None,
                 query: query.map(str::to_owned),
+                search_mode,
             },
         )
         .await
@@ -683,10 +702,12 @@ mod tests {
             .iter()
             .map(|item| item.headline.clone().unwrap())
             .collect::<Vec<_>>();
-        assert!(headlines[0].contains(&highlighted("танк")), "{headlines:?}");
-        assert!(
-            headlines[1].contains(&highlighted("танки")),
-            "{headlines:?}"
+        assert_eq!(
+            headlines,
+            [
+                format!("вчера видели {} у моста", highlighted("танк")),
+                format!("{} идут к реке", highlighted("танки")),
+            ]
         );
     }
 
@@ -711,5 +732,71 @@ mod tests {
             assert_eq!(external_ids(&rsp), ["m-3", "m-2", "m-1"]);
             assert!(rsp.items.iter().all(|item| item.headline.is_none()));
         }
+    }
+
+    async fn search(
+        fixture: &Fixture,
+        query: &str,
+        search_mode: AnalysisSearchMode,
+    ) -> (Vec<String>, Vec<String>) {
+        let rsp =
+            list_in_mode(fixture, Some(query), Some(search_mode), None, 50)
+                .await;
+        let headlines = rsp
+            .items
+            .iter()
+            .map(|item| item.headline.clone().unwrap())
+            .collect();
+        (
+            external_ids(&rsp).into_iter().map(str::to_owned).collect(),
+            headlines,
+        )
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn exact_search_matches_whole_words_only() {
+        let fixture = fixture().await;
+        let (ids, headlines) =
+            search(&fixture, "ТАНК", AnalysisSearchMode::Exact).await;
+        assert_eq!(ids, ["m-3"]);
+        assert_eq!(
+            headlines,
+            [format!("вчера видели {} у моста", highlighted("танк"))]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn substring_search_matches_inside_words() {
+        let fixture = fixture().await;
+        let (ids, headlines) =
+            search(&fixture, "танк", AnalysisSearchMode::Substring).await;
+        assert_eq!(ids, ["m-3", "m-1"]);
+        assert_eq!(
+            headlines,
+            [
+                format!("вчера видели {} у моста", highlighted("танк")),
+                format!("{}и идут к реке", highlighted("танк")),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn literal_search_supports_analysis_syntax() {
+        let fixture = fixture().await;
+        let (ids, _) =
+            search(&fixture, "танк -моста", AnalysisSearchMode::Substring)
+                .await;
+        assert_eq!(ids, ["m-1"]);
+        let (ids, headlines) =
+            search(&fixture, "\"сегодня хорошая\"", AnalysisSearchMode::Exact)
+                .await;
+        assert_eq!(ids, ["m-2"]);
+        assert_eq!(
+            headlines,
+            [format!("погода {}", highlighted("сегодня хорошая"))]
+        );
     }
 }

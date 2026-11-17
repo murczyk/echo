@@ -1165,6 +1165,7 @@ export type MessengersMessagesListReq = {
   aroundMessageId: string | null;
   aroundSentAt: number | null;
   query: string | null;
+  searchMode: AnalysisSearchMode | null;
 };
 
 export type MessengersTelegramMessageId = {

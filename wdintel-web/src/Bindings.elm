@@ -2995,6 +2995,7 @@ type alias MessengersMessagesListReq =
     , aroundMessageId : Maybe (String)
     , aroundSentAt : Maybe (Int)
     , query : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
     }
 
 
@@ -3009,6 +3010,7 @@ messengersMessagesListReqEncoder struct =
         , ( "around_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aroundMessageId )
         , ( "around_sent_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aroundSentAt )
         , ( "query", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.query )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         ]
 
 
@@ -24664,6 +24666,7 @@ messengersMessagesListReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_message_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_sent_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
 
 
 messengersTelegramMessageIdDecoder : Json.Decode.Decoder MessengersTelegramMessageId

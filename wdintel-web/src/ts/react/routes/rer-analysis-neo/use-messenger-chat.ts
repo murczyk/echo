@@ -52,6 +52,7 @@ async function loadFirstPages(args: Args, signal: AbortSignal): Promise<FirstPag
     direction: null,
     aroundSentAt: null,
     query: null,
+    searchMode: null,
   };
   const newest = async () =>
     newestPage(await listMessengersMessages({ ...base, aroundMessageId: null }, { signal }));
@@ -182,6 +183,7 @@ export function useMessengerChat(args: Args) {
             aroundMessageId: null,
             aroundSentAt: null,
             query: null,
+            searchMode: null,
           },
           { signal },
         );
@@ -228,6 +230,7 @@ export function useMessengerChat(args: Args) {
           aroundMessageId: null,
           aroundSentAt: null,
           query: null,
+          searchMode: null,
         },
         { signal },
       );
@@ -257,6 +260,7 @@ export function useMessengerChat(args: Args) {
           aroundMessageId: null,
           aroundSentAt: null,
           query: null,
+          searchMode: null,
         },
         { signal },
       );
@@ -317,6 +321,7 @@ export function useMessengerChat(args: Args) {
             aroundMessageId: null,
             aroundSentAt: sentAt,
             query: null,
+            searchMode: null,
           },
           { signal },
         );

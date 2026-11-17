@@ -470,7 +470,8 @@ type MessengersMessagesListReq = {
   direction: "Older" | "Newer" | "Oldest" | null   // default "Older"
   around_message_id: string | null      // Echo message uuid
   around_sent_at: number | null         // epoch ms
-  query: string | null                  // full-text search in the chat
+  query: string | null                  // search in the chat, analysis syntax
+  search_mode: "Fuzzy" | "Exact" | "Substring" | null  // default "Fuzzy"
 }
 
 type MessengersMessagesListRsp = {
@@ -584,20 +585,25 @@ Semantics:
 
 Search (`query`):
 
-- Matches whole words with Russian stemming (`plainto_tsquery('russian', …)`
-  over `sigint_search.search_tsv`), so `танк` finds `танки`. All words must
-  match, and there is no prefix matching. A query of only stop words matches
-  nothing.
+- The analysis search: the same syntax (`-term`, `or`, `"quoted"` literals)
+  and `search_mode` over the message text analysis indexes
+  (`sigint_search`, `sigint_inbox_item`), without attachments.
+  - `Fuzzy`: words with Russian stemming and prefixes (`танк` finds `танки`).
+  - `Exact`: whole words, case-insensitive (`танк` does not find `танки`).
+  - `Substring`: anywhere in a word, case-insensitive.
+- Unlike analysis, a frequency or message uid in `query` is text to match.
 - Leading and trailing whitespace is ignored. A blank `query` is the same as
   none.
 - Cursors are the same timeline positions. Send the same `query` with every
   page of a search. To open a hit in the full chat, request
   `around_message_id` without `query`. With `query`, an `around_message_id`
   that does not match is a `404`.
-- `headline` is a short fragment of `text` (`ts_headline`, up to 10 words). Each
-  match is between U+E000 and U+E001 (`MESSENGERS_HEADLINE_START` /
-  `_STOP`). It is plain text from the message: escape it, and only then turn
-  the markers into highlighting. It is `null` without `query`.
+- `headline` is the whole `text` with every match marked, the same as inbox
+  search highlighting: `ts_headline` with `HighlightAll=true` for `Fuzzy`,
+  the literal patterns for `Exact` and `Substring`. Each match is between
+  U+E000 and U+E001 (`MESSENGERS_HEADLINE_START` / `_STOP`). It is plain text
+  from the message: escape it, and only then turn the markers into
+  highlighting. It is `null` without `query`.
 
 ## Attachments
 
