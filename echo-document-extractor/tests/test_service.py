@@ -686,3 +686,17 @@ def test_capacity_race_still_respects_atomic_queue_limit(
         assert response.headers["retry-after"] == "30"
         assert app.state.queue.capacity()["active"] == 1
         assert not list(config.service.spool_dir.iterdir())
+
+
+def test_api_keeps_idle_connections_longer_than_echo_pool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from echo_document_extractor import runtime
+
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_CONFIG", str(tmp_path / "config.yaml"))
+    monkeypatch.setattr(runtime.RuntimeConfig, "from_yaml", lambda _path: runtime_config(tmp_path))
+    monkeypatch.setattr(runtime, "create_app", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime.uvicorn, "run", lambda _app, **kwargs: captured.update(kwargs))
+    runtime.api()
+    assert captured["timeout_keep_alive"] > 90
