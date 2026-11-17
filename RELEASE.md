@@ -105,7 +105,26 @@ Everything else still needs separate approval, including:
    Do not push yet: every `stable` push builds packages, so the merge and the
    bump should go out together.
 
-6. Bump the version and push. CI then builds the deb:
+6. Check that the harness bundle still matches its release ID on the agent
+   VMs. A canary reporting `current` does not prove this, because it compares
+   only the ID:
+
+   ```bash
+   release=$(python3 -c 'import json; print(json.load(open("echo-ai-agent/release.json"))["release"])')
+   just ai-control-panel upgrade --host echo-cbr-staging --release "$release" --dry-run
+   ```
+
+   The preview changes nothing. If it reports `Release ID contains different
+   bundle bytes`, `echo-ai-agent/` changed under an ID already on the VMs.
+   Stop and report it: the fix is a new harness release ID, which needs
+   approval like other harness changes. Bump it on the branch being released:
+   on `main` for a normal release, then restart Prepare from step 1; on
+   `stable` for a stable release, where it reaches `main` at the next normal
+   release's step 1.
+   `Requires Echo build for <release>` is expected when the release brings a
+   new ID; the canary deploy installs that build.
+
+   Then bump the version and push. CI then builds the deb:
 
    ```bash
    just bump-version-push

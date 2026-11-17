@@ -25,6 +25,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # Pull requests compare their merge result with the base branch; direct
+      # pushes to main or stable compare with the commit they replaced.
+      - name: Harness release ID changes with the bundle
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT" == pull_request ]]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            base="origin/$BASE_REF"
+          elif [[ "$EVENT" == push && -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=1 origin "$BEFORE"
+            base="$BEFORE"
+          else
+            echo "No previous commit to compare with; skipping."
+            exit 0
+          fi
+          scripts/ci/check_harness_release_id.sh "$base"
       - run: python3 -m unittest discover -s deploy/ai-control-panel -p 'test_*.py' -v
       - run: python3 -m unittest discover -s echo-ai-agent/tests -p test_control_panel.py -v
       - uses: actions/setup-node@v4
