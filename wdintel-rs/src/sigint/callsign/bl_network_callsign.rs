@@ -2,8 +2,8 @@ use super::sea_orm_active_enums::*;
 use crate::entities::*;
 use crate::sigint::callsign::types::*;
 use crate::sigint::callsign::{
-    bl_callsign_create, bl_callsign_update, find_callsign,
-    list_callsign_additional_source_ids,
+    bl_callsign_create, bl_callsign_update, bl_soft_delete_catalog_callsign,
+    find_callsign, list_callsign_additional_source_ids,
 };
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::NetworkFreqFilter;
@@ -14,7 +14,12 @@ use sea_orm::*;
 use sea_query::{
     Alias, Expr, ExprTrait, Func, JoinType, PgFunc, SelectStatement, UnionType,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+
+const NETWORK_CALLSIGN_BULK_DELETE_EMPTY_MSG: &str =
+    "Не обрано жодного позивного для видалення";
+const NETWORK_CALLSIGN_BULK_DELETE_STALE_MSG: &str =
+    "Деякі обрані позивні вже видалені або не належать цій мережі. Оновіть сторінку та спробуйте ще раз";
 
 #[derive(Clone, Debug, FromQueryResult)]
 pub struct NetworkCallsignResult {
@@ -740,6 +745,26 @@ pub async fn bl_delete_network_callsign(
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
+    bl_soft_delete_network_callsign(network_callsign, user_id, txn)
+        .await
+        .context(h!())?;
+
+    let network_callsign =
+        find_network_callsigns_batch_for_period(vec![id], txn)
+            .await
+            .context(h!())?
+            .into_iter()
+            .next()
+            .ok_or(AppError::NotFound)?;
+    Ok(render_network_callsign(&network_callsign, None).context(h!())?)
+}
+
+async fn bl_soft_delete_network_callsign(
+    network_callsign: sigint_network_callsign::Model,
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    let id = network_callsign.id;
     let network_callsign_json_old =
         get_network_callsign_rec_json(id, txn).await.context(h!())?;
     let mut network_callsign_rec = network_callsign.into_active_model();
@@ -760,15 +785,104 @@ pub async fn bl_delete_network_callsign(
     )
     .await
     .context(h!())?;
+    Ok(())
+}
 
-    let network_callsign =
-        find_network_callsigns_batch_for_period(vec![id], txn)
+/// Unlinks several callsigns from one network in a single transaction.
+/// Fails without deleting anything if any id is missing, already deleted or
+/// belongs to another network.
+pub async fn bl_delete_network_callsigns(
+    req: &DeleteNetworkCallsignsReq,
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+) -> Result<DeleteNetworkCallsignsRsp, AppError> {
+    let network = find_network(txn, req.network_id).await.context(h!())?;
+    let network_callsigns = find_network_callsigns_for_bulk_delete(req, txn)
+        .await
+        .context(h!())?;
+    for network_callsign in network_callsigns.iter().cloned() {
+        bl_soft_delete_network_callsign(network_callsign, user_id, txn)
+            .await
+            .context(h!())?;
+    }
+
+    let mut network_record = network.into_active_model();
+    network_record.updated_at = Set(Utc::now().naive_utc());
+    network_record.updated_by_login_id = Set(Some(*user_id));
+    network_record.update(txn).await.context(h!())?;
+
+    let deleted_catalog_callsign_ids = if req.also_delete_from_catalog {
+        delete_linked_catalog_callsigns(&network_callsigns, user_id, txn)
             .await
             .context(h!())?
-            .into_iter()
-            .next()
-            .ok_or(AppError::NotFound)?;
-    Ok(render_network_callsign(&network_callsign, None).context(h!())?)
+    } else {
+        vec![]
+    };
+
+    Ok(DeleteNetworkCallsignsRsp {
+        deleted_ids: network_callsigns.iter().map(|row| row.id).collect(),
+        deleted_catalog_callsign_ids,
+    })
+}
+
+async fn find_network_callsigns_for_bulk_delete(
+    req: &DeleteNetworkCallsignsReq,
+    txn: &DatabaseTransaction,
+) -> Result<Vec<sigint_network_callsign::Model>, AppError> {
+    let ids: Vec<i64> = req
+        .ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if ids.is_empty() {
+        return Err(AppError::BL {
+            msg: NETWORK_CALLSIGN_BULK_DELETE_EMPTY_MSG.into(),
+        });
+    }
+
+    let network_callsigns = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::Id.is_in(ids.clone()))
+        .filter(
+            sigint_network_callsign::Column::SigintNetworkId.eq(req.network_id),
+        )
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .order_by_asc(sigint_network_callsign::Column::Id)
+        .all(txn)
+        .await
+        .context(h!())?;
+    if network_callsigns.len() != ids.len() {
+        return Err(AppError::BL {
+            msg: NETWORK_CALLSIGN_BULK_DELETE_STALE_MSG.into(),
+        });
+    }
+    Ok(network_callsigns)
+}
+
+async fn delete_linked_catalog_callsigns(
+    network_callsigns: &[sigint_network_callsign::Model],
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+) -> Result<Vec<i64>, AppError> {
+    let catalog_callsign_ids: BTreeSet<i64> = network_callsigns
+        .iter()
+        .filter(|network_callsign| !network_callsign.developing)
+        .filter_map(|network_callsign| network_callsign.sigint_callsign_id)
+        .collect();
+
+    let mut deleted_catalog_callsign_ids = vec![];
+    for callsign_id in catalog_callsign_ids {
+        let callsign = find_callsign(txn, callsign_id).await.context(h!())?;
+        if callsign.deleted {
+            continue;
+        }
+        bl_soft_delete_catalog_callsign(txn, callsign, *user_id)
+            .await
+            .context(h!())?;
+        deleted_catalog_callsign_ids.push(callsign_id);
+    }
+    Ok(deleted_catalog_callsign_ids)
 }
 
 pub async fn bl_get_network_callsigns_list(

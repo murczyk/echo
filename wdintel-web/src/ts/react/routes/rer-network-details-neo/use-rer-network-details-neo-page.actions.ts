@@ -31,6 +31,7 @@ import { useRerNetworkDetailsNeoPageDescriptionActions } from './use-rer-network
 import { useRerNetworkDetailsNeoPageReportActions } from './use-rer-network-details-neo-page.report-actions';
 import { useRerNetworkDetailsNeoPageFrequencyActions } from './use-rer-network-details-neo-page.frequency-actions';
 import { useRerNetworkDetailsNeoPageCallsignActions } from './use-rer-network-details-neo-page.callsign-actions';
+import { useRerNetworkDetailsNeoPageCallsignBulkActions } from './use-rer-network-details-neo-page.callsign-bulk-actions';
 import { useRerNetworkDetailsNeoPageCallsignMutations } from './use-rer-network-details-neo-page.callsign-mutations';
 import { getRestoreNetworkOnEditValue } from './network-status';
 
@@ -133,6 +134,11 @@ export function useRerNetworkDetailsNeoPageActions({
   const callsignMutationActions = useRerNetworkDetailsNeoPageCallsignMutations({
     state,
     setState,
+  });
+  const callsignBulkActions = useRerNetworkDetailsNeoPageCallsignBulkActions({
+    state,
+    setState,
+    reloadCallsignsData: callsignActions.reloadCallsignsData,
   });
 
   const openMenu = useCallback(
@@ -377,6 +383,7 @@ export function useRerNetworkDetailsNeoPageActions({
     ...frequencyActions,
     ...callsignActions,
     ...callsignMutationActions,
+    ...callsignBulkActions,
     openMenu,
     closeMenu,
     openDeleteDialog,

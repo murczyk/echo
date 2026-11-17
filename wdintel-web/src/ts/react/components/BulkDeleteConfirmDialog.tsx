@@ -27,6 +27,10 @@ type Props = {
   items: BulkDeleteDialogItem[];
   submitting: boolean;
   disabled?: boolean;
+  title?: string;
+  confirmLabel?: string;
+  /** Extra content after the item list, such as options or an error. */
+  children?: ReactNode;
 };
 
 export function BulkDeleteConfirmDialog({
@@ -38,6 +42,9 @@ export function BulkDeleteConfirmDialog({
   items,
   submitting,
   disabled = false,
+  title = 'Підтвердження видалення',
+  confirmLabel = 'Видалити',
+  children,
 }: Props) {
   const blocked = submitting || disabled;
 
@@ -50,7 +57,7 @@ export function BulkDeleteConfirmDialog({
       fullWidth
       maxWidth="sm"
     >
-      <DialogTitle>Підтвердження видалення</DialogTitle>
+      <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers sx={{ maxHeight: 420 }}>
         <DialogContentText sx={{ mb: 2 }}>{summaryText}</DialogContentText>
         <List dense disablePadding sx={{ maxHeight: 260, overflowY: 'auto' }}>
@@ -60,6 +67,7 @@ export function BulkDeleteConfirmDialog({
             </ListItem>
           ))}
         </List>
+        {children}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={blocked}>
@@ -72,7 +80,7 @@ export function BulkDeleteConfirmDialog({
           disabled={blocked}
           startIcon={submitting ? <CircularProgress color="inherit" size={16} /> : null}
         >
-          Видалити
+          {confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

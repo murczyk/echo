@@ -5128,6 +5128,17 @@ export type AddAsKnownNetworkCallsignReq = {
   knownCallsignIds: Array<number>;
 };
 
+export type DeleteNetworkCallsignsReq = {
+  networkId: number;
+  ids: Array<number>;
+  alsoDeleteFromCatalog: boolean;
+};
+
+export type DeleteNetworkCallsignsRsp = {
+  deletedIds: Array<number>;
+  deletedCatalogCallsignIds: Array<number>;
+};
+
 export type Callsign = {
   id: number;
   callsign: string;

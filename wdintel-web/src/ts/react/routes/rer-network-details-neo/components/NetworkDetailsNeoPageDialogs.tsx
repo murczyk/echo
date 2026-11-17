@@ -1,4 +1,5 @@
 import { Checkbox, FormControlLabel } from '@mui/material';
+import { BulkDeleteConfirmDialog } from '../../../components/BulkDeleteConfirmDialog';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { MRT_ROW_ACTION_MODAL_PROPS } from '../../../components/MrtRowActionButton';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -9,6 +10,12 @@ import { NetworkFreqCreateDrawer } from './NetworkFreqCreateDrawer';
 import { NetworkFreqEditDrawer } from './NetworkFreqEditDrawer';
 import { NetworkEtalonkaReportDialog } from './NetworkEtalonkaReportDialog';
 import { formatClassicNetworkHeaderName } from '../use-rer-network-details-neo-page.shared';
+import {
+  isCatalogDeletableNetworkCallsign,
+  selectNetworkCallsignsByIds,
+} from '../use-rer-network-details-neo-page.callsign-bulk-actions';
+import { getNetworkCallsignStatus, getNetworkCallsignStatusLabel } from '../network-callsigns.rows';
+import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import type { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
 
 type Page = ReturnType<typeof useRerNetworkDetailsNeoPage>;
@@ -100,6 +107,8 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
           <PowerAlert severity="error">{page.callsignDeleteError}</PowerAlert>
         ) : null}
       </ConfirmDangerDialog>
+
+      <NetworkCallsignBulkDeleteDialog page={page} />
 
       <NetworkDescriptionDrawer
         open={page.descriptionDrawerOpen}
@@ -204,5 +213,53 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onToDateTimeStrChange={page.setEtalonkaReportToDateTimeStr}
       />
     </>
+  );
+}
+
+function NetworkCallsignBulkDeleteDialog({ page }: Props) {
+  const selectedCallsigns = selectNetworkCallsignsByIds(
+    page.networkCallsigns,
+    page.selectedNetworkCallsignIds,
+  );
+  const catalogDeletableCount = selectedCallsigns.filter(isCatalogDeletableNetworkCallsign).length;
+
+  return (
+    <BulkDeleteConfirmDialog
+      open={page.callsignBulkDeleteDialogOpen}
+      onClose={page.closeCallsignBulkDeleteDialog}
+      onConfirm={page.deleteSelectedCallsigns}
+      title="Відв'язати позивні"
+      summaryText={`Відв'язати від мережі позивних: ${selectedCallsigns.length}?`}
+      confirmLabel="Відв'язати"
+      items={selectedCallsigns.map((networkCallsign) => {
+        const statusLabel = getNetworkCallsignStatusLabel(
+          getNetworkCallsignStatus(networkCallsign),
+        );
+        const position = networkCallsign.position?.trim();
+        return {
+          id: networkCallsign.id,
+          primary: normalizeCallsignDisplay(networkCallsign.callsign),
+          secondary: position ? `${statusLabel} · ${position}` : statusLabel,
+        };
+      })}
+      submitting={page.callsignBulkDeleteSubmitting}
+      disabled={!page.canManageCallsignActions || selectedCallsigns.length === 0}
+    >
+      {page.canDeleteCatalogCallsign && catalogDeletableCount > 0 ? (
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={page.callsignBulkDeleteAlsoFromCatalog}
+              onChange={(_, checked) => page.setCallsignBulkDeleteAlsoFromCatalog(checked)}
+              disabled={page.callsignBulkDeleteSubmitting}
+            />
+          }
+          label={`Видалити також з каталогу (${catalogDeletableCount})`}
+        />
+      ) : null}
+      {page.callsignBulkDeleteError ? (
+        <PowerAlert severity="error">{page.callsignBulkDeleteError}</PowerAlert>
+      ) : null}
+    </BulkDeleteConfirmDialog>
   );
 }

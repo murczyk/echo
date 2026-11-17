@@ -566,6 +566,52 @@ where
     Ok(callsign)
 }
 
+pub async fn bl_soft_delete_catalog_callsign<C>(
+    conn: &C,
+    callsign: sigint_callsign::Model,
+    login_id: uuid::Uuid,
+) -> Result<sigint_callsign::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    let callsign_json_old = find_callsign_json(conn, callsign.id).await?;
+    let mut callsign = callsign.into_active_model();
+    callsign.deleted = Set(true);
+    let callsign = callsign.update(conn).await.c(h!())?;
+    let callsign_json_new = find_callsign_json(conn, callsign.id).await?;
+    sigint_callsign_changelog::ActiveModel {
+        id: NotSet,
+        sigint_callsign_id: Set(callsign.id),
+        login_id: Set(login_id),
+        action: Set("delete".to_string()),
+        created_at: NotSet,
+        new_value: Set(Some(callsign_json_new)),
+        old_value: Set(Some(callsign_json_old)),
+        req: Set(None),
+        sigint_origin_id: NotSet,
+        original_id: NotSet,
+    }
+    .insert(conn)
+    .await
+    .c(h!())?;
+    Ok(callsign)
+}
+
+async fn find_callsign_json<C>(
+    conn: &C,
+    callsign_id: i64,
+) -> Result<serde_json::Value, AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_callsign::Entity::find_by_id(callsign_id)
+        .into_json()
+        .one(conn)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::NotFound)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

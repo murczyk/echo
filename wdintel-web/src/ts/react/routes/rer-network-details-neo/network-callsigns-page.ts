@@ -49,5 +49,12 @@ export function buildCallsignPanelProps(page: Page) {
     inFlightAddIds: page.callsignCatalogAddInFlightIds,
     inFlightUpdateIds: page.callsignUpdateInFlightIds,
     inFlightDeleteIds: page.callsignDeleteInFlightIds,
+    selectionMode: page.callsignSelectionMode,
+    selectedIds: page.selectedNetworkCallsignIds,
+    onSelectedIdsChange: page.setSelectedNetworkCallsignIds,
+    onEnterSelectionMode: page.enterCallsignSelectionMode,
+    onExitSelectionMode: page.exitCallsignSelectionMode,
+    onRequestBulkDelete: page.openCallsignBulkDeleteDialog,
+    bulkDeleteInFlight: page.callsignBulkDeleteSubmitting,
   };
 }

@@ -336,6 +336,58 @@ pub async fn delete_network_callsign(
     Ok(Json(network_callsign))
 }
 
+/// Масове відв'язування позивних від мережі
+///
+/// # API URL
+/// - POST: /api/sigint/network-callsign/delete-many
+///
+/// # Параметри
+///
+/// * `req`: [`Json<DeleteNetworkCallsignsReq>`] - мережа, ідентифікатори прив'язаних до неї позивних
+///   і ознака, чи видаляти також пов'язані позивні з каталогу (потрібна роль CallsignsEditor).
+///
+/// # Повертає
+///
+/// [`Json<DeleteNetworkCallsignsRsp>`] з ідентифікаторами відв'язаних позивних і видалених позивних каталогу.
+/// Виконується в одній транзакції: якщо хоч один позивний не належить мережі або вже видалений,
+/// нічого не видаляється.
+///
+#[post("/api/sigint/network-callsign/delete-many")]
+pub async fn delete_network_callsigns(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DeleteNetworkCallsignsReq>,
+) -> Result<Json<DeleteNetworkCallsignsRsp>, AppError> {
+    ensure_callsign_write_role(&env.dbx, &user, "UnitsEditor")
+        .await
+        .c(h!())?;
+    if req.also_delete_from_catalog {
+        ensure_callsign_write_role(&env.dbx, &user, "CallsignsEditor")
+            .await
+            .c(h!())?;
+    }
+    let user_id = login_id_from_identity(&user)?;
+
+    info!("Delete network callsigns; login: {user_id}; req: {:?}", req);
+    let txn = env.dbx.begin().await.context(h!())?;
+    let rsp = bl_delete_network_callsigns(&req, &user_id, &txn)
+        .await
+        .context(h!())?;
+    txn.commit().await.context(h!())?;
+
+    crate::sigint::network::fanout_network_changed(&env).await?;
+    if !rsp.deleted_catalog_callsign_ids.is_empty() {
+        let event = crate::event_stream::types::EventMsg::new(
+            crate::event_stream::types::EventType::ETCallsignChanged,
+        );
+        crate::event_stream::fanout(&mut env.redis.clone(), event)
+            .await
+            .context(h!())?;
+    }
+
+    Ok(Json(rsp))
+}
+
 /// Для списку позивних і заданої мережі повертає активності цих позивних в етері на частотах мережі
 ///
 /// # API URL
@@ -699,5 +751,294 @@ mod tests {
             vec![],
             "the same period drops a row without activity on the stats path"
         );
+    }
+
+    async fn insert_catalog_callsign(
+        dbx: &DatabaseConnection,
+        unit_id: i64,
+        callsign: &str,
+    ) -> crate::entities::sigint_callsign::Model {
+        crate::entities::sigint_callsign::ActiveModel {
+            callsign: Set(callsign.to_string()),
+            position: Set(String::new()),
+            comment: Set(String::new()),
+            unit_id: Set(unit_id),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_network_callsign(
+        dbx: &DatabaseConnection,
+        network_id: i64,
+        callsign: &str,
+        catalog_callsign_id: Option<i64>,
+        developing: bool,
+    ) -> sigint_network_callsign::Model {
+        sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network_id),
+            sigint_callsign: Set(callsign.to_string()),
+            sigint_callsign_id: Set(catalog_callsign_id),
+            developing: Set(developing),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn network_callsign_deleted(
+        dbx: &DatabaseConnection,
+        id: i64,
+    ) -> bool {
+        sigint_network_callsign::Entity::find_by_id(id)
+            .one(dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .deleted
+    }
+
+    async fn catalog_callsign_deleted(
+        dbx: &DatabaseConnection,
+        id: i64,
+    ) -> bool {
+        crate::entities::sigint_callsign::Entity::find_by_id(id)
+            .one(dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .deleted
+    }
+
+    async fn set_test_login_roles(
+        dbx: &DatabaseConnection,
+        roles: &[&str],
+    ) -> uuid::Uuid {
+        let test_login = find_test_login(dbx).await.unwrap();
+        let test_login_id = test_login.id;
+        let mut test_login = test_login.into_active_model();
+        test_login.roles = Set(serde_json::json!(roles));
+        test_login.update(dbx).await.unwrap();
+        test_login_id
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn delete_many_network_callsigns_4242() {
+        let env = cleanup().await.unwrap();
+        let test_login_id = set_test_login_roles(
+            &env.dbx,
+            &["Rer", "UnitsEditor", "CallsignsEditor"],
+        )
+        .await;
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let other_network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let catalog = insert_catalog_callsign(&env.dbx, unit.id, "сокіл").await;
+        let developing_catalog =
+            insert_catalog_callsign(&env.dbx, unit.id, "орел").await;
+        let linked = insert_network_callsign(
+            &env.dbx,
+            network.id,
+            "сокіл",
+            Some(catalog.id),
+            false,
+        )
+        .await;
+        let developing = insert_network_callsign(
+            &env.dbx,
+            network.id,
+            "орел",
+            Some(developing_catalog.id),
+            true,
+        )
+        .await;
+        let kept =
+            insert_network_callsign(&env.dbx, network.id, "лис", None, false)
+                .await;
+        let foreign = insert_network_callsign(
+            &env.dbx,
+            other_network.id,
+            "вовк",
+            None,
+            false,
+        )
+        .await;
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(delete_network_callsigns),
+        )
+        .await;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test/login/{test_login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/sigint/network-callsign/delete-many")
+                .cookie(cookie.clone())
+                .set_json(DeleteNetworkCallsignsReq {
+                    network_id: network.id,
+                    ids: vec![linked.id, foreign.id],
+                    also_delete_from_catalog: true,
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::BAD_REQUEST,
+            "an id from another network rejects the whole request"
+        );
+        assert!(!network_callsign_deleted(&env.dbx, linked.id).await);
+        assert!(!network_callsign_deleted(&env.dbx, foreign.id).await);
+        assert!(!catalog_callsign_deleted(&env.dbx, catalog.id).await);
+
+        let rsp: DeleteNetworkCallsignsRsp = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/sigint/network-callsign/delete-many")
+                .cookie(cookie)
+                .set_json(DeleteNetworkCallsignsReq {
+                    network_id: network.id,
+                    ids: vec![developing.id, linked.id, linked.id],
+                    also_delete_from_catalog: true,
+                })
+                .to_request(),
+        )
+        .await;
+
+        assert_eq!(rsp.deleted_ids, vec![linked.id, developing.id]);
+        assert_eq!(rsp.deleted_catalog_callsign_ids, vec![catalog.id]);
+        assert!(network_callsign_deleted(&env.dbx, linked.id).await);
+        assert!(network_callsign_deleted(&env.dbx, developing.id).await);
+        assert!(!network_callsign_deleted(&env.dbx, kept.id).await);
+        assert!(!network_callsign_deleted(&env.dbx, foreign.id).await);
+        assert!(catalog_callsign_deleted(&env.dbx, catalog.id).await);
+        assert!(
+            !catalog_callsign_deleted(&env.dbx, developing_catalog.id).await,
+            "a developing row keeps its catalog callsign"
+        );
+        let delete_changelog_rows =
+            crate::entities::sigint_network_callsign_changelog::Entity::find()
+                .filter(
+                    crate::entities::sigint_network_callsign_changelog::Column::SigintNetworkCallsignId
+                        .is_in(vec![linked.id, developing.id]),
+                )
+                .filter(
+                    crate::entities::sigint_network_callsign_changelog::Column::Action
+                        .eq(crate::entities::sea_orm_active_enums::ChangelogActionEnum::Delete),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap();
+        assert_eq!(delete_changelog_rows, 2);
+        let network =
+            crate::entities::sigint_network::Entity::find_by_id(network.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network.updated_by_login_id, Some(test_login_id));
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn delete_many_network_callsigns_roles_4242() {
+        let env = cleanup().await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(delete_network_callsigns),
+        )
+        .await;
+
+        for (roles, also_delete_from_catalog, allowed) in [
+            (vec!["Rer", "UnitsEditor"], false, true),
+            (vec!["Rer", "UnitsEditor"], true, false),
+            (vec!["Rer", "UnitsEditor", "CallsignsEditor"], true, true),
+            (vec!["Rer", "CallsignsEditor"], false, false),
+            (vec!["Api"], true, true),
+        ] {
+            let test_login_id = set_test_login_roles(&env.dbx, &roles).await;
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&format!("/test/login/{test_login_id}"))
+                    .to_request(),
+            )
+            .await;
+            let cookie =
+                response.response().cookies().next().unwrap().into_owned();
+            let network_callsign = insert_network_callsign(
+                &env.dbx,
+                network.id,
+                "сокіл",
+                None,
+                false,
+            )
+            .await;
+
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/sigint/network-callsign/delete-many")
+                    .cookie(cookie)
+                    .set_json(DeleteNetworkCallsignsReq {
+                        network_id: network.id,
+                        ids: vec![network_callsign.id],
+                        also_delete_from_catalog,
+                    })
+                    .to_request(),
+            )
+            .await;
+
+            assert_eq!(
+                response.status(),
+                if allowed {
+                    actix_web::http::StatusCode::OK
+                } else {
+                    actix_web::http::StatusCode::FORBIDDEN
+                },
+                "roles={roles:?}, also_delete_from_catalog={also_delete_from_catalog}"
+            );
+            assert_eq!(
+                network_callsign_deleted(&env.dbx, network_callsign.id).await,
+                allowed
+            );
+        }
     }
 }

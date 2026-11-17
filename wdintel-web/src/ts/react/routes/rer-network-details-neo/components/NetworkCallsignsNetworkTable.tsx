@@ -1,10 +1,16 @@
+import ChecklistIcon from '@mui/icons-material/Checklist';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import { Box, Button, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import { useCallback, useEffect, useMemo } from 'react';
-import { MaterialReactTable } from 'material-react-table';
+import {
+  MaterialReactTable,
+  type MRT_ColumnOrderState,
+  type MRT_RowSelectionState,
+  type MRT_Updater,
+} from 'material-react-table';
 
 import type { NetworkFreqCallsignsPeriod } from '../../../../../Bindings';
 import type {
@@ -65,11 +71,40 @@ const NETWORK_MRT_LOCALIZATION = {
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps =
   typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+const ROW_SELECT_COLUMN_ID = 'mrt-row-select';
+const NETWORK_DATA_COLUMN_IDS = [
+  'callsign',
+  'position',
+  'fullName',
+  'unitName',
+  'lastDatetime',
+  'messageCount',
+  'comment',
+  'sourceName',
+];
 const EXITING_ROW_SX = {
   opacity: 0,
   transition: `opacity ${ROW_REMOVAL_ANIMATION_MS}ms ease-out`,
   '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
 };
+
+export type NetworkCallsignSelection = {
+  active: boolean;
+  selectedIds: number[];
+  onSelectedIdsChange: (ids: number[]) => void;
+  onEnter: () => void;
+  onExit: () => void;
+  onRequestDelete: () => void;
+  deleteInFlight: boolean;
+};
+
+function resolveUpdater<T>(updater: MRT_Updater<T>, current: T): T {
+  return typeof updater === 'function' ? (updater as (value: T) => T)(current) : updater;
+}
+
+function withoutRowSelectColumn(columnOrder: MRT_ColumnOrderState): MRT_ColumnOrderState {
+  return columnOrder.filter((columnId) => columnId !== ROW_SELECT_COLUMN_ID);
+}
 
 export type NetworkCallsignsTableStats = {
   loading: boolean;
@@ -132,6 +167,7 @@ type Props = {
   onReload: () => void;
   inFlightUpdateIds: number[];
   inFlightDeleteIds: number[];
+  selection: NetworkCallsignSelection;
 };
 
 export function NetworkCallsignDecoratedCell({ row }: { row: NetworkCallsignRowView }) {
@@ -195,23 +231,13 @@ export function NetworkCallsignsNetworkTable({
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
+  selection,
 }: Props) {
   return (
     <TableStateProvider
       tableId="network-details-callsigns"
       defaultColumnVisibility={{ ...NETWORK_COLUMNS_VISIBILITY, 'mrt-row-numbers': true }}
-      defaultColumnOrder={buildNetworkColumnOrder({
-        dataColumnIds: [
-          'callsign',
-          'position',
-          'fullName',
-          'unitName',
-          'lastDatetime',
-          'messageCount',
-          'comment',
-          'sourceName',
-        ],
-      })}
+      defaultColumnOrder={buildNetworkColumnOrder({ dataColumnIds: NETWORK_DATA_COLUMN_IDS })}
     >
       <NetworkCallsignsNetworkTableContent
         title={title}
@@ -232,6 +258,7 @@ export function NetworkCallsignsNetworkTable({
         onReload={onReload}
         inFlightUpdateIds={inFlightUpdateIds}
         inFlightDeleteIds={inFlightDeleteIds}
+        selection={selection}
       />
     </TableStateProvider>
   );
@@ -256,6 +283,7 @@ function NetworkCallsignsNetworkTableContent({
   onReload,
   inFlightUpdateIds,
   inFlightDeleteIds,
+  selection,
 }: Props) {
   const tableStateContext = useTableStateContext();
 
@@ -315,6 +343,15 @@ function NetworkCallsignsNetworkTableContent({
         : NO_DATA_LABEL,
     [stats.available, stats.unknownRowIds],
   );
+  const selectionActive = selection.active && canManage && !isInitialLoading;
+  const { rowSelection, columnOrder, onColumnOrderChange, onRowSelectionChange } =
+    useNetworkCallsignRowSelection({
+      selection,
+      selectionActive,
+      rows: tableStateRows,
+      columnOrder: tableStateContext.columnOrder,
+      onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    });
   const columns = useMemo<AppMrtColumnDef<NetworkCallsignRowView>[]>(
     () => [
       createNetworkCallsignColumn(),
@@ -416,7 +453,10 @@ function NetworkCallsignsNetworkTableContent({
     data: isInitialLoading ? loadingRows : tableStateRows,
     localization: NETWORK_MRT_LOCALIZATION,
     enableColumnActions: true,
-    enableRowSelection: false,
+    enableRowSelection: selectionActive ? () => !selection.deleteInFlight : false,
+    enableMultiRowSelection: true,
+    enableSelectAll: true,
+    onRowSelectionChange,
     enableRowNumbers: true,
     enableRowActions: true,
     positionActionsColumn: 'first',
@@ -433,7 +473,7 @@ function NetworkCallsignsNetworkTableContent({
     enableColumnResizing: tableStateContext.enableColumnResizing,
     enableHiding: true,
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
-    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onSortingChange: tableStateContext.onSortingChange,
     renderRowActions: ({ row }) => {
@@ -507,7 +547,8 @@ function NetworkCallsignsNetworkTableContent({
       isLoading: isBusy && !isInitialLoading,
       showLoadingOverlay: isBusy && !isInitialLoading,
       showSkeletons: isInitialLoading,
-      columnOrder: tableStateContext.columnOrder,
+      columnOrder,
+      rowSelection,
       columnVisibility: tableStateContext.columnVisibility,
       columnSizing: tableStateContext.columnSizing,
       density: tableStateContext.density,
@@ -546,18 +587,7 @@ function NetworkCallsignsNetworkTableContent({
     },
     initialState: {
       density: 'comfortable',
-      columnOrder: buildNetworkColumnOrder({
-        dataColumnIds: [
-          'callsign',
-          'position',
-          'fullName',
-          'unitName',
-          'lastDatetime',
-          'messageCount',
-          'comment',
-          'sourceName',
-        ],
-      }),
+      columnOrder: buildNetworkColumnOrder({ dataColumnIds: NETWORK_DATA_COLUMN_IDS }),
       columnVisibility: NETWORK_COLUMNS_VISIBILITY,
     },
     muiTableBodyRowProps: ({ row }) => ({
@@ -635,22 +665,32 @@ function NetworkCallsignsNetworkTableContent({
                 />
               ))}
             </Stack>
-            <InternalTableActions
-              table={table}
-              rowNumberAppearanceControl
-              leadingInternalActions={
-                <NetworkFreqCallsignPeriodSettings
-                  period={period}
-                  disabled={periodSettingsDisabled}
-                  onChange={onPeriodChange}
-                  onLoadAllTimeStats={
-                    period === 'Unlimited' && stats.period !== 'Unlimited'
-                      ? stats.onLoadAllTime
-                      : undefined
-                  }
+            <div className="flex min-w-0 flex-wrap items-center gap-echo-sm">
+              {canManage ? (
+                <NetworkCallsignSelectionControls
+                  selection={selection}
+                  selectionActive={selectionActive}
+                  selectedCount={Object.keys(rowSelection).length}
+                  enterDisabled={isBusy || tableStateRows.length === 0}
                 />
-              }
-            />
+              ) : null}
+              <InternalTableActions
+                table={table}
+                rowNumberAppearanceControl
+                leadingInternalActions={
+                  <NetworkFreqCallsignPeriodSettings
+                    period={period}
+                    disabled={periodSettingsDisabled}
+                    onChange={onPeriodChange}
+                    onLoadAllTimeStats={
+                      period === 'Unlimited' && stats.period !== 'Unlimited'
+                        ? stats.onLoadAllTime
+                        : undefined
+                    }
+                  />
+                }
+              />
+            </div>
           </Box>
         </Stack>
 
@@ -686,4 +726,112 @@ function NetworkCallsignsNetworkTableContent({
       </Stack>
     </Box>
   );
+}
+
+function NetworkCallsignSelectionControls({
+  selection,
+  selectionActive,
+  selectedCount,
+  enterDisabled,
+}: {
+  selection: NetworkCallsignSelection;
+  selectionActive: boolean;
+  selectedCount: number;
+  enterDisabled: boolean;
+}) {
+  if (!selectionActive) {
+    return (
+      <Button
+        variant="outlined"
+        size="small"
+        startIcon={<ChecklistIcon fontSize="small" />}
+        onClick={selection.onEnter}
+        disabled={enterDisabled}
+      >
+        Вибрати
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <Typography variant="body2" color="text.secondary" role="status">
+        {`Обрано: ${selectedCount}`}
+      </Typography>
+      <Button
+        variant="outlined"
+        color="error"
+        size="small"
+        startIcon={<DeleteIcon fontSize="small" />}
+        onClick={selection.onRequestDelete}
+        disabled={selectedCount === 0 || selection.deleteInFlight}
+      >
+        Видалити обрані
+      </Button>
+      <Button size="small" onClick={selection.onExit} disabled={selection.deleteInFlight}>
+        Скасувати
+      </Button>
+    </>
+  );
+}
+
+function useNetworkCallsignRowSelection({
+  selection,
+  selectionActive,
+  rows,
+  columnOrder,
+  onColumnOrderChange,
+}: {
+  selection: NetworkCallsignSelection;
+  selectionActive: boolean;
+  rows: NetworkCallsignRowView[];
+  columnOrder: MRT_ColumnOrderState;
+  onColumnOrderChange: (updater: MRT_Updater<MRT_ColumnOrderState>) => void;
+}) {
+  const { selectedIds, onSelectedIdsChange } = selection;
+  const rowSelection = useMemo(() => {
+    const selectedIdSet = new Set(selectedIds);
+    return rows.reduce<MRT_RowSelectionState>((acc, row) => {
+      if (selectedIdSet.has(row.id)) acc[String(row.id)] = true;
+      return acc;
+    }, {});
+  }, [rows, selectedIds]);
+
+  // Keep only selected rows that are still visible, so search, status filter or reload
+  // never leave hidden rows queued for deletion.
+  useEffect(() => {
+    if (!selectionActive) return;
+    const visibleSelectedIds = selectedIds.filter((id) => rowSelection[String(id)]);
+    if (visibleSelectedIds.length !== selectedIds.length) {
+      onSelectedIdsChange(visibleSelectedIds);
+    }
+  }, [onSelectedIdsChange, rowSelection, selectedIds, selectionActive]);
+
+  const displayedColumnOrder = useMemo(() => {
+    const dataColumnOrder = withoutRowSelectColumn(columnOrder);
+    return selectionActive ? [ROW_SELECT_COLUMN_ID, ...dataColumnOrder] : dataColumnOrder;
+  }, [columnOrder, selectionActive]);
+
+  const handleColumnOrderChange = useCallback(
+    (updater: MRT_Updater<MRT_ColumnOrderState>) => {
+      // The selection column is transient: never persist it into the stored column order.
+      onColumnOrderChange(withoutRowSelectColumn(resolveUpdater(updater, displayedColumnOrder)));
+    },
+    [displayedColumnOrder, onColumnOrderChange],
+  );
+
+  const handleRowSelectionChange = useCallback(
+    (updater: MRT_Updater<MRT_RowSelectionState>) => {
+      const nextSelection = resolveUpdater(updater, rowSelection);
+      onSelectedIdsChange(rows.filter((row) => nextSelection[String(row.id)]).map((row) => row.id));
+    },
+    [onSelectedIdsChange, rowSelection, rows],
+  );
+
+  return {
+    rowSelection,
+    columnOrder: displayedColumnOrder,
+    onColumnOrderChange: handleColumnOrderChange,
+    onRowSelectionChange: handleRowSelectionChange,
+  };
 }

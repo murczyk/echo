@@ -369,6 +369,23 @@ pub struct AddAsKnownNetworkCallsignReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct DeleteNetworkCallsignsReq {
+    pub network_id: i64,
+    pub ids: Vec<i64>,
+    pub also_delete_from_catalog: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeleteNetworkCallsignsRsp {
+    pub deleted_ids: Vec<i64>,
+    pub deleted_catalog_callsign_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct NetworkCallsignsActivityReq {
     pub network_id: i64,
     pub callsigns: Vec<String>,
