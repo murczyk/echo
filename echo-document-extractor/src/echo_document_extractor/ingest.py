@@ -64,6 +64,8 @@ def _read_image(path: Path) -> tuple[bytes, Image.Image, int]:
             orientation = int(opened.getexif().get(274, 1))
             image = ImageOps.exif_transpose(opened).convert("RGB")
             image.load()
+    except Image.DecompressionBombError as error:
+        raise ValueError(f"image exceeds the pixel limit: {path.name}") from error
     except (UnidentifiedImageError, OSError, ValueError) as error:
         raise ValueError(f"unreadable image: {path.name}") from error
     rotation = {3: 180, 6: 90, 8: 270}.get(orientation, 0)

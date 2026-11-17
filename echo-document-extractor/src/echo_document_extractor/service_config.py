@@ -10,6 +10,8 @@ from .config import ExtractionConfig
 
 MULTIPART_OVERHEAD_BYTES = 2 * 1024 * 1024
 ADMISSION_RETRY_SECONDS = 30
+# Longer than Echo's 90-second HTTP pool idle timeout, so clients never reuse a closed connection.
+API_KEEP_ALIVE_SECONDS = 120
 
 
 class ServiceLimits(BaseModel):

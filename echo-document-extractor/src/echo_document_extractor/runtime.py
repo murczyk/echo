@@ -5,7 +5,7 @@ import os
 import uvicorn
 
 from .api import create_app
-from .service_config import RuntimeConfig
+from .service_config import API_KEEP_ALIVE_SECONDS, RuntimeConfig
 from .worker import run_worker
 
 
@@ -18,6 +18,7 @@ def api() -> None:
         proxy_headers=False,
         server_header=False,
         access_log=False,
+        timeout_keep_alive=API_KEEP_ALIVE_SECONDS,
     )
 
 

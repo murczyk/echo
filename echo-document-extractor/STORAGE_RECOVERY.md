@@ -104,6 +104,21 @@ Never requeue the stored GPU manifest: grants expire after 15 minutes.
 
 ## Monitoring and rollback
 
+If even `/health/live` times out while storage remains below its limits, check
+for repeated recursive spool scans in API requests. With many retained files,
+synchronous scans can block every route. The API now runs one scan at a time
+outside its event loop and shares status measurements for up to ten seconds.
+Readiness and both upload capacity checks request a fresh measurement; status
+caching does not bypass admission limits or remove retained results.
+
+Deploy the application package using the component deployment commands, retain
+the existing configuration and runtime, and verify both `/health/live` latency
+during concurrent status requests and an actual OCR submission from each client.
+Run `bin/verify.sh` and `bin/verify-clients.sh echo-siversk echo-zp2`; confirm the
+worker heartbeat, Paddle, router readiness, and callbacks before clearing any
+synthetic fixtures. No Echo restart or schema migration is needed for this API
+fix. Roll back with the retained application package if the checks fail.
+
 `echo_document_extractor_storage_deferrals_total` counts native admission
 deferrals; `echo.ocr.storage_deferrals.count` counts direct OCR deferrals.
 Observe these alongside spool bytes, free bytes, queue states and new storage
