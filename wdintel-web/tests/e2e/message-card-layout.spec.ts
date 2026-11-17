@@ -128,6 +128,7 @@ for (const host of ['analysis', 'duty'] as const) {
         .poll(() =>
           card.evaluate((element) => {
             const identity = element.querySelector('.message-card-header-identity')!;
+            const timestamp = identity.querySelector('[data-message-card-timestamp-item]')!;
             const badge = element.querySelector('[data-message-card-important-status]')!;
             const actions = element.querySelector('[aria-label="Дії повідомлення"]')!;
             const identityBounds = identity.getBoundingClientRect();
@@ -140,7 +141,10 @@ for (const host of ['analysis', 'duty'] as const) {
                   badgeBounds.top + badgeBounds.height / 2,
                 ),
               ) &&
-              identityBounds.right <= badgeBounds.left &&
+              timestamp.getBoundingClientRect().right <= identityBounds.right + 0.5 &&
+              // #4219: narrow headers move the actions to their own line rather than overlap.
+              (identityBounds.right <= badgeBounds.left ||
+                identityBounds.top >= actionsBounds.bottom) &&
               badgeBounds.right <= actionsBounds.left &&
               Math.abs(
                 badgeBounds.top +

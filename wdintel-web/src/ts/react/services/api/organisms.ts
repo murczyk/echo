@@ -33,6 +33,8 @@ type OrganismLike = {
   aor_ids?: Array<number | string> | null;
   loginsCount?: number | string;
   logins_count?: number | string;
+  adminLogins?: string[];
+  admin_logins?: string[];
 };
 
 type SignalGroupFullLike = {
@@ -81,6 +83,7 @@ type CreateOrganismReqBody = {
   parent_id: number | null;
   roles: string[];
   aor_ids: number[] | null;
+  admin_logins: string[] | null;
 };
 
 type UpdateOrganismReqBody = {
@@ -90,6 +93,7 @@ type UpdateOrganismReqBody = {
   roles: string[] | null;
   enabled: boolean;
   aor_ids: number[] | null;
+  admin_logins: string[] | null;
 };
 
 type AddGroupToOrganismReqBody = {
@@ -187,6 +191,7 @@ function toCreateOrganismReqBody(req: CreateOrganismReq): CreateOrganismReqBody 
     parent_id: req.parentId,
     roles: req.roles,
     aor_ids: req.aorIds ?? null,
+    admin_logins: req.adminLogins ?? null,
   };
 }
 
@@ -198,6 +203,7 @@ function toUpdateOrganismReqBody(req: UpdateOrganismReq): UpdateOrganismReqBody 
     roles: req.roles ?? null,
     enabled: req.enabled,
     aor_ids: req.aorIds ?? null,
+    admin_logins: req.adminLogins ?? null,
   };
 }
 
@@ -293,6 +299,7 @@ function normalizeOrganism(raw: OrganismLike): Organism {
     enabled: raw.enabled ?? false,
     aorIds: normalizeNumberArray(raw.aorIds ?? raw.aor_ids),
     loginsCount: normalizeNumber(raw.loginsCount ?? raw.logins_count),
+    adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
   };
 }
 

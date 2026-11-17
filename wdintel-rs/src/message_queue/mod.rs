@@ -26,6 +26,9 @@ pub struct ProcessSignalMessageQueueItemOptions {
     /// Stored on the staged message, so split children inherit it. Message
     /// replay marks its messages with the negated source message id.
     pub external_id: Option<i64>,
+    /// SIGINT unit the sender chose; unit resolution prefers it to the unit
+    /// name parsed from the body. Set by the Echo Operator API.
+    pub echo_unit_id: Option<i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -188,6 +191,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         message_uid: NotSet,
         operator_tags: NotSet,
         attachments_hash: Set(attachments_hash),
+        echo_unit_id: Set(options.echo_unit_id),
     }
     .insert(txn)
     .await

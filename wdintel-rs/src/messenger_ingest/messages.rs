@@ -177,6 +177,7 @@ async fn submit_message(
                 skip_dedupe: true,
                 login_id: Some(target.scope.login_id),
                 external_id: None,
+                echo_unit_id: None,
             },
         )
         .await

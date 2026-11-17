@@ -24,9 +24,11 @@ import {
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from '../MessageCardMedia.tsx';
-import { MessageCardQuickActionContext } from '../MessageCardQuickAction';
+import { MessageCardQuickActionsContext } from '../MessageCardQuickAction';
 import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
 import { DutyExcludeMenuContext } from '../DutyExcludeMenu.ts';
+import { DutyMessageCardVisibilityContext } from '../DutyMessageCardVisibility.ts';
+import { RadioFeaturesProvider } from '../../RadioFeatures.tsx';
 import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../MessageWriteAccess.tsx';
 import {
   hideMessageCardNetworks,
@@ -83,7 +85,9 @@ async function renderCard(
     canWrite?: boolean;
     canDelete?: boolean;
     dutyExcludeMenuEnabled?: boolean;
+    /** Single quick action, as with «Кількість швидких дій» set to 1. */
     quickAction?: MessageCardQuickAction;
+    quickActions?: readonly MessageCardQuickAction[];
   } = {},
 ) {
   const container = document.createElement('div');
@@ -115,13 +119,15 @@ async function renderCard(
     onDelete: vi.fn(),
     ...overrides,
   } as ComponentProps<typeof MessageCard>;
+  const quickActions =
+    access.quickActions ?? (access.quickAction == null ? undefined : [access.quickAction]);
   const card =
-    access.quickAction == null ? (
+    quickActions == null ? (
       <MessageCard {...props} />
     ) : (
-      <MessageCardQuickActionContext.Provider value={access.quickAction ?? 'createReport'}>
+      <MessageCardQuickActionsContext.Provider value={quickActions}>
         <MessageCard {...props} />
-      </MessageCardQuickActionContext.Provider>
+      </MessageCardQuickActionsContext.Provider>
     );
   await act(async () =>
     root.render(
@@ -307,6 +313,38 @@ describe('MessageCard', () => {
       expect(button.getAttribute('aria-pressed')).toBe('true');
       await click(button);
       expect(handler).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    {
+      quickActions: ['bookmark', 'copyLink'] as const,
+      visible: ['Додати в закладки', 'Копіювати посилання на повідомлення'],
+      inMenu: ['Створити розвіддонесення', 'Позначити як важливе'],
+    },
+    {
+      quickActions: ['createReport'] as const,
+      visible: ['Створити розвіддонесення'],
+      inMenu: ['Позначити як важливе', 'Додати в закладки'],
+    },
+  ])(
+    '#4219 shows $quickActions directly in order and keeps the rest in the narrow menu',
+    async ({ quickActions, visible, inMenu }) => {
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+      const view = await renderCard(
+        { onCopyMessageLink: vi.fn() },
+        { canDelete: true, quickActions },
+      );
+      const visibleActions = Array.from(
+        view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
+      ).map((action) => action.getAttribute('aria-label'));
+      expect(visibleActions).toEqual([...visible, 'Більше дій']);
+      await openOverflowMenu(view.container);
+      const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) =>
+        item.textContent?.trim(),
+      );
+      for (const label of visible) expect(labels).not.toContain(label);
+      for (const label of inMenu) expect(labels).toContain(label);
     },
   );
 
@@ -578,7 +616,7 @@ describe('MessageCard', () => {
     { displayMode: 'duty' as const, hasExcludeSection: true },
     { displayMode: 'analysis' as const, hasExcludeSection: false },
   ])(
-    'keeps report creation direct and moves the remaining actions into the menu on narrow $displayMode cards',
+    'keeps report creation and importance direct and moves the remaining actions into the menu on narrow $displayMode cards (#4219)',
     async ({ displayMode, hasExcludeSection }) => {
       const clientWidth = vi
         .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
@@ -595,7 +633,11 @@ describe('MessageCard', () => {
         view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
       ).map((action) => action.getAttribute('aria-label'));
 
-      expect(visibleActions).toEqual(['Створити розвіддонесення', 'Більше дій']);
+      expect(visibleActions).toEqual([
+        'Створити розвіддонесення',
+        'Позначити як не важливе',
+        'Більше дій',
+      ]);
       const overflowAction = view.container.querySelector('button[aria-label="Більше дій"]');
 
       const importantStatus = view.container.querySelector(
@@ -617,7 +659,9 @@ describe('MessageCard', () => {
       );
 
       await openOverflowMenu(view.container);
-      expect(document.body.textContent).toContain('Позначити як не важливе');
+      expect(document.body.querySelector('[role="menu"]')?.textContent).not.toContain(
+        'Позначити як не важливе',
+      );
       expect(document.body.textContent).toContain('Додати в закладки');
       expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
       expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
@@ -649,6 +693,67 @@ describe('MessageCard', () => {
       scrollWidth.mockRestore();
     },
   );
+
+  it.each(['duty', 'analysis'] as const)(
+    '#4219 applies the Duty card visibility settings only to Duty cards (%s)',
+    async (displayMode) => {
+      const view = await renderCard({
+        displayMode,
+        msg: buildMessage({ unit: 'Unit A', createdAt: 1_709_999_940_000 }),
+      });
+      await act(async () =>
+        view.root.render(
+          <RadioFeaturesProvider allowed>
+            <DutyMessageCardVisibilityContext.Provider
+              value={{ hideHeader: true, hideFrequency: true, hideUnit: true }}
+            >
+              <MessageCard {...view.props} />
+            </DutyMessageCardVisibilityContext.Provider>
+          </RadioFeaturesProvider>,
+        ),
+      );
+      const hidden = displayMode === 'duty';
+      const text = view.container.textContent ?? '';
+      expect(view.container.querySelector('[data-message-card-header-left="true"]') == null).toBe(
+        hidden,
+      );
+      expect(text.includes('р/м Alpha')).toBe(!hidden);
+      expect(text.includes('153.6250')).toBe(!hidden);
+      expect(text.includes('Unit A')).toBe(!hidden);
+      expect(
+        view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
+      ).not.toBeNull();
+      expect(
+        view.container.querySelector('[data-message-card-timestamp-footer="true"]'),
+      ).not.toBeNull();
+    },
+  );
+
+  it('#4219 a hidden Duty header also hides identity metadata when networks are hidden', async () => {
+    const view = await renderCard({
+      displayMode: 'duty',
+      hideNetworks: true,
+      msg: buildMessage({ unit: 'Unit A', location: 'Location A' }),
+    });
+    await act(async () =>
+      view.root.render(
+        <RadioFeaturesProvider allowed>
+          <DutyMessageCardVisibilityContext.Provider
+            value={{ hideHeader: true, hideFrequency: false, hideUnit: false }}
+          >
+            <MessageCard {...view.props} />
+          </DutyMessageCardVisibilityContext.Provider>
+        </RadioFeaturesProvider>,
+      ),
+    );
+    const text = view.container.textContent ?? '';
+    expect(view.container.querySelector('[data-message-card-header-left="true"]')).toBeNull();
+    expect(text).not.toContain('Group');
+    expect(text).not.toContain('Sender');
+    expect(text).not.toContain('Location A');
+    expect(text).toContain('Unit A');
+    expect(text).toContain('153.6250');
+  });
 
   // Regression: https://github.com/echoua/echo/issues/3569
   it('does not expose deletion without independent delete access', async () => {

@@ -1693,6 +1693,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            echo_unit_id: None,
         }
     }
 
@@ -2243,6 +2244,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            echo_unit_id: None,
         };
 
         assert_eq!(
@@ -2272,6 +2274,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            echo_unit_id: None,
         };
 
         assert_eq!(
@@ -2447,6 +2450,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            echo_unit_id: None,
         };
 
         assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));
@@ -2499,6 +2503,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            echo_unit_id: None,
         };
 
         assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));

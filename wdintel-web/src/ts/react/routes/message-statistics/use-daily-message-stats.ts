@@ -11,7 +11,11 @@ export function useDailyMessageStats(
   onDenied?: (error: unknown) => void,
 ) {
   const { notify } = usePowerSnackbar();
-  const [data, setData] = useState<DailyMessageStatsRsp | null>(null);
+  const [result, setResult] = useState<{
+    data: DailyMessageStatsRsp;
+    grouping: DailyMessageStatsReq['grouping'];
+    scopeVersion: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -20,29 +24,27 @@ export function useDailyMessageStats(
   const key = JSON.stringify([request, scopeVersion]);
   const reject = useRef(onDenied);
   reject.current = onDenied;
-  const previousKey = useRef(key);
+  const [activeKey, setActiveKey] = useState(key);
   const refresh = useCallback(() => {
     if (!pending.current) setRevision((value) => value + 1);
   }, []);
   useEffect(() => {
+    setActiveKey(key);
+    setResult((current) => (current?.scopeVersion === scopeVersion ? current : null));
     if (!request) {
-      setData(null);
+      setResult(null);
       setLoading(false);
       setError(null);
       return;
     }
     const controller = new AbortController();
-    if (previousKey.current !== key) {
-      setData(null);
-      setError(null);
-      previousKey.current = key;
-    }
+    setError(null);
     setLoading(true);
     pending.current = true;
     fetchDailyMessageStats(request, { signal: controller.signal })
       .then((response) => {
         if (controller.signal.aborted) return;
-        setData(response);
+        setResult({ data: response, grouping: request.grouping, scopeVersion });
         setError(null);
         lastLoaded.current = Date.now();
       })
@@ -51,7 +53,7 @@ export function useDailyMessageStats(
         const message =
           reason instanceof Error ? reason.message : 'Не вдалося завантажити статистику.';
         if (reason instanceof HttpRequestError && [401, 403].includes(reason.status)) {
-          setData(null);
+          setResult(null);
           reject.current?.(reason);
         }
         setError(message);
@@ -87,5 +89,12 @@ export function useDailyMessageStats(
       window.removeEventListener('focus', update);
     };
   }, [key, refresh]);
-  return { data, error, loading, refresh };
+  const visible = request && result?.scopeVersion === scopeVersion ? result : null;
+  return {
+    data: visible?.data ?? null,
+    dataGrouping: visible?.grouping ?? request?.grouping ?? 'Groups',
+    error: activeKey === key ? error : null,
+    loading: !!request && (loading || activeKey !== key),
+    refresh,
+  };
 }

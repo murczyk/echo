@@ -11,6 +11,7 @@ import {
 type AnalysisNeoMockOptions = {
   messageSortBy?: 'creation' | 'interception';
   userRoles?: string[];
+  administeredOrganismIds?: number[];
   enableAudioTranscription?: boolean;
   analysisAorFilterEnabled?: boolean;
   hideNetworks?: boolean;
@@ -263,6 +264,7 @@ export async function installAnalysisNeoApiMocks(
         id: 'analysis-tester',
         name: 'analysis-tester',
         roles: options.userRoles ?? ['Rer'],
+        administered_organism_ids: options.administeredOrganismIds ?? [],
         sigint_zone_id: null,
         organism_id: null,
         delta_login: null,

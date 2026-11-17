@@ -16,6 +16,42 @@
 - Coverage: `wdintel-web/tests/e2e/manage-message-drawer.spec.ts` and
   `wdintel-rs/src/user_settings/functional_tests.rs`.
 
+## Duty card visibility
+
+- The Duty tab's «Картка повідомлення» block has «Показувати в Оперативному:»
+  switches for the card header, frequency and unit. All are on by default,
+  including missing values from older responses and unset database columns.
+  The frequency switch appears only for users with radio features.
+- `dutyHideCardHeader`, `dutyHideCardFrequency` and `dutyHideCardUnit` persist
+  through `/api/user/settings`; older clients that omit them preserve the stored
+  values. Analysis cards and the Analysis tab ignore them.
+- On the Duty tab the card preview reflects the three choices.
+
+## Narrow-card quick actions
+
+- The «Картка повідомлення» block on the Duty and Analysis tabs has shared
+  «Швидкі дії» selectors (count 1 or 2, default 2). With 2 it shows
+  «Швидка дія 1» and «Швидка дія 2», with a «−» button beside the second that
+  removes it; with 1, a single «Швидка дія» with a «+» button to its right that
+  adds the second. Focus moves to the new second selector, or back to «+».
+  The second defaults to «Позначити як важливе».
+- Choosing the other slot's action swaps the two selectors and saves both.
+  Unrelated saves omit `messageCardQuickAction` and
+  `messageCardSecondQuickAction` so their server defaults stay unset.
+- The card preview shows the selected actions in slot order. It sits at the top
+  of the block under the «Картка повідомлення» title row and, with that row,
+  stays pinned below the navbar while the block's settings scroll. In windows
+  narrower than the `md` breakpoint or shorter than 900px, a «Сховати/Показати
+  перегляд картки» control in the title row collapses it (icon-only below `sm`). The settings card and `<settings-neo>` host use
+  `overflow: clip` so the page stays the sticky scroll container.
+- Coverage: `wdintel-web/tests/e2e/message-card-quick-action.spec.ts` and
+  `wdintel-rs/src/user_settings/functional_tests.rs`.
+- Original Echo issue: [#4219](https://github.com/echoua/echo/issues/4219)
+- Coverage: `wdintel-web/tests/e2e/rer-duty-card-visibility.spec.ts`,
+  `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
+  and `wdintel-rs/src/user_settings/functional_tests.rs`.
+- Original Echo issue: [#4219](https://github.com/echoua/echo/issues/4219)
+
 ## Analysis time-basis regression
 
 - **Behavior ID:** `react-settings-analysis-time-basis`
@@ -115,7 +151,7 @@
 - **Behavior ID:** `react-user-settings-compatibility-defaults`
 - **Status:** operational compatibility
 - **Affected route/component:** user-settings API boundary
-- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `importantOnlyMyOrganism: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
+- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `importantOnlyMyOrganism: false`, `dutyHideCardHeader: false`, `dutyHideCardFrequency: false`, `dutyHideCardUnit: false`, `messageCardQuickActionCount: 2`, `messageCardSecondQuickAction: important`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/user-settings.ts`
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 

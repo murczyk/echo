@@ -53,7 +53,7 @@ import {
   type MessageCardNavigationMenuItem,
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
-import { MessageCardQuickActionContext } from './MessageCardQuickAction';
+import { MessageCardQuickActionsContext } from './MessageCardQuickAction';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
 import { useMessageCardDateDisplayMs } from './useMessageCardDateDisplayMs';
 
@@ -393,7 +393,7 @@ function ActionIconsRow({
   headerRowRef,
   onCompactChange,
 }: ActionIconsRowProps) {
-  const messageCardQuickAction = useContext(MessageCardQuickActionContext) ?? 'createReport';
+  const messageCardQuickActions = useContext(MessageCardQuickActionsContext);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const excludeMenuId = useId();
   const copyMenuId = useId();
@@ -532,11 +532,13 @@ function ActionIconsRow({
   const availableActions = overflowMenuItemCandidates.filter(
     (item): item is OverflowMenuItem => item != null,
   );
-  const quickAction = mobileActions
-    ? availableActions.find((item) => item.key === messageCardQuickAction)
-    : undefined;
+  // Unavailable quick actions are skipped without a replacement.
+  const quickActions = mobileActions
+    ? messageCardQuickActions.flatMap((key) => availableActions.filter((item) => item.key === key))
+    : [];
+  const isQuickAction = (key: string) => quickActions.some((item) => item.key === key);
   const overflowMenuItems = availableActions.filter(
-    (item) => item.key !== quickAction?.key && item.key !== 'copyText' && item.key !== 'copyLink',
+    (item) => !isQuickAction(item.key) && item.key !== 'copyText' && item.key !== 'copyLink',
   );
   const canShowOverflowMenu =
     overflowMenuItems.length > 0 ||
@@ -613,7 +615,7 @@ function ActionIconsRow({
   }
 
   if (
-    !quickAction &&
+    quickActions.length === 0 &&
     !canShowCreateReport &&
     !canShowReply &&
     !canShowPrimaryActions &&
@@ -625,9 +627,9 @@ function ActionIconsRow({
   }
 
   const buttons = [
-    quickAction ? (
+    ...quickActions.map((quickAction) => (
       <ActionIconButton
-        key="quick-action"
+        key={`quick-action-${quickAction.key}`}
         title={quickAction.title}
         icon={cloneElement(quickAction.icon, { className: 'message-card-action-btn__icon' })}
         onClick={quickAction.onClick}
@@ -639,7 +641,7 @@ function ActionIconsRow({
             : undefined
         }
       />
-    ) : null,
+    )),
     !mobileActions && canShowCreateReport ? (
       <ActionIconButton
         key="report"
@@ -858,7 +860,7 @@ function ActionIconsRow({
                 onCopyLocation,
                 onCopyEtalon,
                 onClose: closeOverflowMenu,
-              }).filter((item) => item.key !== quickAction?.key)
+              }).filter((item) => !isQuickAction(String(item.key)))
             : [],
           mobileActions && canShowNavigationMenu
             ? renderNavigationMenuItems({ items: navigationMenuItems, onClose: closeOverflowMenu })
@@ -1264,6 +1266,10 @@ export type MessageCardHeaderProps = {
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   metadata?: ReactNode;
+  /** Hides metadata and event time; actions and the important badge stay. */
+  hideIdentity?: boolean;
+  /** Hides the unit row shown when there is no header metadata. */
+  hideUnit?: boolean;
   mapHref?: string;
   analysisHref?: string;
   onBookmark?: () => void;
@@ -1291,6 +1297,8 @@ export function MessageCardMetadata({
   metadataTrigger,
   wrapText = false,
   hideExplicitUnit = false,
+  hideFrequency = false,
+  hideUnit = false,
   placement = MessageCardMetadataPlacement.All,
 }: {
   msg: InboxMessage;
@@ -1300,6 +1308,8 @@ export function MessageCardMetadata({
   metadataTrigger?: ReactNode;
   wrapText?: boolean;
   hideExplicitUnit?: boolean;
+  hideFrequency?: boolean;
+  hideUnit?: boolean;
   placement?: MessageCardMetadataPlacement;
 }) {
   const radioFeaturesAllowed = useRadioFeatures();
@@ -1344,7 +1354,7 @@ export function MessageCardMetadata({
             <AuthorLabel accountId={msg.sender} fallback={senderName} />
           </MetaLine>
         ) : null}
-        {showSecondaryMetadata && radioFeaturesAllowed && isPresent(msg.freq) ? (
+        {showSecondaryMetadata && !hideFrequency && radioFeaturesAllowed && isPresent(msg.freq) ? (
           <div className="message-card-header-meta" data-message-card-metadata-item="true">
             <span
               className="message-card-header-meta__icon"
@@ -1361,6 +1371,7 @@ export function MessageCardMetadata({
           <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} wrapText={wrapText} />
         ) : null}
         {placement === MessageCardMetadataPlacement.Content &&
+        !hideUnit &&
         isPresent(etalonDisplayModel.headerUnit) ? (
           <MetaLine
             icon={<SquareTwoToneIcon className="message-card-unit-icon" />}
@@ -1445,6 +1456,8 @@ function MessageCardHeaderComponent({
   copiedFeedbackId,
   etalonDisplayModel,
   metadata,
+  hideIdentity = false,
+  hideUnit = false,
   mapHref,
   analysisHref,
   onBookmark,
@@ -1497,21 +1510,25 @@ function MessageCardHeaderComponent({
       data-message-card-header-row="true"
       data-message-card-display-mode={displayMode}
       data-message-card-actions-compact={compactActions ? 'true' : undefined}
+      data-message-card-header-identity-hidden={hideIdentity ? 'true' : undefined}
       className="message-card-header-row w-full"
     >
-      <div className="message-card-header-identity">
-        <div data-message-card-header-left="true" className="min-w-0">
-          {metadata ?? (
-            <div className="message-card-header-unit" data-message-card-header-unit-row="true">
-              <span className="message-card-header-meta__icon">
-                <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
-              </span>
-              <HeaderText wrap>{explicitUnit}</HeaderText>
-            </div>
-          )}
-          {dateTimeBlock}
+      {hideIdentity ? null : (
+        <div className="message-card-header-identity">
+          <div data-message-card-header-left="true" className="min-w-0">
+            {metadata ??
+              (hideUnit ? null : (
+                <div className="message-card-header-unit" data-message-card-header-unit-row="true">
+                  <span className="message-card-header-meta__icon">
+                    <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
+                  </span>
+                  <HeaderText wrap>{explicitUnit}</HeaderText>
+                </div>
+              ))}
+            {dateTimeBlock}
+          </div>
         </div>
-      </div>
+      )}
       {msg.important || !readOnly || isPresent(attachmentArchiveDownload) ? (
         <div className="message-card-header-actions flex items-center justify-end gap-2 self-start">
           {msg.important ? (

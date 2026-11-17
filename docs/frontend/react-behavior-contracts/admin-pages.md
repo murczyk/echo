@@ -96,7 +96,7 @@
 **Behavior ID:** `admin-goi-integration-drawer-lifecycle`
 
 - **Affected route/component:** `/admin/goi-integrations-neo`, `AdminGoiIntegrationsNeoPage`.
-- **User role or permission:** GOI administrator with edit access.
+- **User role or permission:** global Admin; organism administrator assignments do not grant GOI administration.
 - **Preconditions:** an existing integration is selected for editing.
 - **User action or external event:** edit fields, dismiss the drawer, check a connection, or configure its worker.
 - **Expected observable result:** dirty dismissal asks before losing edits; a busy connection check disables dismissal; a successful worker setup keeps the drawer open and shows the returned credentials/configuration.
@@ -186,3 +186,12 @@
 - **Source implementation:** `routes/admin-*/` and related RER maintenance routes.
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as operational safeguards.
+
+## Assigned organism administrators
+
+- **Routes:** `/admin/organisms-neo`, `/admin/organisms-neo/edit`.
+- **Access:** global Admin or a current assignment in the organism's administrator list. The removed `OrganismAdmin` role grants no access. Assignments do not grant global administration or message-reading roles, and can cover multiple organisms independently of the user's membership.
+- **Assignment:** create/edit forms have a multiple-user «Адміністратори» field. Global Admin can choose any active unmanaged user; scoped administrators can add only unprotected users belonging to the edited organism. Existing external administrators remain selected when other settings change. An empty selection revokes all assignments; an omitted API field preserves them.
+- **Boundaries:** scoped administrators retain user, label and statistics-exclusion management for assigned active organisms; global roles, hierarchy, AORs, group restrictions, Delta and Signal identity changes remain Admin-only. GOI administration APIs, `/admin/goi-integrations-neo` and the organism editor's GOI tab are global Admin-only; ordinary GOI usage follows existing integration access. Revoked assignments are checked on the next server request.
+- **Errors:** failed assignment saves preserve the form and show the existing Ukrainian error alert.
+- **Existing tests:** `wdintel-web/tests/e2e/organism-user-labels.spec.ts`, `wdintel-web/src/ts/react/utils/__tests__/roles.spec.ts`, `wdintel-rs/src/organism/tests.rs`.

@@ -68,6 +68,33 @@
   margin-block: var(--echo-spacing-xs);
 }
 
+.settings-message-card-preview__metadata {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--echo-spacing-sm);
+}
+
+.settings-message-card-preview__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--echo-spacing-xs);
+  padding-inline-end: var(--echo-spacing-sm);
+  white-space: nowrap;
+}
+
+.settings-message-card-preview__meta-icon {
+  flex-shrink: 0;
+  color: var(--message-card-metadata-icon-color);
+  font-size: 16px !important;
+}
+
+.settings-message-card-preview__meta-icon.message-card-unit-icon {
+  color: var(--color-error);
+  transform: rotate(45deg);
+}
+
 .settings-message-card-preview__tile {
   display: flex;
   width: 100%;

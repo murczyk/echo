@@ -62,6 +62,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     SelfRef,
+    #[sea_orm(has_many = "super::organism_admin::Entity")]
+    OrganismAdmin,
     #[sea_orm(has_many = "super::organism_aor::Entity")]
     OrganismAor,
     #[sea_orm(has_many = "super::organism_group::Entity")]
@@ -123,6 +125,12 @@ impl Related<super::goi_knowledge::Entity> for Entity {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::organism_admin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrganismAdmin.def()
     }
 }
 

@@ -1,13 +1,14 @@
-use crate::config::ROLE_ORGANISM_ADMIN;
-use crate::entities::{login, organism, organism_aor};
+use crate::entities::{login, organism, organism_admin, organism_aor};
 use crate::types::{AppError, Context, ShortContext};
 use crate::{h, users};
 use actix_identity::Identity;
 use sea_orm::*;
 use std::collections::HashSet;
+use uuid::Uuid;
 
 pub struct ManagementScope {
-    pub organism_id: Option<i64>,
+    pub organism_ids: Option<Vec<i64>>,
+    pub own_organism_id: Option<i64>,
     pub sigint_zone_id: Option<i64>,
 }
 
@@ -20,36 +21,66 @@ pub async fn management_scope(
     let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
     if users::role_matches(&roles, "Admin").context(h!())? {
         return Ok(ManagementScope {
-            organism_id: None,
+            organism_ids: None,
+            own_organism_id: login.organism_id,
             sigint_zone_id: login.sigint_zone_id,
         });
     }
-    if !users::role_matches(&roles, ROLE_ORGANISM_ADMIN).context(h!())? {
-        return Err(AppError::Forbidden("Потрібна роль OrganismAdmin".into()));
+    let organism_ids = administered_organism_ids(db, id).await.c(h!())?;
+    if organism_ids.is_empty() {
+        return Err(AppError::Forbidden(
+            "Потрібні права адміністратора організму".into(),
+        ));
     }
-    let id = login
-        .organism_id
-        .ok_or_else(|| {
-            AppError::Forbidden("Користувач не належить до організму".into())
-        })
-        .context(h!())?;
-    let organism = organism::Entity::find_by_id(id)
-        .filter(organism::Column::DeletedPermanently.eq(false))
-        .filter(organism::Column::Enabled.eq(true))
-        .one(db)
-        .await
-        .c(h!())?
-        .ok_or(AppError::Unauthenticated)
-        .context(h!())?;
     Ok(ManagementScope {
-        organism_id: Some(organism.id),
+        organism_ids: Some(organism_ids),
+        own_organism_id: login.organism_id,
         sigint_zone_id: login.sigint_zone_id,
     })
 }
 
+pub async fn administered_organism_ids<C: ConnectionTrait>(
+    db: &C,
+    login_id: Uuid,
+) -> anyhow::Result<Vec<i64>> {
+    organism_admin::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            organism_admin::Relation::Organism.def(),
+        )
+        .filter(organism_admin::Column::LoginId.eq(login_id))
+        .filter(organism_admin::Column::Deleted.eq(false))
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(organism::Column::Enabled.eq(true))
+        .select_only()
+        .column(organism_admin::Column::OrganismId)
+        .order_by_asc(organism_admin::Column::OrganismId)
+        .into_tuple()
+        .all(db)
+        .await
+        .c(h!())
+}
+
+pub fn ensure_supported_roles(
+    roles: Option<&[String]>,
+) -> Result<(), AppError> {
+    if roles
+        .is_some_and(|roles| roles.iter().any(|role| role == "OrganismAdmin"))
+    {
+        return Err(AppError::Forbidden(
+            "Адміністраторів призначають у налаштуваннях організму".into(),
+        ));
+    }
+    Ok(())
+}
+
 impl ManagementScope {
     pub fn ensure_organism(&self, id: i64) -> Result<(), AppError> {
-        if self.organism_id.is_some_and(|own| own != id) {
+        if self
+            .organism_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.contains(&id))
+        {
             return Err(AppError::Forbidden(
                 "Доступ лише до свого організму".into(),
             ));
@@ -58,8 +89,8 @@ impl ManagementScope {
     }
 
     pub fn ensure_login(&self, login: &login::Model) -> Result<(), AppError> {
-        if let Some(id) = self.organism_id {
-            if login.organism_id != Some(id) {
+        if let Some(ids) = &self.organism_ids {
+            if !login.organism_id.is_some_and(|id| ids.contains(&id)) {
                 return Err(AppError::Forbidden(
                     "Доступ лише до користувачів свого організму".into(),
                 ));
@@ -79,7 +110,7 @@ impl ManagementScope {
         &self,
         changed: bool,
     ) -> Result<(), AppError> {
-        if self.organism_id.is_some() && changed {
+        if self.organism_ids.is_some() && changed {
             return Err(AppError::Forbidden(
                 "Прив’язками Delta керує Admin".into(),
             ));
@@ -91,7 +122,7 @@ impl ManagementScope {
         &self,
         changed: bool,
     ) -> Result<(), AppError> {
-        if self.organism_id.is_some() && changed {
+        if self.organism_ids.is_some() && changed {
             return Err(AppError::Forbidden(
                 "Прив’язками Signal-профілів керує Admin".into(),
             ));
@@ -102,12 +133,15 @@ impl ManagementScope {
     pub async fn ensure_user_zone<C: ConnectionTrait>(
         &self,
         db: &C,
+        organism_id: i64,
         zone: Option<i64>,
     ) -> Result<(), AppError> {
-        let (Some(organism_id), Some(zone)) = (self.organism_id, zone) else {
+        let Some(zone) = zone.filter(|_| self.organism_ids.is_some()) else {
             return Ok(());
         };
-        if self.sigint_zone_id == Some(zone) {
+        if self.own_organism_id == Some(organism_id)
+            && self.sigint_zone_id == Some(zone)
+        {
             return Ok(());
         }
         let available = login::Entity::find()
@@ -129,13 +163,19 @@ impl ManagementScope {
     pub async fn creation_zone<C: ConnectionTrait>(
         &self,
         db: &C,
+        organism_id: i64,
         requested: Option<i64>,
     ) -> Result<Option<i64>, AppError> {
-        self.ensure_user_zone(db, requested).await.context(h!())?;
-        let Some(organism_id) = self.organism_id else {
+        self.ensure_user_zone(db, organism_id, requested)
+            .await
+            .context(h!())?;
+        if self.organism_ids.is_none() {
             return Ok(requested);
-        };
-        if let Some(zone) = requested.or(self.sigint_zone_id) {
+        }
+        if let Some(zone) = requested.or(self
+            .sigint_zone_id
+            .filter(|_| self.own_organism_id == Some(organism_id)))
+        {
             return Ok(Some(zone));
         }
         let user = login::Entity::find()
@@ -157,7 +197,8 @@ impl ManagementScope {
         roles: Option<&[String]>,
     ) -> Result<(), AppError> {
         self.ensure_organism(organism_id).context(h!())?;
-        if self.organism_id.is_none() {
+        ensure_supported_roles(roles).context(h!())?;
+        if self.organism_ids.is_none() {
             return Ok(());
         }
         let organism = organism::Entity::find_by_id(organism_id)
@@ -169,10 +210,9 @@ impl ManagementScope {
         let allowed: Vec<String> =
             serde_json::from_value(organism.roles).c(h!())?;
         if roles.is_some_and(|roles| {
-            roles.iter().any(|role| {
-                protected_role(role)
-                    || (role != ROLE_ORGANISM_ADMIN && !allowed.contains(role))
-            })
+            roles
+                .iter()
+                .any(|role| protected_role(role) || !allowed.contains(role))
         }) {
             return Err(AppError::Forbidden("Ролі мають бути дозволені організму та не містити глобальних привілеїв".into()));
         }
@@ -185,7 +225,8 @@ impl ManagementScope {
         req: &super::types::UpdateOrganismReq,
     ) -> Result<(), AppError> {
         self.ensure_organism(req.id).context(h!())?;
-        if self.organism_id.is_none() {
+        ensure_supported_roles(req.roles.as_deref()).context(h!())?;
+        if self.organism_ids.is_none() {
             return Ok(());
         }
         let organism = organism::Entity::find_by_id(req.id)

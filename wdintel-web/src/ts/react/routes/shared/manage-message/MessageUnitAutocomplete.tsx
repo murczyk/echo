@@ -75,7 +75,7 @@ export function MessageUnitAutocomplete({
         }}
         filterOptions={(units) => {
           const name = value.trim();
-          if (name && allowCreate && !loading && units.length === 0) {
+          if (name && allowCreate && !loading) {
             return [...units, { name, create: true }];
           }
           return units;

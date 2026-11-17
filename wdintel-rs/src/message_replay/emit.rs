@@ -57,6 +57,7 @@ pub async fn emit_source(
                 skip_dedupe: true,
                 login_id: source.message.login_id,
                 external_id: Some(replay_external_id(source.message.id)),
+                echo_unit_id: source.message.echo_unit_id,
             },
         )
         .await

@@ -269,8 +269,18 @@ async fn deleted_callsign_affiliation_keeps_catalog_candidate_3900() {
     fixture
         .assert_candidates(&env.dbx, &[fixture.current_catalog_id])
         .await;
+    let activity_lock = env.dbx.begin().await.unwrap();
+    activity_lock
+        .execute_unprepared(
+            "lock table sigint_inbox_item, sigint_inbox_item_callsign in access exclusive mode",
+        )
+        .await
+        .unwrap();
     let txn = env.dbx.begin().await.unwrap();
-    bl_delete_network_callsign(
+    txn.execute_unprepared("set local lock_timeout = '100ms'")
+        .await
+        .unwrap();
+    let deleted = bl_delete_network_callsign(
         fixture.old_network_callsign_id,
         &fixture.login_id,
         &txn,
@@ -278,6 +288,46 @@ async fn deleted_callsign_affiliation_keeps_catalog_candidate_3900() {
     .await
     .unwrap();
     txn.commit().await.unwrap();
+    activity_lock.rollback().await.unwrap();
+
+    assert_eq!(deleted.id, fixture.old_network_callsign_id);
+    assert_eq!(deleted.network_id, fixture.network_id);
+    assert_eq!(deleted.known_callsign_id, Some(fixture.old_catalog_id));
+    assert_eq!(deleted.position.as_deref(), Some("ПНА"));
+    assert!(!deleted.active);
+    assert_eq!(deleted.message_count, 0);
+    assert_eq!(deleted.last_datetime, None);
+    assert_eq!(deleted.freqs, None);
+    let network_callsign =
+        sigint_network_callsign::Entity::find_by_id(deleted.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(network_callsign.deleted);
+    let catalog_callsign =
+        sigint_callsign::Entity::find_by_id(fixture.old_catalog_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(!catalog_callsign.deleted);
+    let changelog = sigint_network_callsign_changelog::Entity::find()
+        .filter(
+            sigint_network_callsign_changelog::Column::SigintNetworkCallsignId
+                .eq(deleted.id),
+        )
+        .filter(
+            sigint_network_callsign_changelog::Column::Action
+                .eq(sea_orm_active_enums::ChangelogActionEnum::Delete),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(changelog.login_id, fixture.login_id);
+    assert_eq!(changelog.old_value.unwrap()["deleted"], false);
+    assert_eq!(changelog.new_value.unwrap()["deleted"], true);
     fixture
         .assert_candidates(&env.dbx, &[fixture.current_catalog_id])
         .await;
