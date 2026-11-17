@@ -1,5 +1,39 @@
 {
   "migrations": {
+    "echo:m20261116_142224_ai_agent_second_container": {
+      "changes": [{ "table": "public.ai_agent_user_link", "strategy": "excluded" }]
+    },
+    "echo:m20261116_124020_ai_agent_parallel_conversations": {
+      "changes": [{ "table": "public.ai_agent_container", "strategy": "excluded" }]
+    },
+    "echo:m20261116_110507_message_card_quick_action_count": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261115_181951_duty_card_visibility": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261116_093333_organism_admins": {
+      "changes": [
+        { "table": "public.organism_admin", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261116_063906_operator_echo_unit_id": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "cdc_additive" }
+      ]
+    },
     "echo:m20261113_093453_report_group_preferences": {
       "changes": [
         {

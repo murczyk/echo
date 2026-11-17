@@ -21,6 +21,7 @@ pub struct Metadata {
     pub dmr_sender_id: Option<String>,
     pub dmr_call_group_id: Option<String>,
     pub dmr_color_code: Option<String>,
+    pub echo_unit_id: Option<i64>,
 }
 
 #[derive(

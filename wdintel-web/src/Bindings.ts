@@ -2383,6 +2383,7 @@ export type User = {
   name: string;
   displayName: string | null;
   roles: Array<string>;
+  administeredOrganismIds: Array<number>;
   sigintZoneId: number | null;
   organismId: number | null;
   deltaLogin: string | null;
@@ -3866,6 +3867,7 @@ export type Organism = {
   enabled: boolean;
   aorIds: Array<number>;
   loginsCount: number;
+  adminLogins: Array<string>;
 };
 
 export type MyOrganism = {
@@ -3900,6 +3902,7 @@ export type CreateOrganismReq = {
   parentId: number | null;
   roles: Array<string>;
   aorIds: Array<number> | null;
+  adminLogins: Array<string> | null;
 };
 
 export type UpdateOrganismReq = {
@@ -3909,6 +3912,7 @@ export type UpdateOrganismReq = {
   roles: Array<string> | null;
   enabled: boolean;
   aorIds: Array<number> | null;
+  adminLogins: Array<string> | null;
 };
 
 export type AddGroupToOrganismReq = {
@@ -6827,6 +6831,7 @@ export type AiAgentConversationSummary = {
   aiEngineId: string;
   createdAt: number;
   updatedAt: number;
+  activeState: string | null;
 };
 
 export type AiAgentConversationListRsp = {
@@ -7284,6 +7289,7 @@ export type AiAgentIdReq = {
 
 export type AiAgentContainerItem = {
   linkedAgentId: string;
+  slot: number;
   humanLoginId: string;
   humanLogin: string;
   agentLoginId: string;
@@ -7377,6 +7383,7 @@ export type AiAgentAdminRequestDetail = {
 
 export type AiAgentAdminUserReq = {
   loginId: string;
+  linkedAgentId: string | null;
 };
 
 export type AiAgentAdminUserItem = {
@@ -8828,4 +8835,9 @@ export type UserDutySettingsDto = {
   dutyRememberReportGroup: boolean;
   analysisRememberReportGroup: boolean;
   importantOnlyMyOrganism: boolean;
+  dutyHideCardHeader: boolean;
+  dutyHideCardFrequency: boolean;
+  dutyHideCardUnit: boolean;
+  messageCardQuickActionCount: number;
+  messageCardSecondQuickAction: MessageCardQuickAction;
 };

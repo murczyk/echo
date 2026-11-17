@@ -185,10 +185,10 @@ export function runtimeLimitLabel(seconds: number): string {
     : `до ${Math.round(seconds / 60)} хв`;
 }
 
-/** A mode's limit; long modes also warn that they hold the user's running slot. */
+/** A mode's limit; long modes also warn that they hold the conversation's queue. */
 function presetLimitHint(seconds: number): string {
   return seconds >= 3600
-    ? `${runtimeLimitLabel(seconds)}; нові повідомлення чекатимуть у черзі`
+    ? `${runtimeLimitLabel(seconds)}; нові повідомлення в цій розмові чекатимуть у черзі`
     : runtimeLimitLabel(seconds);
 }
 
@@ -198,6 +198,8 @@ const GENERIC_REQUEST_FAILURE = 'Не вдалося виконати запит
 const GENERIC_STREAM_FAILURE = 'Не вдалося відновити з’єднання з потоком відповіді.';
 const PROVIDER_UNHEALTHY_DEFAULT = 'провайдер тимчасово працює нестабільно.';
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'echo.ai-agent.active-conversation-id';
+/** How often the history list refreshes while any conversation is working. */
+const ACTIVE_CONVERSATION_LIST_REFRESH_MS = 5_000;
 
 export const AI_AGENT_CHAT_CARD_HEIGHT = '100%';
 const AI_AGENT_CHAT_MAP_DOCK_WIDTH = '420px';
@@ -601,10 +603,15 @@ function AssistantMessage({
           py: 1.5,
         }}
       >
-        <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-          ЕХО Агент
-          {engineName ? ` · ${engineName}` : ''}
-        </Typography>
+        <div className="mb-echo-xs flex items-center justify-between gap-echo-sm">
+          <Typography variant="caption" color="text.secondary" component="div">
+            ЕХО Агент
+            {engineName ? ` · ${engineName}` : ''}
+          </Typography>
+          {copyable && content.trim() ? (
+            <AnswerCopyMenu markdown={content} contentRef={contentRef} />
+          ) : null}
+        </div>
         <div ref={contentRef}>
           <MarkdownContent
             citations={citations}
@@ -633,9 +640,6 @@ function AssistantMessage({
           <MapPreview key={`${mainMap.requestId}:${mainMap.id}`} summary={mainMap} />
         ) : null}
       </Box>
-      {copyable && content.trim() ? (
-        <AnswerCopyMenu markdown={content} contentRef={contentRef} />
-      ) : null}
     </div>
   );
 }
@@ -1065,6 +1069,13 @@ export function AiAgentChat({
   resetRef.current = resetConversationView;
   const refreshConfigurationRef = useRef(refreshConfiguration);
   refreshConfigurationRef.current = refreshConfiguration;
+  const refreshConversationListRef = useRef(refreshConversationList);
+  refreshConversationListRef.current = refreshConversationList;
+  const listRefreshFailedRef = useRef(false);
+  const listRefreshesInFlightRef = useRef(0);
+  const conversationsActive = conversations.some(
+    (conversation) => conversation.activeState !== null,
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1100,6 +1111,18 @@ export function AiAgentChat({
       streamAbortRefs.current.clear();
     };
   }, []);
+
+  // Requests in other conversations run in parallel without a stream here;
+  // refreshing the list clears their markers when they finish.
+  useEffect(() => {
+    if (!conversationsActive) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void refreshConversationListRef.current({ background: true });
+      }
+    }, ACTIVE_CONVERSATION_LIST_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [conversationsActive]);
 
   useEffect(() => {
     if (!followOutputRef.current) return;
@@ -1214,17 +1237,28 @@ export function AiAgentChat({
     setConversations(next.filter((conversation) => !deletedIdsRef.current.has(conversation.id)));
   }
 
-  async function refreshConversationList() {
+  async function refreshConversationList({ background = false } = {}) {
+    // A slow response would otherwise be superseded by every later tick and
+    // never applied.
+    if (background && listRefreshesInFlightRef.current > 0) return;
     const sequence = ++listSequenceRef.current;
+    listRefreshesInFlightRef.current += 1;
     try {
       const next = await listAiAgentConversations();
+      listRefreshFailedRef.current = false;
       if (mountedRef.current && sequence === listSequenceRef.current) applyConversationList(next);
     } catch (loadError) {
       if (!mountedRef.current) return;
+      // A background refresh reports a failure once, not every interval.
+      const reported = background && listRefreshFailedRef.current;
+      listRefreshFailedRef.current = true;
+      if (reported) return;
       notify({
         severity: 'error',
         message: `Не вдалося оновити історію розмов: ${errorMessage(loadError)}`,
       });
+    } finally {
+      listRefreshesInFlightRef.current -= 1;
     }
   }
 

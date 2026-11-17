@@ -328,7 +328,10 @@ test('@regression #3535 echelon ordering kept brigades before recent subordinate
   const input = page.getByRole('combobox', { name: 'Підрозділ' });
   await expect(input).toHaveValue(crew.name);
   await input.fill('123 омб');
-  await expect(page.getByRole('option')).toHaveText(units.map((unit) => unit.name));
+  await expect(page.getByRole('option')).toHaveText([
+    ...units.map((unit) => unit.name),
+    'Додати Підрозділ «123 омб»',
+  ]);
   await input.press('ArrowDown');
   await input.press('Enter');
   await expect(input).toHaveValue(brigade.name);
@@ -376,7 +379,7 @@ test('@regression #3535 normalized and malformed recent fields remained usable w
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
   await input.fill('1  рота 3535 полк');
   await expect(page.getByRole('option', { name: existingUnit.name, exact: true })).toBeVisible();
-  await expect(page.getByRole('option', { name: /^Додати Підрозділ/ })).toHaveCount(0);
+  await expect(page.getByRole('option').last()).toHaveText('Додати Підрозділ «1  рота 3535 полк»');
 });
 
 test('@regression #3535 ambiguous recent names required an explicit unit ID', async ({ page }) => {
@@ -396,7 +399,9 @@ test('@regression #3535 ambiguous recent names required an explicit unit ID', as
   await input.fill(existingUnit.name);
   await expect(input).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeDisabled();
-  await expect(page.getByRole('option', { name: /^Додати Підрозділ/ })).toHaveCount(0);
+  await expect(page.getByRole('option').last()).toHaveText(
+    `Додати Підрозділ «${existingUnit.name}»`,
+  );
   await expect(
     page.getByRole('option', { name: `${existingUnit.name} · №${existingUnit.id}`, exact: true }),
   ).toBeVisible();
@@ -476,6 +481,8 @@ for (const host of ['duty', 'analysis', 'report'] as const) {
     test(`@regression #3535 ${host} selected ${selection} unit and discarded unknown history`, async ({
       page,
     }) => {
+      const cpu = await page.context().newCDPSession(page);
+      await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
       let submissions: Record<string, unknown>[];
       if (host === 'report') {
         await openCreateReportDrawer(page);
@@ -523,12 +530,22 @@ for (const host of ['duty', 'analysis', 'report'] as const) {
         await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('Перехоплення 3535');
       }
 
+      if (selection === 'new') {
+        await page.route('**/api/sigint/unit/search', (route) =>
+          route.fulfill({ json: { units: [existingUnit, inactiveChild] } }),
+        );
+      }
       const input = page.getByRole('combobox', { name: 'Підрозділ' });
       await input.fill(selection === 'existing' ? '3535 полк' : newUnitName);
       await expect(page.getByRole('option', { name: unknownLabel, exact: true })).toHaveCount(0);
       if (selection === 'existing') {
         await page.getByRole('option', { name: inactiveChild.name, exact: true }).click();
       } else {
+        await expect(page.getByRole('option')).toHaveText([
+          existingUnit.name,
+          inactiveChild.name,
+          `Додати Підрозділ «${newUnitName}»`,
+        ]);
         await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
         await saveNewUnit(page);
         expect(submissions).toHaveLength(0);
@@ -634,7 +651,7 @@ test('@regression #3535 parsed exact names selected inactive units by ID', async
   expect(submissions[0]).toMatchObject({ unit_id: inactiveChild.id, text: '3535 parsed message' });
 });
 
-test('@regression #3535 typed partial names blocked creation and offered Add only without candidates', async ({
+test('@regression #3535 #4210 typed partial names required selection and offered Add after candidates', async ({
   page,
 }) => {
   const submissions = await openDutyUnitEditor(page);
@@ -645,7 +662,7 @@ test('@regression #3535 typed partial names blocked creation and offered Add onl
   await expect(create).toBeEnabled();
   await input.fill('3535 полк');
   await expect(page.getByRole('option', { name: inactiveChild.name, exact: true })).toBeVisible();
-  await expect(page.getByRole('option', { name: /^Додати Підрозділ/ })).toHaveCount(0);
+  await expect(page.getByRole('option').last()).toHaveText('Додати Підрозділ «3535 полк»');
   await expect(input).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Підрозділ не обрано', { exact: true })).toBeVisible();
   await expect(create).toBeDisabled();

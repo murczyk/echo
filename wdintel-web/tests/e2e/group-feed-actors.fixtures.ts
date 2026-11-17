@@ -256,6 +256,7 @@ export async function installGroupFeedActors(options: GroupFeedActorsOptions = {
             goi_host: null,
             goi_integrations: [],
             last_release_seen: null,
+            administered_organism_ids: [],
             rer_report_eligible: true,
           },
         });

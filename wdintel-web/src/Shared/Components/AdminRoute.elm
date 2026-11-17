@@ -11,9 +11,9 @@ adminRouteIsBlocked path user =
     isAdminRoutePath path
         && not
             (adminMenuIsVisible user
-                || (Core.Auth.hasRole "OrganismAdmin" user
+                || (Core.Auth.canManageOrganisms user
                         && List.member (Route.Path.toString path)
-                            [ "/admin/organisms-neo", "/admin/organisms-neo/edit", "/admin/goi-integrations-neo" ]
+                            [ "/admin/organisms-neo", "/admin/organisms-neo/edit" ]
                    )
             )
 

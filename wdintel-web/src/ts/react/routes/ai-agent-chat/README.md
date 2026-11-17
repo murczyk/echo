@@ -18,6 +18,14 @@ confirmation and removes the row only after the server accepts deletion. Deletin
 the viewed conversation replaces its URL with `/`; deleting another preserves the
 current view. The backend rejects deletion while a request is queued or running.
 
+Conversations run in parallel (#4232): a message waits in the queue only behind
+earlier requests in its own conversation. Conversations whose engines need the
+same agent-container proxies (every gateway engine, or one vLLM host) share the
+user's container; one on another backend runs in a second container, and only a
+third backend at once waits. History rows show **Виконується** or **У черзі**
+before the timestamp, and the list refreshes every 5 seconds while any row has
+one, so a conversation finished in the background clears its marker.
+
 The composer remembers the last chosen provider in `localStorage`
 (`echo.ai-agent.provider-id`) and uses it for new dialogues. A missing or
 disabled provider falls back to the configured default; opening an existing
@@ -100,7 +108,8 @@ Regression coverage: `wdintel-web/tests/e2e/ai-agent-documents.spec.ts`.
 
 `CitationMarkdown` renders each code block (`CopyControls.tsx`) with its language
 and a **Копіювати** button that copies only the code. Once an answer has finished,
-a copy button under it opens a menu (#4182): **Копіювати текст** writes the
+a **⋯** button («Дії з відповіддю») at the top right of the answer, beside its
+«ЕХО Агент» caption, opens a menu (#4182): **Копіювати текст** writes the
 rendered answer as HTML plus a plain-text alternative (`answer-copy.ts`), so Word
 and Google Docs keep formatting and messengers get clean text with bullets and
 tab-separated table cells; **Копіювати як Markdown** copies the stored source.
@@ -138,7 +147,8 @@ and published maps. The backend revokes request credentials and terminates the
 runner; switching conversations only detaches the browser stream.
 
 The mode menu shows each mode's time limit (`runtimeLimitLabel`): Deep runs up
-to 4 hours, and while it runs the user's next messages wait in the queue. The
+to 4 hours, and while it runs the next messages in that conversation wait in the
+queue. The
 event stream (`stream.ts`) reconnects after each drop; only consecutive failed
 connections count toward its retry limit, so a multi-hour request survives
 network interruptions.

@@ -150,6 +150,27 @@ pub struct UserDutySettingsDto {
     pub analysis_remember_report_group: bool,
     #[serde(default)]
     pub important_only_my_organism: bool,
+    #[serde(default)]
+    pub duty_hide_card_header: bool,
+    #[serde(default)]
+    pub duty_hide_card_frequency: bool,
+    #[serde(default)]
+    pub duty_hide_card_unit: bool,
+    /// Narrow-card direct actions shown before the overflow menu: 1 or 2.
+    #[serde(default = "default_message_card_quick_action_count")]
+    pub message_card_quick_action_count: u8,
+    /// Second narrow-card direct action; never equal to the first.
+    #[serde(default = "default_message_card_second_quick_action")]
+    pub message_card_second_quick_action: MessageCardQuickAction,
+}
+
+pub(super) fn default_message_card_quick_action_count() -> u8 {
+    crate::config::USER_SETTINGS_MESSAGE_CARD_QUICK_ACTION_COUNT_DEFAULT
+}
+
+pub(super) fn default_message_card_second_quick_action(
+) -> MessageCardQuickAction {
+    MessageCardQuickAction::QuickActionImportant
 }
 
 fn default_remember_report_group() -> bool {
@@ -192,6 +213,13 @@ impl Default for UserDutySettingsDto {
             duty_remember_report_group: default_remember_report_group(),
             analysis_remember_report_group: default_remember_report_group(),
             important_only_my_organism: false,
+            duty_hide_card_header: false,
+            duty_hide_card_frequency: false,
+            duty_hide_card_unit: false,
+            message_card_quick_action_count:
+                default_message_card_quick_action_count(),
+            message_card_second_quick_action:
+                default_message_card_second_quick_action(),
         }
     }
 }

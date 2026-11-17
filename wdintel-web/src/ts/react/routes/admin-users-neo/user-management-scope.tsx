@@ -8,11 +8,7 @@ export const useUserManagementScope = () => useContext(UserManagementScope);
 
 export function userRoleOptions(organism: Organism | null) {
   return organism
-    ? ROLE_OPTIONS.filter(
-        (role) =>
-          !protectedOrganismRole(role) &&
-          (role === 'OrganismAdmin' || organism.roles.includes(role)),
-      )
+    ? ROLE_OPTIONS.filter((role) => !protectedOrganismRole(role) && organism.roles.includes(role))
     : ROLE_OPTIONS;
 }
 

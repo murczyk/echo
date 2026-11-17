@@ -1,0 +1,62 @@
+--- a/wdintel-rs/src/entities/login.rs
++++ b/wdintel-rs/src/entities/login.rs
+@@ -461,6 +461,12 @@
+     }
+ }
+ 
++impl Related<super::organism::Entity> for Entity {
++    fn to() -> RelationDef {
++        Relation::Organism.def()
++    }
++}
++
+ impl Related<super::organism_admin::Entity> for Entity {
+     fn to() -> RelationDef {
+         Relation::OrganismAdmin.def()
+@@ -722,15 +728,6 @@
+ impl Related<super::user_settings::Entity> for Entity {
+     fn to() -> RelationDef {
+         Relation::UserSettings.def()
+-    }
+-}
+-
+-impl Related<super::organism::Entity> for Entity {
+-    fn to() -> RelationDef {
+-        super::organism_admin::Relation::Organism.def()
+-    }
+-    fn via() -> Option<RelationDef> {
+-        Some(super::organism_admin::Relation::Login.def().rev())
+     }
+ }
+ 
+--- a/wdintel-rs/src/entities/organism.rs
++++ b/wdintel-rs/src/entities/organism.rs
+@@ -122,6 +122,12 @@
+     }
+ }
+ 
++impl Related<super::login::Entity> for Entity {
++    fn to() -> RelationDef {
++        Relation::Login.def()
++    }
++}
++
+ impl Related<super::organism_admin::Entity> for Entity {
+     fn to() -> RelationDef {
+         Relation::OrganismAdmin.def()
+@@ -179,15 +185,6 @@
+ impl Related<super::tag::Entity> for Entity {
+     fn to() -> RelationDef {
+         Relation::Tag.def()
+-    }
+-}
+-
+-impl Related<super::login::Entity> for Entity {
+-    fn to() -> RelationDef {
+-        super::organism_admin::Relation::Login.def()
+-    }
+-    fn via() -> Option<RelationDef> {
+-        Some(super::organism_admin::Relation::Organism.def().rev())
+     }
+ }
+ 

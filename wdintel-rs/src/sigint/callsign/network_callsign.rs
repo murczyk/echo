@@ -299,7 +299,7 @@ pub async fn update_network_callsign(
 /// Видалення позивного прив'язаного до мережі
 ///
 /// # API URL
-/// - POST: /api/sigint/network-callsign/update
+/// - POST: /api/sigint/network-callsign/delete
 ///
 /// # Параметри
 ///
@@ -311,6 +311,7 @@ pub async fn update_network_callsign(
 ///
 /// [`Json<NetworkCallsign>`], де [`NetworkCallsign`] - структура, що представляє один прив'язаний до мережі позивний.
 ///  Видалений позивний буде позначено як active = false, але не буде видалено з бази даних.
+///  Статистика активності не обчислюється: message_count = 0, last_datetime = null, freqs = null.
 ///
 #[post("/api/sigint/network-callsign/delete")]
 pub async fn delete_network_callsign(
@@ -332,19 +333,7 @@ pub async fn delete_network_callsign(
         .context(h!())?;
     txn.commit().await.context(h!())?;
 
-    let res = bl_get_network_callsigns_info_batch(
-        &env.dbx,
-        &user_id,
-        network_callsign.sigint_network_id,
-        vec![network_callsign.id],
-    )
-    .await
-    .context(h!())?
-    .into_iter()
-    .next()
-    .ok_or(AppError::NotFound)?;
-
-    Ok(Json(res))
+    Ok(Json(network_callsign))
 }
 
 /// Для списку позивних і заданої мережі повертає активності цих позивних в етері на частотах мережі

@@ -31,6 +31,12 @@ every selected template must match its pinned release and isolation metadata.
   forced-command Unix identity per Echo deployment.
 - Capacity: at most six dispatcher-managed, non-template containers running at
   once. The host dispatcher enforces the limit under a lifecycle lock.
+- Containers per user: a user's conversations share their main container
+  (agent login `<login>-ai-agent`) while their engines need the same
+  proxies. A conversation on another backend at the same time runs in a second
+  container with its own agent login (`<login>-ai-agent-2`), which Echo
+  destroys once it has been idle for 5 minutes (#4232). It takes one of the six
+  running slots while it lives.
 
 Containers can reach the public IPv4 internet. Nftables rejects direct
 container traffic to the bridge host, RFC1918, Tailscale CGNAT, loopback,

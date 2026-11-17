@@ -27,6 +27,7 @@ pub struct Model {
     pub echo_inbox_message_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub attachments_hash: Option<String>,
+    pub echo_unit_id: Option<i64>,
     pub login_id: Option<Uuid>,
     pub id_uuid: Option<Uuid>,
 }

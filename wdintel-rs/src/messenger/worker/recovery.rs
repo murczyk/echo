@@ -2089,6 +2089,7 @@ mod tests {
             message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
             operator_tags: Set(None),
             attachments_hash: Set(None),
+            echo_unit_id: NotSet,
         }
         .insert(&env.dbx)
         .await
@@ -2186,6 +2187,7 @@ mod tests {
             message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
             operator_tags: Set(None),
             attachments_hash: Set(existing_attachments_hash),
+            echo_unit_id: NotSet,
         }
         .insert(&env.dbx)
         .await
@@ -3026,6 +3028,7 @@ mod tests {
             message_uid: Set(message_uid),
             operator_tags: Set(None),
             attachments_hash: Set(None),
+            echo_unit_id: NotSet,
         }
         .insert(dbx)
         .await
@@ -3056,6 +3059,7 @@ mod tests {
             message_uid: Set(None),
             operator_tags: Set(None),
             attachments_hash: Set(None),
+            echo_unit_id: NotSet,
         }
         .insert(dbx)
         .await

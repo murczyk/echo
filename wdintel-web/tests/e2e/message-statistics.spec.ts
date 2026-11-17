@@ -50,7 +50,7 @@ async function install(page: Page) {
   await installAnalysisNeoApiMocks(page, { userRoles: ['Rer'] });
   const requests: StatsRequest[] = [];
   let status = 200;
-  let dataKind: 'normal' | 'zero' | 'empty' = 'normal';
+  let dataKind: 'normal' | 'zero' | 'empty' | 'low' = 'normal';
   let pendingStats: Promise<void> | null = null;
   const catalogs: unknown[] = [];
   const facets: Array<{
@@ -151,9 +151,9 @@ async function install(page: Page) {
                 : key === null
                   ? 'Невідомий відправник'
                   : 'Sender A',
-          points: days.map(() => ({
-            messages: dataKind === 'zero' ? 0 : 12,
-            counterparts: dataKind === 'zero' ? 0 : 2,
+          points: days.map((_, index) => ({
+            messages: dataKind === 'zero' ? 0 : dataKind === 'low' ? (index === 0 ? 120 : 1) : 12,
+            counterparts: dataKind === 'zero' ? 0 : dataKind === 'low' ? 1 : 2,
           })),
         })),
         total_series: keys.length,
@@ -179,7 +179,7 @@ async function install(page: Page) {
     fail: (code: number) => {
       status = code;
     },
-    setData: (kind: 'normal' | 'zero' | 'empty') => {
+    setData: (kind: 'normal' | 'zero' | 'empty' | 'low') => {
       dataKind = kind;
     },
     holdStats: () => {
@@ -584,21 +584,152 @@ test('@regression #3873 refreshes selected sender labels without polling a close
   expect(fixture.senders).toHaveLength(1);
 });
 
+test('@regression #3873 delays refresh progress and cancels it for fast responses', async ({
+  page,
+  context,
+}) => {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  const fixture = await install(page);
+  await page.goto('/message-statistics');
+  const content = page.locator('.message-statistics-chart-content');
+  const progress = page.getByRole('progressbar', { name: 'Оновлення статистики' });
+  await expect(page.locator('.message-statistics-chart svg')).toBeVisible();
+  await expect(content).toHaveAttribute('aria-busy', 'false');
+  await page.clock.pauseAt(new Date((await page.evaluate(() => Date.now())) + 1000));
+  await page.evaluate(() => {
+    const state = { mounts: 0 };
+    (window as any).__refreshProgressProbe = state;
+    const observer = new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (
+            node instanceof Element &&
+            (node.matches('.message-statistics-chart-progress') ||
+              node.querySelector('.message-statistics-chart-progress'))
+          )
+            state.mounts += 1;
+    });
+    observer.observe(document.querySelector('.message-statistics-card')!, {
+      subtree: true,
+      childList: true,
+    });
+    (window as any).__refreshProgressObserver = observer;
+  });
+  const releaseFast = fixture.holdStats();
+  await page.getByRole('button', { name: 'Відправниках', exact: true }).click();
+  await expect(content).toHaveAttribute('aria-busy', 'true');
+  await page.clock.runFor(200);
+  await expect(progress).toHaveCount(0);
+  releaseFast();
+  await expect(content).toHaveAttribute('aria-busy', 'false');
+  await page.clock.runFor(300);
+  await expect(progress).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__refreshProgressProbe.mounts)).toBe(0);
+  const releaseSlow = fixture.holdStats();
+  await page.getByRole('button', { name: 'Групах', exact: true }).click();
+  await expect(content).toHaveAttribute('aria-busy', 'true');
+  await page.clock.runFor(249);
+  await expect(progress).toHaveCount(0);
+  await page.clock.runFor(1);
+  await expect(progress).toBeVisible();
+  releaseSlow();
+  await expect(content).toHaveAttribute('aria-busy', 'false');
+  await expect(progress).toHaveCount(0);
+  await page.evaluate(() => (window as any).__refreshProgressObserver.disconnect());
+});
+
+for (const width of [1440, 390]) {
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`@regression #3873 uses one vertical page scroll over charts at ${width}px with ${reducedMotion} motion`, async ({
+      page,
+      context,
+    }) => {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      await page.emulateMedia({ reducedMotion });
+      await page.setViewportSize({ width, height: 1000 });
+      const fixture = await install(page);
+      fixture.setPanels(
+        [1, 2, 3, 4].map((label_id) => ({
+          label_id,
+          name: `Панель ${label_id}`,
+          color: '#87d7f1',
+          organism_name: null,
+        })),
+      );
+      await page.goto('/message-statistics?from=2026-10-12&to=2026-11-11');
+      const charts = page.locator('.message-statistics-chart-viewport');
+      const cards = page.locator('.message-statistics-card');
+      await expect(page.locator('.message-statistics-chart svg')).toHaveCount(4);
+      await expect(page.locator('.message-statistics-chart-content[aria-busy="true"]')).toHaveCount(
+        0,
+      );
+      await page.evaluate(() => document.fonts.ready);
+      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      const horizontal = await charts.first().evaluate((node) => node.scrollLeft);
+      expect(horizontal).toBeGreaterThan(0);
+      const plot = await boundingBox(charts.first());
+      await page.mouse.move(plot.x + plot.width / 2, Math.min(plot.y + plot.height / 2, 950));
+      await page.mouse.wheel(-300, 0);
+      await expect
+        .poll(() => charts.first().evaluate((node) => node.scrollLeft))
+        .toBeLessThan(horizontal);
+      expect(await page.evaluate(() => window.scrollY + document.body.scrollTop)).toBe(0);
+      await page.mouse.wheel(0, 500);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+      expect(await page.evaluate(() => document.body.scrollTop)).toBe(0);
+      expect(await charts.evaluateAll((nodes) => nodes.every((node) => node.scrollTop === 0))).toBe(
+        true,
+      );
+      await page.mouse.move(5, 500);
+      for (let step = 0; step < 2; step++) {
+        await page.mouse.wheel(0, 10000);
+        await expect
+          .poll(
+            async () =>
+              (await boundingBox(cards.last())).y + (await boundingBox(cards.last())).height,
+          )
+          .toBeCloseTo(976, 0);
+        expect(await page.evaluate(() => document.body.scrollTop)).toBe(0);
+        expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(height);
+      }
+      await charts.first().evaluate(
+        (node) =>
+          new Promise<void>((resolve) => {
+            document.addEventListener('scrollend', () => resolve(), { once: true });
+            (node as HTMLElement).focus();
+          }),
+      );
+      const beforeKey = await page.evaluate(() => window.scrollY);
+      await page.keyboard.press('PageDown');
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(beforeKey);
+      expect(await page.evaluate(() => document.body.scrollTop)).toBe(0);
+      expect(await charts.evaluateAll((nodes) => nodes.every((node) => node.scrollTop === 0))).toBe(
+        true,
+      );
+    });
+  }
+}
+
 for (const viewport of [
   { width: 1440, height: 1000 },
   { width: 390, height: 844 },
 ]) {
   test(`@regression #3873 keeps the chart card and plot stationary across periods and loading states at ${viewport.width}px`, async ({
     page,
+    context,
   }) => {
     test.setTimeout(60_000);
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
     const fixture = await install(page);
     await page.setViewportSize(viewport);
     const releaseInitial = fixture.holdStats();
     await page.goto('/message-statistics');
     const card = page.locator('.message-statistics-card');
     const chart = page.locator('.message-statistics-chart');
-    const zero = chart.locator('svg text').filter({ hasText: /^0$/ });
+    const zero = page.locator('.message-statistics-y-axis span').filter({ hasText: /^0$/ });
     await expect(page.getByLabel('Завантаження статистики', { exact: true })).toBeVisible();
     await expect.poll(() => fixture.requests.length).toBeGreaterThan(0);
     await page.evaluate(() => document.fonts.ready);
@@ -613,18 +744,30 @@ for (const viewport of [
     await expect(page.getByRole('status', { name: 'Завантаження користувача' })).toHaveCount(0);
     const plot = await boundingBox(chart);
     const baseline = await boundingBox(zero);
-    const expectPlotStable = async (refreshing = false) => {
+    const originalHost = await chart.elementHandle();
+    const originalSvg = await chart.locator('svg').elementHandle();
+    const expectPlotStable = async (refreshing = false, empty = false) => {
       await expect(page.locator('.message-statistics-chart-content')).toHaveAttribute(
         'aria-busy',
         String(refreshing),
       );
-      await expect(chart.locator('svg')).toBeVisible();
-      await expect(zero).toBeVisible();
+      if (empty) await expect(chart.locator('svg')).toBeHidden();
+      else {
+        await expect(chart.locator('svg')).toBeVisible();
+        await expect(zero).toBeVisible();
+      }
+      expect(await chart.evaluate((node, original) => node === original, originalHost)).toBe(true);
+      expect(
+        await chart.locator('svg').evaluate((node, original) => node === original, originalSvg),
+      ).toBe(true);
       await expectCardStable();
-      const bounds = await boundingBox(chart);
+      const bounds = await chart.evaluate((node) => node.getBoundingClientRect().toJSON());
       expect(bounds.height).toBeCloseTo(plot.height, 1);
       expect(bounds.y).toBeCloseTo(plot.y, 1);
-      expect((await boundingBox(zero)).y).toBeCloseTo(baseline.y, 1);
+      expect(await zero.evaluate((node) => node.getBoundingClientRect().y)).toBeCloseTo(
+        baseline.y,
+        1,
+      );
     };
     const changeStats = async (label: string) => {
       await Promise.all([
@@ -636,10 +779,29 @@ for (const viewport of [
     const releaseDay = fixture.holdStats();
     const dayResponse = page.waitForResponse('**/api/rer/analysis/stats/daily-messages');
     await page.getByRole('button', { name: 'Сьогодні', exact: true }).click();
-    await expect(page.getByLabel('Завантаження статистики', { exact: true })).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: 'Оновлення статистики' })).toBeVisible();
+    await expectPlotStable(true);
     await expectCardStable();
     releaseDay();
     await dayResponse;
+    await expectPlotStable();
+    const releaseGrouping = fixture.holdStats();
+    await page.getByRole('button', { name: 'Відправниках', exact: true }).click();
+    await expectPlotStable(true);
+    await expect(
+      card.getByText('Число на кольоровому тлі — скільки відправників працювало над групою', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    const reversed = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/rer/analysis/stats/daily-messages') &&
+        response.request().postDataJSON().grouping === 'Groups',
+    );
+    await page.getByRole('button', { name: 'Групах', exact: true }).click();
+    await expectPlotStable(true);
+    releaseGrouping();
+    await reversed;
     await expectPlotStable();
     await changeStats('Відправниках');
     await expectPlotStable();
@@ -656,9 +818,9 @@ for (const viewport of [
     fixture.setData('zero');
     await changeStats('Сьогодні');
     await expect(
-      card.getByText('За вибраними фільтрами в цих групах повідомлень немає.', { exact: true }),
+      card.getByText('За вибраними фільтрами повідомлень немає.', { exact: true }),
     ).toBeVisible();
-    await expectPlotStable();
+    await expectPlotStable(false, true);
     fixture.setData('empty');
     await changeStats('7 днів');
     await expect(
@@ -673,6 +835,83 @@ for (const viewport of [
     await expect(card.getByText('Статистика недоступна')).toBeVisible();
     await expectPlotStable();
   });
+}
+
+for (const width of [1440, 390]) {
+  for (const mode of ['light', 'dark']) {
+    test(`@regression #3873 keeps low-bar values, tooltip dates and the pinned scale readable at ${width}px in ${mode}`, async ({
+      page,
+      context,
+    }) => {
+      test.setTimeout(60_000);
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      await page.emulateMedia({ reducedMotion: mode === 'light' ? 'reduce' : 'no-preference' });
+      const fixture = await install(page);
+      fixture.setData('low');
+      await page.setViewportSize({ width, height: 1000 });
+      await page.addInitScript((value) => localStorage.setItem('echo-theme-mode', value), mode);
+      await page.goto('/message-statistics?from=2026-11-05&to=2026-11-11');
+      const chart = page.locator('.message-statistics-chart');
+      const viewport = page.getByRole('region', { name: 'Прокручування графіка', exact: true });
+      const axis = page.locator('.message-statistics-y-axis');
+      await expect(chart.locator('svg')).toBeVisible();
+      await expect(axis.getByText('160', { exact: true })).toBeVisible();
+      await viewport.evaluate((node) => {
+        node.scrollLeft = 0;
+      });
+      const before = await boundingBox(axis);
+      await viewport.evaluate((node) => {
+        node.scrollLeft = node.scrollWidth;
+      });
+      const after = await boundingBox(axis);
+      expect(after.x).toBeCloseTo(before.x, 1);
+      expect(after.y).toBeCloseTo(before.y, 1);
+      expect(after.x + after.width).toBeLessThanOrEqual((await boundingBox(viewport)).x + 1);
+      const lowValues = await chart.evaluate((node) => {
+        const clip = node.parentElement!.getBoundingClientRect();
+        const baseline = node.getBoundingClientRect().bottom - 114;
+        return [...node.querySelectorAll('svg text')]
+          .filter((text) => text.textContent === '1')
+          .map((text) => text.getBoundingClientRect())
+          .filter((box) => box.x >= clip.x && box.right <= clip.right && box.y > baseline - 80)
+          .map((box) => ({ bottom: box.bottom, baseline }));
+      });
+      expect(lowValues.length).toBeGreaterThanOrEqual(4);
+      expect(lowValues.every((box) => box.bottom < box.baseline)).toBe(true);
+      await viewport.evaluate((node) => {
+        node.scrollLeft = 0;
+      });
+      const bar = await chart.locator('svg path[fill="#87d7f1"]').evaluateAll((nodes) => {
+        const box = nodes
+          .map((node) => node.getBoundingClientRect())
+          .find((box) => box.height > 100);
+        return box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null;
+      });
+      expect(bar).not.toBeNull();
+      await page.mouse.move(bar!.x, bar!.y);
+      await expect(chart.locator('svg text').filter({ hasText: /^05\.11\.2026$/ })).toBeVisible();
+      await expect(
+        chart.locator('svg text').filter({ hasText: /^Повідомлень: 120$/ }),
+      ).toBeVisible();
+      expect(await chart.locator('svg').textContent()).not.toContain('group-a');
+      await page.screenshot({ path: test.info().outputPath('chart-details.png'), fullPage: true });
+      fixture.setData('zero');
+      await page.getByRole('button', { name: 'Сьогодні', exact: true }).click();
+      const empty = page.locator('.message-statistics-chart-empty');
+      await expect(empty).toHaveText('За вибраними фільтрами повідомлень немає.');
+      await expect(empty).toBeVisible();
+      await expect(page.locator('.message-statistics-card').getByRole('alert')).toHaveCount(0);
+      const notice = await boundingBox(empty.locator('p'));
+      const content = await boundingBox(page.locator('.message-statistics-chart-content'));
+      expect(notice.x + notice.width / 2).toBeCloseTo(content.x + content.width / 2, 1);
+      expect(notice.y + notice.height / 2).toBeCloseTo(
+        content.y + 20 + (content.height - 20) / 2,
+        1,
+      );
+      await page.screenshot({ path: test.info().outputPath('chart-empty.png'), fullPage: true });
+    });
+  }
 }
 
 test('@regression #3873 keeps label panels and their grouping independent across shared filters', async ({
@@ -761,6 +1000,11 @@ for (const width of [1440, 390]) {
         ),
       )
       .toBe(true);
+    const axes = page.locator('.message-statistics-y-axis');
+    const axisPositions = await axes.evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().x),
+    );
+    for (const axis of await axes.all()) await expect(axis).toBeVisible();
     await viewports.evaluateAll((elements) => {
       for (const element of elements) element.scrollLeft = 80;
     });
@@ -773,6 +1017,12 @@ for (const width of [1440, 390]) {
     expect(
       await viewports.evaluateAll((elements) => elements.map((element) => element.scrollLeft)),
     ).toEqual([80, 80]);
+    expect(
+      await axes.evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().x),
+      ),
+    ).toEqual(axisPositions);
+    for (const axis of await axes.all()) await expect(axis).toBeVisible();
   });
 }
 

@@ -6,8 +6,10 @@ use crate::ai_engine::client::{government_model, model_id};
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
-    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REASON_MODEL_REFUSAL,
-    AI_AGENT_REASON_PROVIDER_ERROR, AI_AGENT_REQUEST_WORKER_COUNT,
+    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_MAIN_CONTAINER_SLOT,
+    AI_AGENT_MAX_CONTAINERS_PER_USER, AI_AGENT_MAX_RUNNING_CONTAINERS,
+    AI_AGENT_REASON_MODEL_REFUSAL, AI_AGENT_REASON_PROVIDER_ERROR,
+    AI_AGENT_REQUEST_CLAIM_ADVISORY_LOCK_KEY, AI_AGENT_REQUEST_WORKER_COUNT,
     AI_AGENT_RESPONSE_MAX_BYTES, AI_AGENT_RESPONSE_MAX_CHARS,
     AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES, AI_AGENT_USER_FAILURE_MESSAGE,
     AI_AGENT_WORKER_ERROR_SLEEP_SEC, AI_AGENT_WORKER_IDLE_SLEEP_MS,
@@ -27,13 +29,14 @@ use crate::types::{error, info, warn, Context, Env, ShortContext};
 use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
-    DatabaseBackend, EntityTrait, FromQueryResult, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
+    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
+    TransactionTrait,
 };
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
 use tokio::task::JoinSet;
@@ -369,49 +372,229 @@ async fn request_loop(
     }
 }
 
+/// Claims the next request to run. A conversation runs its requests one at a
+/// time, in order; a user's conversations run in parallel while they need the
+/// same container proxies (#4232). Claims are serialized so each sees the
+/// requests the previous one started.
 async fn claim_next_request(
     env: &Env,
 ) -> Result<Option<ai_agent_request::Model>, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
+    txn.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock($1)",
+        [AI_AGENT_REQUEST_CLAIM_ADVISORY_LOCK_KEY.into()],
+    ))
+    .await
+    .c(h!())?;
+    let candidates = claim_candidates(&txn).await.context(h!())?;
+    let request_id = if candidates.is_empty() {
+        None
+    } else {
+        let running = running_requests(&txn).await.context(h!())?;
+        let needs = engine_proxy_needs(&txn, &candidates, &running)
+            .await
+            .context(h!())?;
+        pick_claim(
+            &candidates,
+            &running,
+            &needs,
+            AI_AGENT_MAX_CONTAINERS_PER_USER,
+        )
+    };
+    let request = match request_id {
+        Some(request_id) => start_claimed_request(&txn, request_id)
+            .await
+            .context(h!())?,
+        None => None,
+    };
+    txn.commit().await.c(h!())?;
+    Ok(request)
+}
+
+#[derive(Clone, Debug, FromQueryResult)]
+struct ClaimCandidate {
+    id: Uuid,
+    human_login_id: Uuid,
+    ai_engine_id: Uuid,
+    queued_at: chrono::NaiveDateTime,
+}
+
+/// Each user's oldest queued request that heads its conversation's queue.
+/// Only the oldest is offered, so a request needing other proxies than the
+/// user's running ones is not overtaken by newer requests that fit.
+async fn claim_candidates(
+    txn: &sea_orm::DatabaseTransaction,
+) -> Result<Vec<ClaimCandidate>, AppError> {
     let statement = Statement::from_string(
         DatabaseBackend::Postgres,
         r#"
-with candidate as (
-    select request.id
-    from ai_agent_request request
-    where request.state = 'queued'
-      and not exists (
-          select 1
-          from ai_agent_request running
-          where running.human_login_id = request.human_login_id
-            and running.state = 'running'
-      )
-      and not exists (
-          select 1
-          from ai_agent_request earlier
-          where earlier.human_login_id = request.human_login_id
-            and earlier.state = 'queued'
-            and (earlier.queued_at, earlier.id) < (request.queued_at, request.id)
-      )
-    order by request.queued_at, request.id
-    for update skip locked
-    limit 1
-)
-update ai_agent_request request
+select distinct on (request.human_login_id)
+    request.id,
+    request.human_login_id,
+    request.ai_engine_id,
+    request.queued_at
+from ai_agent_request request
+where request.state = 'queued'
+  and not exists (
+      select 1
+      from ai_agent_request running
+      where running.conversation_id = request.conversation_id
+        and running.state = 'running'
+  )
+  and not exists (
+      select 1
+      from ai_agent_request earlier
+      where earlier.conversation_id = request.conversation_id
+        and earlier.state = 'queued'
+        and (earlier.queued_at, earlier.id) < (request.queued_at, request.id)
+  )
+order by request.human_login_id, request.queued_at, request.id
+        "#,
+    );
+    Ok(ClaimCandidate::find_by_statement(statement)
+        .all(txn)
+        .await
+        .c(h!())?)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RunningRequest {
+    human_login_id: Uuid,
+    ai_engine_id: Uuid,
+}
+
+/// Every running request: at most one per worker slot.
+async fn running_requests(
+    txn: &sea_orm::DatabaseTransaction,
+) -> Result<Vec<RunningRequest>, AppError> {
+    let running: Vec<(Uuid, Uuid)> = ai_agent_request::Entity::find()
+        .select_only()
+        .column(ai_agent_request::Column::HumanLoginId)
+        .column(ai_agent_request::Column::AiEngineId)
+        .filter(ai_agent_request::Column::State.eq("running"))
+        .into_tuple()
+        .all(txn)
+        .await
+        .c(h!())?;
+    Ok(running
+        .into_iter()
+        .map(|(human_login_id, ai_engine_id)| RunningRequest {
+            human_login_id,
+            ai_engine_id,
+        })
+        .collect())
+}
+
+async fn engine_proxy_needs(
+    txn: &sea_orm::DatabaseTransaction,
+    candidates: &[ClaimCandidate],
+    running: &[RunningRequest],
+) -> Result<HashMap<Uuid, access::AgentProxyNeed>, AppError> {
+    let ai_engine_ids = candidates
+        .iter()
+        .map(|candidate| candidate.ai_engine_id)
+        .chain(running.iter().map(|running| running.ai_engine_id))
+        .collect::<BTreeSet<_>>();
+    Ok(crate::entities::ai_engine::Entity::find()
+        .filter(crate::entities::ai_engine::Column::Id.is_in(ai_engine_ids))
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|ai_engine| {
+            access::agent_proxy_need(&ai_engine)
+                .map(|need| (ai_engine.id, need))
+        })
+        .collect())
+}
+
+/// Which container a running request occupies: one per user and proxies.
+fn request_container(
+    running: &RunningRequest,
+    needs: &HashMap<Uuid, access::AgentProxyNeed>,
+) -> (Uuid, String) {
+    let proxies = needs
+        .get(&running.ai_engine_id)
+        .map(|need| need.key())
+        .unwrap_or_else(|| running.ai_engine_id.to_string());
+    (running.human_login_id, proxies)
+}
+
+/// A candidate joins a container of its user already serving its proxies,
+/// or takes another container while the user has fewer than
+/// `max_containers_per_user` and a running-container slot is free; a new
+/// container waits instead of failing at the running-container limit, so
+/// the extra worker slots go to users already running. An engine the
+/// harness cannot serve runs alone and fails at its start. Users running
+/// the fewest requests go first.
+fn pick_claim(
+    candidates: &[ClaimCandidate],
+    running: &[RunningRequest],
+    needs: &HashMap<Uuid, access::AgentProxyNeed>,
+    max_containers_per_user: usize,
+) -> Option<Uuid> {
+    let containers = running
+        .iter()
+        .map(|running| request_container(running, needs))
+        .collect::<HashSet<_>>();
+    let container_available =
+        (containers.len() as u64) < AI_AGENT_MAX_RUNNING_CONTAINERS;
+    candidates
+        .iter()
+        .filter_map(|candidate| {
+            let users_containers = containers
+                .iter()
+                .filter(|(human_login_id, _)| {
+                    *human_login_id == candidate.human_login_id
+                })
+                .map(|(_, proxies)| proxies.as_str())
+                .collect::<HashSet<_>>();
+            let new_container_allowed = container_available
+                && users_containers.len() < max_containers_per_user;
+            let claimable = match needs.get(&candidate.ai_engine_id) {
+                Some(need) => {
+                    users_containers.contains(need.key().as_str())
+                        || new_container_allowed
+                }
+                None => users_containers.is_empty() && new_container_allowed,
+            };
+            let running_count = running
+                .iter()
+                .filter(|running| {
+                    running.human_login_id == candidate.human_login_id
+                })
+                .count();
+            claimable.then_some((running_count, candidate))
+        })
+        .min_by_key(|(running_count, candidate)| {
+            (*running_count, candidate.queued_at, candidate.id)
+        })
+        .map(|(_, candidate)| candidate.id)
+}
+
+async fn start_claimed_request(
+    txn: &sea_orm::DatabaseTransaction,
+    request_id: Uuid,
+) -> Result<Option<ai_agent_request::Model>, AppError> {
+    let statement = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+update ai_agent_request
 set state = 'running',
     started_at = now() at time zone 'utc',
     updated_at = now() at time zone 'utc',
     error = null
-where request.id in (select id from candidate)
-returning request.*
+where id = $1
+  and state = 'queued'
+returning *
         "#,
+        [request_id.into()],
     );
-    let request = ai_agent_request::Model::find_by_statement(statement)
-        .one(&txn)
+    Ok(ai_agent_request::Model::find_by_statement(statement)
+        .one(txn)
         .await
-        .c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(request)
+        .c(h!())?)
 }
 
 async fn process_claimed_request(
@@ -1715,6 +1898,7 @@ pub(super) async fn complete_request(
     let now = Utc::now().naive_utc();
     let conversation_id = request.conversation_id;
     let human_login_id = request.human_login_id;
+    let agent_login_id = request.agent_login_id;
     let mut request = request.into_active_model();
     request.state = Set("completed".to_string());
     request.response = Set(Some(response.clone()));
@@ -1730,6 +1914,7 @@ pub(super) async fn complete_request(
     lifecycle::touch_container_activity_in_transaction(
         &txn,
         human_login_id,
+        agent_login_id,
         now,
     )
     .await?;
@@ -1780,6 +1965,7 @@ pub(super) async fn fail_request(
     let human_login_id = request.human_login_id;
     let message =
         access::truncate(format!("{err:#}"), AI_AGENT_ERROR_MAX_CHARS);
+    let agent_login_id = request.agent_login_id;
     let mut request = request.into_active_model();
     let metadata = model_failure.map(model_failure_metadata);
     request.state = Set("failed".to_string());
@@ -1796,6 +1982,7 @@ pub(super) async fn fail_request(
     lifecycle::touch_container_activity_in_transaction(
         &txn,
         human_login_id,
+        agent_login_id,
         now,
     )
     .await?;
@@ -2016,19 +2203,45 @@ async fn maintenance_once(env: &Env) -> Result<(), AppError> {
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-        lifecycle::stop_for_user_if_idle(env, link.human_login_id).await?;
+        lifecycle::stop_container_if_idle(env, &link)
+            .await
+            .context(h!())?;
     }
-    let stopped = ai_agent_container::Entity::find()
-        .filter(ai_agent_container::Column::State.eq("stopped"))
-        .filter(
-            ai_agent_container::Column::StoppedAt
-                .lte(now - Duration::days(AI_AGENT_DESTROY_STOPPED_DAYS)),
-        )
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    // A container that served another backend is destroyed once stopped,
+    // e.g. after an idle stop whose destruction failed.
+    let secondary_link_ids =
+        crate::entities::ai_agent_user_link::Entity::find()
+            // `<>` also skips unset slots, which are the main one.
+            .filter(
+                crate::entities::ai_agent_user_link::Column::Slot
+                    .ne(AI_AGENT_MAIN_CONTAINER_SLOT),
+            )
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|link| link.id)
+            .collect::<Vec<_>>();
+    let stopped =
+        ai_agent_container::Entity::find()
+            .filter(ai_agent_container::Column::State.eq("stopped"))
+            .filter(
+                Condition::any()
+                    .add(ai_agent_container::Column::StoppedAt.lte(
+                        now - Duration::days(AI_AGENT_DESTROY_STOPPED_DAYS),
+                    ))
+                    .add(
+                        ai_agent_container::Column::AiAgentUserLinkId
+                            .is_in(secondary_link_ids),
+                    ),
+            )
+            .all(&env.dbx)
+            .await
+            .c(h!())?;
     for container in stopped {
-        lifecycle::destroy_container(env, &container).await?;
+        lifecycle::destroy_container(env, &container)
+            .await
+            .context(h!())?;
     }
     if reconciliation_failure_count > 0 {
         return Err(AppError::BL {
@@ -2059,8 +2272,7 @@ async fn reconcile_abandoned_containers(env: &Env) -> Result<(), AppError> {
         .c(h!())?
         .ok_or(AppError::NotFound)?;
         if let Err(err) =
-            lifecycle::reconcile_abandoned_container(env, link.human_login_id)
-                .await
+            lifecycle::reconcile_abandoned_container(env, &link).await
         {
             failure_count += 1;
             error!(
@@ -2087,6 +2299,398 @@ mod tests {
     };
     use crate::entities::{ai_agent_allowed_engine, ai_engine};
     use serial_test::serial;
+
+    fn claim_candidate(
+        human_login_id: Uuid,
+        ai_engine_id: Uuid,
+        queued_minute: u32,
+    ) -> ClaimCandidate {
+        ClaimCandidate {
+            id: Uuid::now_v7(),
+            human_login_id,
+            ai_engine_id,
+            queued_at: chrono::NaiveDate::from_ymd_opt(2026, 11, 16)
+                .unwrap()
+                .and_hms_opt(12, queued_minute, 0)
+                .unwrap(),
+        }
+    }
+
+    #[test]
+    fn issue_4232_claims_beside_running_requests_with_the_same_proxies() {
+        let (alice, bob) = (Uuid::now_v7(), Uuid::now_v7());
+        let (gpt, flash, gemma, gemma_moved, unsupported) = (
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+        );
+        let vllm = |upstream: &str| access::AgentProxyNeed::DirectHttp {
+            vllm_upstream: upstream.to_string(),
+        };
+        let needs = HashMap::from([
+            (gpt, access::AgentProxyNeed::EchoGateway),
+            (flash, access::AgentProxyNeed::EchoGateway),
+            (gemma, vllm("127.0.0.1:18000")),
+            (gemma_moved, vllm("127.0.0.1:18001")),
+        ]);
+        let running = |human_login_id, ai_engine_id| RunningRequest {
+            human_login_id,
+            ai_engine_id,
+        };
+        let claim = |candidate: &ClaimCandidate,
+                     running: &[RunningRequest],
+                     max_containers: usize| {
+            pick_claim(
+                std::slice::from_ref(candidate),
+                running,
+                &needs,
+                max_containers,
+            )
+        };
+
+        let flash_beside_gpt = claim_candidate(alice, flash, 1);
+        assert_eq!(
+            claim(&flash_beside_gpt, &[running(alice, gpt)], 1),
+            Some(flash_beside_gpt.id),
+            "every gateway engine shares the container"
+        );
+        let gemma_beside_gpt = claim_candidate(alice, gemma, 1);
+        assert_eq!(
+            claim(&gemma_beside_gpt, &[running(alice, gpt)], 2),
+            Some(gemma_beside_gpt.id),
+            "another backend takes the user's second container"
+        );
+        assert_eq!(
+            claim(&gemma_beside_gpt, &[running(alice, gpt)], 1),
+            None,
+            "with one container it waits for the gateway runs"
+        );
+        assert_eq!(
+            claim(
+                &claim_candidate(alice, gemma_moved, 1),
+                &[running(alice, gpt), running(alice, gemma)],
+                2
+            ),
+            None,
+            "a third backend waits"
+        );
+        assert_eq!(
+            claim(
+                &gemma_beside_gpt,
+                &[running(alice, gpt), running(alice, gemma)],
+                2
+            ),
+            Some(gemma_beside_gpt.id),
+            "both containers take more conversations"
+        );
+        let unsupported_alone = claim_candidate(alice, unsupported, 1);
+        assert_eq!(
+            claim(&unsupported_alone, &[], 2),
+            Some(unsupported_alone.id),
+            "an unsupported engine still runs alone and fails at its start"
+        );
+        assert_eq!(claim(&unsupported_alone, &[running(alice, gpt)], 2), None);
+
+        let alice_older = claim_candidate(alice, gpt, 1);
+        let bob_newer = claim_candidate(bob, gpt, 2);
+        assert_eq!(
+            pick_claim(
+                &[alice_older.clone(), bob_newer.clone()],
+                &[running(alice, gpt)],
+                &needs,
+                2
+            ),
+            Some(bob_newer.id),
+            "users running fewer requests go first"
+        );
+        assert_eq!(
+            pick_claim(
+                &[alice_older.clone(), bob_newer.clone()],
+                &[],
+                &needs,
+                2
+            ),
+            Some(alice_older.id),
+            "then the older request"
+        );
+
+        let full = (0..AI_AGENT_MAX_RUNNING_CONTAINERS - 1)
+            .map(|_| running(Uuid::now_v7(), gpt))
+            .chain([running(alice, gpt)])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            claim(&alice_older, &full, 2),
+            Some(alice_older.id),
+            "with every container busy, users join their own"
+        );
+        assert_eq!(
+            claim(&bob_newer, &full, 2),
+            None,
+            "a new user waits for a container instead of failing at the limit"
+        );
+        assert_eq!(
+            claim(&gemma_beside_gpt, &full, 2),
+            None,
+            "and so does a user's second container"
+        );
+    }
+
+    async fn fail_stray_requests(dbx: &sea_orm::DatabaseConnection) {
+        dbx.execute_unprepared(
+            "update ai_agent_request
+             set state = 'failed',
+                 completed_at = now() at time zone 'utc',
+                 updated_at = now() at time zone 'utc'
+             where state in ('queued', 'running')",
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn claim_test_engine(
+        dbx: &sea_orm::DatabaseConnection,
+        url: &str,
+    ) -> ai_engine::Model {
+        ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("claim-{}", Uuid::now_v7())),
+            model_name: Set("test".to_string()),
+            url: Set(url.to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn claim_test_conversation(
+        dbx: &sea_orm::DatabaseConnection,
+        human_login_id: Uuid,
+        ai_engine_id: Uuid,
+    ) -> ai_agent_conversation::Model {
+        let now = Utc::now().naive_utc();
+        ai_agent_conversation::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            human_login_id: Set(human_login_id),
+            ai_engine_id: Set(ai_engine_id),
+            title: Set("Parallel conversations".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn queue_test_request(
+        dbx: &sea_orm::DatabaseConnection,
+        conversation: &ai_agent_conversation::Model,
+        queued_second: i64,
+    ) -> Uuid {
+        let queued_at = Utc::now().naive_utc() - Duration::minutes(10)
+            + Duration::seconds(queued_second);
+        ai_agent_request::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            conversation_id: Set(conversation.id),
+            human_login_id: Set(conversation.human_login_id),
+            ai_engine_id: Set(conversation.ai_engine_id),
+            prompt: Set("parallel".to_string()),
+            state: Set("queued".to_string()),
+            cancellation_requested: Set(false),
+            queued_at: Set(queued_at),
+            updated_at: Set(queued_at),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+        .id
+    }
+
+    async fn finish_test_request(
+        dbx: &sea_orm::DatabaseConnection,
+        request_id: Uuid,
+    ) {
+        let request = ai_agent_request::Entity::find_by_id(request_id)
+            .one(dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut request = request.into_active_model();
+        request.state = Set("completed".to_string());
+        request.completed_at = Set(Some(Utc::now().naive_utc()));
+        request.update(dbx).await.unwrap();
+    }
+
+    async fn delete_claim_fixtures(
+        dbx: &sea_orm::DatabaseConnection,
+        conversations: &[ai_agent_conversation::Model],
+        engines: &[ai_engine::Model],
+    ) {
+        for conversation in conversations {
+            ai_agent_request::Entity::delete_many()
+                .filter(
+                    ai_agent_request::Column::ConversationId
+                        .eq(conversation.id),
+                )
+                .exec(dbx)
+                .await
+                .unwrap();
+            ai_agent_conversation::Entity::delete_by_id(conversation.id)
+                .exec(dbx)
+                .await
+                .unwrap();
+        }
+        for engine in engines {
+            ai_engine::Entity::delete_by_id(engine.id)
+                .exec(dbx)
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn claimed_id(env: &Env) -> Option<Uuid> {
+        claim_next_request(env)
+            .await
+            .unwrap()
+            .map(|request| request.id)
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn issue_4232_runs_conversations_in_parallel_and_each_in_order() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        fail_stray_requests(&env.dbx).await;
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let gateway =
+            claim_test_engine(&env.dbx, crate::config::AI_GOV_UA_API_BASE)
+                .await;
+        let vllm =
+            claim_test_engine(&env.dbx, "http://127.0.0.1:18000/v1").await;
+        let first =
+            claim_test_conversation(&env.dbx, human.id, gateway.id).await;
+        let second =
+            claim_test_conversation(&env.dbx, human.id, gateway.id).await;
+        let other_vllm =
+            claim_test_engine(&env.dbx, "http://127.0.0.1:18001/v1").await;
+        let local = claim_test_conversation(&env.dbx, human.id, vllm.id).await;
+        let other =
+            claim_test_conversation(&env.dbx, human.id, other_vllm.id).await;
+        let first_1 = queue_test_request(&env.dbx, &first, 1).await;
+        let first_2 = queue_test_request(&env.dbx, &first, 2).await;
+        let second_1 = queue_test_request(&env.dbx, &second, 3).await;
+        let local_1 = queue_test_request(&env.dbx, &local, 4).await;
+        let other_1 = queue_test_request(&env.dbx, &other, 5).await;
+
+        assert_eq!(claimed_id(&env).await, Some(first_1));
+        assert_eq!(
+            claimed_id(&env).await,
+            Some(second_1),
+            "another conversation runs beside the first"
+        );
+        assert_eq!(
+            claimed_id(&env).await,
+            Some(local_1),
+            "a vLLM conversation runs in the user's second container"
+        );
+        assert_eq!(claimed_id(&env).await, None, "a third backend waits");
+        finish_test_request(&env.dbx, first_1).await;
+        assert_eq!(
+            claimed_id(&env).await,
+            Some(first_2),
+            "a conversation's next request starts after its previous one"
+        );
+        finish_test_request(&env.dbx, first_2).await;
+        finish_test_request(&env.dbx, second_1).await;
+        assert_eq!(claimed_id(&env).await, Some(other_1));
+
+        let now = Utc::now().naive_utc();
+        let second_running = ai_agent_request::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            conversation_id: Set(local.id),
+            human_login_id: Set(human.id),
+            ai_engine_id: Set(vllm.id),
+            prompt: Set("parallel".to_string()),
+            state: Set("running".to_string()),
+            cancellation_requested: Set(false),
+            queued_at: Set(now),
+            started_at: Set(Some(now)),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await;
+        assert!(
+            second_running.is_err(),
+            "the index keeps one running request per conversation"
+        );
+        delete_claim_fixtures(
+            &env.dbx,
+            &[first, second, local, other],
+            &[gateway, vllm, other_vllm],
+        )
+        .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn issue_4232_concurrent_claims_keep_one_container_proxy_per_user() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        fail_stray_requests(&env.dbx).await;
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let gateway =
+            claim_test_engine(&env.dbx, crate::config::AI_GOV_UA_API_BASE)
+                .await;
+        let vllm =
+            claim_test_engine(&env.dbx, "http://127.0.0.1:18000/v1").await;
+        let mut conversations = Vec::new();
+        for queued_second in 0..4 {
+            let conversation =
+                claim_test_conversation(&env.dbx, human.id, gateway.id).await;
+            queue_test_request(&env.dbx, &conversation, queued_second).await;
+            conversations.push(conversation);
+        }
+        let other_vllm =
+            claim_test_engine(&env.dbx, "http://127.0.0.1:18001/v1").await;
+        let local = claim_test_conversation(&env.dbx, human.id, vllm.id).await;
+        queue_test_request(&env.dbx, &local, 10).await;
+        conversations.push(local);
+        let other =
+            claim_test_conversation(&env.dbx, human.id, other_vllm.id).await;
+        queue_test_request(&env.dbx, &other, 11).await;
+        conversations.push(other);
+
+        let claims =
+            futures::future::join_all((0..7).map(|_| claim_next_request(&env)))
+                .await;
+        let claimed = claims
+            .into_iter()
+            .filter_map(|claim| claim.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(claimed.len(), 5);
+        assert!(
+            claimed
+                .iter()
+                .all(|request| request.ai_engine_id != other_vllm.id),
+            "the user's two containers serve two backends at most"
+        );
+        delete_claim_fixtures(
+            &env.dbx,
+            &conversations,
+            &[gateway, vllm, other_vllm],
+        )
+        .await;
+    }
 
     #[actix_web::test]
     #[serial]
