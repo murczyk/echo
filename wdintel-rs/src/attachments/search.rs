@@ -767,7 +767,7 @@ pub(crate) fn body_message_filter(
         search_mode,
         None,
         true,
-        None,
+        SearchSourceScope::default(),
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
