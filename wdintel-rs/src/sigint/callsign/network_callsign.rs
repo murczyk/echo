@@ -375,19 +375,31 @@ pub async fn delete_network_callsigns(
         .context(h!())?;
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::fanout_network_changed(&env)
-        .await
-        .c(h!())?;
-    if !rsp.deleted_catalog_callsign_ids.is_empty() {
-        let event = crate::event_stream::types::EventMsg::new(
-            crate::event_stream::types::EventType::ETCallsignChanged,
-        );
-        crate::event_stream::fanout(&mut env.redis.clone(), event)
-            .await
-            .context(h!())?;
-    }
+    // The deletion is committed: a failed notification must not report it as failed.
+    notify_network_callsigns_deleted(&env, &rsp).await;
 
     Ok(Json(rsp))
+}
+
+async fn notify_network_callsigns_deleted(
+    env: &actix_web::web::Data<Env>,
+    rsp: &DeleteNetworkCallsignsRsp,
+) {
+    if let Err(err) = crate::sigint::network::fanout_network_changed(env).await
+    {
+        warn!("failed to fan out network change after bulk delete: {err:#?}");
+    }
+    if rsp.deleted_catalog_callsign_ids.is_empty() {
+        return;
+    }
+    let event = crate::event_stream::types::EventMsg::new(
+        crate::event_stream::types::EventType::ETCallsignChanged,
+    );
+    if let Err(err) =
+        crate::event_stream::fanout(&mut env.redis.clone(), event).await
+    {
+        warn!("failed to fan out callsign change after bulk delete: {err:#?}");
+    }
 }
 
 /// Для списку позивних і заданої мережі повертає активності цих позивних в етері на частотах мережі

@@ -681,7 +681,6 @@ function NetworkCallsignsNetworkTableContent({
                   selection={selection}
                   selectionActive={selectionActive}
                   selectedCount={visibleSelectedIds.length}
-                  enterDisabled={isBusy || tableStateRows.length === 0}
                 />
               ) : null}
               <InternalTableActions
@@ -742,12 +741,10 @@ function NetworkCallsignSelectionControls({
   selection,
   selectionActive,
   selectedCount,
-  enterDisabled,
 }: {
   selection: NetworkCallsignSelection;
   selectionActive: boolean;
   selectedCount: number;
-  enterDisabled: boolean;
 }) {
   if (!selectionActive) {
     return (
@@ -757,7 +754,6 @@ function NetworkCallsignSelectionControls({
         size="small"
         startIcon={<ChecklistIcon fontSize="small" />}
         onClick={selection.onEnter}
-        disabled={enterDisabled}
       >
         Вибрати
       </Button>
