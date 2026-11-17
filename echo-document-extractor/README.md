@@ -16,8 +16,10 @@ Separate images require a manifest containing an ordered `inputs` list. API
 tokens are read from the endpoint `token_env` variables and are never stored in
 configuration or output artifacts.
 
-Use `config.split_gpu.yaml` for the recommended independent router pools at
-`100.105.172.96:8001` (OCR-Gemma) and `100.105.172.96:8002` (NuExtract3).
+Use `config.split_gpu.yaml` for the independent router pools at
+`100.105.172.96:8002` (NuExtract3) and `100.105.172.96:8001` (OCR-Gemma). The
+OCR-Gemma pool is being retired: preflight and readiness checks require only
+NuExtract3, and `/v1/status` still reports OCR-Gemma.
 `config.single_spark.yaml` is a serial, benchmarking-only profile. Paddle
 evidence is required in production; `enable_paddle: false` is only a local
 degraded mode.

@@ -4,6 +4,9 @@ from __future__ import annotations
 import json
 import sys
 
+# The OCR-Gemma pool is being retired; its router status is reported but not required.
+REQUIRED_ROUTERS = ("nuextract",)
+
 
 def verify_status(status: dict) -> None:
     if not status["worker"]["instances"]:
@@ -11,7 +14,7 @@ def verify_status(status: dict) -> None:
     if status["paddle"]["required"] is not True or status["paddle"]["ready"] is not True:
         raise ValueError("production Paddle runtime is unavailable")
     routers = {router["name"]: router for router in status["routers"]}
-    for name in ("nuextract", "ocr-gemma"):
+    for name in REQUIRED_ROUTERS:
         router = routers.get(name)
         if router is None or router["healthy"] is not True:
             raise ValueError(f"extractor router is unavailable: {name}")
