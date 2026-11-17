@@ -10,10 +10,7 @@ import { NetworkFreqCreateDrawer } from './NetworkFreqCreateDrawer';
 import { NetworkFreqEditDrawer } from './NetworkFreqEditDrawer';
 import { NetworkEtalonkaReportDialog } from './NetworkEtalonkaReportDialog';
 import { formatClassicNetworkHeaderName } from '../use-rer-network-details-neo-page.shared';
-import {
-  isCatalogDeletableNetworkCallsign,
-  selectNetworkCallsignsByIds,
-} from '../use-rer-network-details-neo-page.callsign-bulk-actions';
+import { isCatalogDeletableNetworkCallsign } from '../use-rer-network-details-neo-page.callsign-bulk-actions';
 import { getNetworkCallsignStatus, getNetworkCallsignStatusLabel } from '../network-callsigns.rows';
 import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import type { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
@@ -217,10 +214,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
 }
 
 function NetworkCallsignBulkDeleteDialog({ page }: Props) {
-  const selectedCallsigns = selectNetworkCallsignsByIds(
-    page.networkCallsigns,
-    page.selectedNetworkCallsignIds,
-  );
+  const selectedCallsigns = page.callsignBulkDeleteTargets;
   const catalogDeletableCount = selectedCallsigns.filter(isCatalogDeletableNetworkCallsign).length;
 
   return (
@@ -228,6 +222,8 @@ function NetworkCallsignBulkDeleteDialog({ page }: Props) {
       open={page.callsignBulkDeleteDialogOpen}
       onClose={page.closeCallsignBulkDeleteDialog}
       onConfirm={page.deleteSelectedCallsigns}
+      onExited={page.resetCallsignBulkDeleteDialog}
+      restoreFocus
       title="Відв'язати позивні"
       summaryText={`Відв'язати від мережі позивних: ${selectedCallsigns.length}?`}
       confirmLabel="Відв'язати"

@@ -123,6 +123,12 @@ test('@regression #4242 leaves selection mode without deleting on «Скасув
 
   await page.getByRole('button', { name: 'Вибрати', exact: true }).click();
   await page.getByRole('row', { name: /ЛИС/ }).getByRole('checkbox').check();
+  const bulkDelete = page.getByRole('button', { name: 'Видалити обрані' });
+  await bulkDelete.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(bulkDelete).toBeFocused();
   await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
 
   await expect(page.getByRole('checkbox')).toHaveCount(0);

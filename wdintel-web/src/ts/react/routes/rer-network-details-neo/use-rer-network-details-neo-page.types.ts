@@ -211,6 +211,8 @@ export type NetworkDetailsNeoPageState = {
   callsignSelectionMode: boolean;
   selectedNetworkCallsignIds: number[];
   callsignBulkDeleteDialogOpen: boolean;
+  /** Snapshot of the confirmed callsigns, kept until the dialog has exited. */
+  callsignBulkDeleteTargets: NetworkCallsign[];
   callsignBulkDeleteSubmitting: boolean;
   callsignBulkDeleteError: string | null;
   callsignBulkDeleteAlsoFromCatalog: boolean;
@@ -372,6 +374,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   callsignSelectionMode: false,
   selectedNetworkCallsignIds: [],
   callsignBulkDeleteDialogOpen: false,
+  callsignBulkDeleteTargets: [],
   callsignBulkDeleteSubmitting: false,
   callsignBulkDeleteError: null,
   callsignBulkDeleteAlsoFromCatalog: false,

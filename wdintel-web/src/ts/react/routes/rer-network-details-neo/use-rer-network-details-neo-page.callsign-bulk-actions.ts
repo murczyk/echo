@@ -58,8 +58,6 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
         callsignSelectionMode: false,
         selectedNetworkCallsignIds: [],
         callsignBulkDeleteDialogOpen: false,
-        callsignBulkDeleteError: null,
-        callsignBulkDeleteAlsoFromCatalog: false,
       };
     });
   }, [setState]);
@@ -74,10 +72,15 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
   const openCallsignBulkDeleteDialog = useCallback(() => {
     if (!canManageCallsignActions) return;
     setState((current) => {
-      if (current.selectedNetworkCallsignIds.length === 0) return current;
+      const callsignBulkDeleteTargets = selectNetworkCallsignsByIds(
+        current.networkCallsigns,
+        current.selectedNetworkCallsignIds,
+      );
+      if (callsignBulkDeleteTargets.length === 0) return current;
       return {
         ...current,
         callsignBulkDeleteDialogOpen: true,
+        callsignBulkDeleteTargets,
         callsignBulkDeleteSubmitting: false,
         callsignBulkDeleteError: null,
         callsignBulkDeleteAlsoFromCatalog: false,
@@ -88,9 +91,17 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
   const closeCallsignBulkDeleteDialog = useCallback(() => {
     setState((current) => {
       if (current.callsignBulkDeleteSubmitting) return current;
+      return { ...current, callsignBulkDeleteDialogOpen: false };
+    });
+  }, [setState]);
+
+  /** Clears the dialog snapshot once its exit transition has finished. */
+  const resetCallsignBulkDeleteDialog = useCallback(() => {
+    setState((current) => {
+      if (current.callsignBulkDeleteDialogOpen) return current;
       return {
         ...current,
-        callsignBulkDeleteDialogOpen: false,
+        callsignBulkDeleteTargets: [],
         callsignBulkDeleteError: null,
         callsignBulkDeleteAlsoFromCatalog: false,
       };
@@ -106,10 +117,7 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
 
   const deleteSelectedCallsigns = useCallback(async () => {
     const network = state.network;
-    const ids = selectNetworkCallsignsByIds(
-      state.networkCallsigns,
-      state.selectedNetworkCallsignIds,
-    ).map((networkCallsign) => networkCallsign.id);
+    const ids = state.callsignBulkDeleteTargets.map((networkCallsign) => networkCallsign.id);
     if (
       !canManageCallsignActions ||
       !network ||
@@ -142,8 +150,6 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
         selectedNetworkCallsignIds: [],
         callsignBulkDeleteDialogOpen: false,
         callsignBulkDeleteSubmitting: false,
-        callsignBulkDeleteError: null,
-        callsignBulkDeleteAlsoFromCatalog: false,
         callsignDeleteInFlightIds: withoutDeletedIds(current.callsignDeleteInFlightIds),
       }));
       await reloadCallsignsData();
@@ -163,9 +169,8 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
     setState,
     state.callsignBulkDeleteAlsoFromCatalog,
     state.callsignBulkDeleteSubmitting,
+    state.callsignBulkDeleteTargets,
     state.network,
-    state.networkCallsigns,
-    state.selectedNetworkCallsignIds,
   ]);
 
   return {
@@ -174,6 +179,7 @@ export function useRerNetworkDetailsNeoPageCallsignBulkActions({
     setSelectedNetworkCallsignIds,
     openCallsignBulkDeleteDialog,
     closeCallsignBulkDeleteDialog,
+    resetCallsignBulkDeleteDialog,
     setCallsignBulkDeleteAlsoFromCatalog,
     deleteSelectedCallsigns,
   };

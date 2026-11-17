@@ -876,7 +876,9 @@ async fn delete_linked_catalog_callsigns(
     let mut deleted_catalog_callsign_ids = vec![];
     for callsign_id in catalog_callsign_ids {
         let callsign = find_callsign(txn, callsign_id).await.context(h!())?;
-        if callsign.deleted {
+        // A developing catalog callsign shows its network row as developing too, which
+        // the UI excludes from catalog deletion.
+        if callsign.deleted || callsign.developing {
             continue;
         }
         bl_soft_delete_catalog_callsign(txn, callsign, *user_id)

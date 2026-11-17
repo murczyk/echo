@@ -29,6 +29,8 @@ type Props = {
   disabled?: boolean;
   /** Disables only confirmation, keeping «Скасувати» available. */
   confirmDisabled?: boolean;
+  /** Returns focus to the opening control; use when that control survives the dialog. */
+  restoreFocus?: boolean;
   title?: string;
   confirmLabel?: string;
   /** Extra content after the item list, such as options or an error. */
@@ -45,6 +47,7 @@ export function BulkDeleteConfirmDialog({
   submitting,
   disabled = false,
   confirmDisabled = false,
+  restoreFocus = false,
   title = 'Підтвердження видалення',
   confirmLabel = 'Видалити',
   children,
@@ -55,7 +58,7 @@ export function BulkDeleteConfirmDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      disableRestoreFocus
+      disableRestoreFocus={!restoreFocus}
       TransitionProps={onExited ? { onExited } : undefined}
       fullWidth
       maxWidth="sm"

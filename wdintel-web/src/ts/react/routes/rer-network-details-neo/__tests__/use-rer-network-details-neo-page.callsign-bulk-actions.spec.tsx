@@ -124,6 +124,27 @@ describe('useRerNetworkDetailsNeoPageCallsignBulkActions', () => {
     act(() => latestActions?.setSelectedNetworkCallsignIds([1]));
     act(() => latestActions?.openCallsignBulkDeleteDialog());
     expect(latestState?.callsignBulkDeleteDialogOpen).toBe(true);
+    expect(latestState?.callsignBulkDeleteTargets.map(({ id }) => id)).toEqual([1]);
+  });
+
+  it('keeps the confirmed callsigns until the dialog has exited', () => {
+    renderHarness({
+      networkCallsigns: NETWORK_CALLSIGNS,
+      callsignSelectionMode: true,
+      selectedNetworkCallsignIds: [2],
+    });
+
+    act(() => latestActions?.openCallsignBulkDeleteDialog());
+    act(() => latestActions?.setCallsignBulkDeleteAlsoFromCatalog(true));
+    act(() => latestActions?.closeCallsignBulkDeleteDialog());
+    expect(latestState?.callsignBulkDeleteDialogOpen).toBe(false);
+    expect(latestState?.callsignBulkDeleteTargets.map(({ id }) => id)).toEqual([2]);
+    expect(latestState?.callsignBulkDeleteAlsoFromCatalog).toBe(true);
+
+    act(() => latestActions?.resetCallsignBulkDeleteDialog());
+    expect(latestState?.callsignBulkDeleteTargets).toEqual([]);
+    expect(latestState?.callsignBulkDeleteAlsoFromCatalog).toBe(false);
+    expect(latestState?.selectedNetworkCallsignIds).toEqual([2]);
   });
 
   it('deletes the selected callsigns in one request, leaves selection mode and reloads', async () => {
@@ -135,9 +156,9 @@ describe('useRerNetworkDetailsNeoPageCallsignBulkActions', () => {
       networkCallsigns: NETWORK_CALLSIGNS,
       callsignSelectionMode: true,
       selectedNetworkCallsignIds: [3, 1, 99],
-      callsignBulkDeleteDialogOpen: true,
-      callsignBulkDeleteAlsoFromCatalog: true,
     });
+    act(() => latestActions?.openCallsignBulkDeleteDialog());
+    act(() => latestActions?.setCallsignBulkDeleteAlsoFromCatalog(true));
 
     await act(async () => {
       await latestActions?.deleteSelectedCallsigns();
@@ -154,9 +175,12 @@ describe('useRerNetworkDetailsNeoPageCallsignBulkActions', () => {
       callsignBulkDeleteDialogOpen: false,
       callsignBulkDeleteSubmitting: false,
       callsignBulkDeleteError: null,
-      callsignBulkDeleteAlsoFromCatalog: false,
       callsignDeleteInFlightIds: [],
     });
+    expect(
+      latestState?.callsignBulkDeleteTargets.map(({ id }) => id),
+      'the closing dialog still shows what was deleted',
+    ).toEqual([1, 3]);
     expect(reloadCallsignsData).toHaveBeenCalledTimes(1);
   });
 
@@ -170,11 +194,11 @@ describe('useRerNetworkDetailsNeoPageCallsignBulkActions', () => {
         networkCallsigns: NETWORK_CALLSIGNS,
         callsignSelectionMode: true,
         selectedNetworkCallsignIds: [1],
-        callsignBulkDeleteDialogOpen: true,
-        callsignBulkDeleteAlsoFromCatalog: true,
       },
       ['Rer', 'UnitsEditor'],
     );
+    act(() => latestActions?.openCallsignBulkDeleteDialog());
+    act(() => latestActions?.setCallsignBulkDeleteAlsoFromCatalog(true));
 
     await act(async () => {
       await latestActions?.deleteSelectedCallsigns();
@@ -193,8 +217,8 @@ describe('useRerNetworkDetailsNeoPageCallsignBulkActions', () => {
       networkCallsigns: NETWORK_CALLSIGNS,
       callsignSelectionMode: true,
       selectedNetworkCallsignIds: [2],
-      callsignBulkDeleteDialogOpen: true,
     });
+    act(() => latestActions?.openCallsignBulkDeleteDialog());
 
     await act(async () => {
       await latestActions?.deleteSelectedCallsigns();

@@ -366,7 +366,7 @@ pub async fn delete_network_callsigns(
             .await
             .c(h!())?;
     }
-    let user_id = login_id_from_identity(&user)?;
+    let user_id = login_id_from_identity(&user).c(h!())?;
 
     info!("Delete network callsigns; login: {user_id}; req: {:?}", req);
     let txn = env.dbx.begin().await.context(h!())?;
@@ -375,7 +375,9 @@ pub async fn delete_network_callsigns(
         .context(h!())?;
     txn.commit().await.context(h!())?;
 
-    crate::sigint::network::fanout_network_changed(&env).await?;
+    crate::sigint::network::fanout_network_changed(&env)
+        .await
+        .c(h!())?;
     if !rsp.deleted_catalog_callsign_ids.is_empty() {
         let event = crate::event_stream::types::EventMsg::new(
             crate::event_stream::types::EventType::ETCallsignChanged,
@@ -860,6 +862,21 @@ mod tests {
             true,
         )
         .await;
+        let mut developing_in_catalog =
+            insert_catalog_callsign(&env.dbx, unit.id, "сова")
+                .await
+                .into_active_model();
+        developing_in_catalog.developing = Set(true);
+        let developing_in_catalog =
+            developing_in_catalog.update(&env.dbx).await.unwrap();
+        let linked_to_developing_catalog = insert_network_callsign(
+            &env.dbx,
+            network.id,
+            "сова",
+            Some(developing_in_catalog.id),
+            false,
+        )
+        .await;
         let kept =
             insert_network_callsign(&env.dbx, network.id, "лис", None, false)
                 .await;
@@ -923,14 +940,22 @@ mod tests {
                 .cookie(cookie)
                 .set_json(DeleteNetworkCallsignsReq {
                     network_id: network.id,
-                    ids: vec![developing.id, linked.id, linked.id],
+                    ids: vec![
+                        developing.id,
+                        linked.id,
+                        linked.id,
+                        linked_to_developing_catalog.id,
+                    ],
                     also_delete_from_catalog: true,
                 })
                 .to_request(),
         )
         .await;
 
-        assert_eq!(rsp.deleted_ids, vec![linked.id, developing.id]);
+        assert_eq!(
+            rsp.deleted_ids,
+            vec![linked.id, developing.id, linked_to_developing_catalog.id]
+        );
         assert_eq!(rsp.deleted_catalog_callsign_ids, vec![catalog.id]);
         assert!(network_callsign_deleted(&env.dbx, linked.id).await);
         assert!(network_callsign_deleted(&env.dbx, developing.id).await);
@@ -941,11 +966,19 @@ mod tests {
             !catalog_callsign_deleted(&env.dbx, developing_catalog.id).await,
             "a developing row keeps its catalog callsign"
         );
+        assert!(
+            !catalog_callsign_deleted(&env.dbx, developing_in_catalog.id).await,
+            "a developing catalog callsign is kept even behind a non-developing row"
+        );
         let delete_changelog_rows =
             crate::entities::sigint_network_callsign_changelog::Entity::find()
                 .filter(
                     crate::entities::sigint_network_callsign_changelog::Column::SigintNetworkCallsignId
-                        .is_in(vec![linked.id, developing.id]),
+                        .is_in(vec![
+                            linked.id,
+                            developing.id,
+                            linked_to_developing_catalog.id,
+                        ]),
                 )
                 .filter(
                     crate::entities::sigint_network_callsign_changelog::Column::Action
@@ -954,7 +987,7 @@ mod tests {
                 .count(&env.dbx)
                 .await
                 .unwrap();
-        assert_eq!(delete_changelog_rows, 2);
+        assert_eq!(delete_changelog_rows, 3);
         let network =
             crate::entities::sigint_network::Entity::find_by_id(network.id)
                 .one(&env.dbx)
