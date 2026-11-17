@@ -8,7 +8,6 @@ import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox-me
 import { fetchMessagesByIdsMatchingFilters } from '../../services/api/analysis';
 import { isUnauthorizedError } from '../../services/api/client';
 import { AUTH_UNAUTHORIZED_EVENT } from '../../auth-redirect';
-import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 import {
   compareMessageTuple,
   messageOrderCursor,
@@ -50,6 +49,7 @@ export type DutySearchColumn = {
   onVisibilityChange?: (visible: boolean) => void;
   onClose: (options?: { restoreFocus?: boolean }) => void;
   onChange: (updates: Partial<Pick<SearchState, 'search' | 'searchMode' | 'period'>>) => void;
+  onRefresh: () => void;
   onRetry: () => void;
   onLoadOlder: () => void;
   onSelect: (item: MessageItem) => void;
@@ -62,7 +62,6 @@ type Dependencies = {
   enabled: boolean;
   closeOnSelect?: boolean;
   buildReqForFeed: (feed: MessageFeedState, opts: { loadLatest?: boolean }) => InboxMessagesReq;
-  pollIntervalMs: number;
   activateFeed?: (feedId: string) => void;
   navigate: (feedId: string, reference: string, item: MessageItem) => void;
   navigatingFeedId?: string | null;
@@ -102,19 +101,17 @@ async function fetchSearchResults(
   req: InboxMessagesReq,
   state: SearchState,
   older: boolean,
-  changedIds: number[],
   signal: AbortSignal,
   currentRequest: () => boolean,
 ) {
   const options = { signal };
   const cachedIds = [...state.items, ...state.pendingItems].map(([id]) => id);
   const oldestCached = state.items.at(-1);
-  const validationIds = [...new Set([...(oldestCached ? [oldestCached[0]] : []), ...changedIds])];
   const [response, count, matching] = await Promise.all([
     fetchInboxMessages(req, options),
     fetchInboxCount({ ...req, beforeIdNoninclusive: null }, options),
-    !older && validationIds.length > 0
-      ? fetchMessagesByIdsMatchingFilters(validationIds, req, options)
+    !older && oldestCached
+      ? fetchMessagesByIdsMatchingFilters([oldestCached[0]], req, options)
       : Promise.resolve([]),
   ]);
   if (!currentRequest()) throw new DOMException('Aborted', 'AbortError');
@@ -215,8 +212,6 @@ export function useDutySearch(dependencies: Dependencies) {
   activeRef.current = activeFeedId === suspendedFeedId ? null : activeFeedId;
   const requestRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
-  const refreshPendingRef = useRef(false);
-  const changedIdsRef = useRef(new Set<number>());
   const authenticationFailedRef = useRef(false);
   const focusRequestRef = useRef(0);
 
@@ -231,8 +226,6 @@ export function useDutySearch(dependencies: Dependencies) {
     generationRef.current += 1;
     requestRef.current?.abort();
     requestRef.current = null;
-    refreshPendingRef.current = false;
-    changedIdsRef.current.clear();
   }, []);
   const signatureFor = useCallback((feed: MessageFeedState) => {
     const request = dependenciesRef.current.buildReqForFeed(feed, {});
@@ -255,10 +248,7 @@ export function useDutySearch(dependencies: Dependencies) {
         authenticationFailedRef.current
       )
         return;
-      if (requestRef.current) {
-        if (!older) refreshPendingRef.current = true;
-        return;
-      }
+      if (requestRef.current) return;
       const signature = signatureFor(feed);
       if (signature !== state.signature) return;
       const controller = new AbortController();
@@ -292,14 +282,11 @@ export function useDutySearch(dependencies: Dependencies) {
         signatureFor(
           dependenciesRef.current.messageFeeds.find((entry) => entry.id === id) ?? feed,
         ) === signature;
-      const changedIds = older ? [] : [...changedIdsRef.current];
-      changedIds.forEach((id) => changedIdsRef.current.delete(id));
       try {
         const result = await fetchSearchResults(
           req,
           state,
           older,
-          changedIds,
           controller.signal,
           currentRequest,
         );
@@ -311,7 +298,6 @@ export function useDutySearch(dependencies: Dependencies) {
         );
       } catch (error) {
         if (!currentRequest()) return;
-        changedIds.forEach((id) => changedIdsRef.current.add(id));
         if (isUnauthorizedError(error)) authenticationFailedRef.current = true;
         update(id, (current) => ({
           ...current,
@@ -337,10 +323,6 @@ export function useDutySearch(dependencies: Dependencies) {
         );
       } finally {
         if (requestRef.current === controller) requestRef.current = null;
-        if (currentRequest() && refreshPendingRef.current) {
-          refreshPendingRef.current = false;
-          void runRef.current();
-        }
       }
     },
     [signatureFor, update],
@@ -372,7 +354,8 @@ export function useDutySearch(dependencies: Dependencies) {
     }
     if (suspendedFeedId === activeFeedId) return;
     const timer = setTimeout(() => {
-      void run();
+      const state = statesRef.current[activeFeedId];
+      if (state?.total === null && !state.error && !requestRef.current) void run();
     }, SEARCH_DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
@@ -392,15 +375,6 @@ export function useDutySearch(dependencies: Dependencies) {
     update,
   ]);
 
-  useInboxChangedMessageIds({
-    enabled: Boolean(activeFeedId) && activeFeedId !== suspendedFeedId && !blocked,
-    scopeKey: activeFeedId,
-    minIntervalMs: dependencies.pollIntervalMs,
-    onMessageIds: (ids) => {
-      ids.forEach((id) => changedIdsRef.current.add(id));
-      return run();
-    },
-  });
   useEffect(() => {
     const stop = () => {
       authenticationFailedRef.current = true;
@@ -442,7 +416,11 @@ export function useDutySearch(dependencies: Dependencies) {
       navigating: dependencies.navigatingFeedId === feed.id,
       state,
       onVisibilityChange: (visible) => {
-        if (!visible) cancel();
+        if (!visible) {
+          cancel();
+          if (statesRef.current[feed.id]?.loading || statesRef.current[feed.id]?.loadingOlder)
+            update(feed.id, (current) => ({ ...current, loading: false, loadingOlder: false }));
+        }
         setSuspendedFeedId((current) =>
           visible ? (current === feed.id ? null : current) : feed.id,
         );
@@ -475,6 +453,16 @@ export function useDutySearch(dependencies: Dependencies) {
         }
       },
       onChange: (changes) => {
+        const current = statesRef.current[feed.id];
+        if (!current) return;
+        const next = { ...current, ...changes };
+        if (
+          next.search === current.search &&
+          next.searchMode === current.searchMode &&
+          next.period.fromDateTimeStr === current.period.fromDateTimeStr &&
+          next.period.toDateTimeStr === current.period.toDateTimeStr
+        )
+          return;
         cancel();
         dependenciesRef.current.cancelNavigation();
         update(feed.id, (current) => ({
@@ -484,6 +472,9 @@ export function useDutySearch(dependencies: Dependencies) {
           period: current.period,
           ...changes,
         }));
+      },
+      onRefresh: () => {
+        void run();
       },
       onRetry: () => {
         void run(state.failedOlder);

@@ -464,6 +464,7 @@ test('#3571 keeps the same visible search row fixed when pending counts change @
         ),
       ids().slice(0, count),
     );
+    await column.getByRole('button', { name: 'Оновити результати пошуку', exact: true }).click();
     await expect(
       column.getByRole('button', { name: `Нові результати: ${count}`, exact: true }),
     ).toBeVisible();
@@ -474,7 +475,7 @@ test('#3571 keeps the same visible search row fixed when pending counts change @
   await expect.poll(() => list.evaluate((n) => n.scrollTop)).toBe(0);
 });
 
-test('#3571 shows a live match at the top when the search list is at scroll position zero @regression', async ({
+test('#3571 shows a manually refreshed match at the top when the search list is at scroll position zero @regression', async ({
   page,
 }) => {
   let added = false;
@@ -513,6 +514,7 @@ test('#3571 shows a live match at the top when the search list is at scroll posi
   await page.evaluate(() =>
     window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [21] } })),
   );
+  await column.getByRole('button', { name: 'Оновити результати пошуку', exact: true }).click();
   const newest = list.locator('[data-duty-search-result="21"]');
   await expect(newest).toBeVisible();
   await expect(newest).toBeInViewport();
@@ -726,6 +728,38 @@ test('#3571 blocks Duty panel search while the keyword filter is applied @regres
   ).toBeVisible();
   expect(requests.length).toBeGreaterThan(0);
   expect(requests.every((request) => request.search === 'needle')).toBe(true);
+  await cpu.detach();
+});
+
+test('#3571 selecting the current search mode keeps the first search loading without manual refresh @regression', async ({
+  page,
+}) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await installRerDutyShortStateMocks(page, {
+    enableDutySearch: true,
+    inboxCountResponseForRequest: () => ({ quantity: 1, first_element_ts: null }),
+    inboxResponseForRequest: async (body) => {
+      if ((body as Record<string, unknown>).search) await pending;
+      return responseWithMessages([{ id: 1, text: 'needle match' }]);
+    },
+  });
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await page.goto('/rer-duty-neo');
+  const column = page.locator('[data-duty-feed-column]').first();
+  const query = await openDutySearch(column);
+  await query.fill('needle');
+  const panel = column.locator('[data-duty-search-panel]');
+  const progress = panel.getByRole('progressbar');
+  await expect(progress).toBeVisible();
+  await page.getByRole('option', { name: /Гнучкий пошук/ }).click();
+  await expect(progress).toBeVisible();
+  release();
+  await expect(panel.getByRole('button', { name: 'needle match', exact: true })).toBeVisible();
+  await expect(progress).toHaveCount(0);
   await cpu.detach();
 });
 
@@ -1544,7 +1578,7 @@ test('#3571 keeps search list geometry stable while loading results and older pa
   expect(await geometry()).toEqual(initial);
 });
 
-test('#3571 refreshes only on inbox updates and reports search failures in a snackbar @regression', async ({
+test('#3571 refreshes only on demand and reports search failures in a snackbar @regression', async ({
   page,
 }) => {
   let searchRequests = 0;
@@ -1577,10 +1611,25 @@ test('#3571 refreshes only on inbox updates and reports search failures in a sna
   await page.goto('/rer-duty-neo');
   const column = page.locator('[data-duty-feed-column]').first();
   const query = await openDutySearch(column);
+  const panel = column.locator('[data-duty-search-panel]');
+  const refresh = panel.getByRole('button', { name: 'Оновити результати пошуку', exact: true });
+  await expect(refresh).toBeDisabled();
   await query.fill('needle');
   await query.press('Escape');
-  const panel = column.locator('[data-duty-search-panel]');
   await expect(panel.getByRole('button', { name: 'needle original', exact: true })).toBeVisible();
+  await expect(refresh).toBeEnabled();
+  const arrows = await Promise.all(
+    [
+      refresh,
+      panel.getByRole('button', { name: 'Попередній результат', exact: true }),
+      panel.getByRole('button', { name: 'Наступний результат', exact: true }),
+    ].map((button) => button.boundingBox()),
+  );
+  expect(arrows[0]!.width).toBe(arrows[1]!.width);
+  expect(arrows[0]!.height).toBe(arrows[1]!.height);
+  expect(arrows[1]!.width).toBe(arrows[2]!.width);
+  expect(arrows[1]!.height).toBe(arrows[2]!.height);
+  expect(arrows[1]!.x - arrows[0]!.x).toBe(arrows[2]!.x - arrows[1]!.x);
   await expect(panel.getByText('Вся доступна історія', { exact: true })).toHaveCount(0);
   await expect(panel.getByRole('button', { name: /^Інтервал:/ })).toHaveCount(0);
   const requestsBeforeIdle = searchRequests;
@@ -1590,10 +1639,31 @@ test('#3571 refreshes only on inbox updates and reports search failures in a sna
   await expect(panel.getByRole('progressbar')).toHaveCount(0);
   await page.clock.resume();
 
-  failSearch = true;
+  showNewMessage = true;
   await page.evaluate(() =>
     window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [2] } })),
   );
+  await page.clock.runFor(10000);
+  expect(searchRequests).toBe(requestsBeforeIdle);
+  await expect(panel.getByText('Знайдено: 1', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'needle new message', exact: true })).toHaveCount(
+    0,
+  );
+  await column.getByRole('button', { name: 'Пошук у стрічці', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  await openDutySearch(column);
+  await page.clock.runFor(1000);
+  expect(searchRequests).toBe(requestsBeforeIdle);
+  await expect(panel.getByText('Знайдено: 1', { exact: true })).toBeVisible();
+  await page.clock.resume();
+  await refresh.click();
+  await expect(
+    panel.getByRole('button', { name: 'needle new message', exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByText('Знайдено: 2', { exact: true })).toBeVisible();
+  const requestsBeforeFailure = searchRequests;
+  failSearch = true;
+  await refresh.click();
   const error = page.getByRole('alert').filter({ hasText: 'Не вдалося оновити результати пошуку' });
   await expect(error).toBeVisible();
   await expect(panel.getByRole('alert')).toHaveCount(0);
@@ -1601,9 +1671,8 @@ test('#3571 refreshes only on inbox updates and reports search failures in a sna
   await expect(panel.getByRole('progressbar')).toHaveCount(0);
 
   failSearch = false;
-  showNewMessage = true;
   await error.getByRole('button', { name: 'Повторити', exact: true }).click();
-  await expect.poll(() => searchRequests).toBeGreaterThan(requestsBeforeIdle);
+  await expect.poll(() => searchRequests).toBeGreaterThan(requestsBeforeFailure);
   await expect(
     panel.getByRole('button', { name: 'needle new message', exact: true }),
   ).toBeVisible();

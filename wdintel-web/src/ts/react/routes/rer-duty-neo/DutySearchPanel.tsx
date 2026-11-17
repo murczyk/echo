@@ -1,5 +1,6 @@
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { IconButton, LinearProgress, linearProgressClasses, useTheme } from '@mui/material';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import dayjs from 'dayjs';
@@ -255,6 +256,15 @@ export function DutySearchPanel({
             ) : null}
           </div>
           <div className="flex items-center">
+            <IconButton
+              size="small"
+              aria-label="Оновити результати пошуку"
+              title="Оновити результати пошуку"
+              disabled={!state.search.trim() || state.loading || state.loadingOlder}
+              onClick={search.onRefresh}
+            >
+              <RefreshIcon fontSize="small" />
+            </IconButton>
             <IconButton
               size="small"
               aria-label="Попередній результат"
