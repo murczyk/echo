@@ -6412,6 +6412,8 @@ export type SystemSettingsItem = {
   messengerMediaCacheMinFreeGib: number;
   signozMetricsEnabled: boolean;
   signozMetricsEndpoint: string | null;
+  mediaSandboxEnabled: boolean | null;
+  mediaSandboxError: string | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -6465,6 +6467,7 @@ export type CreateSystemSettingsReq = {
   messengerMediaCacheMinFreeGib: number;
   signozMetricsEnabled: boolean | null;
   signozMetricsEndpoint: string | null;
+  mediaSandboxEnabled: boolean | null;
 };
 
 export type ActivateSystemSettingsReq = {

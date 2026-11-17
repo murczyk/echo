@@ -273,6 +273,10 @@ impl Cache {
         let result = if enough_space {
             generate(entry.path.clone()).await
         } else {
+            log::warn!(
+                "device thumbnail skipped: not enough free space in {}",
+                self.namespace.path().display()
+            );
             event(&metrics, "thumbnail_capacity");
             Err(Failure::Transient)
         };

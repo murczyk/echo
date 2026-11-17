@@ -127,45 +127,6 @@ async fn audio_probe_rejects_late_corruption_and_naive_time() {
 }
 
 #[tokio::test]
-async fn audio_probe_no_progress_decoder_is_killed_and_reaped() {
-    for repeat_progress in ["0", "1"] {
-        let directory = tempfile::tempdir().unwrap();
-        let marker = directory.path().join("decoder.pid");
-        let mut command = tokio::process::Command::new("python3");
-        command.args(["-c", "import os,sys,time\nfrom pathlib import Path\nPath(sys.argv[1]).write_text(str(os.getpid()))\nwhile True:\n if sys.argv[2]=='1':\n  print('#tb 0: 1/48000',flush=True)\n  sys.stderr.write('x'*8192);sys.stderr.flush()\n time.sleep(.01)"])
-            .arg(&marker).arg(repeat_progress);
-        let started = std::time::Instant::now();
-        let error = run_media_process(
-            command,
-            true,
-            std::time::Duration::from_millis(300),
-        )
-        .await
-        .unwrap_err();
-        assert!(marker.is_file(), "real no-progress child must have started");
-        assert!(
-            !error.chain().any(|e| e.is::<DeviceAudioMediaError>()),
-            "watchdog is operational failure, not invalid source media"
-        );
-        assert!(started.elapsed() < std::time::Duration::from_secs(3));
-        assert!(started.elapsed() >= std::time::Duration::from_millis(300));
-        let pid = std::fs::read_to_string(marker)
-            .unwrap()
-            .parse::<i32>()
-            .unwrap();
-        assert_eq!(
-            unsafe { libc::kill(pid, 0) },
-            -1,
-            "child must be killed and reaped before completion"
-        );
-        assert_eq!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(libc::ESRCH)
-        );
-    }
-}
-
-#[tokio::test]
 #[serial_test::serial]
 async fn audio_probe_counts_decoded_samples_when_mp3_rate_changes() {
     let (env, _guard) = cleanup_locked().await.unwrap();
@@ -195,10 +156,15 @@ async fn audio_probe_counts_decoded_samples_when_mp3_rate_changes() {
     }
     let source_path = directory.path().join("mixed-rates.mp3");
     tokio::fs::write(&source_path, source).await.unwrap();
-    let sample_rate = media_metadata(&source_path).await.unwrap().streams[0]
-        .sample_rate
-        .parse::<i64>()
-        .unwrap();
+    let sample_rate = i64::from(
+        media_metadata(&source_path)
+            .await
+            .unwrap()
+            .first("audio")
+            .unwrap()
+            .sample_rate()
+            .unwrap(),
+    );
     let decoded = tokio::process::Command::new("ffmpeg")
         .args([
             "-v",

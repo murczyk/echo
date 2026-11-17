@@ -56,6 +56,8 @@ type SystemSettingsItemRaw = {
   echo_restapi_error_discord_webhook_url?: string | null;
   signoz_metrics_enabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
   signoz_metrics_endpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
+  media_sandbox_enabled?: BackendSystemSettingsItem['mediaSandboxEnabled'];
+  media_sandbox_error?: BackendSystemSettingsItem['mediaSandboxError'];
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -150,6 +152,7 @@ type CreateSystemSettingsReqRaw = {
   echo_restapi_error_discord_webhook_url: string | null;
   signoz_metrics_enabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
   signoz_metrics_endpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
+  media_sandbox_enabled?: BackendSystemSettingsItem['mediaSandboxEnabled'];
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -208,6 +211,8 @@ export type SystemSettingsItem = {
   echoRestapiErrorDiscordWebhookUrl: string | null;
   signozMetricsEnabled: BackendSystemSettingsItem['signozMetricsEnabled'];
   signozMetricsEndpoint: BackendSystemSettingsItem['signozMetricsEndpoint'];
+  mediaSandboxEnabled: BackendSystemSettingsItem['mediaSandboxEnabled'];
+  mediaSandboxError: BackendSystemSettingsItem['mediaSandboxError'];
 };
 
 export type SystemSettingsCurrent = {
@@ -298,6 +303,7 @@ export type CreateSystemSettingsInput = {
   echoRestapiErrorDiscordWebhookUrl: string | null;
   signozMetricsEnabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
   signozMetricsEndpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
+  mediaSandboxEnabled?: BackendSystemSettingsItem['mediaSandboxEnabled'];
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -353,6 +359,8 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     echoRestapiErrorDiscordWebhookUrl: raw.echo_restapi_error_discord_webhook_url ?? null,
     signozMetricsEnabled: raw.signoz_metrics_enabled ?? false,
     signozMetricsEndpoint: raw.signoz_metrics_endpoint ?? null,
+    mediaSandboxEnabled: raw.media_sandbox_enabled ?? null,
+    mediaSandboxError: raw.media_sandbox_error ?? null,
   };
 }
 
@@ -454,6 +462,7 @@ export async function createSystemSettings(
     echo_restapi_error_discord_webhook_url: input.echoRestapiErrorDiscordWebhookUrl,
     signoz_metrics_enabled: input.signozMetricsEnabled,
     signoz_metrics_endpoint: input.signozMetricsEndpoint,
+    media_sandbox_enabled: input.mediaSandboxEnabled ?? null,
   };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/create', req);
   return normalizeItem(data);

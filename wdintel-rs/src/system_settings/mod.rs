@@ -222,6 +222,8 @@ fn map_system_settings_item(
             .signoz_metrics_enabled
             .unwrap_or(false),
         signoz_metrics_endpoint: settings.signoz_metrics_endpoint,
+        media_sandbox_enabled: settings.media_sandbox_enabled,
+        media_sandbox_error: settings.media_sandbox_error,
     })
 }
 
@@ -255,6 +257,48 @@ where
         .c(h!())?
         .and_then(|settings| settings.enable_duty_search)
         .unwrap_or(false))
+}
+
+/// Turns the sandbox off in settings row `id` after its startup self-check
+/// failed, keeping `error` for the admin UI. Leaves the row alone unless it
+/// still enables the sandbox, so a concurrent admin change wins.
+pub async fn record_media_sandbox_failure<C>(
+    dbx: &C,
+    id: i64,
+    error: &str,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    system_settings::Entity::update_many()
+        .col_expr(
+            system_settings::Column::MediaSandboxEnabled,
+            Expr::value(false),
+        )
+        .col_expr(
+            system_settings::Column::MediaSandboxError,
+            Expr::value(error),
+        )
+        .filter(system_settings::Column::Id.eq(id))
+        .filter(system_settings::Column::MediaSandboxEnabled.eq(true))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+/// The startup failure stays visible while the sandbox stays off; choosing
+/// any other value clears it, and enabling it again retries at restart.
+fn carried_media_sandbox_error(
+    enabled: Option<bool>,
+    active: Option<&system_settings::Model>,
+) -> Option<String> {
+    active
+        .filter(|active| {
+            enabled == Some(false)
+                && active.media_sandbox_enabled == Some(false)
+        })
+        .and_then(|active| active.media_sandbox_error.clone())
 }
 
 pub async fn import_legacy_duty_search_config<C>(
@@ -876,6 +920,8 @@ fn system_settings_active_model(
         )),
         signoz_metrics_enabled: Set(req.signoz_metrics_enabled),
         signoz_metrics_endpoint: Set(req.signoz_metrics_endpoint.clone()),
+        media_sandbox_enabled: Set(req.media_sandbox_enabled),
+        media_sandbox_error: Set(None),
     })
 }
 
@@ -960,6 +1006,15 @@ async fn create_system_settings_for_login(
             })
             .unwrap_or(false),
     );
+    req.media_sandbox_enabled = req.media_sandbox_enabled.or_else(|| {
+        settings
+            .as_ref()
+            .and_then(|settings| settings.media_sandbox_enabled)
+    });
+    let media_sandbox_error = carried_media_sandbox_error(
+        req.media_sandbox_enabled,
+        settings.as_ref(),
+    );
     req.duty_selected_groups_enabled = Some(
         req.duty_selected_groups_enabled
             .or_else(|| {
@@ -987,15 +1042,14 @@ async fn create_system_settings_for_login(
             .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
     );
     deactivate_active_settings(&txn, login).await.c(h!())?;
-    let created = system_settings_active_model(
+    let mut created = system_settings_active_model(
         login,
         &req,
         echo_im_sync_cursor,
         hide_orbit_data,
-    )?
-    .insert(&txn)
-    .await
-    .c(h!())?;
+    )?;
+    created.media_sandbox_error = Set(media_sandbox_error);
+    let created = created.insert(&txn).await.c(h!())?;
     if created.do_not_store_duplicate_echoim_failures {
         crate::messenger::missing_message::delete_duplicate_missing_messages(
             &txn,
@@ -1041,6 +1095,14 @@ async fn activate_system_settings_for_login(
                 .and_then(|settings| settings.enable_duty_search)
                 .unwrap_or(false),
         ));
+    }
+    if target.media_sandbox_enabled.is_none() {
+        settings.media_sandbox_enabled = Set(active
+            .as_ref()
+            .and_then(|settings| settings.media_sandbox_enabled));
+        settings.media_sandbox_error = Set(active
+            .as_ref()
+            .and_then(|settings| settings.media_sandbox_error.clone()));
     }
     settings.deleted = Set(false);
     settings.updated_by_login_id = Set(Some(*login));
@@ -2037,6 +2099,69 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn issue_4066_media_sandbox_failure_turns_it_off_until_reenabled() {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut req = settings_req(false);
+        req.media_sandbox_enabled = Some(true);
+        let enabled = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+
+        record_media_sandbox_failure(&env.dbx, enabled.id, "no landlock")
+            .await
+            .unwrap();
+        let failed =
+            get_active_system_settings(&env.dbx).await.unwrap().unwrap();
+        assert_eq!(
+            (
+                failed.media_sandbox_enabled,
+                failed.media_sandbox_error.as_deref()
+            ),
+            (Some(false), Some("no landlock"))
+        );
+
+        let kept = create_system_settings_for_login(
+            &env.dbx,
+            &login,
+            &settings_req(false),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            (
+                kept.media_sandbox_enabled,
+                kept.media_sandbox_error.as_deref()
+            ),
+            (Some(false), Some("no landlock"))
+        );
+
+        let retried = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        assert_eq!(
+            (retried.media_sandbox_enabled, retried.media_sandbox_error),
+            (Some(true), None)
+        );
+
+        record_media_sandbox_failure(&env.dbx, kept.id, "stale row")
+            .await
+            .unwrap();
+        let unchanged = system_settings::Entity::find_by_id(kept.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            unchanged.media_sandbox_error.as_deref(),
+            Some("no landlock")
+        );
+    }
+
     #[test]
     fn issue_4034_enabling_signoz_metrics_requires_a_valid_endpoint() {
         let mut req = settings_req(false);
@@ -2580,6 +2705,7 @@ mod tests {
                 crate::config::MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT,
             signoz_metrics_enabled: None,
             signoz_metrics_endpoint: None,
+            media_sandbox_enabled: None,
         }
     }
 
@@ -2669,6 +2795,8 @@ mod tests {
             messenger_media_cache_min_free_gib: Set(None),
             signoz_metrics_enabled: Set(None),
             signoz_metrics_endpoint: Set(None),
+            media_sandbox_enabled: Set(None),
+            media_sandbox_error: Set(None),
         }
         .insert(dbx)
         .await
