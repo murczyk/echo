@@ -122,7 +122,7 @@ type MessengersAccountItem = {
   notes: string | null                  // from the collector
   internal_notes: string | null         // written by Echo users
   external_url: string | null           // absolute http(s) URL of the account's page in the collector
-  avatar_url: string | null             // see Avatars
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { user_id: string } | null
   datasource_group: MessengersDatasourceGroup
 }
@@ -162,6 +162,7 @@ Example response:
       "notes": null,
       "internal_notes": "Перевірити зв'язок з чатом 9001",
       "external_url": "https://example.com/accounts/17",
+      "avatar_id": "0199e3a3-2f4a-7b5c-8d6e-9f0a1b2c3d4e",
       "telegram": { "user_id": "7012345678" },
       "datasource_group": {
         "id": 4182,
@@ -223,7 +224,7 @@ type MessengersChatItem = {
   account_member_status: string | null  // the account's membership in the chat
   last_message_date: number | null      // epoch ms
   is_bot: boolean | null                // a dialog with a bot; null until the collector says
-  avatar_url: string | null             // see Avatars
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { chat_id: string } | null
   oldest_read_at: number | null         // epoch ms, the caller's read span; null until read
   newest_read_at: number | null         // epoch ms
@@ -261,7 +262,7 @@ type MessengersChatMemberItem = {
   role: string | null                   // creator, admin, member, ...
   joined_date: number | null            // epoch ms
   deleted: boolean
-  avatar_url: string | null             // see Avatars
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { user_id: string } | null
 }
 ```
@@ -398,7 +399,7 @@ contacts, so unlike chat members, deleted contacts are left out.
 type MessengersContactsListReq = {
   account_id: string
   page: number | null                   // from 1, default 1
-  limit: number | null                  // default 50, at most 100
+  limit: number | null                  // default 100, at most 250
 }
 
 type MessengersContactsListRsp = {
@@ -419,7 +420,8 @@ type MessengersContactItem = {
   is_mutual: boolean | null
   is_close_friend: boolean | null
   created_at: number                    // epoch ms, when Echo first stored it
-  avatar_url: string | null             // see Avatars
+  updated_at: number                    // epoch ms, when Echo last changed it
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { user_id: string } | null
 }
 ```
@@ -432,10 +434,10 @@ type MessengersContactItem = {
 
 ## Avatars
 
-Accounts, chats, chat members and contacts carry `avatar_url`: the path of
-their current avatar, `/api/messengers/avatars/{avatar_id}`, or `null` when
-the owner has none or it was removed. The avatar id changes with the avatar,
-so the URL identifies one immutable image or video; a client may cache it.
+Accounts, chats, chat members and contacts carry `avatar_id`: the Echo uuid of
+their current avatar, or `null` when the owner has none or it was removed. The
+client loads it from `/api/messengers/avatars/{avatar_id}`. The avatar id
+changes with the avatar, so one id always names the same image or video.
 
 ### `GET /avatars/{avatar_id}`
 
@@ -445,7 +447,8 @@ see the account that owns it, directly or through its chat, member or contact;
 an unknown avatar or one of an account outside the caller's groups is a `404`.
 
 - Not a JSON route and not ranged: the body is the whole file, at most 20 MiB.
-- `Cache-Control: private, max-age=86400`.
+- `Cache-Control: private, no-store`, as for messenger media: the browser
+  keeps no copy.
 - Avatars that are not the owner's current one (its history) are served too,
   but nothing links to them yet.
 - Served with the sandboxing headers of the media route, since the file comes

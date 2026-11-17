@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessengersContactItem } from '../../../../../../Bindings';
 
 const apiMock = vi.hoisted(() => ({ listMessengersContacts: vi.fn() }));
-vi.mock('../../../../services/api/analysis-messengers', () => apiMock);
+// The avatar URL helper stays real, so the test checks the path the browser loads.
+vi.mock('../../../../services/api/analysis-messengers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../services/api/analysis-messengers')>()),
+  ...apiMock,
+}));
 
 const downloadMock = vi.hoisted(() => ({ downloadBlob: vi.fn() }));
 vi.mock('../../../../utils/download-blob', () => downloadMock);

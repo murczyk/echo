@@ -1149,7 +1149,7 @@ uploaded once with TUS (see [TUS uploads](#tus-uploads)), then recorded on
 its owner by one submit endpoint per owner type. Each request carries one
 avatar for one owner. Every avatar is kept: an owner has a history of avatars
 and at most one **current** avatar, which the submit attaches to the owner.
-The current avatar is shown through the viewer API (`avatar_url`, see
+The current avatar is shown through the viewer API (`avatar_id`, see
 [Messengers API](MESSENGERS_API.md#avatars)); avatars do not enter the media
 pipeline (no previews, OCR or transcription). The sync endpoints
 neither accept nor return avatars.
