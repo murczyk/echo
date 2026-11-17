@@ -11,6 +11,7 @@ import type { NetworkCallsignRowView } from '../../network-callsigns.types';
 const tableMockState = vi.hoisted(() => ({
   options: null as Record<string, any> | null,
   onColumnOrderChange: vi.fn(),
+  columnFilteredOutIds: new Set<number>(),
 }));
 
 vi.mock('material-react-table', () => ({
@@ -42,9 +43,14 @@ vi.mock('../../../../components/mui-customized/table/get-default-table-options',
   mrtCustomCell: (renderer: unknown) => renderer,
   mrtTextCell: ({ displayValue }: { displayValue: unknown }) => displayValue,
   getDefaultMRTOptions: () => ({ localization: {} }),
-  useAppMaterialReactTable: (options: Record<string, unknown>) => ({
+  useAppMaterialReactTable: (options: { data: Array<{ id: number }> }) => ({
     options,
     getState: () => ({ isFullScreen: false }),
+    getFilteredRowModel: () => ({
+      rows: options.data
+        .filter((row) => !tableMockState.columnFilteredOutIds.has(row.id))
+        .map((row) => ({ id: String(row.id), original: row })),
+    }),
   }),
   buildDefaultColumnOrder: ({ dataColumnIds }: { dataColumnIds: string[] }) => dataColumnIds,
   renderColumnActionsMenuItems: () => [],
@@ -174,6 +180,7 @@ afterEach(() => {
   });
   root = null;
   tableMockState.options = null;
+  tableMockState.columnFilteredOutIds = new Set();
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
@@ -233,6 +240,15 @@ describe('NetworkCallsignsNetworkTable selection mode', () => {
     const selection = createSelection({ active: true, selectedIds: [1, 2, 99] });
     renderTable({ selection, statusFilter: 'Developing' });
 
+    expect(selection.onSelectedIdsChange).toHaveBeenCalledWith([2]);
+  });
+
+  it('drops selected rows hidden by a column filter and does not count them', () => {
+    tableMockState.columnFilteredOutIds = new Set([1]);
+    const selection = createSelection({ active: true, selectedIds: [1, 2] });
+    const container = renderTable({ selection });
+
+    expect(container.textContent).toContain('Обрано: 1');
     expect(selection.onSelectedIdsChange).toHaveBeenCalledWith([2]);
   });
 

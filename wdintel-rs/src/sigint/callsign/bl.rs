@@ -574,11 +574,13 @@ pub async fn bl_soft_delete_catalog_callsign<C>(
 where
     C: ConnectionTrait,
 {
-    let callsign_json_old = find_callsign_json(conn, callsign.id).await?;
+    let callsign_json_old =
+        find_callsign_json(conn, callsign.id).await.c(h!())?;
     let mut callsign = callsign.into_active_model();
     callsign.deleted = Set(true);
     let callsign = callsign.update(conn).await.c(h!())?;
-    let callsign_json_new = find_callsign_json(conn, callsign.id).await?;
+    let callsign_json_new =
+        find_callsign_json(conn, callsign.id).await.c(h!())?;
     sigint_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),

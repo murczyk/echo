@@ -600,6 +600,14 @@ function NetworkCallsignsNetworkTableContent({
     tableStateContext.onTableInitialized(table);
   }, [table, tableStateContext]);
 
+  const visibleSelectedIds = selectionActive
+    ? table
+        .getFilteredRowModel()
+        .rows.map((row) => row.original.id)
+        .filter((id) => rowSelection[String(id)])
+    : [];
+  usePruneHiddenSelection(selection, selectionActive, visibleSelectedIds);
+
   return (
     <Box
       sx={{
@@ -670,7 +678,7 @@ function NetworkCallsignsNetworkTableContent({
                 <NetworkCallsignSelectionControls
                   selection={selection}
                   selectionActive={selectionActive}
-                  selectedCount={Object.keys(rowSelection).length}
+                  selectedCount={visibleSelectedIds.length}
                   enterDisabled={isBusy || tableStateRows.length === 0}
                 />
               ) : null}
@@ -775,6 +783,28 @@ function NetworkCallsignSelectionControls({
   );
 }
 
+/**
+ * Keeps only selected rows that are still visible, so search, status or column filters
+ * and reloads never leave hidden rows queued for deletion.
+ */
+function usePruneHiddenSelection(
+  selection: NetworkCallsignSelection,
+  selectionActive: boolean,
+  visibleSelectedIds: number[],
+) {
+  const { selectedIds, onSelectedIdsChange } = selection;
+  const visibleSelectedKey = visibleSelectedIds.join(',');
+  useEffect(() => {
+    if (!selectionActive) return;
+    const visibleSelectedIdSet = new Set(
+      visibleSelectedKey === '' ? [] : visibleSelectedKey.split(',').map(Number),
+    );
+    if (selectedIds.some((id) => !visibleSelectedIdSet.has(id))) {
+      onSelectedIdsChange(selectedIds.filter((id) => visibleSelectedIdSet.has(id)));
+    }
+  }, [onSelectedIdsChange, selectedIds, selectionActive, visibleSelectedKey]);
+}
+
 function useNetworkCallsignRowSelection({
   selection,
   selectionActive,
@@ -796,16 +826,6 @@ function useNetworkCallsignRowSelection({
       return acc;
     }, {});
   }, [rows, selectedIds]);
-
-  // Keep only selected rows that are still visible, so search, status filter or reload
-  // never leave hidden rows queued for deletion.
-  useEffect(() => {
-    if (!selectionActive) return;
-    const visibleSelectedIds = selectedIds.filter((id) => rowSelection[String(id)]);
-    if (visibleSelectedIds.length !== selectedIds.length) {
-      onSelectedIdsChange(visibleSelectedIds);
-    }
-  }, [onSelectedIdsChange, rowSelection, selectedIds, selectionActive]);
 
   const displayedColumnOrder = useMemo(() => {
     const dataColumnOrder = withoutRowSelectColumn(columnOrder);

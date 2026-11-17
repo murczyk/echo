@@ -849,6 +849,8 @@ async fn find_network_callsigns_for_bulk_delete(
         )
         .filter(sigint_network_callsign::Column::Deleted.eq(false))
         .order_by_asc(sigint_network_callsign::Column::Id)
+        // Keeps a concurrent move or relink from changing a validated row before commit.
+        .lock_exclusive()
         .all(txn)
         .await
         .context(h!())?;

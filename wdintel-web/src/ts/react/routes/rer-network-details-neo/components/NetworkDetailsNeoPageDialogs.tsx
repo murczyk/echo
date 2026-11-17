@@ -243,7 +243,8 @@ function NetworkCallsignBulkDeleteDialog({ page }: Props) {
         };
       })}
       submitting={page.callsignBulkDeleteSubmitting}
-      disabled={!page.canManageCallsignActions || selectedCallsigns.length === 0}
+      disabled={!page.canManageCallsignActions}
+      confirmDisabled={selectedCallsigns.length === 0}
     >
       {page.canDeleteCatalogCallsign && catalogDeletableCount > 0 ? (
         <FormControlLabel

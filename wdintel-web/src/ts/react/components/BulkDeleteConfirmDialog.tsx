@@ -27,6 +27,8 @@ type Props = {
   items: BulkDeleteDialogItem[];
   submitting: boolean;
   disabled?: boolean;
+  /** Disables only confirmation, keeping «Скасувати» available. */
+  confirmDisabled?: boolean;
   title?: string;
   confirmLabel?: string;
   /** Extra content after the item list, such as options or an error. */
@@ -42,6 +44,7 @@ export function BulkDeleteConfirmDialog({
   items,
   submitting,
   disabled = false,
+  confirmDisabled = false,
   title = 'Підтвердження видалення',
   confirmLabel = 'Видалити',
   children,
@@ -77,7 +80,7 @@ export function BulkDeleteConfirmDialog({
           onClick={onConfirm}
           color="error"
           variant="contained"
-          disabled={blocked}
+          disabled={blocked || confirmDisabled}
           startIcon={submitting ? <CircularProgress color="inherit" size={16} /> : null}
         >
           {confirmLabel}
