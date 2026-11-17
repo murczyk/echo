@@ -93,7 +93,7 @@ impl WorkerState {
         {
             return;
         }
-        crate::types::info!(target: "device_document_queue", "kind={kind} claims={} polls={} skipped_claims={} admission_deferrals={} errors={} claim_total_us={} claim_max_us={}", self.claims,self.polls,self.skipped_claims,self.admission_deferrals,self.errors,self.claim_micros,self.max_claim_micros);
+        crate::types::info!(target: "device_document_queue", "kind={kind} claims={} polls={} skipped_claims={} admission_deferrals={} failures={} claim_total_us={} claim_max_us={}", self.claims,self.polls,self.skipped_claims,self.admission_deferrals,self.errors,self.claim_micros,self.max_claim_micros);
         let complete = self.backfill_complete;
         *self = Self {
             backfill_complete: complete,

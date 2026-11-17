@@ -124,6 +124,10 @@ async fn extract_original(
             .send()
             .await
             .c(h!())?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            forget_extractor_job(env, job).await.c(h!())?;
+            return Ok(None);
+        }
         let status: serde_json::Value =
             response.error_for_status().c(h!())?.json().await.c(h!())?;
         match status["state"].as_str() {
@@ -189,4 +193,11 @@ async fn extract_original(
     let response: serde_json::Value = response.json().await.c(h!())?;
     execute(&env.dbx,"update attachment_job set payload=payload || jsonb_build_object('extractorJobId',$3::text) where id=$1 and lease=$2",vec![job.id.into(),job.lease.into(),response["id"].as_str().c(h!())?.into()]).await.c(h!())?;
     Ok(None)
+}
+
+/// The extractor no longer knows the job, for example after switching
+/// extractors, so the next run submits the original again.
+async fn forget_extractor_job(env: &Env, job: &Job) -> anyhow::Result<()> {
+    execute(&env.dbx,"update attachment_job set payload=payload - 'extractorJobId' where id=$1 and lease=$2",vec![job.id.into(),job.lease.into()]).await.c(h!())?;
+    Ok(())
 }
