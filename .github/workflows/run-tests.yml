@@ -25,6 +25,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Harness release ID changes with the bundle
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          scripts/ci/check_harness_release_id.sh "origin/${{ github.base_ref }}"
       - run: python3 -m unittest discover -s deploy/ai-control-panel -p 'test_*.py' -v
       - run: python3 -m unittest discover -s echo-ai-agent/tests -p test_control_panel.py -v
       - uses: actions/setup-node@v4
