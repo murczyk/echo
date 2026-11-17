@@ -470,6 +470,7 @@ type MessengersMessagesListReq = {
   direction: "Older" | "Newer" | "Oldest" | null   // default "Older"
   around_message_id: string | null      // Echo message uuid
   around_sent_at: number | null         // epoch ms
+  query: string | null                  // full-text search in the chat
 }
 
 type MessengersMessagesListRsp = {
@@ -488,6 +489,7 @@ type MessengersMessageItem = {
   sender_chat_member_id: string | null  // null for channel posts / unknown
   attachments: MessengersAttachment[]
   telegram: { message_id: string } | null
+  headline: string | null               // with `query` only
 }
 
 type MessengersAttachment = {
@@ -507,6 +509,7 @@ Modes:
 | `cursor` from `older_cursor`, `direction` `"Older"` or omitted | Messages sent before that point |
 | `cursor` from `newer_cursor`, `direction: "Newer"` | The messages closest after that point |
 | `around_message_id` | That message with messages on both sides: `limit / 2` newer, the rest older including the message itself |
+| `query` | Combines with every mode above: the same pages over only the messages that match |
 | `around_sent_at` | The page split at the end of that millisecond: `limit / 2` messages sent after it, the rest sent at or before it. With a chat's `newest_read_at`, the first unread messages and the last read ones; see [Opening a chat at its unread messages](#opening-a-chat-at-its-unread-messages) |
 
 Example response:
@@ -578,6 +581,23 @@ Semantics:
   count towards `limit`.
 - Messages are visible before their attachments arrive, so `has_media: true`
   with an empty `attachments` is valid.
+
+Search (`query`):
+
+- Matches whole words with Russian stemming (`plainto_tsquery('russian', …)`
+  over `sigint_search.search_tsv`), so `танк` finds `танки`. All words must
+  match, and there is no prefix matching. A query of only stop words matches
+  nothing.
+- Leading and trailing whitespace is ignored. A blank `query` is the same as
+  none.
+- Cursors are the same timeline positions. Send the same `query` with every
+  page of a search. To open a hit in the full chat, request
+  `around_message_id` without `query`. With `query`, an `around_message_id`
+  that does not match is a `404`.
+- `headline` is a short fragment of `text` (`ts_headline`, up to 10 words). Each
+  match is between U+E000 and U+E001 (`MESSENGERS_HEADLINE_START` /
+  `_STOP`). It is plain text from the message: escape it, and only then turn
+  the markers into highlighting. It is `null` without `query`.
 
 ## Attachments
 
@@ -761,6 +781,6 @@ Unchanged on purpose:
 
 ### Filtering and search
 
-Optional fields on the same request bodies, starting with `messages/list`.
-`sigint_search.id` equals `sigint_chat_message.id`, so text search joins the
-timeline directly and the message cursor stays the same.
+More optional fields on the same request bodies. `messages/list` already has
+`query`, which joins `sigint_search` (`sigint_search.id` equals
+`sigint_chat_message.id`) to the timeline.

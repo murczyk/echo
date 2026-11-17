@@ -2994,6 +2994,7 @@ type alias MessengersMessagesListReq =
     , direction : Maybe (MessengersMessagesDirection)
     , aroundMessageId : Maybe (String)
     , aroundSentAt : Maybe (Int)
+    , query : Maybe (String)
     }
 
 
@@ -3007,6 +3008,7 @@ messengersMessagesListReqEncoder struct =
         , ( "direction", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersMessagesDirectionEncoder)) struct.direction )
         , ( "around_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aroundMessageId )
         , ( "around_sent_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aroundSentAt )
+        , ( "query", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.query )
         ]
 
 
@@ -3064,6 +3066,7 @@ type alias MessengersMessageItem =
     , senderChatMemberId : Maybe (String)
     , attachments : List (MessengersAttachment)
     , telegram : Maybe (MessengersTelegramMessageId)
+    , headline : Maybe (String)
     }
 
 
@@ -3079,6 +3082,7 @@ messengersMessageItemEncoder struct =
         , ( "sender_chat_member_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderChatMemberId )
         , ( "attachments", (Json.Encode.list (messengersAttachmentEncoder)) struct.attachments )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramMessageIdEncoder)) struct.telegram )
+        , ( "headline", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.headline )
         ]
 
 
@@ -24659,6 +24663,7 @@ messengersMessagesListReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.nullable (messengersMessagesDirectionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_message_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_sent_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.nullable (Json.Decode.string))))
 
 
 messengersTelegramMessageIdDecoder : Json.Decode.Decoder MessengersTelegramMessageId
@@ -24695,6 +24700,7 @@ messengersMessageItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_chat_member_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (messengersAttachmentDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramMessageIdDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "headline" (Json.Decode.nullable (Json.Decode.string))))
 
 
 messengersMessagesListRspDecoder : Json.Decode.Decoder MessengersMessagesListRsp

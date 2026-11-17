@@ -1164,6 +1164,7 @@ export type MessengersMessagesListReq = {
   direction: MessengersMessagesDirection | null;
   aroundMessageId: string | null;
   aroundSentAt: number | null;
+  query: string | null;
 };
 
 export type MessengersTelegramMessageId = {
@@ -1192,6 +1193,7 @@ export type MessengersMessageItem = {
   senderChatMemberId: string | null;
   attachments: Array<MessengersAttachment>;
   telegram: MessengersTelegramMessageId | null;
+  headline: string | null;
 };
 
 export type MessengersMessagesListRsp = {
