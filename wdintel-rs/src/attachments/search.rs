@@ -1,9 +1,31 @@
+use crate::rer_importer::analysis::AnalyticsMessageIdScope;
 use crate::rer_importer::types::AnalysisSearchMode;
 use crate::{h, types::ShortContext};
 use sea_orm::{
     sea_query::{Expr, SimpleExpr},
     Value,
 };
+
+#[derive(Clone, Copy, Default)]
+struct SearchSourceScope<'a> {
+    relation: Option<&'a str>,
+    message_ids: Option<&'a AnalyticsMessageIdScope>,
+}
+
+impl SearchSourceScope<'_> {
+    fn id_filter(self, column: &str) -> String {
+        match self.message_ids {
+            Some(AnalyticsMessageIdScope::Empty) => "false and ".into(),
+            Some(AnalyticsMessageIdScope::From(min_id)) => {
+                format!("{column}>={min_id} and ")
+            }
+            Some(AnalyticsMessageIdScope::Inclusive { min_id, max_id }) => {
+                format!("{column} between {min_id} and {max_id} and ")
+            }
+            None => String::new(),
+        }
+    }
+}
 
 fn bind(values: &mut Vec<Value>, value: impl Into<Value>) -> String {
     values.push(value.into());
@@ -156,8 +178,16 @@ pub fn text_predicate(
     values: &mut Vec<Value>,
 ) -> anyhow::Result<String> {
     text_predicate_with_correlation(
-        query, message, scope, structured, values, false, None, None, false,
+        query,
+        message,
+        scope,
+        structured,
+        values,
+        false,
         None,
+        None,
+        false,
+        SearchSourceScope::default(),
     )
     .c(h!())
 }
@@ -173,7 +203,7 @@ fn text_predicate_with_correlation(
     search_mode: Option<AnalysisSearchMode>,
     direct_body_key: Option<&str>,
     inline_tsquery: bool,
-    source_scope: Option<&str>,
+    source_scope: SearchSourceScope<'_>,
 ) -> anyhow::Result<String> {
     let mut predicates = search_predicates(
         query,
@@ -212,7 +242,7 @@ fn search_predicates(
     search_mode: Option<AnalysisSearchMode>,
     direct_body_key: Option<&str>,
     inline_tsquery: bool,
-    source_scope: Option<&str>,
+    source_scope: SearchSourceScope<'_>,
 ) -> anyhow::Result<SearchPredicates> {
     let search_mode = search_mode.unwrap_or_default();
     anyhow::ensure!(
@@ -242,7 +272,6 @@ fn search_predicates(
     let prefixes =
         crate::rer_importer::analysis::search::ts_prefix_query(&text_query)
             .is_some();
-    let materialize_ids = inline_tsquery && !correlated;
     let combined = if search_mode == AnalysisSearchMode::Fuzzy && !correlated {
         combined_or_predicate(
             &text_query,
@@ -251,7 +280,6 @@ fn search_predicates(
             prefixes,
             values,
             source_scope,
-            materialize_ids,
         )
     } else {
         None
@@ -287,7 +315,6 @@ fn search_predicates(
                 &format!("body_search.search_tsv @@ {tsquery}"),
                 correlated,
                 source_scope,
-                materialize_ids,
             )
         } else {
             message_literal_predicate(
@@ -353,8 +380,7 @@ fn combined_or_predicate(
     scope: &str,
     prefixes: bool,
     values: &mut Vec<Value>,
-    source_scope: Option<&str>,
-    materialize_ids: bool,
+    source_scope: SearchSourceScope<'_>,
 ) -> Option<String> {
     let mut terms = Vec::new();
     let mut expect_term = true;
@@ -378,7 +404,12 @@ fn combined_or_predicate(
     let tsqueries = terms
         .iter()
         .map(|term| {
-            term_tsquery(term, prefixes, values, source_scope.is_some())
+            term_tsquery(
+                term,
+                prefixes,
+                values,
+                source_scope.relation.is_some(),
+            )
         })
         .collect::<Vec<_>>();
     let filenames = terms
@@ -397,7 +428,6 @@ fn combined_or_predicate(
         &format!("body_search.search_tsv @@ {tsquery}"),
         false,
         source_scope,
-        materialize_ids,
     ))
 }
 
@@ -509,7 +539,7 @@ fn message_literal_predicate(
     values: &mut Vec<Value>,
     direct_body_key: Option<&str>,
     correlated: bool,
-    source_scope: Option<&str>,
+    source_scope: SearchSourceScope<'_>,
 ) -> String {
     let operator = literal_operator(pattern, search_mode, values);
     let mut sources = Vec::new();
@@ -521,7 +551,7 @@ fn message_literal_predicate(
         ))
     } else {
         if !matches!(scope, "attachments" | "document") {
-            sources.push(format!("select literal_item.id from sigint_inbox_item literal_item where {}coalesce(literal_item.body_noheader->>'body','') {operator}", if correlated { format!("literal_item.id={message} and ") } else { String::new() }));
+            sources.push(format!("select literal_item.id from sigint_inbox_item literal_item where {}coalesce(literal_item.body_noheader->>'body','') {operator}", if correlated { format!("literal_item.id={message} and ") } else { source_scope.id_filter("literal_item.id") }));
         }
         None
     };
@@ -563,14 +593,13 @@ fn exists_term(
     filename: &str,
     body: &str,
     correlated: bool,
-    source_scope: Option<&str>,
-    materialize_ids: bool,
+    source_scope: SearchSourceScope<'_>,
 ) -> String {
     let mut sources = Vec::new();
     if !matches!(scope, "attachments" | "document") {
-        sources.push(match source_scope {
+        sources.push(match source_scope.relation {
             Some(source_scope) => format!("select body_search.id from {source_scope} source_candidate join lateral (select body_search.id from sigint_search body_search where body_search.id=source_candidate.id and {body} offset 0) body_search on true"),
-            None => format!("select body_search.id from sigint_search body_search where {}{body}", if correlated { format!("body_search.id={message} and ") } else { String::new() }),
+            None => format!("select body_search.id from sigint_search body_search where {}{body}", if correlated { format!("body_search.id={message} and ") } else { source_scope.id_filter("body_search.id") }),
         });
     }
     sources.extend(attachment_term_sources(
@@ -582,7 +611,12 @@ fn exists_term(
         correlated,
         source_scope,
     ));
-    term_sources_predicate(message, sources, correlated, materialize_ids)
+    term_sources_predicate(
+        message,
+        sources,
+        correlated,
+        source_scope.message_ids.is_some(),
+    )
 }
 
 fn attachment_term_sources(
@@ -592,7 +626,7 @@ fn attachment_term_sources(
     filename: &str,
     audio: &str,
     correlated: bool,
-    source_scope: Option<&str>,
+    source_scope: SearchSourceScope<'_>,
 ) -> Vec<String> {
     let mut sources = Vec::new();
     if scope != "body" {
@@ -604,7 +638,7 @@ fn attachment_term_sources(
         let correlation = if correlated {
             format!("{} and ", media_filter(message, scope))
         } else {
-            source_scope.map(|scope| format!("media.signal_message_id in (select id from {scope}) and ")).unwrap_or_default()
+            source_scope.relation.map(|scope| format!("media.signal_message_id in (select id from {scope}) and ")).unwrap_or_else(|| source_scope.id_filter("media.signal_message_id"))
         };
         sources.push(format!("select {key} from signal_message_media media where {correlation}{filename}"));
         sources.push(format!("select {key} from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision join signal_message_media media on media.id=chunk.media_id where {correlation}{chunk}"));
@@ -613,7 +647,7 @@ fn attachment_term_sources(
         let correlation = if correlated {
             format!("audio_search.signal_message_id={message} and ")
         } else {
-            source_scope.map(|scope| format!("audio_search.signal_message_id in (select id from {scope}) and ")).unwrap_or_default()
+            source_scope.relation.map(|scope| format!("audio_search.signal_message_id in (select id from {scope}) and ")).unwrap_or_else(|| source_scope.id_filter("audio_search.signal_message_id"))
         };
         sources.push(format!("select audio_search.signal_message_id from signal_message_audio_search audio_search where {correlation}{audio}"));
     }
@@ -666,7 +700,7 @@ pub(crate) fn message_filter_with_mode(
         search_mode,
         None,
         false,
-        None,
+        SearchSourceScope::default(),
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
@@ -676,7 +710,7 @@ pub(crate) fn analysis_message_filter(
     query: &str,
     search_mode: Option<AnalysisSearchMode>,
     correlated: bool,
-    inline_tsquery: bool,
+    message_ids: Option<&AnalyticsMessageIdScope>,
     inbox_required: bool,
 ) -> anyhow::Result<SimpleExpr> {
     let mut values = Vec::new();
@@ -693,8 +727,11 @@ pub(crate) fn analysis_message_filter(
         } else {
             "signal_message.id"
         }),
-        inline_tsquery,
-        None,
+        message_ids.is_some(),
+        SearchSourceScope {
+            relation: None,
+            message_ids,
+        },
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
@@ -743,7 +780,10 @@ pub(crate) fn scoped_analysis_message_filter(
         search_mode,
         Some("signal_message.id"),
         false,
-        Some("source_search_scope"),
+        SearchSourceScope {
+            relation: Some("source_search_scope"),
+            message_ids: None,
+        },
     )
     .c(h!())?;
     let matches = if predicates.matches.is_empty() {

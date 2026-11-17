@@ -96,7 +96,9 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
                         query,
                         None,
                         correlated,
-                        inline_tsquery,
+                        inline_tsquery.then_some(
+                            &crate::rer_importer::analysis::AnalyticsMessageIdScope::From(message),
+                        ),
                         true,
                     )
                     .unwrap(),
@@ -161,7 +163,7 @@ async fn attachment_search_modes_respect_word_boundaries_and_case_3780() {
                     query,
                     Some(mode),
                     correlated,
-                    false,
+                    None,
                     true,
                 )
                 .unwrap(),

@@ -4000,7 +4000,7 @@ where
                 search,
                 search_mode,
                 correlated_terms,
-                scope.is_some(),
+                scope,
                 inbox_required,
             )
         }
