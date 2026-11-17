@@ -32,8 +32,14 @@ Only `/health/live` and `/health/ready` are unauthenticated. Every `/v1` route
 requires `Authorization: Bearer …`; submissions also require an
 `Idempotency-Key`.
 
+- `GET /v1/capacity`: `limit`, `active`, `available`, and `retry_after_seconds`;
+  reads only active queue entries, without spool or dependency checks. A full
+  queue advertises a 30-second retry delay; the response is never cached.
 - `POST /v1/jobs`: multipart `files` plus optional `manifest` JSON; returns
-  `202` with the durable job record.
+  `202` with the durable job record. New keys are rejected with `503` and
+  `Retry-After` before parsing uploads when the queue is full. Existing keys
+  retain digest validation and idempotent replay. Capacity probes are advisory;
+  the final insert checks the limit atomically.
 - `GET /v1/jobs/{id}`: queue state, attempts, timestamps, progress, quality,
   and a bounded error summary.
 - `GET /v1/jobs/{id}/result`: completed canonical ZIP package.

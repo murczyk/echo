@@ -23,6 +23,11 @@ import type { RequestOptions } from './client';
 
 // Read-only analysis messenger viewer API, `/api/messengers`. Requires the CyberMessengers role.
 
+// The content of an avatar, by the `avatarId` of an account, chat, member or contact.
+export function messengerAvatarUrl(avatarId: string): string {
+  return `/api/messengers/avatars/${encodeURIComponent(avatarId)}`;
+}
+
 export async function listMessengersAccounts(
   options?: RequestOptions,
 ): Promise<MessengersAccountsListRsp> {

@@ -675,6 +675,7 @@ mod tests {
                     members_count: None,
                     account_member_status: None,
                     last_message_date: None,
+                    is_bot: None,
                     telegram: None,
                 }],
                 updated: BTreeMap::new(),

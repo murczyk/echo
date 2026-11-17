@@ -239,13 +239,23 @@ async fn verify_maintenance_command(
             .context(h!())?
             .parse()
             .c(h!())?;
+        // Control panels before #4232 send no agent_id: the main container.
+        let agent_id = command["agent_id"]
+            .as_str()
+            .map(str::parse)
+            .transpose()
+            .c(h!())?;
+        let slot =
+            crate::ai_agent::lifecycle::container_slot(db, human_id, agent_id)
+                .await
+                .c(h!())?;
         crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
-            db, human_id,
+            db, human_id, slot,
         )
         .await
         .c(h!())?;
         let env = crate::server::new_readonly_env(mode).await.c(h!())?;
-        crate::ai_agent::lifecycle::test_connection(&env, human_id)
+        crate::ai_agent::lifecycle::test_connection(&env, human_id, slot)
             .await
             .c(h!())?;
     }

@@ -103,3 +103,21 @@
 - **Expected observable result:** with the system setting «ШІ: головна мережа повідомлення» on, the network create/edit drawer shows a multiline «Опис для ШІ» below the location, with helper text explaining that it is used to decide whether a message belongs to the network and to show the main network match. Saving sends the text; a blank value clears it. With the setting off the field is hidden and saves send `null`, which keeps the stored text.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-network-details-neo/components/__tests__/NetworkEditDrawer.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-network-details-neo/__tests__/use-rer-network-details-neo-page.forms.spec.ts`
 - **Original Echo issue/PR, if known:** [#4095](https://github.com/echoua/echo/issues/4095)
+
+## Network callsigns bulk delete
+
+- **Behavior ID:** `react-network-callsigns-bulk-delete`
+- **Status:** normative
+- **Affected route/component:** network details «Позивні» tab, «Позивні мережі» table
+- **User role or permission:** Admin, or UnitsEditor with Rer or Cyber; the catalog option needs CallsignsEditor
+- **Preconditions:** the network has callsigns
+- **User action or external event:** «Вибрати», tick rows or select all, «Видалити обрані», confirm «Відв'язати»; «Скасувати» leaves the mode
+- **Expected observable result:** «Вибрати» adds a first checkbox column and shows «Обрано: N». The confirm dialog lists the selected callsigns and, when some are catalog-linked and not in further reconnaissance, offers «Видалити також з каталогу (K)». Confirming unlinks all of them at once, leaves selection mode and reloads the callsigns. Rows hidden by search, status filter or reload drop out of the selection.
+- **Loading/empty/error/success behavior:** «Видалити обрані» is disabled with nothing selected or while deleting; a failure keeps the dialog and selection open with the error, and nothing is deleted
+- **URL, localStorage, or user-settings persistence:** the selection column is never stored in the column order
+- **API endpoint and compatibility requirements:** `deleteNetworkCallsigns` → `POST /api/sigint/network-callsign/delete-many`, one transaction; every id must belong to the network and not be deleted already
+- **Responsive and keyboard requirements:** checkboxes and buttons are keyboard reachable
+- **Known race/idempotency constraints:** a stale selection is rejected by the server as a whole
+- **Source implementation:** `use-rer-network-details-neo-page.callsign-bulk-actions.ts`, `components/NetworkCallsignsNetworkTable.tsx`, `components/NetworkDetailsNeoPageDialogs.tsx`
+- **Existing tests:** `wdintel-web/src/ts/react/routes/rer-network-details-neo/__tests__/use-rer-network-details-neo-page.callsign-bulk-actions.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-network-details-neo/components/__tests__/NetworkCallsignsNetworkTable.spec.tsx`
+- **Original Echo issue/PR, if known:** [#4242](https://github.com/echoua/echo/issues/4242)

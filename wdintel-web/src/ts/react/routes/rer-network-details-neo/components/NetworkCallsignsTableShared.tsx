@@ -145,11 +145,14 @@ export function formatCountLabel(value: number) {
 
 export function buildNetworkColumnOrder({
   dataColumnIds,
+  withRowSelection = false,
 }: {
   dataColumnIds: string[];
+  withRowSelection?: boolean;
 }): MRT_ColumnOrderState {
   return buildDefaultColumnOrder({
     dataColumnIds,
+    withRowSelection,
     withRowNumbers: true,
     withRowActions: true,
   });

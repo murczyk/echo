@@ -1064,6 +1064,7 @@ update shared msg model =
                     , "AES256"
                     , "TYT (16 bit)"
                     , "TYT (128 bit)"
+                    , "TYT380Enhanced"
                     ]
 
                 keyModulations =

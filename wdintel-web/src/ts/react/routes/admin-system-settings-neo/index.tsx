@@ -91,6 +91,10 @@ type SystemSettingsForm = {
   echoRestapiErrorDiscordWebhookUrl: string;
   signozMetricsEnabled: boolean;
   signozMetricsEndpoint: string;
+  /** `null` until an admin chooses; saving keeps it unset. */
+  mediaSandboxEnabled: boolean | null;
+  /** Read-only: why startup turned the sandbox off. */
+  mediaSandboxError: string | null;
 };
 
 type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
@@ -142,6 +146,7 @@ type SystemSettingsPayload = {
   echoRestapiErrorDiscordWebhookUrl: string | null;
   signozMetricsEnabled: boolean;
   signozMetricsEndpoint: string | null;
+  mediaSandboxEnabled: boolean | null;
 };
 
 const DUTY_POLL_INTERVAL_SEC_MIN = 5;
@@ -193,6 +198,8 @@ const EMPTY_FORM: SystemSettingsForm = {
   echoRestapiErrorDiscordWebhookUrl: '',
   signozMetricsEnabled: false,
   signozMetricsEndpoint: '',
+  mediaSandboxEnabled: null,
+  mediaSandboxError: null,
 };
 
 const SUPPORT_NON_RER_TOOLTIP =
@@ -203,6 +210,8 @@ const REPORT_CHUNKING_HOURS_MAX = 2_147_483_647;
 const DUTY_POLL_INTERVAL_TOOLTIP =
   'Резервна перевірка нових повідомлень; події надходять одразу між перевірками.';
 const SIGNOZ_METRICS_ENDPOINT_EXAMPLE = 'http://signoz-echo.eagle-atria.ts.net:4317';
+const MEDIA_SANDBOX_TOOLTIP =
+  'ffmpeg і ffprobe обробляють аудіо та відео ізольовано від решти системи. Застосовується після перезапуску сервера й bgworker; якщо перевірка пісочниці під час запуску не пройде, сервер запуститься без неї, а налаштування буде вимкнено.';
 const DISABLE_BOT_TAGS_TOOLTIP =
   'Приховує теги, додані ботом, на сторінках «Аналіз» та «Оперативний Neo» і призупиняє створення нових. Після вимкнення наявні теги знову відображатимуться, а бот продовжить роботу.';
 
@@ -268,6 +277,8 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     echoRestapiErrorDiscordWebhookUrl: item?.echoRestapiErrorDiscordWebhookUrl ?? '',
     signozMetricsEnabled: item?.signozMetricsEnabled ?? false,
     signozMetricsEndpoint: item?.signozMetricsEndpoint ?? '',
+    mediaSandboxEnabled: item?.mediaSandboxEnabled ?? null,
+    mediaSandboxError: item?.mediaSandboxError ?? null,
   };
 }
 
@@ -318,7 +329,8 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng &&
     a.echoRestapiErrorDiscordWebhookUrl === b.echoRestapiErrorDiscordWebhookUrl &&
     a.signozMetricsEnabled === b.signozMetricsEnabled &&
-    a.signozMetricsEndpoint === b.signozMetricsEndpoint
+    a.signozMetricsEndpoint === b.signozMetricsEndpoint &&
+    a.mediaSandboxEnabled === b.mediaSandboxEnabled
   );
 }
 
@@ -424,6 +436,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl || null,
     signozMetricsEnabled: form.signozMetricsEnabled,
     signozMetricsEndpoint: form.signozMetricsEndpoint || null,
+    mediaSandboxEnabled: form.mediaSandboxEnabled,
   };
 }
 
@@ -594,10 +607,12 @@ function MainSettingsSection({
   form,
   patchForm,
   audioTranscriptionSaved,
+  mediaSandboxFailure,
 }: {
   form: SystemSettingsForm;
   patchForm: PatchSystemSettingsForm;
   audioTranscriptionSaved: boolean;
+  mediaSandboxFailure: string | null;
 }) {
   return (
     <Stack spacing={3}>
@@ -658,6 +673,30 @@ function MainSettingsSection({
           label="Двофакторна автентифікація (2FA)"
           onChange={(checked) => patchForm({ twoFactorAuthEnabled: checked })}
         />
+        <MainSettingsSwitchRow
+          checked={form.mediaSandboxEnabled ?? false}
+          label={<InfoLabel label="Пісочниця для обробки медіа" tooltip={MEDIA_SANDBOX_TOOLTIP} />}
+          onChange={(checked) => patchForm({ mediaSandboxEnabled: checked })}
+        />
+        {mediaSandboxFailure && form.mediaSandboxEnabled === false ? (
+          <PowerAlert severity="error" autoHideDuration={null} dismissible={false}>
+            Пісочниця не запустилася, тому її вимкнено. Виправте причину, увімкніть пісочницю й
+            перезапустіть сервер та bgworker, щоб перевірити знову.
+            <Box
+              component="pre"
+              sx={{
+                m: 0,
+                mt: 1,
+                fontFamily: 'monospace',
+                fontSize: 13,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {mediaSandboxFailure}
+            </Box>
+          </PowerAlert>
+        ) : null}
       </MainSettingsGroup>
 
       <MainSettingsGroup title="Обробка повідомлень">
@@ -1397,6 +1436,7 @@ export function AdminSystemSettingsNeoPage() {
       echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
       signozMetricsEnabled: payload.signozMetricsEnabled,
       signozMetricsEndpoint: payload.signozMetricsEndpoint,
+      mediaSandboxEnabled: payload.mediaSandboxEnabled,
     });
   }
 
@@ -1557,6 +1597,9 @@ export function AdminSystemSettingsNeoPage() {
                           form={form}
                           patchForm={patchForm}
                           audioTranscriptionSaved={saved.enableAudioTranscription}
+                          mediaSandboxFailure={
+                            saved.mediaSandboxEnabled === false ? saved.mediaSandboxError : null
+                          }
                         />
                       </Stack>
                     ) : null}

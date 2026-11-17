@@ -1029,6 +1029,7 @@ export type MessengersAccountItem = {
   notes: string | null;
   internalNotes: string | null;
   externalUrl: string | null;
+  avatarId: string | null;
   telegram: MessengersTelegramAccountId | null;
   datasourceGroup: MessengersDatasourceGroup;
 };
@@ -1060,6 +1061,8 @@ export type MessengersChatItem = {
   membersCount: number | null;
   accountMemberStatus: string | null;
   lastMessageDate: number | null;
+  isBot: boolean | null;
+  avatarId: string | null;
   telegram: MessengersTelegramChatId | null;
   oldestReadAt: number | null;
   newestReadAt: number | null;
@@ -1110,6 +1113,7 @@ export type MessengersChatMemberItem = {
   role: string | null;
   joinedDate: number | null;
   deleted: boolean;
+  avatarId: string | null;
   telegram: MessengersTelegramAccountId | null;
 };
 
@@ -1135,6 +1139,7 @@ export type MessengersContactItem = {
   isCloseFriend: boolean | null;
   createdAt: number;
   updatedAt: number;
+  avatarId: string | null;
   telegram: MessengersTelegramAccountId | null;
 };
 
@@ -5123,6 +5128,17 @@ export type AddAsKnownNetworkCallsignReq = {
   knownCallsignIds: Array<number>;
 };
 
+export type DeleteNetworkCallsignsReq = {
+  networkId: number;
+  ids: Array<number>;
+  alsoDeleteFromCatalog: boolean;
+};
+
+export type DeleteNetworkCallsignsRsp = {
+  deletedIds: Array<number>;
+  deletedCatalogCallsignIds: Array<number>;
+};
+
 export type Callsign = {
   id: number;
   callsign: string;
@@ -6407,6 +6423,8 @@ export type SystemSettingsItem = {
   messengerMediaCacheMinFreeGib: number;
   signozMetricsEnabled: boolean;
   signozMetricsEndpoint: string | null;
+  mediaSandboxEnabled: boolean | null;
+  mediaSandboxError: string | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -6460,6 +6478,7 @@ export type CreateSystemSettingsReq = {
   messengerMediaCacheMinFreeGib: number;
   signozMetricsEnabled: boolean | null;
   signozMetricsEndpoint: string | null;
+  mediaSandboxEnabled: boolean | null;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -6828,6 +6847,7 @@ export type AiAgentConversationSummary = {
   aiEngineId: string;
   createdAt: number;
   updatedAt: number;
+  activeState: string | null;
 };
 
 export type AiAgentConversationListRsp = {
@@ -7285,6 +7305,7 @@ export type AiAgentIdReq = {
 
 export type AiAgentContainerItem = {
   linkedAgentId: string;
+  slot: number;
   humanLoginId: string;
   humanLogin: string;
   agentLoginId: string;
@@ -7378,6 +7399,7 @@ export type AiAgentAdminRequestDetail = {
 
 export type AiAgentAdminUserReq = {
   loginId: string;
+  linkedAgentId: string | null;
 };
 
 export type AiAgentAdminUserItem = {

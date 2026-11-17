@@ -81,6 +81,8 @@ fn chat_item(row: &ChatRow) -> MessengersChatItem {
         last_message_date: chat
             .last_message_date
             .map(|dt| dt.and_utc().timestamp_millis()),
+        is_bot: chat.is_bot,
+        avatar_id: chat.avatar_id.map(|id| id.to_string()),
         telegram: chat.telegram_chat_id.map(|id| MessengersTelegramChatId {
             chat_id: id.to_string(),
         }),

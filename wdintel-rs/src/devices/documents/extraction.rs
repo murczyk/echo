@@ -1,4 +1,4 @@
-use super::queue::{self, Job};
+use super::queue::{self, Job, JobOutcome};
 use crate::{
     attachments::{
         store::{execute, rows},
@@ -79,23 +79,30 @@ async fn source_bytes(env: &Env, source: &Source) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub(super) async fn extract(env: &Env, job: &Job) -> anyhow::Result<bool> {
+pub(super) async fn extract(
+    env: &Env,
+    job: &Job,
+) -> anyhow::Result<JobOutcome> {
     if published(env, job, job.generation).await.c(h!())?
         || reuse(env, job).await.c(h!())?
     {
-        return Ok(true);
+        return Ok(JobOutcome::Complete);
     }
     let source = source(env, job).await.c(h!())?;
     let extension = extension(&source);
     if !supported(&extension) {
         execute(env.file_registry_db().c(h!())?.connection(),"update file_document set state='unsupported' where file_id=$1 and revision=$2 and generation=$3",vec![job.file_id.into(),job.revision.into(),job.generation.into()]).await.c(h!())?;
-        return Ok(true);
+        return Ok(JobOutcome::Complete);
     }
-    let Some(package) = package(env, job, &source).await.c(h!())? else {
-        return Ok(false);
+    let package = match package(env, job, &source).await.c(h!())? {
+        PackageOutcome::Ready(package) => package,
+        PackageOutcome::Pending => return Ok(JobOutcome::Pending),
+        PackageOutcome::Deferred(delay) => {
+            return Ok(JobOutcome::Deferred(delay))
+        }
     };
     publish(env, job, package).await.c(h!())?;
-    Ok(true)
+    Ok(JobOutcome::Complete)
 }
 
 fn extension(source: &Source) -> String {
@@ -145,15 +152,23 @@ fn supported(extension: &str) -> bool {
         )
 }
 
+pub(super) enum PackageOutcome {
+    Ready(Package),
+    Pending,
+    Deferred(Duration),
+}
+
 pub(super) async fn package(
     env: &Env,
     job: &Job,
     source: &Source,
-) -> anyhow::Result<Option<Package>> {
+) -> anyhow::Result<PackageOutcome> {
     let extension = extension(source);
     anyhow::ensure!(supported(&extension), "unsupported file format");
     if SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS.contains(&extension.as_str()) {
-        return Ok(Some(map_package(env, source, &extension).await.c(h!())?));
+        return Ok(PackageOutcome::Ready(
+            map_package(env, source, &extension).await.c(h!())?,
+        ));
     }
     let config = crate::attachments::store::extractor_config(env).c(h!())?;
     if let Some(id) = job.payload["extractorJobId"].as_str() {
@@ -170,7 +185,7 @@ pub(super) async fn submit_extractor(
     source: &Source,
     config: &crate::ocr::OcrRuntimeConfig,
     extension: &str,
-) -> anyhow::Result<Option<Package>> {
+) -> anyhow::Result<PackageOutcome> {
     let bytes = tokio::time::timeout(
         Duration::from_secs(DEVICE_FILE_CONTENT_DOWNLOAD_TIMEOUT_SECS),
         source_bytes(env, source),
@@ -205,12 +220,14 @@ pub(super) async fn submit_extractor(
             | reqwest::StatusCode::SERVICE_UNAVAILABLE
             | reqwest::StatusCode::INSUFFICIENT_STORAGE
     ) {
-        return Ok(None);
+        return Ok(PackageOutcome::Deferred(super::admission::retry_delay(
+            &response,
+        )));
     }
     let result: serde_json::Value =
         response.error_for_status().c(h!())?.json().await.c(h!())?;
     execute(env.file_registry_db().c(h!())?.connection(),"update file_document_job set payload=payload||jsonb_build_object('extractorJobId',$3::text) where id=$1 and lease=$2",vec![job.id.into(),job.lease.into(),result["id"].as_str().c(h!())?.into()]).await.c(h!())?;
-    Ok(None)
+    Ok(PackageOutcome::Pending)
 }
 
 async fn poll_extractor(
@@ -218,7 +235,7 @@ async fn poll_extractor(
     job: &Job,
     config: &crate::ocr::OcrRuntimeConfig,
     id: &str,
-) -> anyhow::Result<Option<Package>> {
+) -> anyhow::Result<PackageOutcome> {
     let response = env
         .rq
         .get(format!("{}/v1/jobs/{id}", config.base_url))
@@ -228,7 +245,7 @@ async fn poll_extractor(
         .c(h!())?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         execute(env.file_registry_db().c(h!())?.connection(),"update file_document_job set payload=payload-'extractorJobId' where id=$1 and lease=$2",vec![job.id.into(),job.lease.into()]).await.c(h!())?;
-        return Ok(None);
+        return Ok(PackageOutcome::Pending);
     }
     let status: serde_json::Value =
         response.error_for_status().c(h!())?.json().await.c(h!())?;
@@ -246,13 +263,15 @@ async fn poll_extractor(
             let bytes = crate::attachments::worker::bounded_response(response)
                 .await
                 .c(h!())?;
-            Ok(Some(crate::attachments::worker::unpack(&bytes).c(h!())?))
+            Ok(PackageOutcome::Ready(
+                crate::attachments::worker::unpack(&bytes).c(h!())?,
+            ))
         }
         Some("failed" | "cancelled") => anyhow::bail!(
             "document extractor failed: {}",
             status["error_summary"]
         ),
-        _ => Ok(None),
+        _ => Ok(PackageOutcome::Pending),
     }
 }
 

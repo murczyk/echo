@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    #[sea_orm(unique)]
     pub human_login_id: Uuid,
     #[sea_orm(unique)]
     pub agent_login_id: Uuid,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub slot: Option<i16>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

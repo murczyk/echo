@@ -365,8 +365,6 @@ pub(crate) const DEVICE_AUDIO_CLEANUP_METRIC: &str =
 pub(super) const DEVICE_AUDIO_BUSY_RETRY_AFTER_SECS: u64 = 60;
 pub(super) const DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT: Duration =
     Duration::from_secs(5 * 60);
-pub(super) const DEVICE_AUDIO_DECODER_STDERR_BYTES: usize = 64 * 1024;
-pub(super) const DEVICE_AUDIO_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 pub(super) const DEVICE_AUDIO_PROCESS_READ_BYTES: usize = 8192;
 pub(super) const DEVICE_AUDIO_MIN_TIMESTAMP_US: i64 = -210_866_803_200_000_000;
 pub(super) const DEVICE_AUDIO_MAX_JS_TIMESTAMP_MS: i64 = 8_640_000_000_000_000;

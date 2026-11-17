@@ -6,6 +6,7 @@ use crate::{
     types::{Env, ShortContext},
 };
 use sea_orm::{ConnectionTrait, FromQueryResult, TransactionTrait};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Clone, FromQueryResult)]
@@ -20,9 +21,31 @@ pub(super) struct Job {
     pub payload: serde_json::Value,
 }
 
-pub(super) async fn discover(env: &Env) -> anyhow::Result<()> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum JobOutcome {
+    Complete,
+    Progress,
+    Pending,
+    Deferred(Duration),
+}
+
+impl From<bool> for JobOutcome {
+    fn from(complete: bool) -> Self {
+        if complete {
+            Self::Complete
+        } else {
+            Self::Progress
+        }
+    }
+}
+
+pub(super) async fn discover(env: &Env) -> anyhow::Result<bool> {
+    #[derive(FromQueryResult)]
+    struct Backfill {
+        complete: bool,
+    }
     let db = env.file_registry_db().c(h!())?.connection();
-    execute(db,"with checkpoint as (select * from file_document_backfill where id=1 and not complete for update), batch as materialized (
+    let result = rows::<Backfill, _>(db,"with checkpoint as (select * from file_document_backfill where id=1 and not complete for update), batch as materialized (
       select c.file_id,c.revision,r.device_id from checkpoint b cross join lateral (
         select file_id,revision from file_content
         where origin_archive_id is null and (file_id,revision)>(coalesce(b.cursor_file,'00000000-0000-0000-0000-000000000000'::uuid),coalesce(b.cursor_revision,0))
@@ -36,23 +59,85 @@ pub(super) async fn discover(env: &Env) -> anyhow::Result<()> {
       select uuid_generate_v7(),file_id,revision,generation,'extract' from inserted on conflict do nothing
     ) update file_document_backfill set cursor_file=coalesce((select file_id from batch order by file_id desc,revision desc limit 1),cursor_file),
       cursor_revision=coalesce((select revision from batch order by file_id desc,revision desc limit 1),cursor_revision),
-      discovered=discovered+(select count(*) from inserted),complete=not exists(select 1 from batch) where id=1 and not complete",
+      discovered=discovered+(select count(*) from inserted),complete=not exists(select 1 from batch) where id=1 and not complete returning complete",
       vec![DEVICE_DOCUMENT_DISCOVERY_BATCH.into()]).await.c(h!())?;
-    Ok(())
+    Ok(result.first().is_none_or(|backfill| backfill.complete))
 }
 
 pub(super) async fn claim(
     env: &Env,
     kind: &str,
 ) -> anyhow::Result<Option<Job>> {
-    let lease = Uuid::now_v7();
-    Ok(rows::<Job,_>(env.file_registry_db().c(h!())?.connection(),"with selected as (
-      select j.id from file_document_job j join file_document d on d.file_id=j.file_id and d.revision=j.revision
-      where j.kind=$1 and (j.kind='inspect' or j.generation=d.generation) and j.next_attempt_at<=now()
-      and (j.state in ('queued','retry_wait') or j.state='running' and j.lease_until<now())
-      order by j.created_at desc,j.id limit 1 for update of j skip locked
-    ) update file_document_job j set state='running',lease=$2,lease_until=now()+make_interval(secs=>$3),attempts=attempts+1
-      from selected where j.id=selected.id returning j.*",vec![kind.into(),lease.into(),(DEVICE_DOCUMENT_LEASE_SECS as f64).into()]).await.c(h!())?.pop())
+    claim_ready(env, kind, false).await.c(h!())
+}
+
+pub(super) async fn claim_submitted(
+    env: &Env,
+    kind: &str,
+) -> anyhow::Result<Option<Job>> {
+    claim_ready(env, kind, true).await.c(h!())
+}
+
+pub(super) fn claim_sql(submitted_only: bool) -> String {
+    let submitted = submitted_predicate(submitted_only);
+    format!(
+        r#"
+with due as materialized (
+    select j.id,j.created_at from file_document_job j
+    where j.kind=$1 and j.next_attempt_at<=now()
+      and j.state in ('queued','retry_wait','running')
+      and (j.state<>'running' or j.lease_until<now())
+      and (j.kind='inspect' or exists (
+          select 1 from file_document d
+          where d.file_id=j.file_id and d.revision=j.revision and d.generation=j.generation
+          offset 0
+      )) {submitted}
+    order by j.next_attempt_at desc limit {DEVICE_DOCUMENT_CLAIM_CANDIDATE_LIMIT}
+), selected as materialized (
+    select j.id from due join file_document_job j on j.id=due.id
+    where j.next_attempt_at<=now()
+      and j.state in ('queued','retry_wait','running')
+      and (j.state<>'running' or j.lease_until<now())
+    order by due.created_at desc,due.id limit 1 for update of j skip locked
+) update file_document_job j
+  set state='running',lease=$2,lease_until=now()+make_interval(secs=>$3),attempts=attempts+1
+  from selected where j.id=selected.id returning j.*
+"#
+    )
+}
+
+fn submitted_predicate(submitted_only: bool) -> &'static str {
+    if submitted_only {
+        "and jsonb_typeof(j.payload->'extractorJobId')='string'"
+    } else {
+        ""
+    }
+}
+
+async fn claim_ready(
+    env: &Env,
+    kind: &str,
+    submitted_only: bool,
+) -> anyhow::Result<Option<Job>> {
+    let db = env.file_registry_db().c(h!())?.connection();
+    let tx = db.begin().await.c(h!())?;
+    tx.execute_unprepared(&format!(
+        "set local statement_timeout='{DEVICE_DOCUMENT_CLAIM_TIMEOUT_MS}ms'; set local lock_timeout='{DEVICE_DOCUMENT_CLAIM_LOCK_TIMEOUT_MS}ms'"
+    )).await.c(h!())?;
+    let job = rows::<Job, _>(
+        &tx,
+        &claim_sql(submitted_only),
+        vec![
+            kind.into(),
+            Uuid::now_v7().into(),
+            (DEVICE_DOCUMENT_LEASE_SECS as f64).into(),
+        ],
+    )
+    .await
+    .c(h!())?
+    .pop();
+    tx.commit().await.c(h!())?;
+    Ok(job)
 }
 
 pub(super) async fn renew(
@@ -70,13 +155,17 @@ pub(super) async fn renew(
 pub(super) async fn finish(
     env: &Env,
     job: &Job,
-    outcome: anyhow::Result<bool>,
+    outcome: anyhow::Result<JobOutcome>,
 ) -> anyhow::Result<()> {
     let db = env.file_registry_db().c(h!())?.connection();
     let tx = db.begin().await.c(h!())?;
+    let delay = match &outcome {
+        Ok(JobOutcome::Deferred(delay)) => delay.as_secs_f64(),
+        _ => 10.0 * 2f64.powi(job.attempts.min(6)),
+    };
     let (state, error) = match outcome {
-        Ok(true) => ("completed", None),
-        Ok(false) => ("queued", None),
+        Ok(JobOutcome::Complete) => ("completed", None),
+        Ok(_) => ("queued", None),
         Err(error) => {
             crate::types::error!(
                 "device document {} {}: {error:#}",
@@ -101,7 +190,7 @@ pub(super) async fn finish(
     let changed=execute(&tx,"update file_document_job set state=$3,last_error=$4,lease=null,lease_until=null,
       attempts=case when $3='queued' then greatest(attempts-1,0) else attempts end,
       next_attempt_at=now()+make_interval(secs=>$5) where id=$1 and lease=$2",
-      vec![job.id.into(),job.lease.into(),state.into(),error.clone().into(),(10.0*2f64.powi(job.attempts.min(6))).into()]).await.c(h!())?;
+      vec![job.id.into(),job.lease.into(),state.into(),error.clone().into(),delay.into()]).await.c(h!())?;
     if changed > 0 && state == "failed" && job.kind != "inspect" {
         execute(&tx,"update file_document set last_error=$4,state=case when $5='extract' then 'failed' else state end where file_id=$1 and revision=$2 and generation=$3",
             vec![job.file_id.into(),job.revision.into(),job.generation.into(),error.into(),job.kind.clone().into()]).await.c(h!())?;

@@ -209,7 +209,7 @@ function ChatSection({
     >
       <button
         type="button"
-        className="flex w-full items-center justify-between px-4 py-2 text-sm"
+        className="flex w-full items-center justify-between !px-4 py-2 text-sm"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
@@ -223,7 +223,7 @@ function ChatSection({
       </button>
       <Collapse in={open}>
         {chats.length === 0 ? (
-          <p className="px-4 pt-1 pb-3 text-xs opacity-60">Немає чатів</p>
+          <p className="!px-4 pt-1 pb-3 text-xs opacity-60">Немає чатів</p>
         ) : (
           <ChatRows
             chats={chats}
@@ -234,7 +234,8 @@ function ChatSection({
             render={(chat) => (
               <button
                 type="button"
-                className="group-navigation-list-item echo-selectable-list-item !px-2"
+                // The row has a 1 px border of its own, so its padding is 1 px short of the 0.5 rem and the content starts 1 rem from the border like the rest.
+                className="group-navigation-list-item echo-selectable-list-item !px-[calc(0.5rem_-_1px)]"
                 data-messenger-chat
                 aria-label={chatCountsLabel(chat)}
                 data-selected={chat.id === selectedChatId ? 'true' : 'false'}
@@ -242,7 +243,12 @@ function ChatSection({
                 onClick={() => onSelectChat(chat.id)}
               >
                 <MessengerAccountAvatar
-                  account={{ id: chat.id, name: chatLabel(chat), phone: '' }}
+                  account={{
+                    id: chat.id,
+                    name: chatLabel(chat),
+                    phone: '',
+                    avatarId: chat.avatarId,
+                  }}
                 />
                 <span className="flex min-w-0 flex-col">
                   <span className="group-navigation-name" title={chatLabel(chat)}>
@@ -342,7 +348,7 @@ function ExpandedSidebar({
     >
       {/* Lit like the open items of the rail while the account cards are open; it reaches up to the top edge of the box and down to the line below (negative margins cancel the gaps of the column). */}
       <div
-        className={`-mt-2 -mb-2 flex cursor-pointer items-center gap-3 px-4 pt-4 pb-3 ${ACCOUNT_OPEN_LOOK} ${ACCOUNT_HEADER_HOVER}`}
+        className={`-mt-2 -mb-2 flex cursor-pointer items-center gap-3 !px-4 pt-4 pb-3 ${ACCOUNT_OPEN_LOOK} ${ACCOUNT_HEADER_HOVER}`}
         data-selected={accountOpen ? 'true' : 'false'}
         onClick={onOpenAccount}
       >
@@ -412,11 +418,11 @@ function ExpandedSidebar({
         </button>
       </nav>
       <Separator name="pages-search" />
-      <div className="px-4">
+      <div className="!px-4">
         <MessengerSearchField value={query} onChange={setQuery} ariaLabel="Пошук чату" />
       </div>
       <div
-        className="flex items-center justify-between gap-2 px-4 text-xs"
+        className="flex items-center justify-between gap-2 !px-4 text-xs"
         data-messenger-unread-row
       >
         <label className="flex items-center gap-1 opacity-80">
@@ -442,7 +448,7 @@ function ExpandedSidebar({
         </Tooltip>
       </div>
       {error != null ? (
-        <div className="flex flex-col items-start gap-1 px-4 py-2">
+        <div className="flex flex-col items-start gap-1 !px-4 py-2">
           <p className="m-0" role="alert">
             {error}
           </p>
@@ -452,12 +458,12 @@ function ExpandedSidebar({
         </div>
       ) : null}
       {loading ? (
-        <p className="px-4 text-xs opacity-60" role="status">
+        <p className="!px-4 text-xs opacity-60" role="status">
           Завантажуємо чати…
         </p>
       ) : // A failed first load has no chats to show; a failed refresh keeps the old ones under the error.
       error != null && chats.length === 0 ? null : (
-        // Sections are cut off from each other by a line, as in kontur, and the last one is closed by a line too.
+        // Sections are cut off from each other by a line, as in the collector, and the last one is closed by a line too.
         <div className={`border-b border-solid ${DIVIDER}`}>
           {CHAT_SECTIONS.map(({ key, title, Icon }) => (
             <ChatSection
@@ -747,6 +753,7 @@ function CollapsedSidebar({
                               id: chat.id,
                               name: chatLabel(chat),
                               phone: '',
+                              avatarId: chat.avatarId,
                             }}
                             className={RAIL_AVATAR_SIZE}
                           />

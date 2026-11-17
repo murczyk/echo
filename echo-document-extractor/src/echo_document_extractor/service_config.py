@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .config import ExtractionConfig
 
 MULTIPART_OVERHEAD_BYTES = 2 * 1024 * 1024
+ADMISSION_RETRY_SECONDS = 30
 
 
 class ServiceLimits(BaseModel):

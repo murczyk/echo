@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { handleUnauthorizedMediaResponse } from '../shared/message-card/message-card-media-fetch';
 
-// A session-wide cache of the thumbnails the gallery has shown, as object URLs (kontur's `useMediaUrl` does the same). The
+// A session-wide cache of the thumbnails the gallery has shown, as object URLs (the collector's `useMediaUrl` does the same). The
 // thumbnail route is a handler that checks the role and the access in the database on every request, so even a 304
 // costs the server work; a tile that scrolls away and comes back should cost nothing. The same cache holds the originals of
 // small photos that are shown instead of a thumbnail (`MessengerGalleryThumb.tsx`), which the server sends as `no-store`, so the

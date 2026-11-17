@@ -4,9 +4,10 @@ use super::dispatcher::{DispatcherClient, DispatcherResponse};
 use crate::config::{
     AI_AGENT_CONTAINER_NAME_PREFIX, AI_AGENT_HARNESS_RELEASE,
     AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_LINKED_LOGIN_SUFFIX,
-    AI_AGENT_MAX_RUNNING_CONTAINERS, AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER,
-    AI_AGENT_ROLE_RER, AI_AGENT_TEMPLATE_LOGIN_NAME,
-    AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS,
+    AI_AGENT_MAIN_CONTAINER_SLOT, AI_AGENT_MAX_CONTAINERS_PER_USER,
+    AI_AGENT_MAX_RUNNING_CONTAINERS, AI_AGENT_REQUEST_START_LOCK_WAIT_MS,
+    AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER, AI_AGENT_ROLE_RER,
+    AI_AGENT_TEMPLATE_LOGIN_NAME, AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS,
 };
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::{
@@ -17,15 +18,15 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{info, warn, Context, Env, ShortContext};
 use chrono::Utc;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction,
-    EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Statement,
-    TransactionTrait,
+    Condition, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    DatabaseTransaction, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QuerySelect, Statement, TransactionTrait,
 };
 use serde_json::json;
 use std::time::Instant;
-use url::Url;
 use uuid::Uuid;
 
 pub struct LinkedAgent {
@@ -118,9 +119,41 @@ where
     Ok(template)
 }
 
-pub async fn ensure_linked_agent(
+/// The agent login name of a user's container slot: `<login>-ai-agent` for
+/// the main one, `<login>-ai-agent-2` for the next. The slot follows the
+/// suffix, so it never collides with a human whose login ends in `-2`.
+pub(crate) fn linked_login_name(human_login: &str, slot: i16) -> String {
+    if slot == AI_AGENT_MAIN_CONTAINER_SLOT {
+        format!("{human_login}{AI_AGENT_LINKED_LOGIN_SUFFIX}")
+    } else {
+        format!(
+            "{human_login}{AI_AGENT_LINKED_LOGIN_SUFFIX}-{}",
+            i32::from(slot) + 1
+        )
+    }
+}
+
+/// The container slot `link` runs; links made before #4232 have none and run
+/// the main one.
+pub(crate) fn link_slot(link: &ai_agent_user_link::Model) -> i16 {
+    link.slot.unwrap_or(AI_AGENT_MAIN_CONTAINER_SLOT)
+}
+
+/// Selects the links of container `slot`, counting unset ones as the main.
+pub(crate) fn link_slot_condition(slot: i16) -> Condition {
+    let condition =
+        Condition::any().add(ai_agent_user_link::Column::Slot.eq(slot));
+    if slot == AI_AGENT_MAIN_CONTAINER_SLOT {
+        condition.add(ai_agent_user_link::Column::Slot.is_null())
+    } else {
+        condition
+    }
+}
+
+pub(crate) async fn ensure_linked_agent_in_slot(
     env: &Env,
     human_login_id: Uuid,
+    slot: i16,
 ) -> Result<LinkedAgent, AppError> {
     crate::ai_agent::ensure_valid_human_target(&env.dbx, human_login_id)
         .await?;
@@ -131,10 +164,9 @@ pub async fn ensure_linked_agent(
         .c(h!())?
         .filter(|human| !human.deleted && !human.deleted_permanently)
         .ok_or(AppError::NotFound)?;
-    let linked_name =
-        format!("{}{}", human.login, AI_AGENT_LINKED_LOGIN_SUFFIX);
     let existing_link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human.id))
+        .filter(link_slot_condition(slot))
         .one(&txn)
         .await
         .c(h!())?;
@@ -148,11 +180,11 @@ pub async fn ensure_linked_agent(
                     msg: "Linked AI agent login is missing".to_string(),
                 })?;
             let agent =
-                reconcile_linked_login_name(&txn, &link, &agent, &linked_name)
+                reconcile_linked_login_name(&txn, &link, &agent, &human.login)
                     .await?;
             (link, agent)
         }
-        None => create_link(&txn, &human, linked_name).await?,
+        None => create_link(&txn, &human, slot).await?,
     };
     let container = ensure_container(&txn, &link).await?;
     let agent = synchronize_agent_scope(&txn, &human, agent).await?;
@@ -172,8 +204,10 @@ async fn reconcile_linked_login_name(
     txn: &DatabaseTransaction,
     link: &ai_agent_user_link::Model,
     agent: &login::Model,
-    linked_name: &str,
+    human_login: &str,
 ) -> Result<login::Model, AppError> {
+    let linked_name = linked_login_name(human_login, link_slot(link));
+    let linked_name = linked_name.as_str();
     let name_owner = login::Entity::find()
         .filter(login::Column::Login.eq(linked_name))
         .one(txn)
@@ -189,9 +223,6 @@ async fn reconcile_linked_login_name(
     if agent.login == linked_name {
         return Ok(agent.clone());
     }
-    let human_login = linked_name
-        .strip_suffix(AI_AGENT_LINKED_LOGIN_SUFFIX)
-        .unwrap_or(linked_name);
     let mut agent = agent.clone().into_active_model();
     agent.login = Set(linked_name.to_string());
     agent.description = Set(Some(format!("AI agent linked to {human_login}")));
@@ -201,8 +232,9 @@ async fn reconcile_linked_login_name(
 async fn create_link(
     txn: &DatabaseTransaction,
     human: &login::Model,
-    linked_name: String,
+    slot: i16,
 ) -> Result<(ai_agent_user_link::Model, login::Model), AppError> {
+    let linked_name = linked_login_name(&human.login, slot);
     if login::Entity::find()
         .filter(login::Column::Login.eq(&linked_name))
         .one(txn)
@@ -245,6 +277,7 @@ async fn create_link(
         agent_login_id: Set(agent.id),
         created_at: Set(now),
         updated_at: Set(now),
+        slot: Set(Some(slot)),
     }
     .insert(txn)
     .await
@@ -326,6 +359,7 @@ async fn ensure_container(
         last_activity_at: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
+        configured_proxies: Set(None),
     }
     .insert(txn)
     .await
@@ -337,6 +371,7 @@ pub async fn start_for_user(
     env: &Env,
     human_login_id: Uuid,
     ai_engine: Option<&ai_engine::Model>,
+    slot: i16,
 ) -> Result<LinkedAgent, AppError> {
     crate::ai_agent::ensure_valid_human_target(&env.dbx, human_login_id)
         .await?;
@@ -345,11 +380,16 @@ pub async fn start_for_user(
     if ai_engine.is_none() {
         ensure_manual_start_allowed(&lifecycle_lock, human_login_id).await?;
     }
-    let result = start_for_user_locked(env, human_login_id, ai_engine, 0).await;
+    let result =
+        start_for_user_locked(env, human_login_id, ai_engine, 0, slot).await;
     lifecycle_lock.commit().await.c(h!())?;
     result
 }
 
+/// Starts the user's container for a claimed request, or joins it while
+/// requests from the user's other conversations run there (#4232). The
+/// request is marked started before the user's lock is released, so a later
+/// start sees it and never revokes or reconfigures the container under it.
 pub async fn start_for_request(
     env: &Env,
     request_id: Uuid,
@@ -360,13 +400,29 @@ pub async fn start_for_request(
         .await?;
     let Some(lifecycle_lock) =
         begin_request_start_lifecycle(&env.dbx, request_id, human_login_id)
-            .await?
+            .await
+            .context(h!())?
     else {
         return Ok(None);
     };
-    let result = start_for_user_locked(env, human_login_id, Some(ai_engine), 0)
-        .await
-        .map(Some);
+    let result = match start_or_join_locked(
+        env,
+        &lifecycle_lock,
+        request_id,
+        human_login_id,
+        ai_engine,
+    )
+    .await
+    {
+        Ok(linked) => {
+            mark_request_started(&lifecycle_lock, request_id, linked.login.id)
+                .await
+                .context(h!())
+                .map_err(Into::into)
+                .map(|started| started.then_some(linked))
+        }
+        Err(err) => Err(err),
+    };
     lifecycle_lock.commit().await.c(h!())?;
     result
 }
@@ -377,7 +433,13 @@ async fn begin_request_start_lifecycle(
     human_login_id: Uuid,
 ) -> Result<Option<DatabaseTransaction>, AppError> {
     let lifecycle_lock = dbx.begin().await.c(h!())?;
-    lock_user_lifecycle(&lifecycle_lock, human_login_id).await?;
+    lock_user_lifecycle_waiting(
+        &lifecycle_lock,
+        human_login_id,
+        AI_AGENT_REQUEST_START_LOCK_WAIT_MS,
+    )
+    .await
+    .context(h!())?;
     let request_is_running = ai_agent_request::Entity::find_by_id(request_id)
         .filter(ai_agent_request::Column::HumanLoginId.eq(human_login_id))
         .filter(ai_agent_request::Column::State.eq("running"))
@@ -391,6 +453,243 @@ async fn begin_request_start_lifecycle(
         return Ok(None);
     }
     Ok(Some(lifecycle_lock))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RequestStartPlan {
+    /// No other request runs in the container: start or reconfigure it.
+    Start,
+    /// Requests run there with the proxies this one needs: share it.
+    Join,
+    /// Requests run there with other proxies, which cannot change under
+    /// them; the claim prevents this unless an engine changed since.
+    Conflict,
+}
+
+fn request_start_plan(
+    need: &access::AgentProxyNeed,
+    has_started_siblings: bool,
+    container: &ai_agent_container::Model,
+) -> RequestStartPlan {
+    if !has_started_siblings {
+        return RequestStartPlan::Start;
+    }
+    // Requests marked started in a container that is not running are
+    // already lost; a full start replaces it.
+    if container.state != "running" {
+        return RequestStartPlan::Start;
+    }
+    if container.configured_proxies.as_deref() == Some(need.key().as_str()) {
+        RequestStartPlan::Join
+    } else {
+        RequestStartPlan::Conflict
+    }
+}
+
+/// One of the user's container slots as a request start sees it.
+#[derive(Clone, Copy, Debug)]
+struct SlotView<'a> {
+    slot: i16,
+    /// Another of the user's requests runs in it.
+    busy: bool,
+    container: &'a ai_agent_container::Model,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlotPlan {
+    Join(i16),
+    Start(i16),
+    Conflict,
+}
+
+/// Joins a slot running requests with the same proxies; otherwise starts a
+/// free slot, preferring one already configured for them, then the main
+/// one; otherwise opens the next slot (#4232). The claim admits a request
+/// only while one of these exists.
+fn request_slot_plan(
+    need: &access::AgentProxyNeed,
+    slots: &[SlotView<'_>],
+    max_slots: usize,
+) -> SlotPlan {
+    let mut free = Vec::new();
+    for view in slots {
+        match request_start_plan(need, view.busy, view.container) {
+            RequestStartPlan::Join => return SlotPlan::Join(view.slot),
+            RequestStartPlan::Start => free.push(view),
+            RequestStartPlan::Conflict => {}
+        }
+    }
+    let configured = |view: &&SlotView<'_>| {
+        view.container.state == "running"
+            && view.container.configured_proxies.as_deref()
+                == Some(need.key().as_str())
+    };
+    if let Some(view) = free
+        .iter()
+        .copied()
+        .find(configured)
+        .or_else(|| free.iter().copied().min_by_key(|view| view.slot))
+    {
+        return SlotPlan::Start(view.slot);
+    }
+    (0..max_slots as i16)
+        .find(|slot| slots.iter().all(|view| view.slot != *slot))
+        .map_or(SlotPlan::Conflict, SlotPlan::Start)
+}
+
+async fn start_or_join_locked(
+    env: &Env,
+    lifecycle_lock: &DatabaseTransaction,
+    request_id: Uuid,
+    human_login_id: Uuid,
+    ai_engine: &ai_engine::Model,
+) -> Result<LinkedAgent, AppError> {
+    let need = proxy_need(ai_engine).context(h!())?;
+    let busy_agents =
+        started_sibling_agents(lifecycle_lock, request_id, human_login_id)
+            .await
+            .context(h!())?;
+    let agents = load_user_agents_on(lifecycle_lock, human_login_id)
+        .await
+        .context(h!())?;
+    let views = agents
+        .iter()
+        .map(|agent| SlotView {
+            slot: link_slot(&agent.link),
+            busy: busy_agents.contains(&agent.login.id),
+            container: &agent.container,
+        })
+        .collect::<Vec<_>>();
+    let slot = match request_slot_plan(
+        &need,
+        &views,
+        AI_AGENT_MAX_CONTAINERS_PER_USER,
+    ) {
+        SlotPlan::Join(slot) => {
+            let linked = agents
+                .into_iter()
+                .find(|agent| link_slot(&agent.link) == slot)
+                .ok_or(AppError::NotFound)
+                .c(h!())?;
+            if let Some(linked) = join_running_agent(env, linked, &need)
+                .await
+                .context(h!())?
+            {
+                return Ok(linked);
+            }
+            slot
+        }
+        SlotPlan::Start(slot) => slot,
+        SlotPlan::Conflict => {
+            return Err(AppError::BL {
+                msg: "ШІ-агент зараз виконує запити інших розмов з іншими моделями. Повторіть запит після їх завершення.".to_string(),
+            })
+        }
+    };
+    start_for_user_locked(env, human_login_id, Some(ai_engine), 0, slot)
+        .await
+        .context(h!())
+        .map_err(Into::into)
+}
+
+/// The agent logins of the user's other requests already started in a
+/// container.
+async fn started_sibling_agents(
+    txn: &DatabaseTransaction,
+    request_id: Uuid,
+    human_login_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(ai_agent_request::Entity::find()
+        .select_only()
+        .column(ai_agent_request::Column::AgentLoginId)
+        .filter(ai_agent_request::Column::HumanLoginId.eq(human_login_id))
+        .filter(ai_agent_request::Column::State.eq("running"))
+        .filter(ai_agent_request::Column::CancellationRequested.eq(false))
+        .filter(ai_agent_request::Column::AgentLoginId.is_not_null())
+        .filter(ai_agent_request::Column::Id.ne(request_id))
+        .into_tuple::<Option<Uuid>>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
+/// Joins the container where the user's other conversations run. It changes
+/// nothing those runs rely on: no credential revocation, no proxy
+/// reconfiguration (which would wait on their instance lock until the
+/// dispatcher reports busy) and no failed-start cleanup, which stops the
+/// container. `None` means the instance is not running; start it instead.
+async fn join_running_agent(
+    env: &Env,
+    linked: LinkedAgent,
+    need: &access::AgentProxyNeed,
+) -> Result<Option<LinkedAgent>, AppError> {
+    let started = Instant::now();
+    let dispatcher = DispatcherClient::from_env(env).await.context(h!())?;
+    let status = dispatcher
+        .call("status", Some(linked.login.id), json!({}))
+        .await
+        .context(h!())?;
+    let state =
+        validate_linked_instance(&status.result, &linked, &dispatcher, None)
+            .context(h!())?;
+    if state != "running" {
+        return Ok(None);
+    }
+    validate_joined_transport(&status.result, need).context(h!())?;
+    let login = activate_login_with_current_scope(
+        &env.dbx,
+        linked.link.human_login_id,
+        linked.login.id,
+    )
+    .await
+    .context(h!())?;
+    info!(
+        "AI agent container ready human_login_id={} path=joined duration_ms={}",
+        linked.link.human_login_id,
+        started.elapsed().as_millis()
+    );
+    Ok(Some(LinkedAgent { login, ..linked }))
+}
+
+fn validate_joined_transport(
+    status: &serde_json::Value,
+    need: &access::AgentProxyNeed,
+) -> Result<(), AppError> {
+    let transport = status
+        .get("instance")
+        .and_then(|instance| instance.get("provider_transport"))
+        .and_then(|transport| transport.as_str());
+    if transport != Some(need.transport().as_str()) {
+        return Err(AppError::BL {
+            msg: "AI agent container proxies do not match the request's engine"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// The last statement of a request start, under the user's lock: from here
+/// on, starts of the user's other requests join the container.
+async fn mark_request_started(
+    lifecycle_lock: &DatabaseTransaction,
+    request_id: Uuid,
+    agent_login_id: Uuid,
+) -> Result<bool, AppError> {
+    let updated = ai_agent_request::Entity::update_many()
+        .col_expr(
+            ai_agent_request::Column::AgentLoginId,
+            Expr::value(agent_login_id),
+        )
+        .filter(ai_agent_request::Column::Id.eq(request_id))
+        .filter(ai_agent_request::Column::State.eq("running"))
+        .filter(ai_agent_request::Column::CancellationRequested.eq(false))
+        .exec(lifecycle_lock)
+        .await
+        .c(h!())?;
+    Ok(updated.rows_affected == 1)
 }
 
 async fn ensure_manual_start_allowed(
@@ -434,17 +733,19 @@ pub(crate) async fn start_for_user_locked(
     human_login_id: Uuid,
     ai_engine: Option<&ai_engine::Model>,
     reserved_slots: u64,
+    slot: i16,
 ) -> Result<LinkedAgent, AppError> {
     crate::users::ensure_base_role_by_id(&env.dbx, &human_login_id)
         .await
         .c(h!())?;
     let template = reconcile_template_login(&env.dbx).await?;
-    let mut linked = ensure_linked_agent(env, human_login_id).await?;
+    let mut linked =
+        ensure_linked_agent_in_slot(env, human_login_id, slot).await?;
     auth::revoke_login_credentials(env, linked.login.id).await?;
     enforce_running_limit(&env.dbx, linked.link.id).await?;
     set_container_state(env, &linked.container, "starting", None).await?;
     let started = Instant::now();
-    let path = match start_instance(
+    let (path, need) = match start_instance(
         env,
         template.id,
         &linked,
@@ -453,7 +754,7 @@ pub(crate) async fn start_for_user_locked(
     )
     .await
     {
-        Ok(path) => path,
+        Ok(started) => started,
         Err(err) => {
             cleanup_failed_start(env, &linked, &err).await;
             return Err(err);
@@ -477,14 +778,14 @@ pub(crate) async fn start_for_user_locked(
             return Err(err);
         }
     };
-    linked.container = match set_container_running(env, &linked.container).await
-    {
-        Ok(container) => container,
-        Err(err) => {
-            cleanup_failed_start(env, &linked, &err).await;
-            return Err(err);
-        }
-    };
+    linked.container =
+        match set_container_running(env, &linked.container, &need).await {
+            Ok(container) => container,
+            Err(err) => {
+                cleanup_failed_start(env, &linked, &err).await;
+                return Err(err);
+            }
+        };
     Ok(linked)
 }
 
@@ -656,13 +957,14 @@ async fn start_instance(
     linked: &LinkedAgent,
     requested_engine: Option<&ai_engine::Model>,
     reserved_slots: u64,
-) -> Result<StartPath, AppError> {
+) -> Result<(StartPath, access::AgentProxyNeed), AppError> {
     let dispatcher = DispatcherClient::from_env(env).await.context(h!())?;
     let ai_engine = match requested_engine {
         Some(ai_engine) => ai_engine.clone(),
         None => access::allowed_engine(&env.dbx, None).await.context(h!())?,
     };
     let echo_proxy = enabled_echo_proxy(env).await.context(h!())?;
+    let need = proxy_need(&ai_engine).context(h!())?;
     let proxy_config = proxy_config(&echo_proxy, &ai_engine).context(h!())?;
     let path = ensure_instance_running(
         &dispatcher,
@@ -679,7 +981,7 @@ async fn start_instance(
     if needs_connection_test(path, &configured.result) {
         test_connection_internal(env, linked).await.context(h!())?;
     }
-    Ok(path)
+    Ok((path, need))
 }
 
 async fn ensure_instance_running(
@@ -795,27 +1097,28 @@ fn validate_linked_instance(
     )
 }
 
+fn proxy_need(
+    ai_engine: &ai_engine::Model,
+) -> Result<access::AgentProxyNeed, AppError> {
+    access::agent_proxy_need(ai_engine).ok_or_else(|| {
+        AppError::Forbidden(
+            "AI engine is not supported by the agent harness".to_string(),
+        )
+    })
+}
+
 fn proxy_config(
     echo_proxy: &ai_agent_echo_proxy::Model,
     ai_engine: &ai_engine::Model,
 ) -> Result<serde_json::Value, AppError> {
-    let provider_transport = access::agent_provider_transport(ai_engine)
-        .ok_or_else(|| {
-            AppError::Forbidden(
-                "AI engine is not supported by the agent harness".to_string(),
-            )
-        })?;
+    let need = proxy_need(ai_engine).context(h!())?;
     let mut proxy_config = json!({
         "echo_hostname": echo_proxy.hostname,
         "echo_upstream": format!("{}:{}", echo_proxy.upstream_host, echo_proxy.upstream_port),
-        "provider_transport": provider_transport.as_str(),
+        "provider_transport": need.transport().as_str(),
     });
-    if provider_transport == access::AgentProviderTransport::DirectHttp {
-        let engine_url = Url::parse(&ai_engine.url).c(h!())?;
-        let engine_host = engine_url.host_str().c(h!())?;
-        let engine_port = engine_url.port_or_known_default().c(h!())?;
-        proxy_config["vllm_upstream"] =
-            json!(format!("{engine_host}:{engine_port}"));
+    if let access::AgentProxyNeed::DirectHttp { vllm_upstream } = need {
+        proxy_config["vllm_upstream"] = json!(vllm_upstream);
     }
     Ok(proxy_config)
 }
@@ -892,21 +1195,26 @@ async fn enabled_echo_proxy(
 pub async fn test_connection(
     env: &Env,
     human_login_id: Uuid,
+    slot: i16,
 ) -> Result<(), AppError> {
-    let linked = load_linked_agent(env, human_login_id).await?;
+    let linked = load_linked_agent_in_slot_on(&env.dbx, human_login_id, slot)
+        .await
+        .context(h!())?;
     test_connection_internal(env, &linked).await
 }
 
 pub(crate) async fn prepare_maintenance_connection_test(
     dbx: &DatabaseConnection,
     human_login_id: Uuid,
+    slot: i16,
 ) -> anyhow::Result<LinkedAgent> {
     let txn = dbx.begin().await.c(h!())?;
     crate::ai_agent::ensure_valid_human_target(&txn, human_login_id)
         .await
         .c(h!())?;
-    let mut linked =
-        load_linked_agent_on(&txn, human_login_id).await.c(h!())?;
+    let mut linked = load_linked_agent_in_slot_on(&txn, human_login_id, slot)
+        .await
+        .c(h!())?;
     let human = login::Entity::find_by_id(human_login_id)
         .one(&txn)
         .await
@@ -1034,38 +1342,82 @@ pub async fn force_stop_for_user(
     failures.into_result()
 }
 
-pub async fn stop_for_user_if_idle(
+/// Stops one of the user's containers once idle. A container serving
+/// another backend (slot 1+) is destroyed too: it only exists while the
+/// user mixes backends, and holds host capacity and storage (#4232).
+pub async fn stop_container_if_idle(
     env: &Env,
-    human_login_id: Uuid,
+    link: &ai_agent_user_link::Model,
 ) -> Result<bool, AppError> {
     let lifecycle_lock = env.dbx.begin().await.c(h!())?;
-    lock_user_lifecycle(&lifecycle_lock, human_login_id).await?;
-    let has_active = crate::entities::ai_agent_request::Entity::find()
-        .filter(
-            crate::entities::ai_agent_request::Column::HumanLoginId
-                .eq(human_login_id),
-        )
-        .filter(
-            crate::entities::ai_agent_request::Column::State
-                .is_in(["queued", "running"]),
-        )
-        .one(&lifecycle_lock)
+    lock_user_lifecycle(&lifecycle_lock, link.human_login_id)
         .await
-        .c(h!())?
-        .is_some();
-    if has_active
-        || container_recently_active(&lifecycle_lock, human_login_id)
+        .context(h!())?;
+    if container_in_demand(
+        &lifecycle_lock,
+        link.human_login_id,
+        link.agent_login_id,
+    )
+    .await
+    .context(h!())?
+        || container_recently_active(&lifecycle_lock, link.id)
             .await
             .context(h!())?
     {
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(false);
     }
+    let linked = linked_agent_for_link(&lifecycle_lock, link.clone())
+        .await
+        .context(h!())?;
     let mut failures = StopFailures::default();
-    stop_for_user_locked(env, human_login_id, &mut failures).await;
+    stop_linked_agent_locked(env, &linked, &mut failures).await;
+    if link_slot(link) != AI_AGENT_MAIN_CONTAINER_SLOT
+        && !failures.has_failures()
+    {
+        if let Err(err) =
+            destroy_instance(env, &linked.container, link.agent_login_id).await
+        {
+            failures.record("container destruction", &err);
+        }
+    }
     lifecycle_lock.commit().await.c(h!())?;
     failures.into_result()?;
     Ok(true)
+}
+
+/// Whether the user has requests that may still need this container:
+/// queued ones, claimed ones not yet in a container, or ones running in it.
+async fn container_in_demand(
+    txn: &DatabaseTransaction,
+    human_login_id: Uuid,
+    agent_login_id: Uuid,
+) -> Result<bool, AppError> {
+    Ok(ai_agent_request::Entity::find()
+        .filter(ai_agent_request::Column::HumanLoginId.eq(human_login_id))
+        .filter(
+            Condition::any()
+                .add(ai_agent_request::Column::State.eq("queued"))
+                .add(
+                    Condition::all()
+                        .add(ai_agent_request::Column::State.eq("running"))
+                        .add(
+                            Condition::any()
+                                .add(
+                                    ai_agent_request::Column::AgentLoginId
+                                        .is_null(),
+                                )
+                                .add(
+                                    ai_agent_request::Column::AgentLoginId
+                                        .eq(agent_login_id),
+                                ),
+                        ),
+                ),
+        )
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 /// Rechecked under the lifecycle lock: the maintenance loop selects idle
@@ -1073,19 +1425,11 @@ pub async fn stop_for_user_if_idle(
 /// in between.
 async fn container_recently_active(
     txn: &DatabaseTransaction,
-    human_login_id: Uuid,
+    link_id: Uuid,
 ) -> Result<bool, AppError> {
-    let Some(link) = ai_agent_user_link::Entity::find()
-        .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
-        .one(txn)
-        .await
-        .c(h!())?
-    else {
-        return Ok(false);
-    };
     let idle_since = Utc::now().naive_utc()
         - chrono::Duration::minutes(AI_AGENT_IDLE_STOP_MINUTES);
-    let active = ai_agent_container::Entity::find_by_id(link.id)
+    let active = ai_agent_container::Entity::find_by_id(link_id)
         .filter(ai_agent_container::Column::LastActivityAt.gt(idle_since))
         .one(txn)
         .await
@@ -1094,6 +1438,8 @@ async fn container_recently_active(
     Ok(active)
 }
 
+/// Stops the container of an interrupted request: the one it started in,
+/// or every one of the user's when it had not started yet.
 pub(crate) async fn stop_after_request_interruption(
     env: &Env,
     human_login_id: Uuid,
@@ -1103,6 +1449,7 @@ pub(crate) async fn stop_after_request_interruption(
         env,
         human_login_id,
         Some(request_id),
+        None,
         &["creating", "starting", "running", "stopping", "error"],
         false,
     )
@@ -1117,6 +1464,7 @@ pub(crate) async fn stop_after_worker_recovery(
         env,
         human_login_id,
         None,
+        None,
         &["creating", "starting", "running", "stopping", "error"],
         false,
     )
@@ -1125,50 +1473,59 @@ pub(crate) async fn stop_after_worker_recovery(
 
 pub(crate) async fn reconcile_abandoned_container(
     env: &Env,
-    human_login_id: Uuid,
+    link: &ai_agent_user_link::Model,
 ) -> Result<bool, AppError> {
     fail_safe_stop_for_user(
         env,
-        human_login_id,
+        link.human_login_id,
         None,
+        Some(link.agent_login_id),
         &["creating", "starting", "stopping", "error"],
         true,
     )
     .await
 }
 
+/// Stops the user's containers (or only `only_agent`'s) in a target state
+/// that run no request but the allowed one.
 async fn fail_safe_stop_for_user(
     env: &Env,
     human_login_id: Uuid,
     allowed_running_request_id: Option<Uuid>,
+    only_agent: Option<Uuid>,
     target_states: &[&str],
     try_lock: bool,
 ) -> Result<bool, AppError> {
-    let Some((lifecycle_lock, linked)) = prepare_fail_safe_stop(
+    let Some((lifecycle_lock, agents)) = prepare_fail_safe_stop(
         env,
         human_login_id,
         allowed_running_request_id,
+        only_agent,
         target_states,
         try_lock,
     )
-    .await?
+    .await
+    .context(h!())?
     else {
         return Ok(false);
     };
     let mut failures = StopFailures::default();
-    stop_linked_agent_locked(env, &linked, &mut failures).await;
+    for linked in &agents {
+        stop_linked_agent_locked(env, linked, &mut failures).await;
+    }
     lifecycle_lock.commit().await.c(h!())?;
     failures.into_result()?;
-    Ok(true)
+    Ok(!agents.is_empty())
 }
 
 async fn prepare_fail_safe_stop(
     env: &Env,
     human_login_id: Uuid,
     allowed_running_request_id: Option<Uuid>,
+    only_agent: Option<Uuid>,
     target_states: &[&str],
     try_lock: bool,
-) -> Result<Option<(DatabaseTransaction, LinkedAgent)>, AppError> {
+) -> Result<Option<(DatabaseTransaction, Vec<LinkedAgent>)>, AppError> {
     let lifecycle_lock = env.dbx.begin().await.c(h!())?;
     let locked = if try_lock {
         try_lock_user_lifecycle(&lifecycle_lock, human_login_id).await?
@@ -1180,35 +1537,47 @@ async fn prepare_fail_safe_stop(
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(None);
     }
-    let running_request_ids = ai_agent_request::Entity::find()
+    let running = ai_agent_request::Entity::find()
         .filter(ai_agent_request::Column::HumanLoginId.eq(human_login_id))
         .filter(ai_agent_request::Column::State.eq("running"))
         .all(&lifecycle_lock)
         .await
-        .c(h!())?
+        .c(h!())?;
+    // An interrupted request that started only touched its own container.
+    let only_agent = only_agent.or_else(|| {
+        running
+            .iter()
+            .find(|request| Some(request.id) == allowed_running_request_id)
+            .and_then(|request| request.agent_login_id)
+    });
+    let agents = load_user_agents_on(&lifecycle_lock, human_login_id)
+        .await
+        .context(h!())?
         .into_iter()
-        .map(|request| request.id)
+        .filter(|linked| {
+            only_agent.is_none_or(|agent| agent == linked.login.id)
+        })
+        .filter(|linked| {
+            let running_in_container = running
+                .iter()
+                .filter(|request| {
+                    request.agent_login_id == Some(linked.login.id)
+                })
+                .map(|request| request.id)
+                .collect::<Vec<_>>();
+            fail_safe_stop_guard(
+                &running_in_container,
+                allowed_running_request_id,
+                &linked.container.state,
+                target_states,
+            )
+        })
         .collect::<Vec<_>>();
-    let linked =
-        match load_linked_agent_on(&lifecycle_lock, human_login_id).await {
-            Ok(linked) => linked,
-            Err(AppError::NotFound) => {
-                lifecycle_lock.commit().await.c(h!())?;
-                return Ok(None);
-            }
-            Err(err) => return Err(err),
-        };
-    let should_stop = fail_safe_stop_guard(
-        &running_request_ids,
-        allowed_running_request_id,
-        &linked.container.state,
-        target_states,
-    );
-    if !should_stop {
+    if agents.is_empty() {
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(None);
     }
-    Ok(Some((lifecycle_lock, linked)))
+    Ok(Some((lifecycle_lock, agents)))
 }
 
 fn fail_safe_stop_guard(
@@ -1230,14 +1599,20 @@ async fn stop_for_user_locked(
     human_login_id: Uuid,
     failures: &mut StopFailures,
 ) {
-    let linked = match load_linked_agent(env, human_login_id).await {
-        Ok(linked) => linked,
+    let agents = match load_user_agents_on(&env.dbx, human_login_id).await {
+        Ok(agents) if !agents.is_empty() => agents,
+        Ok(_) => {
+            failures.record("linked agent lookup", &AppError::NotFound);
+            return;
+        }
         Err(err) => {
             failures.record("linked agent lookup", &err);
             return;
         }
     };
-    stop_linked_agent_locked(env, &linked, failures).await;
+    for linked in &agents {
+        stop_linked_agent_locked(env, linked, failures).await;
+    }
 }
 
 async fn stop_linked_agent_locked(
@@ -1469,14 +1844,29 @@ pub async fn lock_user_lifecycle(
     txn: &DatabaseTransaction,
     human_login_id: Uuid,
 ) -> Result<(), AppError> {
+    lock_user_lifecycle_waiting(
+        txn,
+        human_login_id,
+        AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS,
+    )
+    .await
+}
+
+async fn lock_user_lifecycle_waiting(
+    txn: &DatabaseTransaction,
+    human_login_id: Uuid,
+    wait_ms: u64,
+) -> Result<(), AppError> {
     crate::ai_control_panel::probe::lock_lifecycle(txn)
         .await
         .c(h!())?;
     // A request start or prewarm holds this lock for a whole container start,
     // which can outlast the server's `lock_timeout`; a submission then waits
-    // for the start instead of failing.
+    // for the start instead of failing. `lock_timeout` alone bounds the wait:
+    // the pool's `statement_timeout` (30 s with `[postgres_runtime]`) would
+    // otherwise cut a longer one short.
     txn.execute_unprepared(&format!(
-        "set local lock_timeout = {AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS}"
+        "set local lock_timeout = {wait_ms}; set local statement_timeout = 0"
     ))
     .await
     .c(h!())?;
@@ -1487,9 +1877,11 @@ pub async fn lock_user_lifecycle(
     ))
     .await
     .c(h!())?;
-    txn.execute_unprepared("set local lock_timeout to default")
-        .await
-        .c(h!())?;
+    txn.execute_unprepared(
+        "set local lock_timeout to default; set local statement_timeout to default",
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -1521,13 +1913,22 @@ fn user_lifecycle_lock_key(human_login_id: Uuid) -> i64 {
     i64::from_be_bytes(key)
 }
 
+/// Touches the container `agent_login_id` ran in, or the user's main one
+/// for a request that never reached a container.
 pub(crate) async fn touch_container_activity_in_transaction(
     txn: &DatabaseTransaction,
     human_login_id: Uuid,
+    agent_login_id: Option<Uuid>,
     now: chrono::NaiveDateTime,
 ) -> Result<(), AppError> {
     let link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+        .filter(match agent_login_id {
+            Some(agent_login_id) => Condition::all().add(
+                ai_agent_user_link::Column::AgentLoginId.eq(agent_login_id),
+            ),
+            None => link_slot_condition(AI_AGENT_MAIN_CONTAINER_SLOT),
+        })
         .one(txn)
         .await
         .c(h!())?;
@@ -1567,61 +1968,132 @@ pub async fn destroy_container(
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(());
     };
-    let expired = container.state == "stopped"
-        && container.stopped_at.is_some_and(|stopped_at| {
-            stopped_at
-                <= Utc::now().naive_utc()
-                    - chrono::Duration::days(
-                        crate::config::AI_AGENT_DESTROY_STOPPED_DAYS,
-                    )
-        });
-    let has_active = crate::entities::ai_agent_request::Entity::find()
-        .filter(
-            crate::entities::ai_agent_request::Column::HumanLoginId
-                .eq(link.human_login_id),
+    if !container_expired(&container, link_slot(&link), Utc::now().naive_utc())
+        || container_in_demand(
+            &lifecycle_lock,
+            link.human_login_id,
+            link.agent_login_id,
         )
-        .filter(
-            crate::entities::ai_agent_request::Column::State
-                .is_in(["queued", "running"]),
-        )
-        .one(&lifecycle_lock)
         .await
-        .c(h!())?
-        .is_some();
-    if !expired || has_active {
+        .context(h!())?
+    {
         lifecycle_lock.commit().await.c(h!())?;
         return Ok(());
     }
-    let container = refresh_container_stats(env, &container).await?;
-    DispatcherClient::from_env(env)
-        .await?
-        .call("destroy", Some(link.agent_login_id), json!({}))
-        .await?;
-    set_container_state(env, &container, "absent", None).await?;
+    destroy_instance(env, &container, link.agent_login_id)
+        .await
+        .context(h!())?;
     lifecycle_lock.commit().await.c(h!())?;
     Ok(())
 }
 
-pub async fn load_linked_agent(
-    env: &Env,
-    human_login_id: Uuid,
-) -> Result<LinkedAgent, AppError> {
-    load_linked_agent_on(&env.dbx, human_login_id).await
+/// A stopped main container is kept for a week of warm-ish restarts; one
+/// that served another backend is destroyed as soon as it stopped.
+fn container_expired(
+    container: &ai_agent_container::Model,
+    slot: i16,
+    now: chrono::NaiveDateTime,
+) -> bool {
+    container.state == "stopped"
+        && (slot != AI_AGENT_MAIN_CONTAINER_SLOT
+            || container.stopped_at.is_some_and(|stopped_at| {
+                stopped_at
+                    <= now
+                        - chrono::Duration::days(
+                            crate::config::AI_AGENT_DESTROY_STOPPED_DAYS,
+                        )
+            }))
 }
 
-async fn load_linked_agent_on<C>(
+async fn destroy_instance(
+    env: &Env,
+    container: &ai_agent_container::Model,
+    agent_login_id: Uuid,
+) -> Result<(), AppError> {
+    let container = refresh_container_stats(env, container)
+        .await
+        .context(h!())?;
+    DispatcherClient::from_env(env)
+        .await
+        .context(h!())?
+        .call("destroy", Some(agent_login_id), json!({}))
+        .await
+        .context(h!())?;
+    set_container_state(env, &container, "absent", None)
+        .await
+        .context(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn load_linked_agent_in_slot_on<C>(
     dbx: &C,
     human_login_id: Uuid,
+    slot: i16,
 ) -> Result<LinkedAgent, AppError>
 where
     C: ConnectionTrait,
 {
     let link = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+        .filter(link_slot_condition(slot))
         .one(dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    linked_agent_for_link(dbx, link).await
+}
+
+/// The slot of the user's container run by `agent_login_id`; the main one
+/// when none is given.
+pub(crate) async fn container_slot<C>(
+    dbx: &C,
+    human_login_id: Uuid,
+    agent_login_id: Option<Uuid>,
+) -> Result<i16, AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(agent_login_id) = agent_login_id else {
+        return Ok(AI_AGENT_MAIN_CONTAINER_SLOT);
+    };
+    let link = ai_agent_user_link::Entity::find()
+        .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+        .filter(ai_agent_user_link::Column::AgentLoginId.eq(agent_login_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    Ok(link_slot(&link))
+}
+
+/// Every container slot the user has, main first.
+async fn load_user_agents_on<C>(
+    dbx: &C,
+    human_login_id: Uuid,
+) -> Result<Vec<LinkedAgent>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut links = ai_agent_user_link::Entity::find()
+        .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    links.sort_by_key(link_slot);
+    let mut agents = Vec::with_capacity(links.len());
+    for link in links {
+        agents.push(linked_agent_for_link(dbx, link).await.context(h!())?);
+    }
+    Ok(agents)
+}
+
+async fn linked_agent_for_link<C>(
+    dbx: &C,
+    link: ai_agent_user_link::Model,
+) -> Result<LinkedAgent, AppError>
+where
+    C: ConnectionTrait,
+{
     let agent = login::Entity::find_by_id(link.agent_login_id)
         .one(dbx)
         .await
@@ -1702,10 +2174,8 @@ async fn activate_login_with_current_scope_in_transaction(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let linked_name =
-        format!("{}{}", human.login, AI_AGENT_LINKED_LOGIN_SUFFIX);
     let agent =
-        reconcile_linked_login_name(txn, &link, &agent, &linked_name).await?;
+        reconcile_linked_login_name(txn, &link, &agent, &human.login).await?;
     let agent = synchronize_agent_scope(txn, &human, agent).await?;
     synchronize_direct_hidden_groups(txn, human.id, agent.id).await?;
     let mut agent = agent.into_active_model();
@@ -1750,10 +2220,12 @@ async fn set_container_state(
 async fn set_container_running(
     env: &Env,
     container: &ai_agent_container::Model,
+    need: &access::AgentProxyNeed,
 ) -> Result<ai_agent_container::Model, AppError> {
     let now = Utc::now().naive_utc();
     let mut container = container.clone().into_active_model();
     container.state = Set("running".to_string());
+    container.configured_proxies = Set(Some(need.key()));
     container.last_error = Set(None);
     container.started_at = Set(Some(now));
     container.stopped_at = Set(None);
@@ -2324,6 +2796,498 @@ mod tests {
             .unwrap();
     }
 
+    #[test]
+    fn issue_4232_requests_join_only_a_running_container_with_their_proxies() {
+        let gateway = access::AgentProxyNeed::EchoGateway;
+        let vllm = access::AgentProxyNeed::DirectHttp {
+            vllm_upstream: "127.0.0.1:18000".to_string(),
+        };
+        let now = Utc::now().naive_utc();
+        let container =
+            |state: &str, configured: Option<&access::AgentProxyNeed>| {
+                ai_agent_container::Model {
+                    ai_agent_user_link_id: Uuid::now_v7(),
+                    instance_name: "echo-ai-agent-test".to_string(),
+                    state: state.to_string(),
+                    last_error: None,
+                    stats: None,
+                    started_at: None,
+                    stopped_at: None,
+                    last_activity_at: None,
+                    created_at: now,
+                    updated_at: now,
+                    configured_proxies: configured.map(|need| need.key()),
+                }
+            };
+        assert_eq!(
+            request_start_plan(
+                &gateway,
+                false,
+                &container("running", Some(&vllm))
+            ),
+            RequestStartPlan::Start,
+            "an idle container is reconfigured for the request"
+        );
+        assert_eq!(
+            request_start_plan(
+                &gateway,
+                true,
+                &container("running", Some(&gateway))
+            ),
+            RequestStartPlan::Join
+        );
+        assert_eq!(
+            request_start_plan(
+                &gateway,
+                true,
+                &container("error", Some(&gateway))
+            ),
+            RequestStartPlan::Start,
+            "requests in a container that stopped are lost; start it again"
+        );
+        assert_eq!(
+            request_start_plan(
+                &gateway,
+                true,
+                &container("running", Some(&vllm))
+            ),
+            RequestStartPlan::Conflict
+        );
+        let moved = access::AgentProxyNeed::DirectHttp {
+            vllm_upstream: "127.0.0.1:18001".to_string(),
+        };
+        assert_eq!(
+            request_start_plan(
+                &moved,
+                true,
+                &container("running", Some(&vllm))
+            ),
+            RequestStartPlan::Conflict,
+            "an engine moved to another upstream never joins the old one"
+        );
+        assert_eq!(
+            request_start_plan(&gateway, true, &container("running", None)),
+            RequestStartPlan::Conflict,
+            "proxies of unknown origin are not shared"
+        );
+    }
+
+    #[test]
+    fn issue_4232_other_backends_get_the_next_container_slot() {
+        let gateway = access::AgentProxyNeed::EchoGateway;
+        let vllm = access::AgentProxyNeed::DirectHttp {
+            vllm_upstream: "127.0.0.1:18000".to_string(),
+        };
+        let now = Utc::now().naive_utc();
+        let container = |state: &str, configured: &access::AgentProxyNeed| {
+            ai_agent_container::Model {
+                ai_agent_user_link_id: Uuid::now_v7(),
+                instance_name: "echo-ai-agent-test".to_string(),
+                state: state.to_string(),
+                last_error: None,
+                stats: None,
+                started_at: None,
+                stopped_at: None,
+                last_activity_at: None,
+                created_at: now,
+                updated_at: now,
+                configured_proxies: Some(configured.key()),
+            }
+        };
+        let main_gateway = container("running", &gateway);
+        let second_vllm = container("running", &vllm);
+        let view = |slot, busy, container| SlotView {
+            slot,
+            busy,
+            container,
+        };
+        assert_eq!(
+            request_slot_plan(&vllm, &[], 2),
+            SlotPlan::Start(0),
+            "a first request creates the main container"
+        );
+        assert_eq!(
+            request_slot_plan(&gateway, &[view(0, true, &main_gateway)], 2),
+            SlotPlan::Join(0)
+        );
+        assert_eq!(
+            request_slot_plan(&vllm, &[view(0, true, &main_gateway)], 2),
+            SlotPlan::Start(1),
+            "another backend opens the next slot"
+        );
+        assert_eq!(
+            request_slot_plan(&vllm, &[view(0, true, &main_gateway)], 1),
+            SlotPlan::Conflict
+        );
+        assert_eq!(
+            request_slot_plan(
+                &vllm,
+                &[view(0, false, &main_gateway), view(1, false, &second_vllm)],
+                2
+            ),
+            SlotPlan::Start(1),
+            "an idle slot already configured for the backend is preferred"
+        );
+        assert_eq!(
+            request_slot_plan(
+                &gateway,
+                &[view(0, true, &second_vllm), view(1, false, &second_vllm)],
+                2
+            ),
+            SlotPlan::Start(1),
+            "a free slot is reconfigured while the busy one keeps running"
+        );
+        let third = access::AgentProxyNeed::DirectHttp {
+            vllm_upstream: "127.0.0.1:18001".to_string(),
+        };
+        assert_eq!(
+            request_slot_plan(
+                &third,
+                &[view(0, true, &main_gateway), view(1, true, &second_vllm)],
+                2
+            ),
+            SlotPlan::Conflict
+        );
+    }
+
+    #[test]
+    fn issue_4232_second_slot_names_and_expiry() {
+        assert_eq!(linked_login_name("alice", 0), "alice-ai-agent");
+        assert_eq!(linked_login_name("alice", 1), "alice-ai-agent-2");
+        assert_ne!(
+            linked_login_name("alice", 1),
+            linked_login_name("alice-2", 0),
+            "the slot follows the suffix"
+        );
+        let now = Utc::now().naive_utc();
+        let stopped = |stopped_at| ai_agent_container::Model {
+            ai_agent_user_link_id: Uuid::now_v7(),
+            instance_name: "echo-ai-agent-test".to_string(),
+            state: "stopped".to_string(),
+            last_error: None,
+            stats: None,
+            started_at: None,
+            stopped_at: Some(stopped_at),
+            last_activity_at: None,
+            created_at: now,
+            updated_at: now,
+            configured_proxies: None,
+        };
+        assert!(!container_expired(&stopped(now), 0, now));
+        assert!(container_expired(&stopped(now), 1, now));
+        assert!(container_expired(
+            &stopped(now - chrono::Duration::days(8)),
+            0,
+            now
+        ));
+        let running = ai_agent_container::Model {
+            state: "running".to_string(),
+            ..stopped(now)
+        };
+        assert!(!container_expired(&running, 1, now));
+    }
+
+    #[test]
+    fn issue_4232_joined_container_must_serve_the_request_transport() {
+        let status = |transport: Option<&str>| json!({ "instance": { "provider_transport": transport } });
+        let gateway = access::AgentProxyNeed::EchoGateway;
+        assert!(validate_joined_transport(
+            &status(Some("echo_gateway")),
+            &gateway
+        )
+        .is_ok());
+        assert!(validate_joined_transport(
+            &status(Some("direct_http")),
+            &gateway
+        )
+        .is_err());
+        assert!(validate_joined_transport(&status(None), &gateway).is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4232_request_start_lock_wait_is_configurable() {
+        crate::tests::test::init().await;
+        let dbx = crate::new_pg_pool_from_mode(crate::types::Mode::Test)
+            .await
+            .unwrap();
+        let human_login_id = Uuid::now_v7();
+        let start = dbx.begin().await.unwrap();
+        lock_user_lifecycle(&start, human_login_id).await.unwrap();
+        let waiter = dbx.begin().await.unwrap();
+        let began = Instant::now();
+        assert!(lock_user_lifecycle_waiting(&waiter, human_login_id, 100)
+            .await
+            .is_err());
+        assert!(began.elapsed() < std::time::Duration::from_secs(5));
+        waiter.rollback().await.unwrap();
+
+        // A statement timeout must not cut a longer wait short, and the
+        // connection's own value (the pool sets it at connect) comes back.
+        let waiter = dbx.begin().await.unwrap();
+        waiter
+            .execute_unprepared("set local statement_timeout = 50")
+            .await
+            .unwrap();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            start.rollback().await.unwrap();
+        });
+        lock_user_lifecycle_waiting(&waiter, human_login_id, 5_000)
+            .await
+            .unwrap();
+        release.await.unwrap();
+        let restored = waiter
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "select current_setting('statement_timeout') = (
+                     select case when reset_val = '0' then '0'
+                                 else reset_val || 'ms' end
+                     from pg_settings where name = 'statement_timeout'
+                 ) as restored",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<bool>("", "restored")
+            .unwrap();
+        assert!(restored);
+        waiter.rollback().await.unwrap();
+        const {
+            assert!(
+                AI_AGENT_REQUEST_START_LOCK_WAIT_MS
+                    > AI_AGENT_USER_LIFECYCLE_LOCK_WAIT_MS
+            )
+        };
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4232_started_siblings_and_marker_skip_cancelled_requests() {
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("lifecycle-join-{}", Uuid::now_v7())),
+            url: Set("http://127.0.0.1:18000/v1".to_string()),
+            model_name: Set("test".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        let mut conversations = Vec::new();
+        let mut requests = Vec::new();
+        // (state, cancellation requested, started in the container)
+        for (state, cancelled, started) in [
+            ("running", false, false),
+            ("running", false, true),
+            ("running", true, true),
+            ("completed", false, true),
+            ("running", false, false),
+        ] {
+            let conversation = ai_agent_conversation::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                human_login_id: Set(human.id),
+                ai_engine_id: Set(ai_engine.id),
+                title: Set("Join".to_string()),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted_at: Set(None),
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            let request = ai_agent_request::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                conversation_id: Set(conversation.id),
+                human_login_id: Set(human.id),
+                agent_login_id: Set(started.then_some(human.id)),
+                ai_engine_id: Set(ai_engine.id),
+                prompt: Set("join".to_string()),
+                state: Set(state.to_string()),
+                cancellation_requested: Set(cancelled),
+                queued_at: Set(now),
+                started_at: Set(Some(now)),
+                updated_at: Set(now),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            conversations.push(conversation);
+            requests.push(request);
+        }
+        let own = requests[0].id;
+
+        let txn = env.dbx.begin().await.unwrap();
+        assert_eq!(
+            started_sibling_agents(&txn, own, human.id).await.unwrap(),
+            vec![human.id],
+            "the live started sibling counts"
+        );
+        assert!(
+            started_sibling_agents(&txn, requests[1].id, human.id)
+                .await
+                .unwrap()
+                .is_empty(),
+            "unstarted, cancelled and finished requests do not"
+        );
+        assert!(mark_request_started(&txn, own, human.id).await.unwrap());
+        assert!(!mark_request_started(&txn, requests[2].id, human.id)
+            .await
+            .unwrap());
+        assert_eq!(
+            started_sibling_agents(&txn, requests[1].id, human.id)
+                .await
+                .unwrap()
+                .len(),
+            1,
+            "a marked request counts for the user's next start"
+        );
+        txn.rollback().await.unwrap();
+
+        for request in requests {
+            ai_agent_request::Entity::delete_by_id(request.id)
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+        for conversation in conversations {
+            ai_agent_conversation::Entity::delete_by_id(conversation.id)
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+        ai_engine::Entity::delete_by_id(ai_engine.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_4232_container_demand_ignores_the_other_slot() {
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        env.dbx
+            .execute_unprepared(&format!(
+                "update ai_agent_request set state = 'failed'
+                 where human_login_id = '{}' and state in ('queued', 'running')",
+                human.id
+            ))
+            .await
+            .unwrap();
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("lifecycle-demand-{}", Uuid::now_v7())),
+            url: Set("http://127.0.0.1:18000/v1".to_string()),
+            model_name: Set("test".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        let conversation = ai_agent_conversation::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            human_login_id: Set(human.id),
+            ai_engine_id: Set(ai_engine.id),
+            title: Set("Demand".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let other_agent = login::Entity::find()
+            .filter(login::Column::Id.ne(human.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let this_agent = human.id;
+        let request = ai_agent_request::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            conversation_id: Set(conversation.id),
+            human_login_id: Set(human.id),
+            ai_engine_id: Set(ai_engine.id),
+            prompt: Set("demand".to_string()),
+            state: Set("completed".to_string()),
+            cancellation_requested: Set(false),
+            queued_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let in_demand = |state: &'static str, agent: Option<Uuid>| {
+            let env = env.clone();
+            let request = request.clone();
+            async move {
+                let txn = env.dbx.begin().await.unwrap();
+                txn.execute_unprepared(&format!(
+                    "update ai_agent_request set state = '{state}',
+                         agent_login_id = {}
+                     where id = '{}'",
+                    agent.map_or("null".to_string(), |agent| format!(
+                        "'{agent}'"
+                    )),
+                    request.id
+                ))
+                .await
+                .unwrap();
+                let demand = container_in_demand(
+                    &txn,
+                    request.human_login_id,
+                    this_agent,
+                )
+                .await
+                .unwrap();
+                txn.rollback().await.unwrap();
+                demand
+            }
+        };
+        assert!(!in_demand("completed", Some(this_agent)).await);
+        assert!(
+            in_demand("queued", None).await,
+            "a queued request may need it"
+        );
+        assert!(
+            in_demand("running", None).await,
+            "a claimed request may be about to start in it"
+        );
+        assert!(in_demand("running", Some(this_agent)).await);
+        assert!(
+            !in_demand("running", Some(other_agent)).await,
+            "a request in the user's other container does not keep it"
+        );
+        ai_agent_request::Entity::delete_by_id(request.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_agent_conversation::Entity::delete_by_id(conversation.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_engine::Entity::delete_by_id(ai_engine.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     #[serial]
     async fn activation_materializes_latest_direct_and_organism_scope() {
@@ -2401,6 +3365,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
+            slot: Set(None),
         }
         .insert(&txn)
         .await
@@ -2471,6 +3436,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(Utc::now().naive_utc()),
             updated_at: Set(Utc::now().naive_utc()),
+            slot: Set(None),
         }
         .insert(&txn)
         .await
@@ -2525,6 +3491,7 @@ mod tests {
             agent_login_id: Set(agent.id),
             created_at: Set(old_activity),
             updated_at: Set(old_activity),
+            slot: Set(None),
         }
         .insert(&txn)
         .await
@@ -2543,12 +3510,13 @@ mod tests {
             last_activity_at: Set(Some(old_activity)),
             created_at: Set(old_activity),
             updated_at: Set(old_activity),
+            configured_proxies: Set(None),
         }
         .insert(&txn)
         .await
         .unwrap();
 
-        touch_container_activity_in_transaction(&txn, human.id, now)
+        touch_container_activity_in_transaction(&txn, human.id, None, now)
             .await
             .unwrap();
         let container = ai_agent_container::Entity::find_by_id(link.id)

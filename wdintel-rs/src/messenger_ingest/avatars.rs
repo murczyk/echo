@@ -654,6 +654,7 @@ mod tests {
                     members_count: None,
                     account_member_status: None,
                     last_message_date: None,
+                    is_bot: None,
                     telegram: is_telegram.then(|| {
                         MessengerIngestTelegramChatId {
                             chat_id: "-1001".to_string(),
@@ -939,6 +940,100 @@ mod tests {
             account_row.avatar_id,
             Some(Uuid::parse_str(&created.id).unwrap())
         );
+    }
+
+    /// What `GET /api/messengers/avatars/{id}` serves: the stored bytes, for
+    /// an encrypted object (image) and a plaintext one (video), and only to
+    /// the account's group.
+    #[tokio::test]
+    #[serial]
+    async fn stored_avatars_are_served_back_to_the_account_group_only() {
+        use crate::messengers::access::MessengersScope;
+        let fixture = fixture(MESSENGER_TYPE_MAX).await;
+        let handler = upload_handler(&fixture.env.config.storage_dir);
+        let login = fixture.scope.login_id;
+        let image_url = upload(&fixture).await;
+        let video_url = upload_bytes(
+            &handler,
+            &login,
+            "clip.mp4",
+            "video/mp4",
+            b"mp4 bytes",
+        )
+        .await;
+        let image = stored(
+            account_submit(&fixture, Some(avatar("image", &image_url, true)))
+                .await
+                .unwrap(),
+        );
+        let video = stored(
+            chat_submit(&fixture, Some(avatar("video", &video_url, true)))
+                .await
+                .unwrap(),
+        );
+        let group_key = format!(
+            "{}{}",
+            crate::config::MESSENGER_INGEST_GROUP_KEY_PREFIX,
+            fixture.account.id
+        );
+        let owner = MessengersScope {
+            login_id: login,
+            group_master_keys: vec![group_key],
+        };
+        // The runtime storage config that goes with the operator, as in
+        // `new_env`; the fixture sets only the operator.
+        let mut env = fixture.env.clone();
+        env.s3_config = Some(crate::storage::S3Config::from(
+            env.config.s3_config.as_ref().unwrap(),
+        ));
+        let mut no_storage = env.clone();
+        no_storage.s3_config = None;
+        // Half-configured storage is an error, not an empty cacheable body.
+        assert!(crate::messengers::avatars::serve_avatar(
+            &no_storage,
+            &owner,
+            Uuid::parse_str(&image.id).unwrap(),
+        )
+        .await
+        .is_err());
+        let stranger = MessengersScope {
+            login_id: login,
+            group_master_keys: vec!["other-group".to_string()],
+        };
+
+        for (avatar, content_type, bytes, encrypted) in [
+            (&image, "image/jpeg", &b"jpeg bytes"[..], true),
+            (&video, "video/mp4", &b"mp4 bytes"[..], false),
+        ] {
+            let id = Uuid::parse_str(&avatar.id).unwrap();
+            let row = messenger_avatar::Entity::find_by_id(id)
+                .one(&fixture.env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(row.is_encrypted, encrypted);
+            let response =
+                crate::messengers::avatars::serve_avatar(&env, &owner, id)
+                    .await
+                    .unwrap();
+            assert_eq!(response.status(), 200);
+            let headers = response.headers();
+            let header =
+                |name: &str| headers.get(name).unwrap().to_str().unwrap();
+            assert_eq!(header("content-type"), content_type);
+            assert_eq!(header("x-content-type-options"), "nosniff");
+            assert!(headers.contains_key("content-security-policy"));
+            let body = actix_web::body::to_bytes(response.into_body())
+                .await
+                .unwrap();
+            assert_eq!(&body[..], bytes);
+
+            assert!(matches!(
+                crate::messengers::avatars::serve_avatar(&env, &stranger, id)
+                    .await,
+                Err(AppError::NotFound)
+            ));
+        }
     }
 
     #[tokio::test]

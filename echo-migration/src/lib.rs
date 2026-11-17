@@ -556,14 +556,19 @@ mod m20261111_090000_message_replay_session;
 mod m20261112_141106_attachment_order;
 mod m20261113_093453_report_group_preferences;
 mod m20261113_114713_legacy_replay_marker_index;
+mod m20261114_065246_media_sandbox_settings;
 mod m20261115_181951_duty_card_visibility;
 mod m20261116_110507_message_card_quick_action_count;
 mod m20261113_124500_messenger_account_external_url;
 mod m20261114_111044_messenger_chat_read_state;
 mod m20261114_170500_ai_agent_refusal_rewrite;
 mod m20261115_100000_messenger_chat_message_count;
+mod m20261116_103129_messenger_chat_is_bot;
 mod m20261116_063906_operator_echo_unit_id;
 mod m20261116_093333_organism_admins;
+mod m20261116_124020_ai_agent_parallel_conversations;
+mod m20261116_142224_ai_agent_second_container;
+mod m20261117_092325_add_tyt380_enhanced_encryption;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1279,12 +1284,17 @@ impl MigratorTrait for Migrator {
             Box::new(m20261113_093453_report_group_preferences::Migration),
             Box::new(m20261113_095232_organism_message_stats_exclusion::Migration),
             Box::new(m20261113_114713_legacy_replay_marker_index::Migration),
+            Box::new(m20261114_065246_media_sandbox_settings::Migration),
             Box::new(m20261114_111044_messenger_chat_read_state::Migration),
             Box::new(m20261115_100000_messenger_chat_message_count::Migration),
+            Box::new(m20261116_103129_messenger_chat_is_bot::Migration),
             Box::new(m20261116_063906_operator_echo_unit_id::Migration),
             Box::new(m20261116_093333_organism_admins::Migration),
             Box::new(m20261115_181951_duty_card_visibility::Migration),
             Box::new(m20261116_110507_message_card_quick_action_count::Migration),
+            Box::new(m20261116_124020_ai_agent_parallel_conversations::Migration),
+            Box::new(m20261116_142224_ai_agent_second_container::Migration),
+            Box::new(m20261117_092325_add_tyt380_enhanced_encryption::Migration),
         ]
     }
 }

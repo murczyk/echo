@@ -47,6 +47,7 @@ fn chat_member_item(
             .joined_date
             .map(|dt| dt.and_utc().timestamp_millis()),
         deleted: member.deleted,
+        avatar_id: member.avatar_id.map(|id| id.to_string()),
         telegram: member.telegram_user_id.map(|id| {
             MessengersTelegramAccountId {
                 user_id: id.to_string(),

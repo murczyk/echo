@@ -3010,6 +3010,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "echo-media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "landlock",
+ "libc",
+ "log",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+]
+
+[[package]]
 name = "echo-messengers"
 version = "0.1.1-rc.202611171009"
 dependencies = [
@@ -3098,6 +3114,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "enumflags2"
+version = "0.7.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1027f7680c853e056ebcec683615fb6fbbc07dbaa13b4d5d9442b146ded4ecef"
+dependencies = [
+ "enumflags2_derive",
+]
+
+[[package]]
+name = "enumflags2_derive"
+version = "0.7.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -4768,6 +4804,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "landlock"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cca98e95f35b29d469dade6724c6f96cec9236640f745a0e99b0334ec320ab1"
+dependencies = [
+ "enumflags2",
+ "libc",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "language-tags"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5182,15 +5229,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "milgeo-audio-wave"
-version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=a94bda974c1af3f31362c10965dda066c602cf30#a94bda974c1af3f31362c10965dda066c602cf30"
-dependencies = [
- "log",
- "tokio",
 ]
 
 [[package]]
@@ -10034,6 +10072,7 @@ dependencies = [
  "echo-gpu-client",
  "echo-im",
  "echo-install-utils",
+ "echo-media",
  "echo-migration",
  "elm_rs",
  "encoding_rs",
@@ -10058,7 +10097,6 @@ dependencies = [
  "libc",
  "log",
  "md-5 0.10.6",
- "milgeo-audio-wave",
  "milgeo-rs",
  "mime_guess",
  "nipper",

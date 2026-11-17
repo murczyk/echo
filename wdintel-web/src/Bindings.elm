@@ -2641,6 +2641,7 @@ type alias MessengersAccountItem =
     , notes : Maybe (String)
     , internalNotes : Maybe (String)
     , externalUrl : Maybe (String)
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     , datasourceGroup : MessengersDatasourceGroup
     }
@@ -2667,6 +2668,7 @@ messengersAccountItemEncoder struct =
         , ( "notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.notes )
         , ( "internal_notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.internalNotes )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         , ( "datasource_group", (messengersDatasourceGroupEncoder) struct.datasourceGroup )
         ]
@@ -2732,6 +2734,8 @@ type alias MessengersChatItem =
     , membersCount : Maybe (Int)
     , accountMemberStatus : Maybe (String)
     , lastMessageDate : Maybe (Int)
+    , isBot : Maybe (Bool)
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramChatId)
     , oldestReadAt : Maybe (Int)
     , newestReadAt : Maybe (Int)
@@ -2752,6 +2756,8 @@ messengersChatItemEncoder struct =
         , ( "members_count", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.membersCount )
         , ( "account_member_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.accountMemberStatus )
         , ( "last_message_date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastMessageDate )
+        , ( "is_bot", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isBot )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramChatIdEncoder)) struct.telegram )
         , ( "oldest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.oldestReadAt )
         , ( "newest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.newestReadAt )
@@ -2858,6 +2864,7 @@ type alias MessengersChatMemberItem =
     , role : Maybe (String)
     , joinedDate : Maybe (Int)
     , deleted : Bool
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     }
 
@@ -2876,6 +2883,7 @@ messengersChatMemberItemEncoder struct =
         , ( "role", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.role )
         , ( "joined_date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.joinedDate )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         ]
 
@@ -2920,6 +2928,7 @@ type alias MessengersContactItem =
     , isCloseFriend : Maybe (Bool)
     , createdAt : Int
     , updatedAt : Int
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     }
 
@@ -2938,6 +2947,7 @@ messengersContactItemEncoder struct =
         , ( "is_close_friend", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isCloseFriend )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         ]
 
@@ -13237,6 +13247,36 @@ addAsKnownNetworkCallsignReqEncoder struct =
         ]
 
 
+type alias DeleteNetworkCallsignsReq =
+    { networkId : Int
+    , ids : List (Int)
+    , alsoDeleteFromCatalog : Bool
+    }
+
+
+deleteNetworkCallsignsReqEncoder : DeleteNetworkCallsignsReq -> Json.Encode.Value
+deleteNetworkCallsignsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "ids", (Json.Encode.list (Json.Encode.int)) struct.ids )
+        , ( "also_delete_from_catalog", (Json.Encode.bool) struct.alsoDeleteFromCatalog )
+        ]
+
+
+type alias DeleteNetworkCallsignsRsp =
+    { deletedIds : List (Int)
+    , deletedCatalogCallsignIds : List (Int)
+    }
+
+
+deleteNetworkCallsignsRspEncoder : DeleteNetworkCallsignsRsp -> Json.Encode.Value
+deleteNetworkCallsignsRspEncoder struct =
+    Json.Encode.object
+        [ ( "deleted_ids", (Json.Encode.list (Json.Encode.int)) struct.deletedIds )
+        , ( "deleted_catalog_callsign_ids", (Json.Encode.list (Json.Encode.int)) struct.deletedCatalogCallsignIds )
+        ]
+
+
 type alias Callsign =
     { id : Int
     , callsign : String
@@ -16443,6 +16483,8 @@ type alias SystemSettingsItem =
     , messengerMediaCacheMinFreeGib : Int
     , signozMetricsEnabled : Bool
     , signozMetricsEndpoint : Maybe (String)
+    , mediaSandboxEnabled : Maybe (Bool)
+    , mediaSandboxError : Maybe (String)
     }
 
 
@@ -16500,6 +16542,8 @@ systemSettingsItemEncoder struct =
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         , ( "signoz_metrics_enabled", (Json.Encode.bool) struct.signozMetricsEnabled )
         , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
+        , ( "media_sandbox_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.mediaSandboxEnabled )
+        , ( "media_sandbox_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mediaSandboxError )
         ]
 
 
@@ -16562,6 +16606,7 @@ type alias CreateSystemSettingsReq =
     , messengerMediaCacheMinFreeGib : Int
     , signozMetricsEnabled : Maybe (Bool)
     , signozMetricsEndpoint : Maybe (String)
+    , mediaSandboxEnabled : Maybe (Bool)
     }
 
 
@@ -16614,6 +16659,7 @@ createSystemSettingsReqEncoder struct =
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         , ( "signoz_metrics_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.signozMetricsEnabled )
         , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
+        , ( "media_sandbox_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.mediaSandboxEnabled )
         ]
 
 
@@ -17548,6 +17594,7 @@ type alias AiAgentConversationSummary =
     , aiEngineId : String
     , createdAt : Int
     , updatedAt : Int
+    , activeState : Maybe (String)
     }
 
 
@@ -17559,6 +17606,7 @@ aiAgentConversationSummaryEncoder struct =
         , ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
         , ( "createdAt", (Json.Encode.int) struct.createdAt )
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "activeState", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.activeState )
         ]
 
 
@@ -18698,6 +18746,7 @@ aiAgentIdReqEncoder struct =
 
 type alias AiAgentContainerItem =
     { linkedAgentId : String
+    , slot : Int
     , humanLoginId : String
     , humanLogin : String
     , agentLoginId : String
@@ -18716,6 +18765,7 @@ aiAgentContainerItemEncoder : AiAgentContainerItem -> Json.Encode.Value
 aiAgentContainerItemEncoder struct =
     Json.Encode.object
         [ ( "linkedAgentId", (Json.Encode.string) struct.linkedAgentId )
+        , ( "slot", (Json.Encode.int) struct.slot )
         , ( "humanLoginId", (Json.Encode.string) struct.humanLoginId )
         , ( "humanLogin", (Json.Encode.string) struct.humanLogin )
         , ( "agentLoginId", (Json.Encode.string) struct.agentLoginId )
@@ -18920,6 +18970,7 @@ aiAgentAdminRequestDetailEncoder struct =
 
 type alias AiAgentAdminUserReq =
     { loginId : String
+    , linkedAgentId : Maybe (String)
     }
 
 
@@ -18927,6 +18978,7 @@ aiAgentAdminUserReqEncoder : AiAgentAdminUserReq -> Json.Encode.Value
 aiAgentAdminUserReqEncoder struct =
     Json.Encode.object
         [ ( "loginId", (Json.Encode.string) struct.loginId )
+        , ( "linkedAgentId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.linkedAgentId )
         ]
 
 
@@ -24448,6 +24500,7 @@ messengersAccountItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "notes" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "internal_notes" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_group" (messengersDatasourceGroupDecoder)))
 
@@ -24489,6 +24542,8 @@ messengersChatItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "members_count" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_member_status" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_message_date" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_bot" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramChatIdDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_read_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_read_at" (Json.Decode.nullable (Json.Decode.int))))
@@ -24553,6 +24608,7 @@ messengersChatMemberItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "joined_date" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
 
 
@@ -24584,6 +24640,7 @@ messengersContactItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_close_friend" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
 
 
@@ -31015,6 +31072,21 @@ addAsKnownNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_ids" (Json.Decode.list (Json.Decode.int))))
 
 
+deleteNetworkCallsignsReqDecoder : Json.Decode.Decoder DeleteNetworkCallsignsReq
+deleteNetworkCallsignsReqDecoder =
+    Json.Decode.succeed DeleteNetworkCallsignsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "also_delete_from_catalog" (Json.Decode.bool)))
+
+
+deleteNetworkCallsignsRspDecoder : Json.Decode.Decoder DeleteNetworkCallsignsRsp
+deleteNetworkCallsignsRspDecoder =
+    Json.Decode.succeed DeleteNetworkCallsignsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_catalog_callsign_ids" (Json.Decode.list (Json.Decode.int))))
+
+
 callsignDecoder : Json.Decode.Decoder Callsign
 callsignDecoder =
     Json.Decode.succeed Callsign
@@ -33006,6 +33078,8 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_error" (Json.Decode.nullable (Json.Decode.string))))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -33063,6 +33137,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_enabled" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
@@ -33663,6 +33738,7 @@ aiAgentConversationSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activeState" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentConversationListRspDecoder : Json.Decode.Decoder AiAgentConversationListRsp
@@ -34236,6 +34312,7 @@ aiAgentContainerItemDecoder : Json.Decode.Decoder AiAgentContainerItem
 aiAgentContainerItemDecoder =
     Json.Decode.succeed AiAgentContainerItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "linkedAgentId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "slot" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLoginId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLogin" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "agentLoginId" (Json.Decode.string)))
@@ -34347,6 +34424,7 @@ aiAgentAdminUserReqDecoder : Json.Decode.Decoder AiAgentAdminUserReq
 aiAgentAdminUserReqDecoder =
     Json.Decode.succeed AiAgentAdminUserReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "loginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "linkedAgentId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentAdminUserItemDecoder : Json.Decode.Decoder AiAgentAdminUserItem

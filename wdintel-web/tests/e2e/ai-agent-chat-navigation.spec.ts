@@ -915,7 +915,7 @@ for (const width of [1280, 320]) {
     await expect(page.getByRole('option')).toHaveText([
       'Швидкийдо 2 хв',
       'Збалансованийдо 5 хв',
-      'Глибокийдо 4 год; нові повідомлення чекатимуть у черзі',
+      'Глибокийдо 4 год; нові повідомлення в цій розмові чекатимуть у черзі',
     ]);
     await expect(page.getByRole('tooltip')).toHaveCount(0);
     await page.getByRole('option', { name: /^Глибокий/ }).click();
@@ -992,7 +992,9 @@ for (const width of [1280, 320]) {
       exact: true,
     });
     await expect(continuation).toBeEnabled();
-    await expect(page.getByText('до 4 год; нові повідомлення чекатимуть у черзі')).toBeVisible();
+    await expect(
+      page.getByText('до 4 год; нові повідомлення в цій розмові чекатимуть у черзі'),
+    ).toBeVisible();
     const clipped = await continuation.evaluate(
       (button) => button.scrollWidth > button.clientWidth,
     );

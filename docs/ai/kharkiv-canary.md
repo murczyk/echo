@@ -238,5 +238,7 @@ namespace, pinned template, callback address, and authenticated TLS proxy route.
 Use Tailscale between Proxmox hosts: their identical private subnets are isolated.
 Share the new VM into each caller's tailnet or provide the required ACL access
 before changing its settings. The global six-container limit is shared by all
-namespaces. Existing production installations remain on their current agent host
+namespaces; a user running conversations on two model backends at once holds
+two of those slots until their second container is destroyed after 5 idle
+minutes (#4232). Existing production installations remain on their current agent host
 until their own rollout.

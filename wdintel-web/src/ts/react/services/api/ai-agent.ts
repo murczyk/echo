@@ -82,8 +82,12 @@ export type AiAgentConfiguration = {
   defaultProviderId: string | null;
 };
 
-export type AiAgentConversation = Omit<AiAgentConversationSummary, 'aiEngineId'> & {
+/** Whether a conversation in the list has a running or only a queued request. */
+export type AiAgentConversationActivity = 'running' | 'queued';
+
+export type AiAgentConversation = Omit<AiAgentConversationSummary, 'aiEngineId' | 'activeState'> & {
   providerId: string | null;
+  activeState: AiAgentConversationActivity | null;
 };
 
 export type AiAgentMessage = Omit<
@@ -167,6 +171,8 @@ export type AiAgentRequestCreated = {
 
 export type AiAgentContainer = {
   id: string;
+  /** 0 for the user's main container; 1 for one serving another backend. */
+  slot: number;
   humanLoginId: string;
   humanLogin: string;
   linkedLoginId: string | null;
@@ -419,7 +425,12 @@ function normalizeConversation(
     providerId: value.aiEngineId,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
+    activeState: 'activeState' in value ? conversationActivity(value.activeState) : null,
   };
+}
+
+function conversationActivity(value: string | null): AiAgentConversationActivity | null {
+  return value === 'running' || value === 'queued' ? value : null;
 }
 
 function normalizeMessage(value: AiAgentMessageItem): AiAgentMessage {
@@ -534,6 +545,7 @@ function formatToolActivity(event: AiAgentEvent): string {
 function normalizeContainer(value: AiAgentContainerItem): AiAgentContainer {
   return {
     id: value.linkedAgentId,
+    slot: value.slot,
     humanLoginId: value.humanLoginId,
     humanLogin: value.humanLogin,
     linkedLoginId: value.agentLoginId,
@@ -907,22 +919,30 @@ export async function listAiAgentContainers(): Promise<AiAgentContainer[]> {
   return response.items.map(normalizeContainer);
 }
 
-export async function startAiAgentContainer(humanLoginId: string): Promise<AiAgentUserStatus> {
-  const req: AiAgentAdminUserReq = { loginId: humanLoginId };
+/** `linkedAgentId` targets one of the user's containers; the main one by default. */
+export async function startAiAgentContainer(
+  humanLoginId: string,
+  linkedAgentId: string | null = null,
+): Promise<AiAgentUserStatus> {
+  const req: AiAgentAdminUserReq = { loginId: humanLoginId, linkedAgentId };
   return normalizeUserStatus(
     await postJson<AiAgentAdminUserItem>('/api/admin/ai-agent/users/start', req),
   );
 }
 
+/** Cancels the user's requests and stops all of their containers. */
 export async function stopAiAgentContainer(humanLoginId: string): Promise<AiAgentUserStatus> {
-  const req: AiAgentAdminUserReq = { loginId: humanLoginId };
+  const req: AiAgentAdminUserReq = { loginId: humanLoginId, linkedAgentId: null };
   return normalizeUserStatus(
     await postJson<AiAgentAdminUserItem>('/api/admin/ai-agent/users/force-stop', req),
   );
 }
 
-export async function testAiAgentConnection(humanLoginId: string): Promise<void> {
-  const req: AiAgentAdminUserReq = { loginId: humanLoginId };
+export async function testAiAgentConnection(
+  humanLoginId: string,
+  linkedAgentId: string | null = null,
+): Promise<void> {
+  const req: AiAgentAdminUserReq = { loginId: humanLoginId, linkedAgentId };
   const result = await postJson<AiAgentConnectionTestRsp>(
     '/api/admin/ai-agent/users/test-connection',
     req,
@@ -931,7 +951,7 @@ export async function testAiAgentConnection(humanLoginId: string): Promise<void>
 }
 
 export async function getAiAgentUserStatus(humanLoginId: string): Promise<AiAgentUserStatus> {
-  const req: AiAgentAdminUserReq = { loginId: humanLoginId };
+  const req: AiAgentAdminUserReq = { loginId: humanLoginId, linkedAgentId: null };
   return normalizeUserStatus(
     await postJson<AiAgentAdminUserItem>('/api/admin/ai-agent/users/get', req),
   );
@@ -941,6 +961,7 @@ function normalizeUserStatus(value: AiAgentAdminUserItem): AiAgentUserStatus {
   const container: AiAgentContainer | null = value.containerState
     ? {
         id: value.linkedAgentId ?? value.humanLoginId,
+        slot: 0,
         humanLoginId: value.humanLoginId,
         humanLogin: value.humanLogin,
         linkedLoginId: value.agentLoginId,

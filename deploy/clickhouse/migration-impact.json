@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261116_142224_ai_agent_second_container": {
+      "changes": [{ "table": "public.ai_agent_user_link", "strategy": "excluded" }]
+    },
+    "echo:m20261116_124020_ai_agent_parallel_conversations": {
+      "changes": [{ "table": "public.ai_agent_container", "strategy": "excluded" }]
+    },
     "echo:m20261116_110507_message_card_quick_action_count": {
       "changes": [
         {
@@ -35,6 +41,11 @@
           "strategy": "replicated_snapshot",
           "targeted_resnapshot": true
         }
+      ]
+    },
+    "echo:m20261114_065246_media_sandbox_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
       ]
     },
     "echo:m20261112_141106_attachment_order": {
@@ -342,6 +353,11 @@
       ]
     },
     "echo:m20261115_100000_messenger_chat_message_count": {
+      "changes": [
+        { "table": "public.messenger_chat", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261116_103129_messenger_chat_is_bot": {
       "changes": [
         { "table": "public.messenger_chat", "strategy": "excluded" }
       ]

@@ -9,6 +9,7 @@ import './history.css';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_MOVEMENT_PX = 10;
+const ACTIVITY_LABELS = { running: 'Виконується', queued: 'У черзі' } as const;
 
 export function ConversationHistoryItem({
   conversation,
@@ -130,7 +131,11 @@ export function ConversationHistoryItem({
       >
         <ListItemText
           primary={conversation.title}
-          secondary={timestamp}
+          secondary={
+            conversation.activeState
+              ? `${ACTIVITY_LABELS[conversation.activeState]} · ${timestamp}`
+              : timestamp
+          }
           slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
         />
       </ListItemButton>

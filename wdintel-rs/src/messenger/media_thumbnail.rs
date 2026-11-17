@@ -2,7 +2,6 @@ use crate::config::{
     Config, MESSENGER_MEDIA_IMAGE_THUMBNAIL_MAX_TOTAL_SIZE_BYTES,
     MESSENGER_MEDIA_IMAGE_THUMBNAIL_SHORT_SIDE_PX,
     MESSENGER_MEDIA_THUMBNAIL_DIR_MODE, MESSENGER_MEDIA_THUMBNAIL_DIR_NAME,
-    MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN,
     MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER,
     MESSENGER_MEDIA_THUMBNAIL_FFMPEG_TIMEOUT_SECS,
     MESSENGER_MEDIA_THUMBNAIL_FILE_MODE, MESSENGER_MEDIA_THUMBNAIL_FILE_SUFFIX,
@@ -60,8 +59,6 @@ use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-#[cfg(test)]
-use tokio::process::Command;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 
@@ -2310,27 +2307,12 @@ fn thumbnail_filter(is_image: bool) -> String {
 
 fn thumbnail_options(filter: &str) -> crate::thumbnail::Options<'_> {
     crate::thumbnail::Options {
-        binary: MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN,
         filter,
         timeout: Duration::from_secs(
             MESSENGER_MEDIA_THUMBNAIL_FFMPEG_TIMEOUT_SECS,
         ),
         max_bytes: None,
-        local_media_only: false,
     }
-}
-
-#[cfg(test)]
-fn build_thumbnail_command(
-    input_path: &Path,
-    output_path: &Path,
-    is_image: bool,
-) -> Command {
-    crate::thumbnail::command(
-        input_path,
-        output_path,
-        &thumbnail_options(&thumbnail_filter(is_image)),
-    )
 }
 
 async fn ensure_private_dir(path: &Path) -> Result<(), AppError> {
@@ -3355,41 +3337,15 @@ mod tests {
     }
 
     #[test]
-    fn ffmpeg_command_reads_a_local_path_and_emits_one_jpeg() {
-        let command = build_thumbnail_command(
-            Path::new("/tmp/input.mp4"),
-            Path::new("/tmp/output.jpg"),
-            false,
+    fn image_thumbnail_filter_scales_the_short_side_to_300_pixels() {
+        assert_eq!(
+            thumbnail_filter(true),
+            "scale=300:300:force_original_aspect_ratio=increase"
         );
-        let args = command
-            .as_std()
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-
-        assert!(args.windows(2).any(|args| args == ["-i", "/tmp/input.mp4"]));
-        assert!(args.windows(2).any(|args| args == ["-frames:v", "1"]));
-        assert_eq!(args.last().map(String::as_str), Some("/tmp/output.jpg"));
-    }
-
-    #[test]
-    fn image_thumbnail_command_scales_the_short_side_to_300_pixels() {
-        let command = build_thumbnail_command(
-            Path::new("/tmp/input.png"),
-            Path::new("/tmp/output.jpg"),
-            true,
+        assert_eq!(
+            thumbnail_filter(false),
+            MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER
         );
-        let args = command
-            .as_std()
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        assert!(args.windows(2).any(|args| {
-            args == [
-                "-vf",
-                "scale=300:300:force_original_aspect_ratio=increase",
-            ]
-        }));
     }
 
     #[test]

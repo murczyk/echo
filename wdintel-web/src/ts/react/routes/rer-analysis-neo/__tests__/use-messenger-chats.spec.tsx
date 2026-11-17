@@ -11,7 +11,7 @@ const apiMock = vi.hoisted(() => ({
 }));
 vi.mock('../../../services/api/analysis-messengers', () => apiMock);
 
-import { useMessengerChats } from '../use-messenger-chats';
+import { chatSectionOf, useMessengerChats, type MessengerChat } from '../use-messenger-chats';
 
 type State = ReturnType<typeof useMessengerChats>;
 
@@ -154,5 +154,20 @@ describe('useMessengerChats', () => {
       await expect(act(async () => latest?.markAllRead())).rejects.toThrow('forbidden');
       expect(apiMock.listMessengersChats).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('chatSectionOf', () => {
+  const section = (chatType: string | null, isBot: boolean | null) =>
+    chatSectionOf({ chatType, isBot } as MessengerChat);
+
+  it('puts only a private chat flagged as a bot into the bots', () => {
+    expect(section('PRIVATE', true)).toBe('bot');
+    expect(section('PRIVATE', false)).toBe('private');
+    // Until the collector says, a chat is not a bot.
+    expect(section('PRIVATE', null)).toBe('private');
+    expect(section('GROUP', true)).toBe('group');
+    expect(section('CHANNEL', null)).toBe('channel');
+    expect(section(null, null)).toBe('group');
   });
 });

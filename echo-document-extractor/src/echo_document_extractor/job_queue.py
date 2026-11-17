@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from .service_config import ADMISSION_RETRY_SECONDS
+
 JobState = Literal["queued", "running", "retry_wait", "completed", "failed", "cancelled"]
 TERMINAL_STATES = ("completed", "failed", "cancelled")
 ACTIVE_STATES = ("queued", "running", "retry_wait")
@@ -132,6 +134,32 @@ class JobQueue:
             raise
         finally:
             connection.close()
+
+    def capacity(self) -> dict[str, int]:
+        with self.connect() as connection:
+            active = connection.execute(
+                "SELECT COUNT(*) FROM jobs WHERE state IN ('queued', 'running', 'retry_wait')"
+            ).fetchone()[0]
+        available = max(0, self.max_depth - active)
+        return {
+            "limit": self.max_depth,
+            "active": active,
+            "available": available,
+            "retry_after_seconds": 0 if available else ADMISSION_RETRY_SECONDS,
+        }
+
+    def ensure_submission_capacity(self, idempotency_key: str) -> None:
+        with self.connect() as connection:
+            existing = connection.execute(
+                "SELECT 1 FROM jobs WHERE idempotency_key = ?", (idempotency_key,)
+            ).fetchone()
+            if existing:
+                return
+            active = connection.execute(
+                "SELECT COUNT(*) FROM jobs WHERE state IN ('queued', 'running', 'retry_wait')"
+            ).fetchone()[0]
+            if active >= self.max_depth:
+                raise QueueFullError("job queue is full")
 
     def submit(
         self,

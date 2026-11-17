@@ -405,10 +405,12 @@ class Control:
                 message(f'{host}: retained orphan {orphan["name"]} as {orphan["backup"]}')
             maintenance.call({'action':'verify_template'}, timeout=120)
             message(f'{host}: authenticated template preflight passed for {target["release"]}')
-            humans = {r['name']: r['human_id'] for r in current['containers']}
+            owners = {r['name']: r for r in current['containers']}
             for container in job['containers']:
                 self.host_action('container', {'namespace':row['namespace'],'name':container['name'],'action':'start'})
-                maintenance.call({'action':'verify','human_id':humans[container['name']]}, timeout=120)
+                owner = owners[container['name']]
+                # agent_id picks the user's container slot; older Echo builds ignore it.
+                maintenance.call({'action':'verify','human_id':owner['human_id'],'agent_id':owner.get('agent_id')}, timeout=120)
                 self.host_action('container', {'namespace':row['namespace'],'name':container['name'],'action':'stop'})
                 message(f'{host}: verified {container["name"]}')
             for container in job['containers']:

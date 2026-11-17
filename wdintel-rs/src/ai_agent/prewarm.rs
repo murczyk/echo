@@ -154,6 +154,7 @@ async fn prewarm_locked(
         human_login_id,
         Some(ai_engine),
         AI_AGENT_PREWARM_RESERVED_SLOTS,
+        crate::config::AI_AGENT_MAIN_CONTAINER_SLOT,
     )
     .await
     {
@@ -175,6 +176,9 @@ async fn running_container(
 ) -> Result<Option<ai_agent_container::Model>, AppError> {
     let Some(link) = ai_agent_user_link::Entity::find()
         .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+        .filter(crate::ai_agent::lifecycle::link_slot_condition(
+            crate::config::AI_AGENT_MAIN_CONTAINER_SLOT,
+        ))
         .one(dbx)
         .await
         .c(h!())?
