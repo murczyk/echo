@@ -56,6 +56,17 @@ async fn file(
     content: bool,
     login: Uuid,
 ) -> file_entry::Model {
+    file_with_extension(env, device, name, "txt", content, login).await
+}
+
+async fn file_with_extension(
+    env: &Env,
+    device: Uuid,
+    name: &str,
+    extension: &str,
+    content: bool,
+    login: Uuid,
+) -> file_entry::Model {
     let db = env.file_registry_db().unwrap().connection();
     let root = Uuid::now_v7();
     let id = Uuid::now_v7();
@@ -84,7 +95,7 @@ async fn file(
             parent_id: Set(Some(root)),
             kind: Set(FileEntryKind::File),
             name: Set(name.into()),
-            extension: Set(Some("txt".into())),
+            extension: Set(Some(extension.into())),
             absolute_path: Set(Some(format!("C:\\{name}"))),
             hierarchy_path: Set(format!("n{}.n{}", root.simple(), id.simple())),
             created_at: Set(now),
@@ -127,4 +138,5 @@ mod file_links;
 mod lifecycle;
 mod maps;
 mod positions;
+mod queue_execution;
 mod storage_pressure;

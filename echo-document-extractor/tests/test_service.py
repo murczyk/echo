@@ -520,3 +520,90 @@ def test_native_attachment_job_runs_without_ocr_dependency_and_packages_result(
             payload = json.loads(archive.read("document.json"))
             assert payload["sections"][0]["text"] == "Позиція Береза"
         assert client.get(f"/v1/jobs/{ordinary.json()['id']}", headers=auth()).json()["state"] == "queued"
+
+
+def test_capacity_is_authenticated_and_does_not_touch_spool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+    app = create_app(runtime_config(tmp_path, max_queue_depth=1))
+    with TestClient(app) as client:
+        def forbidden(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("capacity must not inspect the spool or dependencies")
+
+        monkeypatch.setattr("echo_document_extractor.api.ensure_capacity", forbidden)
+        monkeypatch.setattr("echo_document_extractor.api.directory_size", forbidden)
+        assert client.get("/v1/capacity").status_code == 401
+        available = client.get("/v1/capacity", headers=auth())
+        assert available.json() == {"limit": 1, "active": 0, "available": 1, "retry_after_seconds": 0}
+        assert available.headers["cache-control"] == "no-store"
+        app.state.queue.submit("one", "first", "digest", tmp_path, 1, 1)
+        full = client.get("/v1/capacity", headers=auth())
+        assert full.json() == {"limit": 1, "active": 1, "available": 0, "retry_after_seconds": 30}
+        assert full.headers["retry-after"] == "30"
+        running = app.state.queue.claim("worker", 30)
+        assert client.get("/v1/capacity", headers=auth()).json()["active"] == 1
+        app.state.queue.complete(running.id, "worker", "accepted", tmp_path / "result.zip", 1)
+        assert client.get("/v1/capacity", headers=auth()).json()["available"] == 1
+
+
+def test_full_queue_rejects_before_reading_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+    config = runtime_config(tmp_path, max_queue_depth=1)
+    app = create_app(config)
+    app.state.queue.submit("one", "first", "digest", tmp_path, 1, 1)
+
+    def unread_body():
+        raise AssertionError("full queue must not read the request body")
+        yield b""
+
+    with TestClient(app) as client:
+        before = set(config.service.spool_dir.iterdir())
+        response = client.post("/v1/jobs", headers=auth(), content=unread_body())
+        assert response.status_code == 503
+        assert response.headers["retry-after"] == "30"
+        assert set(config.service.spool_dir.iterdir()) == before
+        assert app.state.queue.capacity()["active"] == 1
+
+
+def test_full_queue_preserves_idempotent_replay_and_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+    app = create_app(runtime_config(tmp_path, max_queue_depth=1))
+    with TestClient(app) as client:
+        files = [("files", ("page.png", png_bytes(), "image/png"))]
+        first = client.post("/v1/jobs", headers=auth(), files=files)
+        assert first.status_code == 202
+        replay = client.post("/v1/jobs", headers=auth(), files=files)
+        assert replay.status_code == 202
+        assert replay.json()["id"] == first.json()["id"]
+        conflict = client.post(
+            "/v1/jobs", headers=auth(),
+            files=[("files", ("page.png", png_bytes("black"), "image/png"))],
+        )
+        assert conflict.status_code == 409
+        assert app.state.queue.capacity()["active"] == 1
+
+
+def test_capacity_race_still_respects_atomic_queue_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+    config = runtime_config(tmp_path, max_queue_depth=1)
+    app = create_app(config)
+    with TestClient(app) as client:
+        def fill_after_probe(_key: str) -> None:
+            app.state.queue.submit("winner", "other", "digest", tmp_path, 1, 1)
+
+        monkeypatch.setattr(app.state.queue, "ensure_submission_capacity", fill_after_probe)
+        response = client.post(
+            "/v1/jobs", headers=auth(),
+            files=[("files", ("page.png", png_bytes(), "image/png"))],
+        )
+        assert response.status_code == 503
+        assert response.headers["retry-after"] == "30"
+        assert app.state.queue.capacity()["active"] == 1
+        assert not list(config.service.spool_dir.iterdir())

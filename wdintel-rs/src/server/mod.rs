@@ -994,6 +994,7 @@ fn spawn_background_workers(
     }
 
     if env.file_registry_db.is_some() {
+        let admission = crate::devices::documents::worker::shared_admission();
         for (name, kind) in [
             ("device_document_worker", "extract"),
             ("device_document_summary_worker", "summary"),
@@ -1002,11 +1003,13 @@ fn spawn_background_workers(
         ] {
             let attachment_env = env.clone();
             let attachment_cancel = cancel_token.clone();
+            let admission = admission.clone();
             spawn_named_worker(name, bg_set, async move {
                 crate::devices::documents::worker::run(
                     attachment_env,
                     attachment_cancel,
                     kind,
+                    admission,
                 )
                 .await;
             });

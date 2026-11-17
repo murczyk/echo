@@ -35,6 +35,19 @@ summaries, positions and focused inspection. The pipeline defaults to disabled.
 Enabling summaries and positions also requires a selected enabled text engine.
 Disabling an enrichment stage leaves its jobs queued for later enablement.
 
+Before claiming new extraction or inspection work, the coordinator checks the
+native extractor's authenticated `GET /v1/capacity`. A full queue pauses new
+claims, historical discovery and source downloads for 30 seconds; unavailable
+capacity checks back off up to five minutes. Already submitted jobs continue
+polling through a separate partial index. Temporary admission failures preserve
+the job and its failure budget. Claims first select up to 100 ready jobs through
+the due-time index, latest due time first, then prefer the newest within that
+window. Future retries cannot hide ready work. Current-generation checks use
+indexed point lookups, and claims have a one-second SQL timeout.
+The completed historical discovery pass is remembered until worker restart.
+Deploy the native capacity endpoint before upgrading the coordinator; an older
+extractor pauses new submissions. Published results remain readable.
+
 New `file_content` inserts enqueue work transactionally in `wd_files`. A persisted
 keyset scan discovers older content in batches of 100. Workers claim jobs with
 `SKIP LOCKED`, 15-minute renewable leases and at most five failed attempts.
@@ -123,6 +136,7 @@ Regression coverage: `wdintel-rs/src/devices/documents/tests/authorization.rs`,
 `wdintel-rs/src/devices/documents/tests/lifecycle.rs`,
 `wdintel-rs/src/devices/documents/tests/maps.rs`,
 `wdintel-rs/src/devices/documents/tests/positions.rs`,
+`wdintel-rs/src/devices/documents/tests/queue_execution.rs`,
 `echo-ai-agent/runner/devices.test.ts`,
 `echo-ai-agent/runner/map-script.test.ts`, and
 `wdintel-web/tests/e2e/ai-agent-files.spec.ts`.

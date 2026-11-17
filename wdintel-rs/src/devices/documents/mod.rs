@@ -1,4 +1,5 @@
 pub(crate) mod access;
+mod admission;
 pub(crate) mod api;
 pub(crate) mod discovery;
 mod enrich;
