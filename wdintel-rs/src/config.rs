@@ -1368,6 +1368,8 @@ pub const SIGNAL_RESTART_MAINTENANCE_TTL_SEC: u64 = 90;
 pub const SIGNAL_RESTART_COOLDOWN_TTL_SEC: u64 = 5 * 60;
 pub const SIGNAL_RESTART_MAINTENANCE_RETRY_SEC: u64 = 1;
 pub const MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR: &str = "/tmp";
+pub const MESSENGER_MEDIA_AUDIO_PNG_CONTENT_TYPE: &str = "image/png";
+pub const MESSENGER_MEDIA_AUDIO_PNG_CONTENT_DISPOSITION: &str = "inline";
 pub const MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT: i64 = 24;
 pub const MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT: i64 = 32;
 pub const MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT: i64 = 10;
@@ -1464,8 +1466,6 @@ pub const MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS: u64 = 15;
 pub const MESSENGER_MEDIA_LOCAL_CACHE_MP4_METADATA_MAX_BYTES: u64 =
     16 * 1024 * 1024;
 pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_EXTRA_BYTES: u64 = 1024 * 1024;
-pub const MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN: &str = "ffmpeg";
-pub const MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN: &str = "ffprobe";
 pub const MESSENGER_MEDIA_PREVIEW_DIR_NAME: &str = "preview-v1";
 pub const MESSENGER_MEDIA_PREVIEW_MIN_SOURCE_BYTES: i64 = 8 * 1024 * 1024;
 pub const MESSENGER_MEDIA_PREVIEW_NATIVE_MAX_BITRATE: u64 = 8_000_000;
@@ -1487,11 +1487,8 @@ pub const MESSENGER_MEDIA_PREVIEW_VIDEO_FILTER: &str =
     "fps=30,scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2";
 pub const MESSENGER_MEDIA_PREVIEW_VIDEO_MAXRATE: &str = "3M";
 pub const MESSENGER_MEDIA_PREVIEW_VIDEO_THREADS: &str = "2";
-pub const MESSENGER_MEDIA_PREVIEW_SOURCE_TIMEOUT_MICROS: &str = "10000000";
 
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
-pub const THUMBNAIL_LOCAL_FORMAT_WHITELIST: &str =
-    "image2,jpeg_pipe,png_pipe,webp_pipe,bmp_pipe,tiff_pipe,gif,apng,ico,mov,matroska,webm,avi,asf,flv,mpeg,mpegvideo,mpegts,ogg,hevc,h264";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
     ".source-budget.lock";
@@ -1536,7 +1533,6 @@ pub const MESSENGER_MEDIA_THUMBNAIL_RECOVERY_TERMINAL_TTL_SECS: u64 =
 pub const MESSENGER_MEDIA_THUMBNAIL_MAX_CONCURRENT_GENERATIONS: usize = 1;
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_MODE: u32 = 0o700;
 pub const MESSENGER_MEDIA_THUMBNAIL_FILE_MODE: u32 = 0o600;
-pub const MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN: &str = "ffmpeg";
 pub const MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER: &str =
     "scale=640:-2:force_original_aspect_ratio=decrease,thumbnail=60";
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;

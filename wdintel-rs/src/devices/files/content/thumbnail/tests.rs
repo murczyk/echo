@@ -201,11 +201,9 @@ async fn thumbnail_generator_decodes_bounded_image_and_rejects_playlist() {
         .unwrap();
     tokio::fs::write(&source, png.into_inner()).await.unwrap();
     let options = crate::thumbnail::Options {
-        binary: DEVICE_FILE_THUMBNAIL_FFMPEG_BIN,
         filter: DEVICE_FILE_THUMBNAIL_IMAGE_FILTER,
         timeout: Duration::from_secs(10),
         max_bytes: Some(DEVICE_FILE_THUMBNAIL_MAX_BYTES),
-        local_media_only: true,
     };
     crate::thumbnail::generate(&source, &output, &options)
         .await
@@ -220,75 +218,4 @@ async fn thumbnail_generator_decodes_bounded_image_and_rejects_playlist() {
         .is_err());
     assert!(!output.exists());
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
-}
-
-#[tokio::test]
-async fn thumbnail_generator_cleans_missing_binary_and_kills_timed_out_process()
-{
-    use std::os::unix::fs::PermissionsExt;
-
-    let root = tempfile::tempdir().unwrap();
-    let source = root.path().join("source");
-    let output = root.path().join("thumbnail.jpg");
-    tokio::fs::write(&source, b"source").await.unwrap();
-    let executable = root.path().join("decoder");
-    let options = crate::thumbnail::Options {
-        binary: executable.to_str().unwrap(),
-        filter: DEVICE_FILE_THUMBNAIL_IMAGE_FILTER,
-        timeout: Duration::from_secs(5),
-        max_bytes: Some(DEVICE_FILE_THUMBNAIL_MAX_BYTES),
-        local_media_only: true,
-    };
-    let missing = crate::thumbnail::generate(&source, &output, &options)
-        .await
-        .unwrap_err();
-    assert_eq!(
-        missing.downcast_ref::<std::io::Error>().unwrap().kind(),
-        std::io::ErrorKind::NotFound
-    );
-    assert!(!output.exists());
-    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
-
-    tokio::fs::write(
-        &executable,
-        b"#!/bin/sh\nprintf '%s' \"$$\" > \"$0.pid\"\nfor output in \"$@\"; do :; done\nprintf partial > \"$output\"\nexec /bin/sleep 60\n",
-    )
-    .await
-    .unwrap();
-    tokio::fs::set_permissions(
-        &executable,
-        std::fs::Permissions::from_mode(0o700),
-    )
-    .await
-    .unwrap();
-    let timed_out = crate::thumbnail::generate(&source, &output, &options)
-        .await
-        .unwrap_err();
-    assert!(timed_out
-        .downcast_ref::<tokio::time::error::Elapsed>()
-        .is_some());
-    let pid: libc::pid_t =
-        tokio::fs::read_to_string(executable.with_extension("pid"))
-            .await
-            .unwrap()
-            .parse()
-            .unwrap();
-    let terminated = tokio::time::timeout(Duration::from_secs(2), async {
-        while unsafe { libc::kill(pid, 0) } == 0 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await;
-    if terminated.is_err() {
-        unsafe { libc::kill(pid, libc::SIGKILL) };
-    }
-    assert!(terminated.is_ok(), "decoder must be terminated on timeout");
-    assert!(!output.exists());
-    assert!(std::fs::read_dir(root.path()).unwrap().all(|entry| {
-        !entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .contains(".tmp-")
-    }));
 }

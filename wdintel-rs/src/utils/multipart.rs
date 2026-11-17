@@ -154,9 +154,6 @@ pub fn download_content_disposition(
         }
         mime::APPLICATION => match content_type.subtype() {
             mime::JAVASCRIPT | mime::JSON => DispositionType::Inline,
-            name if name == "wasm" || name == "xhtml" => {
-                DispositionType::Inline
-            }
             _ => DispositionType::Attachment,
         },
         _ => DispositionType::Attachment,

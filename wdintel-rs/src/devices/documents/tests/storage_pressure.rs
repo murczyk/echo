@@ -90,8 +90,12 @@ async fn device_document_storage_pressure_keeps_retry_budget_3743() {
             extraction::submit_extractor(&env, &job, &source, &config, "txt")
                 .await
                 .unwrap();
-        assert!(result.is_none());
-        queue::finish(&env, &job, Ok(false)).await.unwrap();
+        let extraction::PackageOutcome::Deferred(delay) = result else {
+            panic!("expected admission deferral")
+        };
+        queue::finish(&env, &job, Ok(queue::JobOutcome::Deferred(delay)))
+            .await
+            .unwrap();
         let state = retry_state(&env, job.id).await;
         assert_eq!(state.state, "queued");
         assert_eq!(state.attempts, 0);
@@ -107,13 +111,15 @@ async fn device_document_storage_pressure_keeps_retry_budget_3743() {
         job = queue::claim(&env, "extract").await.unwrap().unwrap();
         assert_eq!(job.attempts, 1);
     }
-    assert!(
+    assert!(matches!(
         extraction::submit_extractor(&env, &job, &source, &config, "txt")
             .await
-            .unwrap()
-            .is_none()
-    );
-    queue::finish(&env, &job, Ok(false)).await.unwrap();
+            .unwrap(),
+        extraction::PackageOutcome::Pending
+    ));
+    queue::finish(&env, &job, Ok(queue::JobOutcome::Pending))
+        .await
+        .unwrap();
     assert_eq!(
         retry_state(&env, job.id).await.extractor_job_id.as_deref(),
         Some(accepted.as_str())
@@ -125,7 +131,7 @@ async fn device_document_storage_pressure_keeps_retry_budget_3743() {
     let result =
         extraction::submit_extractor(&env, &job, &source, &config, "txt").await;
     assert!(result.is_err());
-    queue::finish(&env, &job, result.map(|package| package.is_some()))
+    queue::finish(&env, &job, result.map(|_| queue::JobOutcome::Complete))
         .await
         .unwrap();
     let state = retry_state(&env, job.id).await;

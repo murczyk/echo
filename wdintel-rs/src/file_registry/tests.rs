@@ -710,6 +710,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261030_143441_device_audio_activity_index".to_string(),
             "m20261031_111058_device_list_activity_order".to_string(),
             "m20261103_101213_file_markers".to_string(),
+            "m20261116_190308_device_document_claim_indexes".to_string(),
         ]
     );
 }

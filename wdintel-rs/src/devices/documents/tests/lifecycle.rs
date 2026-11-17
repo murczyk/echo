@@ -29,8 +29,13 @@ async fn device_document_search_revisions_and_lease_fencing_3064() {
     )
     .await
     .unwrap();
-    assert!(extraction::extract(&env, &job).await.unwrap());
-    queue::finish(&env, &job, Ok(true)).await.unwrap();
+    assert_eq!(
+        extraction::extract(&env, &job).await.unwrap(),
+        queue::JobOutcome::Complete
+    );
+    queue::finish(&env, &job, Ok(queue::JobOutcome::Complete))
+        .await
+        .unwrap();
     let mut pinned = request(&file);
     pinned.extraction_revision = Some(job.generation.to_string());
     let result = read::read(&env, &pinned).await.unwrap();
@@ -203,7 +208,9 @@ async fn device_document_backfill_discovers_content_published_before_trigger_306
     extraction::publish(&env, &reclaimed, package("current"))
         .await
         .unwrap();
-    queue::finish(&env, &job, Ok(true)).await.unwrap();
+    queue::finish(&env, &job, Ok(queue::JobOutcome::Complete))
+        .await
+        .unwrap();
     queue::renew(db, &reclaimed).await.unwrap();
 }
 
@@ -227,7 +234,9 @@ async fn device_document_reuse_and_citations_survive_new_generations_3064() {
     extraction::publish(&env, &job, package("Original evidence"))
         .await
         .unwrap();
-    queue::finish(&env, &job, Ok(true)).await.unwrap();
+    queue::finish(&env, &job, Ok(queue::JobOutcome::Complete))
+        .await
+        .unwrap();
     execute(db,"update file_document_generation set summary_state='completed',position_state='completed' where id=$1",vec![job.generation.into()]).await.unwrap();
     let mut revision = file_revision::Entity::find_by_id((file.id, 1))
         .one(db)
@@ -247,8 +256,13 @@ async fn device_document_reuse_and_citations_survive_new_generations_3064() {
     content.revision = Set(2);
     content.insert(db).await.unwrap();
     let reused = queue::claim(&env, "extract").await.unwrap().unwrap();
-    assert!(extraction::extract(&env, &reused).await.unwrap());
-    queue::finish(&env, &reused, Ok(true)).await.unwrap();
+    assert_eq!(
+        extraction::extract(&env, &reused).await.unwrap(),
+        queue::JobOutcome::Complete
+    );
+    queue::finish(&env, &reused, Ok(queue::JobOutcome::Complete))
+        .await
+        .unwrap();
     let pinned = DeviceDocumentReadReq {
         revision: 2,
         extraction_revision: Some(job.generation.to_string()),

@@ -127,6 +127,12 @@ pub struct SystemSettingsItem {
     pub signoz_metrics_enabled: bool,
     #[serde(default)]
     pub signoz_metrics_endpoint: Option<String>,
+    /// `None` until an admin chooses; read once at startup.
+    #[serde(default)]
+    pub media_sandbox_enabled: Option<bool>,
+    /// Why startup turned the sandbox off, while it stays off.
+    #[serde(default)]
+    pub media_sandbox_error: Option<String>,
 }
 
 #[derive(
@@ -225,6 +231,9 @@ pub struct CreateSystemSettingsReq {
     pub signoz_metrics_enabled: Option<bool>,
     #[serde(default)]
     pub signoz_metrics_endpoint: Option<String>,
+    /// Omitted by older clients; the saved value is then kept.
+    #[serde(default)]
+    pub media_sandbox_enabled: Option<bool>,
 }
 
 fn default_api_rate_limit_replenish_interval_ms() -> i64 {

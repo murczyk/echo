@@ -651,11 +651,9 @@ where
             .await
             .c(h!())?;
     let source_scope = inbox_search_scope(req, &sigint_groups).c(h!())?;
-    let correlated_terms =
-        matches!(
-            purpose,
-            InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
-        ) || search_uses_candidate_ids(&req.selected_freqs, scope);
+    let correlated_terms = purpose != InboxQueryPurpose::Analytics
+        && (purpose == InboxQueryPurpose::Hydration
+            || search_uses_candidate_ids(&req.selected_freqs, scope));
     let indexed_search = inbox_candidates_use_indexed_search(
         req,
         purpose,

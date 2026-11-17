@@ -2,6 +2,7 @@ use super::types::*;
 use super::*;
 use crate::file_registry::entities::device_audio;
 use actix_web::{http::header, web, HttpRequest};
+use echo_media::ffmpeg::Rendition;
 use futures_util::StreamExt;
 use sea_orm::{
     ColumnTrait, EntityTrait, FromQueryResult, QueryFilter, QuerySelect,
@@ -637,16 +638,14 @@ async fn generate(
     {
         tokio::fs::copy(&original, temporary.path()).await.c(h!())?;
     } else {
-        let ffmpeg =
-            media_command(&original, temporary.path(), command.representation)
-                .await
-                .c(h!())?;
+        let rendition =
+            rendition(&original, command.representation).await.c(h!())?;
         tokio::select! {
             biased;
             _ = runtime.preparation.cancellation.cancelled() => {
                 return Err(unavailable("audio preparation is stopping")).c(h!());
             }
-            result = probe::run_decoder(ffmpeg) => result.c(h!())?,
+            result = probe::render(&original, temporary.path(), rendition) => result.c(h!())?,
         }
     }
     validate_output(temporary.path(), command.representation)
@@ -665,96 +664,23 @@ async fn generate(
     Ok(target)
 }
 
-async fn media_command(
+/// What the sandboxed renderer produces for `representation`.
+async fn rendition(
     original: &Path,
-    output: &Path,
     representation: DeviceAudioRepresentation,
-) -> anyhow::Result<tokio::process::Command> {
-    let mut command = tokio::process::Command::new("ffmpeg");
-    command
-        .args([
-            "-y",
-            "-v",
-            "error",
-            "-nostdin",
-            "-threads",
-            DEVICE_AUDIO_FFMPEG_THREADS,
-            "-filter_threads",
-            DEVICE_AUDIO_FFMPEG_THREADS,
-            "-filter_complex_threads",
-            DEVICE_AUDIO_FFMPEG_THREADS,
-            "-xerror",
-            "-err_detect",
-            "explode",
-            "-protocol_whitelist",
-            "file,pipe",
-            "-i",
-        ])
-        .arg(original);
-    match representation {
-        DeviceAudioRepresentation::Content => {
-            let channels = probe::source_channels(original)
-                .await
-                .c(h!())?
-                .min(2)
-                .to_string();
-            command.args([
-                "-map",
-                "0:a:0",
-                "-vn",
-                "-c:a",
-                "libmp3lame",
-                "-q:a",
-                DEVICE_AUDIO_RENDITION_QUALITY,
-                "-ar",
-                DEVICE_AUDIO_RENDITION_RATE,
-                "-ac",
-                &channels,
-                "-f",
-                "mp3",
-            ]);
-        }
-        DeviceAudioRepresentation::Wave => {
-            command.args([
-                "-filter_complex",
-                DEVICE_AUDIO_WAVE_FILTER,
-                "-frames:v",
-                "1",
-                "-an",
-                "-f",
-                "image2",
-            ]);
-        }
-        DeviceAudioRepresentation::Spectrogram => {
-            command.args([
-                "-lavfi",
-                DEVICE_AUDIO_SPECTROGRAM_FILTER,
-                "-frames:v",
-                "1",
-                "-an",
-                "-f",
-                "image2",
-            ]);
-        }
-    }
-    command
-        .args(["-threads", DEVICE_AUDIO_FFMPEG_THREADS])
-        .arg(output)
-        .args([
-            "-map",
-            "0:a:0",
-            "-vn",
-            "-c:a",
-            "pcm_s16le",
-            "-threads",
-            DEVICE_AUDIO_FFMPEG_THREADS,
-            "-ar",
-            DEVICE_AUDIO_RENDITION_RATE,
-            "-f",
-            "framecrc",
-            "pipe:1",
-        ]);
-    Ok(command)
+) -> anyhow::Result<Rendition<'static>> {
+    Ok(match representation {
+        DeviceAudioRepresentation::Content => Rendition::Mp3 {
+            channels: probe::source_channels(original).await.c(h!())?.min(2),
+            quality: DEVICE_AUDIO_RENDITION_QUALITY.parse().c(h!())?,
+        },
+        DeviceAudioRepresentation::Wave => Rendition::Wave {
+            filter: DEVICE_AUDIO_WAVE_FILTER,
+        },
+        DeviceAudioRepresentation::Spectrogram => Rendition::Spectrogram {
+            filter: DEVICE_AUDIO_SPECTROGRAM_FILTER,
+        },
+    })
 }
 
 async fn validate_output(

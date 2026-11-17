@@ -334,7 +334,7 @@ where
         None => source::Entity::find().all(txn).await.context(h!())?,
         Some(_) => vec![],
     };
-    // Always include all encryption rows: the table has only 6 seeded entries and
+    // Always include all encryption rows: the table has a handful of seeded entries and
     // every migrated freq row references one of them, including unit-scoped exports.
     let encryption = encryption::Entity::find().all(txn).await.context(h!())?;
     let sigint_post =

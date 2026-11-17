@@ -11,13 +11,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse, JSONResponse, Response
+from starlette.datastructures import UploadFile
 
 from .dependencies import DependencyChecker
 from .job_queue import IdempotencyConflictError, Job, JobQueue, QueueFullError
 from .metrics import ServiceMetrics
-from .service_config import MULTIPART_OVERHEAD_BYTES, RuntimeConfig
+from .service_config import ADMISSION_RETRY_SECONDS, MULTIPART_OVERHEAD_BYTES, RuntimeConfig, ServiceSettings
 from .storage import (
     StoragePressureError,
     count_pages,
@@ -148,76 +149,44 @@ def create_app(config: RuntimeConfig, start_metrics: bool = False) -> FastAPI:
             )
         return JSONResponse({"status": "ready"})
 
-    @app.post("/v1/jobs", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(authenticate)])
+    @app.get("/v1/capacity", dependencies=[Depends(authenticate)])
+    async def capacity() -> JSONResponse:
+        available = queue.capacity()
+        headers = {"Cache-Control": "no-store"}
+        if not available["available"]:
+            headers["Retry-After"] = str(ADMISSION_RETRY_SECONDS)
+        return JSONResponse(available, headers=headers)
+
+    @app.post(
+        "/v1/jobs", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(authenticate)],
+        openapi_extra={"requestBody": {"required": True, "content": {"multipart/form-data": {"schema": {
+            "type": "object", "required": ["files"], "properties": {
+                "files": {"type": "array", "items": {"type": "string", "format": "binary"}},
+                "manifest": {"type": "string"},
+            },
+        }}}}},
+    )
     async def submit_job(
-        files: list[UploadFile] = File(...),
-        manifest: str | None = Form(default=None),
+        request: Request,
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> JSONResponse:
         if not idempotency_key or len(idempotency_key) > 200:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Idempotency-Key is required")
-        if not files:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "at least one file is required")
         try:
-            ensure_capacity(
-                service.spool_dir,
-                service.limits.max_spool_bytes,
-                service.limits.min_free_bytes,
-            )
-        except StoragePressureError as error:
-            raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, str(error)) from error
-        incoming = service.spool_dir / f".incoming-{uuid.uuid4()}"
-        incoming.mkdir(mode=0o700)
-        try:
-            names, digests, total_bytes = await _store_uploads(
-                files, incoming, service.limits.max_input_bytes
-            )
-            parsed_manifest = parse_manifest(manifest, names)
-            if parsed_manifest:
-                (incoming / "manifest.json").write_text(
-                    json.dumps(parsed_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-            native = bool(parsed_manifest and parsed_manifest.get("metadata", {}).get("attachment_native"))
-            total_pages = (
-                len(names) if native else sum(count_pages(incoming / "inputs" / name) for name in names)
-            )
-            if total_pages > service.limits.max_pages or len(names) > service.limits.max_pages:
-                raise ValueError("submission exceeds the 200 page/file limit")
-            ensure_capacity(
-                service.spool_dir,
-                service.limits.max_spool_bytes,
-                service.limits.min_free_bytes,
-            )
-            digest = request_digest(list(zip(names, digests, strict=True)), parsed_manifest)
-            job_id = str(uuid.uuid4())
-            final_dir = service.spool_dir / job_id
-            os.replace(incoming, final_dir)
-            try:
-                job, created = queue.submit(
-                    job_id,
-                    idempotency_key,
-                    digest,
-                    final_dir,
-                    total_bytes,
-                    total_pages,
-                )
-            except Exception:
-                remove_job_directory(service.spool_dir, job_id)
-                raise
-            if not created:
-                remove_job_directory(service.spool_dir, job_id)
-            metrics.update_queue(queue.counts())
-            return JSONResponse(status_code=202, content=_job_payload(job))
-        except IdempotencyConflictError as error:
-            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+            queue.ensure_submission_capacity(idempotency_key)
         except QueueFullError as error:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
-        except StoragePressureError as error:
-            raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, str(error)) from error
-        except ValueError as error:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
-        finally:
-            shutil.rmtree(incoming, ignore_errors=True)
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, str(error),
+                headers={"Retry-After": str(ADMISSION_RETRY_SECONDS)},
+            ) from error
+        async with request.form() as form:
+            files = form.getlist("files")
+            manifest = form.get("manifest")
+            if not files or any(not isinstance(file, UploadFile) for file in files):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "at least one file is required")
+            if manifest is not None and not isinstance(manifest, str):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "manifest must be text")
+            return await _submit_files(service, queue, metrics, files, manifest, idempotency_key)
 
     @app.get("/v1/jobs/{job_id}", dependencies=[Depends(authenticate)])
     async def get_job(job_id: str) -> dict[str, object]:
@@ -336,3 +305,76 @@ def _job_payload(job: Job | None) -> dict[str, object]:
         "quality_status": job.quality_status,
         "error_summary": job.error_summary,
     }
+
+
+async def _submit_files(
+    service: ServiceSettings,
+    queue: JobQueue,
+    metrics: ServiceMetrics,
+    files: list[UploadFile],
+    manifest: str | None,
+    idempotency_key: str,
+) -> JSONResponse:
+    try:
+        ensure_capacity(
+            service.spool_dir,
+            service.limits.max_spool_bytes,
+            service.limits.min_free_bytes,
+        )
+    except StoragePressureError as error:
+        raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, str(error)) from error
+    incoming = service.spool_dir / f".incoming-{uuid.uuid4()}"
+    incoming.mkdir(mode=0o700)
+    try:
+        names, digests, total_bytes = await _store_uploads(
+            files, incoming, service.limits.max_input_bytes
+        )
+        parsed_manifest = parse_manifest(manifest, names)
+        if parsed_manifest:
+            (incoming / "manifest.json").write_text(
+                json.dumps(parsed_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        native = bool(parsed_manifest and parsed_manifest.get("metadata", {}).get("attachment_native"))
+        total_pages = (
+            len(names) if native else sum(count_pages(incoming / "inputs" / name) for name in names)
+        )
+        if total_pages > service.limits.max_pages or len(names) > service.limits.max_pages:
+            raise ValueError("submission exceeds the 200 page/file limit")
+        ensure_capacity(
+            service.spool_dir,
+            service.limits.max_spool_bytes,
+            service.limits.min_free_bytes,
+        )
+        digest = request_digest(list(zip(names, digests, strict=True)), parsed_manifest)
+        job_id = str(uuid.uuid4())
+        final_dir = service.spool_dir / job_id
+        os.replace(incoming, final_dir)
+        try:
+            job, created = queue.submit(
+                job_id,
+                idempotency_key,
+                digest,
+                final_dir,
+                total_bytes,
+                total_pages,
+            )
+        except Exception:
+            remove_job_directory(service.spool_dir, job_id)
+            raise
+        if not created:
+            remove_job_directory(service.spool_dir, job_id)
+        metrics.update_queue(queue.counts())
+        return JSONResponse(status_code=202, content=_job_payload(job))
+    except IdempotencyConflictError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    except QueueFullError as error:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, str(error),
+            headers={"Retry-After": str(ADMISSION_RETRY_SECONDS)},
+        ) from error
+    except StoragePressureError as error:
+        raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    finally:
+        shutil.rmtree(incoming, ignore_errors=True)

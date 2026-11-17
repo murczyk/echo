@@ -27,6 +27,14 @@ type Props = {
   items: BulkDeleteDialogItem[];
   submitting: boolean;
   disabled?: boolean;
+  /** Disables only confirmation, keeping «Скасувати» available. */
+  confirmDisabled?: boolean;
+  /** Returns focus to the opening control; use when that control survives the dialog. */
+  restoreFocus?: boolean;
+  title?: string;
+  confirmLabel?: string;
+  /** Extra content after the item list, such as options or an error. */
+  children?: ReactNode;
 };
 
 export function BulkDeleteConfirmDialog({
@@ -38,6 +46,11 @@ export function BulkDeleteConfirmDialog({
   items,
   submitting,
   disabled = false,
+  confirmDisabled = false,
+  restoreFocus = false,
+  title = 'Підтвердження видалення',
+  confirmLabel = 'Видалити',
+  children,
 }: Props) {
   const blocked = submitting || disabled;
 
@@ -45,12 +58,12 @@ export function BulkDeleteConfirmDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      disableRestoreFocus
+      disableRestoreFocus={!restoreFocus}
       TransitionProps={onExited ? { onExited } : undefined}
       fullWidth
       maxWidth="sm"
     >
-      <DialogTitle>Підтвердження видалення</DialogTitle>
+      <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers sx={{ maxHeight: 420 }}>
         <DialogContentText sx={{ mb: 2 }}>{summaryText}</DialogContentText>
         <List dense disablePadding sx={{ maxHeight: 260, overflowY: 'auto' }}>
@@ -60,6 +73,7 @@ export function BulkDeleteConfirmDialog({
             </ListItem>
           ))}
         </List>
+        {children}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={blocked}>
@@ -69,10 +83,10 @@ export function BulkDeleteConfirmDialog({
           onClick={onConfirm}
           color="error"
           variant="contained"
-          disabled={blocked}
+          disabled={blocked || confirmDisabled}
           startIcon={submitting ? <CircularProgress color="inherit" size={16} /> : null}
         >
-          Видалити
+          {confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

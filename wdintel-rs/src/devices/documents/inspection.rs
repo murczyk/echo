@@ -1,5 +1,5 @@
 use super::{
-    queue::{self, Job},
+    queue::{self, Job, JobOutcome},
     types::*,
 };
 use crate::{
@@ -105,7 +105,10 @@ pub(crate) async fn status(
     }))
 }
 
-pub(super) async fn process(env: &Env, job: &Job) -> anyhow::Result<bool> {
+pub(super) async fn process(
+    env: &Env,
+    job: &Job,
+) -> anyhow::Result<JobOutcome> {
     let req: DeviceDocumentInspectionReq =
         serde_json::from_value(job.payload.clone())
             .or_else(|_| {
@@ -119,11 +122,17 @@ pub(super) async fn process(env: &Env, job: &Job) -> anyhow::Result<bool> {
         .c(h!())?
     {
         let source = super::extraction::source(env, job).await.c(h!())?;
-        let Some(mut package) = super::extraction::package(env, job, &source)
+        let mut package = match super::extraction::package(env, job, &source)
             .await
             .c(h!())?
-        else {
-            return Ok(false);
+        {
+            super::extraction::PackageOutcome::Ready(package) => package,
+            super::extraction::PackageOutcome::Pending => {
+                return Ok(JobOutcome::Pending)
+            }
+            super::extraction::PackageOutcome::Deferred(delay) => {
+                return Ok(JobOutcome::Deferred(delay))
+            }
         };
         package.sections.retain(|section| {
             req.member
@@ -177,5 +186,5 @@ pub(super) async fn process(env: &Env, job: &Job) -> anyhow::Result<bool> {
     .await
     .c(h!())?;
     tx.commit().await.c(h!())?;
-    Ok(true)
+    Ok(JobOutcome::Complete)
 }

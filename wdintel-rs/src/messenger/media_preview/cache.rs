@@ -109,19 +109,33 @@ impl Entry {
         try_lock(&self.root.join(format!("entry-{shard}.lock"))).await
     }
 
+    /// The published segment, opened without following symlinks: segments
+    /// are renamed in from a directory the sandboxed encoder can write, so
+    /// only a regular file is served.
     pub async fn cached_segment(
         &self,
         index: u32,
     ) -> Result<Option<actix_files::NamedFile>> {
-        match actix_files::NamedFile::open_async(
-            self.path(&format!("{index}.ts")),
-        )
-        .await
+        let path = self.path(&format!("{index}.ts"));
+        let file = match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(&path)
+            .await
         {
-            Ok(file) => Ok(Some(file)),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error).c(h!()),
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                return Ok(None)
+            }
+            Err(error) => return Err(error).c(h!()),
+        };
+        if !file.metadata().await.c(h!())?.is_file() {
+            bail!("cached video preview segment is not a regular file");
         }
+        let file = file.into_std().await;
+        actix_files::NamedFile::from_file(file, path)
+            .map(Some)
+            .c(h!())
     }
 
     pub async fn slot(&self) -> Result<Option<Lock>> {

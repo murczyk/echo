@@ -1,14 +1,19 @@
 import { Checkbox, FormControlLabel } from '@mui/material';
+import { BulkDeleteConfirmDialog } from '../../../components/BulkDeleteConfirmDialog';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { MRT_ROW_ACTION_MODAL_PROPS } from '../../../components/MrtRowActionButton';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { NetworkDescriptionDrawer } from './NetworkDescriptionDrawer';
 import { NetworkEditDrawer } from './NetworkEditDrawer';
 import { NetworkCallsignDrawer } from './NetworkCallsignDrawer';
+import { NETWORK_CALLSIGNS_SELECT_BUTTON_ID } from './NetworkCallsignsNetworkTable';
 import { NetworkFreqCreateDrawer } from './NetworkFreqCreateDrawer';
 import { NetworkFreqEditDrawer } from './NetworkFreqEditDrawer';
 import { NetworkEtalonkaReportDialog } from './NetworkEtalonkaReportDialog';
 import { formatClassicNetworkHeaderName } from '../use-rer-network-details-neo-page.shared';
+import { isCatalogDeletableNetworkCallsign } from '../use-rer-network-details-neo-page.callsign-bulk-actions';
+import { getNetworkCallsignStatus, getNetworkCallsignStatusLabel } from '../network-callsigns.rows';
+import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import type { useRerNetworkDetailsNeoPage } from '../use-rer-network-details-neo-page';
 
 type Page = ReturnType<typeof useRerNetworkDetailsNeoPage>;
@@ -100,6 +105,8 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
           <PowerAlert severity="error">{page.callsignDeleteError}</PowerAlert>
         ) : null}
       </ConfirmDangerDialog>
+
+      <NetworkCallsignBulkDeleteDialog page={page} />
 
       <NetworkDescriptionDrawer
         open={page.descriptionDrawerOpen}
@@ -204,5 +211,65 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onToDateTimeStrChange={page.setEtalonkaReportToDateTimeStr}
       />
     </>
+  );
+}
+
+/**
+ * Cancelling returns focus to «Видалити обрані»; after a delete that button is gone, so
+ * focus moves to «Вибрати» instead of being left on the page body.
+ */
+function focusSelectModeButtonIfFocusLost() {
+  if (document.activeElement !== null && document.activeElement !== document.body) return;
+  document.getElementById(NETWORK_CALLSIGNS_SELECT_BUTTON_ID)?.focus();
+}
+
+function NetworkCallsignBulkDeleteDialog({ page }: Props) {
+  const selectedCallsigns = page.callsignBulkDeleteTargets;
+  const catalogDeletableCount = selectedCallsigns.filter(isCatalogDeletableNetworkCallsign).length;
+
+  return (
+    <BulkDeleteConfirmDialog
+      open={page.callsignBulkDeleteDialogOpen}
+      onClose={page.closeCallsignBulkDeleteDialog}
+      onConfirm={page.deleteSelectedCallsigns}
+      onExited={() => {
+        page.resetCallsignBulkDeleteDialog();
+        focusSelectModeButtonIfFocusLost();
+      }}
+      restoreFocus
+      title="Відв'язати позивні"
+      summaryText={`Відв'язати від мережі позивних: ${selectedCallsigns.length}?`}
+      confirmLabel="Відв'язати"
+      items={selectedCallsigns.map((networkCallsign) => {
+        const statusLabel = getNetworkCallsignStatusLabel(
+          getNetworkCallsignStatus(networkCallsign),
+        );
+        const position = networkCallsign.position?.trim();
+        return {
+          id: networkCallsign.id,
+          primary: normalizeCallsignDisplay(networkCallsign.callsign),
+          secondary: position ? `${statusLabel} · ${position}` : statusLabel,
+        };
+      })}
+      submitting={page.callsignBulkDeleteSubmitting}
+      disabled={!page.canManageCallsignActions}
+      confirmDisabled={selectedCallsigns.length === 0}
+    >
+      {page.canDeleteCatalogCallsign && catalogDeletableCount > 0 ? (
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={page.callsignBulkDeleteAlsoFromCatalog}
+              onChange={(_, checked) => page.setCallsignBulkDeleteAlsoFromCatalog(checked)}
+              disabled={page.callsignBulkDeleteSubmitting}
+            />
+          }
+          label={`Видалити також з каталогу (${catalogDeletableCount})`}
+        />
+      ) : null}
+      {page.callsignBulkDeleteError ? (
+        <PowerAlert severity="error">{page.callsignBulkDeleteError}</PowerAlert>
+      ) : null}
+    </BulkDeleteConfirmDialog>
   );
 }

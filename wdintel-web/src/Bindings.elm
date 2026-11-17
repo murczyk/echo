@@ -13253,6 +13253,36 @@ addAsKnownNetworkCallsignReqEncoder struct =
         ]
 
 
+type alias DeleteNetworkCallsignsReq =
+    { networkId : Int
+    , ids : List (Int)
+    , alsoDeleteFromCatalog : Bool
+    }
+
+
+deleteNetworkCallsignsReqEncoder : DeleteNetworkCallsignsReq -> Json.Encode.Value
+deleteNetworkCallsignsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "ids", (Json.Encode.list (Json.Encode.int)) struct.ids )
+        , ( "also_delete_from_catalog", (Json.Encode.bool) struct.alsoDeleteFromCatalog )
+        ]
+
+
+type alias DeleteNetworkCallsignsRsp =
+    { deletedIds : List (Int)
+    , deletedCatalogCallsignIds : List (Int)
+    }
+
+
+deleteNetworkCallsignsRspEncoder : DeleteNetworkCallsignsRsp -> Json.Encode.Value
+deleteNetworkCallsignsRspEncoder struct =
+    Json.Encode.object
+        [ ( "deleted_ids", (Json.Encode.list (Json.Encode.int)) struct.deletedIds )
+        , ( "deleted_catalog_callsign_ids", (Json.Encode.list (Json.Encode.int)) struct.deletedCatalogCallsignIds )
+        ]
+
+
 type alias Callsign =
     { id : Int
     , callsign : String
@@ -16459,6 +16489,8 @@ type alias SystemSettingsItem =
     , messengerMediaCacheMinFreeGib : Int
     , signozMetricsEnabled : Bool
     , signozMetricsEndpoint : Maybe (String)
+    , mediaSandboxEnabled : Maybe (Bool)
+    , mediaSandboxError : Maybe (String)
     }
 
 
@@ -16516,6 +16548,8 @@ systemSettingsItemEncoder struct =
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         , ( "signoz_metrics_enabled", (Json.Encode.bool) struct.signozMetricsEnabled )
         , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
+        , ( "media_sandbox_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.mediaSandboxEnabled )
+        , ( "media_sandbox_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mediaSandboxError )
         ]
 
 
@@ -16578,6 +16612,7 @@ type alias CreateSystemSettingsReq =
     , messengerMediaCacheMinFreeGib : Int
     , signozMetricsEnabled : Maybe (Bool)
     , signozMetricsEndpoint : Maybe (String)
+    , mediaSandboxEnabled : Maybe (Bool)
     }
 
 
@@ -16630,6 +16665,7 @@ createSystemSettingsReqEncoder struct =
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         , ( "signoz_metrics_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.signozMetricsEnabled )
         , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
+        , ( "media_sandbox_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.mediaSandboxEnabled )
         ]
 
 
@@ -31045,6 +31081,21 @@ addAsKnownNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_ids" (Json.Decode.list (Json.Decode.int))))
 
 
+deleteNetworkCallsignsReqDecoder : Json.Decode.Decoder DeleteNetworkCallsignsReq
+deleteNetworkCallsignsReqDecoder =
+    Json.Decode.succeed DeleteNetworkCallsignsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "also_delete_from_catalog" (Json.Decode.bool)))
+
+
+deleteNetworkCallsignsRspDecoder : Json.Decode.Decoder DeleteNetworkCallsignsRsp
+deleteNetworkCallsignsRspDecoder =
+    Json.Decode.succeed DeleteNetworkCallsignsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_catalog_callsign_ids" (Json.Decode.list (Json.Decode.int))))
+
+
 callsignDecoder : Json.Decode.Decoder Callsign
 callsignDecoder =
     Json.Decode.succeed Callsign
@@ -33036,6 +33087,8 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_error" (Json.Decode.nullable (Json.Decode.string))))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -33093,6 +33146,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_sandbox_enabled" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

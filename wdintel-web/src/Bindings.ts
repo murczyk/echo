@@ -5131,6 +5131,17 @@ export type AddAsKnownNetworkCallsignReq = {
   knownCallsignIds: Array<number>;
 };
 
+export type DeleteNetworkCallsignsReq = {
+  networkId: number;
+  ids: Array<number>;
+  alsoDeleteFromCatalog: boolean;
+};
+
+export type DeleteNetworkCallsignsRsp = {
+  deletedIds: Array<number>;
+  deletedCatalogCallsignIds: Array<number>;
+};
+
 export type Callsign = {
   id: number;
   callsign: string;
@@ -6415,6 +6426,8 @@ export type SystemSettingsItem = {
   messengerMediaCacheMinFreeGib: number;
   signozMetricsEnabled: boolean;
   signozMetricsEndpoint: string | null;
+  mediaSandboxEnabled: boolean | null;
+  mediaSandboxError: string | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -6468,6 +6481,7 @@ export type CreateSystemSettingsReq = {
   messengerMediaCacheMinFreeGib: number;
   signozMetricsEnabled: boolean | null;
   signozMetricsEndpoint: string | null;
+  mediaSandboxEnabled: boolean | null;
 };
 
 export type ActivateSystemSettingsReq = {

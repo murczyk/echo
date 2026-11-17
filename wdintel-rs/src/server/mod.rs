@@ -485,6 +485,7 @@ async fn init_runtime_env(
     crate::migration::run_migration_1(mode).await.c(h!())?;
     crate::use_pg_runtime_pool(role);
     let env = new_env(mode).await.c(h!())?;
+    crate::media_sandbox::init(&env.dbx).await.c(h!())?;
     if let Some(file_registry_db) = &env.file_registry_db {
         crate::devices::analytics::initialize_definition(
             file_registry_db.connection(),
@@ -993,6 +994,7 @@ fn spawn_background_workers(
     }
 
     if env.file_registry_db.is_some() {
+        let admission = crate::devices::documents::worker::shared_admission();
         for (name, kind) in [
             ("device_document_worker", "extract"),
             ("device_document_summary_worker", "summary"),
@@ -1001,11 +1003,13 @@ fn spawn_background_workers(
         ] {
             let attachment_env = env.clone();
             let attachment_cancel = cancel_token.clone();
+            let admission = admission.clone();
             spawn_named_worker(name, bg_set, async move {
                 crate::devices::documents::worker::run(
                     attachment_env,
                     attachment_cancel,
                     kind,
+                    admission,
                 )
                 .await;
             });
@@ -1857,6 +1861,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::callsign::network_callsign::add_as_known_network_callsigns)
             .service(crate::sigint::callsign::network_callsign::create_network_callsign)
             .service(crate::sigint::callsign::network_callsign::delete_network_callsign)
+            .service(crate::sigint::callsign::network_callsign::delete_network_callsigns)
             .service(crate::sigint::callsign::network_callsign::list_network_callsigns)
             .service(crate::sigint::callsign::network_callsign::network_callsigns_activity)
             .service(crate::sigint::callsign::network_callsign::update_network_callsign)
