@@ -41,7 +41,7 @@ export type GalleryDataSource = {
 export const GALLERY_FIRST_PAGE_SIZE = 40;
 export const GALLERY_PAGE_SIZE = 100;
 
-// The Telegram media types of each tab (kontur's rules: a video note is a video, a voice message is audio). All the types of a
+// The Telegram media types of each tab (the collector's rules: a video note is a video, a voice message is audio). All the types of a
 // tab go in one request, so a page is never short of the tab's items. `document` is only what Telegram calls a document: the
 // filter has no "everything else", so a type that is in no tab (an animation, say) is not shown at all.
 export const GALLERY_TAB_TELEGRAM_TYPES: Record<GalleryTab, string[]> = {

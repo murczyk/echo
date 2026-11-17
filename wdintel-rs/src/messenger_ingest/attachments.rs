@@ -536,6 +536,7 @@ mod tests {
                     members_count: None,
                     account_member_status: None,
                     last_message_date: None,
+                    is_bot: None,
                     telegram: is_telegram.then(|| {
                         MessengerIngestTelegramChatId {
                             chat_id: "-1001".to_string(),

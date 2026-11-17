@@ -442,6 +442,7 @@ type MessengerIngestChatInput = {
   members_count: number | null
   account_member_status: string | null  // the account's membership in the chat
   last_message_date: number | null      // epoch ms
+  is_bot: boolean | null                // a dialog with a bot
   telegram: MessengerIngestTelegramChatId | null
 }
 ```
@@ -1148,8 +1149,9 @@ uploaded once with TUS (see [TUS uploads](#tus-uploads)), then recorded on
 its owner by one submit endpoint per owner type. Each request carries one
 avatar for one owner. Every avatar is kept: an owner has a history of avatars
 and at most one **current** avatar, which the submit attaches to the owner.
-Avatars are stored only; they are not shown in Echo yet and do not enter the
-media pipeline (no previews, OCR or transcription). The sync endpoints
+The current avatar is shown through the viewer API (`avatar_id`, see
+[Messengers API](MESSENGERS_API.md#avatars)); avatars do not enter the media
+pipeline (no previews, OCR or transcription). The sync endpoints
 neither accept nor return avatars.
 
 | Route | Owner | Request |

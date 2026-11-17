@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { MessengerAccountList } from '../MessengerAccountList';
+import { MessengerAccountAvatar, MessengerAccountList } from '../MessengerAccountList';
 
 describe('MessengerAccountList', () => {
   let container: HTMLDivElement;
@@ -20,6 +20,28 @@ describe('MessengerAccountList', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it('shows the avatar image, and the initials once the image fails to load', () => {
+    act(() =>
+      root.render(
+        <MessengerAccountAvatar
+          account={{
+            id: '1',
+            name: 'Ivan Petrenko',
+            phone: '',
+            avatarId: 'a1',
+          }}
+        />,
+      ),
+    );
+    const image = container.querySelector('img')!;
+    expect(image.getAttribute('src')).toBe('/api/messengers/avatars/a1');
+    act(() => {
+      image.dispatchEvent(new Event('error'));
+    });
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toBe('IP');
   });
 
   it('does not hide accounts for a whitespace-only query', () => {

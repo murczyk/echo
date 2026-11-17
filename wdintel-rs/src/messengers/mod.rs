@@ -1,6 +1,7 @@
 pub mod access;
 pub mod accounts;
 pub mod attachments;
+pub mod avatars;
 pub mod chats;
 pub mod contacts;
 pub mod members;
@@ -25,8 +26,9 @@ use crate::messengers::types::{
     MessengersMessagesListRsp,
 };
 use crate::types::{Env, ShortContext};
-use actix_web::post;
-use actix_web::web::{Data, Json};
+use actix_web::web::{Data, Json, Path};
+use actix_web::{get, post, HttpResponse};
+use uuid::Uuid;
 
 // Routes of the messengers viewer API, `/api/messengers`. Handlers
 // only gate access and delegate to the per-entity modules.
@@ -118,6 +120,16 @@ pub async fn chat_members_list(
         .await
         .c(h!())?;
     Ok(Json(rsp))
+}
+
+#[get("/api/messengers/avatars/{avatar_id}")]
+pub async fn avatar_get(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    path: Path<(Uuid,)>,
+) -> Result<HttpResponse, AppError> {
+    let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
+    avatars::serve_avatar(&env, &scope, path.0).await
 }
 
 #[post("/api/messengers/contacts/list")]

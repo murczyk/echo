@@ -10,11 +10,9 @@ import { toErrorMessage } from './use-analysis-data.shared';
 
 export type MessengerChatSection = 'private' | 'group' | 'channel' | 'bot';
 
-// TODO: `isBot` is optional until the backend sends it (Bindings.ts is generated, so it is added here);
-// then drop this type, use MessengersChatItem and make the flag required.
-export type MessengerChat = MessengersChatItem & { isBot?: boolean | null };
+export type MessengerChat = MessengersChatItem;
 
-// Bots are PRIVATE chats flagged `isBot`, as in kontur. `chat_type` is free text, so unknown values land in groups.
+// Bots are PRIVATE chats flagged `isBot`, as in the collector. `chat_type` is free text, so unknown values land in groups.
 export function chatSectionOf(chat: MessengerChat): MessengerChatSection {
   switch (chat.chatType?.toLowerCase()) {
     case 'private':

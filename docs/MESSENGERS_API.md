@@ -25,6 +25,7 @@ are removed from the RER inbox and analysis feeds; see
 | `POST /chats/mark-all-read` | Implemented | `MessengersChatsMarkAllReadReq` | `null` |
 | `POST /chats/members/list` | Implemented | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
 | `POST /contacts/list` | Implemented | `MessengersContactsListReq` | `MessengersContactsListRsp` |
+| `GET /avatars/{avatar_id}` | Implemented | none | the image or video |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 | `POST /attachments/list` | Implemented | `MessengersAttachmentsListReq` | `MessengersAttachmentsListRsp` |
 | `POST /attachments/count` | Implemented | `MessengersAttachmentsCountsReq` | `MessengersAttachmentsCountsRsp` |
@@ -121,6 +122,7 @@ type MessengersAccountItem = {
   notes: string | null                  // from the collector
   internal_notes: string | null         // written by Echo users
   external_url: string | null           // absolute http(s) URL of the account's page in the collector
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { user_id: string } | null
   datasource_group: MessengersDatasourceGroup
 }
@@ -160,6 +162,7 @@ Example response:
       "notes": null,
       "internal_notes": "Перевірити зв'язок з чатом 9001",
       "external_url": "https://example.com/accounts/17",
+      "avatar_id": "0199e3a3-2f4a-7b5c-8d6e-9f0a1b2c3d4e",
       "telegram": { "user_id": "7012345678" },
       "datasource_group": {
         "id": 4182,
@@ -220,6 +223,8 @@ type MessengersChatItem = {
   members_count: number | null
   account_member_status: string | null  // the account's membership in the chat
   last_message_date: number | null      // epoch ms
+  is_bot: boolean | null                // a dialog with a bot; null until the collector says
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { chat_id: string } | null
   oldest_read_at: number | null         // epoch ms, the caller's read span; null until read
   newest_read_at: number | null         // epoch ms
@@ -257,6 +262,7 @@ type MessengersChatMemberItem = {
   role: string | null                   // creator, admin, member, ...
   joined_date: number | null            // epoch ms
   deleted: boolean
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { user_id: string } | null
 }
 ```
@@ -393,7 +399,7 @@ contacts, so unlike chat members, deleted contacts are left out.
 type MessengersContactsListReq = {
   account_id: string
   page: number | null                   // from 1, default 1
-  limit: number | null                  // default 50, at most 100
+  limit: number | null                  // default 100, at most 250
 }
 
 type MessengersContactsListRsp = {
@@ -414,6 +420,8 @@ type MessengersContactItem = {
   is_mutual: boolean | null
   is_close_friend: boolean | null
   created_at: number                    // epoch ms, when Echo first stored it
+  updated_at: number                    // epoch ms, when Echo last changed it
+  avatar_id: string | null              // current avatar, see Avatars
   telegram: { user_id: string } | null
 }
 ```
@@ -423,6 +431,28 @@ type MessengersContactItem = {
   contact can repeat or be skipped.
 - `created_at` is not when the contact joined the address book, which collectors
   do not send. A contact restored after deletion keeps its original value.
+
+## Avatars
+
+Accounts, chats, chat members and contacts carry `avatar_id`: the Echo uuid of
+their current avatar, or `null` when the owner has none or it was removed. The
+client loads it from `/api/messengers/avatars/{avatar_id}`. The avatar id
+changes with the avatar, so one id always names the same image or video.
+
+### `GET /avatars/{avatar_id}`
+
+The content of the avatar, with the `Content-Type` it was stored with (an
+image or a video; animated avatars are videos). Visible to the logins that can
+see the account that owns it, directly or through its chat, member or contact;
+an unknown avatar or one of an account outside the caller's groups is a `404`.
+
+- Not a JSON route and not ranged: the body is the whole file, at most 20 MiB.
+- `Cache-Control: private, no-store`, as for messenger media: the browser
+  keeps no copy.
+- Avatars that are not the owner's current one (its history) are served too,
+  but nothing links to them yet.
+- Served with the sandboxing headers of the media route, since the file comes
+  from the messenger.
 
 ## Messages
 
@@ -734,8 +764,3 @@ Unchanged on purpose:
 Optional fields on the same request bodies, starting with `messages/list`.
 `sigint_search.id` equals `sigint_chat_message.id`, so text search joins the
 timeline directly and the message cursor stays the same.
-
-### Avatars
-
-`avatar_url` on accounts, chats, members and contacts, and a route that serves
-`messenger_avatar` content behind a group check. No such route exists yet.

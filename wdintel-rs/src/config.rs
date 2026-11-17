@@ -977,6 +977,8 @@ pub const MESSENGERS_ATTACHMENTS_DEFAULT_LIMIT: i64 = 50;
 pub const MESSENGERS_ATTACHMENTS_MAX_LIMIT: i64 = 100;
 pub const MESSENGERS_CONTACTS_DEFAULT_LIMIT: i64 = 100;
 pub const MESSENGERS_CONTACTS_MAX_LIMIT: i64 = 250;
+/// Avatars follow the messenger media policy: the browser keeps no copy.
+pub const MESSENGERS_AVATAR_CACHE_CONTROL: &str = "private, no-store";
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 /// Master keys of messenger account groups are this prefix plus the account id.

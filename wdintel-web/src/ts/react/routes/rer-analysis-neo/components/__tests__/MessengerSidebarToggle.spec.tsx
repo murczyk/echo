@@ -514,11 +514,12 @@ describe('the account sidebar of the messenger workspace', () => {
       const info = full()
         .querySelector('[data-messenger-username]')!
         .closest('.flex.items-center')!;
-      expect(info.className).toContain('px-4');
+      // (`!`: Bootstrap's `.px-4` is `!important` and 1.5 rem, and would beat a plain `px-4`.)
+      expect(info.className).toContain('!px-4');
       expect(
-        full().querySelector('input[aria-label="Пошук чату"]')!.closest('.px-4'),
+        full().querySelector('input[aria-label="Пошук чату"]')!.closest('[class~="!px-4"]'),
       ).not.toBeNull();
-      expect(full().querySelector('[data-messenger-unread-row]')!.className).toContain('px-4');
+      expect(full().querySelector('[data-messenger-unread-row]')!.className).toContain('!px-4');
       // ... and so do the contents of the rows that light up, which are themselves inset, so a lit row does not touch the border.
       const nav = full().querySelector('nav')!;
       expect(nav.className).toContain('px-2');
@@ -529,7 +530,9 @@ describe('the account sidebar of the messenger workspace', () => {
       );
       const list = full().querySelector('section ul')!;
       expect(list.className).toContain('px-2');
-      expect(list.querySelector('[data-messenger-chat]')!.className).toContain('!px-2');
+      expect(list.querySelector('[data-messenger-chat]')!.className).toContain(
+        '!px-[calc(0.5rem_-_1px)]',
+      );
     });
 
     it('leaves room under the last row of a kind of chat and under an empty one, before the next line', async () => {
@@ -909,7 +912,9 @@ describe('the account sidebar of the messenger workspace', () => {
         .closest('.flex.items-center')!;
       expect(info.querySelector('button[aria-label="Згорнути панель акаунту"]')).toBeNull();
       // It sits in the row above, not by the search.
-      const search = full().querySelector('input[aria-label="Пошук чату"]')!.closest('.px-4')!;
+      const search = full()
+        .querySelector('input[aria-label="Пошук чату"]')!
+        .closest('[class~="!px-4"]')!;
       expect(search.querySelector('button[aria-label="Згорнути панель акаунту"]')).toBeNull();
     });
   });

@@ -2641,6 +2641,7 @@ type alias MessengersAccountItem =
     , notes : Maybe (String)
     , internalNotes : Maybe (String)
     , externalUrl : Maybe (String)
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     , datasourceGroup : MessengersDatasourceGroup
     }
@@ -2667,6 +2668,7 @@ messengersAccountItemEncoder struct =
         , ( "notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.notes )
         , ( "internal_notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.internalNotes )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         , ( "datasource_group", (messengersDatasourceGroupEncoder) struct.datasourceGroup )
         ]
@@ -2732,6 +2734,8 @@ type alias MessengersChatItem =
     , membersCount : Maybe (Int)
     , accountMemberStatus : Maybe (String)
     , lastMessageDate : Maybe (Int)
+    , isBot : Maybe (Bool)
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramChatId)
     , oldestReadAt : Maybe (Int)
     , newestReadAt : Maybe (Int)
@@ -2752,6 +2756,8 @@ messengersChatItemEncoder struct =
         , ( "members_count", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.membersCount )
         , ( "account_member_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.accountMemberStatus )
         , ( "last_message_date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastMessageDate )
+        , ( "is_bot", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isBot )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramChatIdEncoder)) struct.telegram )
         , ( "oldest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.oldestReadAt )
         , ( "newest_read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.newestReadAt )
@@ -2858,6 +2864,7 @@ type alias MessengersChatMemberItem =
     , role : Maybe (String)
     , joinedDate : Maybe (Int)
     , deleted : Bool
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     }
 
@@ -2876,6 +2883,7 @@ messengersChatMemberItemEncoder struct =
         , ( "role", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.role )
         , ( "joined_date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.joinedDate )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         ]
 
@@ -2920,6 +2928,7 @@ type alias MessengersContactItem =
     , isCloseFriend : Maybe (Bool)
     , createdAt : Int
     , updatedAt : Int
+    , avatarId : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     }
 
@@ -2938,6 +2947,7 @@ messengersContactItemEncoder struct =
         , ( "is_close_friend", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isCloseFriend )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        , ( "avatar_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.avatarId )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         ]
 
@@ -24454,6 +24464,7 @@ messengersAccountItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "notes" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "internal_notes" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_group" (messengersDatasourceGroupDecoder)))
 
@@ -24495,6 +24506,8 @@ messengersChatItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "members_count" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_member_status" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_message_date" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_bot" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramChatIdDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_read_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_read_at" (Json.Decode.nullable (Json.Decode.int))))
@@ -24559,6 +24572,7 @@ messengersChatMemberItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "joined_date" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
 
 
@@ -24590,6 +24604,7 @@ messengersContactItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_close_friend" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "avatar_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
 
 

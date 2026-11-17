@@ -1029,6 +1029,7 @@ export type MessengersAccountItem = {
   notes: string | null;
   internalNotes: string | null;
   externalUrl: string | null;
+  avatarId: string | null;
   telegram: MessengersTelegramAccountId | null;
   datasourceGroup: MessengersDatasourceGroup;
 };
@@ -1060,6 +1061,8 @@ export type MessengersChatItem = {
   membersCount: number | null;
   accountMemberStatus: string | null;
   lastMessageDate: number | null;
+  isBot: boolean | null;
+  avatarId: string | null;
   telegram: MessengersTelegramChatId | null;
   oldestReadAt: number | null;
   newestReadAt: number | null;
@@ -1110,6 +1113,7 @@ export type MessengersChatMemberItem = {
   role: string | null;
   joinedDate: number | null;
   deleted: boolean;
+  avatarId: string | null;
   telegram: MessengersTelegramAccountId | null;
 };
 
@@ -1135,6 +1139,7 @@ export type MessengersContactItem = {
   isCloseFriend: boolean | null;
   createdAt: number;
   updatedAt: number;
+  avatarId: string | null;
   telegram: MessengersTelegramAccountId | null;
 };
 
