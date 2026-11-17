@@ -22,17 +22,26 @@ class SpoolStorage:
         self.path = path
         self._lock = asyncio.Lock()
         self._sample: tuple[int, int] | None = None
-        self._measured_at = 0.0
+        self._started_at = 0.0
+        self._completed_at = 0.0
 
     async def usage(self, max_age: float = 0.0) -> tuple[int, int]:
-        earliest = time.monotonic() - max_age
+        requested = time.monotonic()
         async with self._lock:
-            if self._sample is None or self._measured_at < earliest:
+            if self._sample is None or not self._is_fresh(requested, max_age):
                 started = time.monotonic()
                 sample = await asyncio.to_thread(self._measure)
                 self._sample = sample
-                self._measured_at = started
+                self._started_at = started
+                self._completed_at = time.monotonic()
             return self._sample
+
+    def _is_fresh(self, requested: float, max_age: float) -> bool:
+        # Strict callers need a scan that began after they asked; cached callers may
+        # reuse one that finished within max_age, even if the scan itself was slow.
+        if max_age <= 0:
+            return self._started_at >= requested
+        return self._completed_at >= time.monotonic() - max_age
 
     def _measure(self) -> tuple[int, int]:
         self.path.mkdir(mode=0o700, parents=True, exist_ok=True)
