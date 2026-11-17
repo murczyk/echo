@@ -439,6 +439,54 @@ The PostgreSQL unit-match breakdown reads only the requested filtered counts,
 without discarded overall totals. Requests without a unit-name filter reuse one
 count; aggregate-cache reads and recovery-conflict retries remain available.
 
+## Duty analytics search ID arrays (#3571)
+
+Duty analytics pages and counts materialize fuzzy body, document, filename and
+audio matches as distinct message-ID arrays before applying membership. This
+keeps the membership predicate independent of the outer gateway join. Every
+source in an array carries the same message-ID range as the outer query;
+otherwise each chunk would collect matching IDs from the entire history.
+Quoted, Exact and Substring searches keep their direct body predicate and apply
+the same range to attachment/audio ID arrays. Closed ranges retain both bounds;
+the last range of a recent scope retains only its lower bound so arriving
+messages remain eligible. Current document revisions, authorization, creation
+time, and cursor ordering remain authoritative.
+
+The functional regression
+`wdintel-rs/src/rer_importer/analysis/tests.rs` covers pages and counts across
+multiple chunks, all search modes, mixed sources and exclusions, and a message
+whose event time predates its creation-time window. Attachment reconciliation
+coverage in `wdintel-rs/src/attachments/tests/scoped.rs` checks pages and counts
+against a stale snapshot after a filename rename and removal of group access,
+including searches for both the former and current filename. The existing
+coverage check must reject analytics when either source or snapshot membership
+is affected; these changes do not bypass that PostgreSQL fallback. Once neither
+state can match (the new filename after access removal), empty analytics pages
+and counts remain allowed, as does ordinary source fallback when analytics
+cannot resolve a message-ID scope.
+
+On 2026-11-17, a local PostgreSQL 14 synthetic check used 38.8 million indexed
+bigint IDs, a half-matching predicate, 32 MB work memory, no parallel workers,
+and a 180-second statement timeout. `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
+SUMMARY ON)` of array cardinality showed an unbounded sequential scan collecting
+19.4 million IDs in 2,010 ms (171,682 local blocks read). Bounding the source to
+IDs 32,000,001–36,000,000 produced an index-only scan with both bounds in
+`Index Cond`, collecting two million IDs in 598 ms (28,634 local blocks read,
+four million heap fetches). The bigint payload alone shrinks from approximately
+148 MiB to 15 MiB; this is a size calculation, not measured backend peak memory.
+This isolates array materialization and range access, not full-text selectivity
+or the actual pg_clickhouse plan.
+
+No migration, reconciliation command, backfill, resnapshot or configuration
+change is required. Keep normal schema reconciliation, freshness and attachment
+change tracking enabled. Before rollout, inspect the actual prepared gateway
+plans for body, OR, negation and quoted searches: verify source range predicates,
+membership, ordering and limits are pushed down as intended. Compare broad and
+selective scopes, pages and counts, and concurrent gateway/native memory under
+the existing limits. Production performance remains a canary gate; a four-million
+ID chunk still permits a large array per term and concurrent requests multiply
+that cost. Deployment and real-environment mutations require separate approval.
+
 ## Analysis search modes
 
 `search_mode` is optional on analysis, inbox, and callsign-graph requests.

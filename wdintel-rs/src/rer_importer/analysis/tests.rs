@@ -3277,6 +3277,208 @@ async fn indexed_fuzzy_inbox_pages_preserve_full_period_matches_3780() {
     }
 }
 
+#[tokio::test]
+#[serial]
+async fn analytics_search_pages_and_counts_3571() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap().id;
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    seed_search_pagination_messages(&fixture, &login, tag.id).await;
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 3, 1, 10, 0);
+    seed_fresh_tail_search_messages_3780(&fixture, [unit.id, unit.id], date)
+        .await;
+    seed_full_period_audio_search_3780(&fixture, date).await;
+    seed_search_chunk_boundary_3571(&fixture, date).await;
+    for (group, datetime) in [
+        (&fixture.secret_hidden, date),
+        (&fixture.alpha, date - chrono::Duration::days(16)),
+    ] {
+        mk_analysis_message(
+            db,
+            "Береза",
+            "155.2750",
+            datetime,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    db.execute_unprepared(
+        r#"
+        CREATE TABLE IF NOT EXISTS public.echo_analytics_attachment_search (
+            singleton boolean PRIMARY KEY CHECK(singleton),
+            started_at timestamp NOT NULL,
+            history_complete boolean NOT NULL DEFAULT false
+        );
+        INSERT INTO public.echo_analytics_attachment_search
+        VALUES (true, now() AT TIME ZONE 'UTC', true)
+        ON CONFLICT (singleton) DO UPDATE SET history_complete = true;
+        UPDATE attachment_search_change
+        SET tracked_from = (now() AT TIME ZONE 'UTC') - interval '1 day';
+        DELETE FROM attachment_search_message_change;
+        "#,
+    )
+    .await
+    .unwrap();
+    for search_mode in [
+        AnalysisSearchMode::Fuzzy,
+        AnalysisSearchMode::Exact,
+        AnalysisSearchMode::Substring,
+    ] {
+        for (search, count) in [
+            ("Береза", 32),
+            ("Береза or Вільха", 33),
+            ("Береза вкладення", 1),
+            ("Береза -Вільха", 30),
+            ("\"зміна позиції\"", 1),
+            ("-\"Береза\"", 1),
+            ("absent3571", 0),
+        ] {
+            let req = InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 16, 0, 0).and_utc().timestamp_millis(),
+                ),
+                selected_freqs: Some(vec!["155.2750".into()]),
+                search: Some(search.into()),
+                search_mode: Some(search_mode),
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                ..Default::default()
+            };
+            assert_unit_id_digest_3780(&fixture, login, &req, count).await;
+            assert_analytics_search_pages_3571(&fixture, login, &req).await;
+        }
+    }
+    let req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(
+            test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+        ),
+        search: Some("Береза".into()),
+        sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+        ..Default::default()
+    };
+    assert_unit_id_digest_3780(&fixture, login, &req, 32).await;
+    assert_analytics_search_pages_3571(&fixture, login, &req).await;
+    db.execute_unprepared(
+        "DELETE FROM public.echo_analytics_attachment_search",
+    )
+    .await
+    .unwrap();
+}
+
+async fn seed_search_chunk_boundary_3571(
+    fixture: &RerAnalysisFixture,
+    date: NaiveDateTime,
+) {
+    let db = &fixture.env.dbx;
+    let last_id = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .order_by_desc(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let message = mk_signal_message(
+        db,
+        signal_message::ActiveModel {
+            id: Set(
+                last_id + crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE
+            ),
+            body: Set(Some("Береза boundary".into())),
+            created_at: Set(date),
+            timestamp: Set(Some(date - chrono::Duration::days(30))),
+            datasource_group_id: Set(Some(fixture.alpha.datasource_group.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_inbox_item(
+        db,
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            freq: Set(Some("155.2750".into())),
+            date: Set(Some(
+                (date - chrono::Duration::days(30)).date().to_string(),
+            )),
+            body_noheader: Set(Some(
+                serde_json::json!({"body": "Береза boundary"}),
+            )),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    crate::sigint::worker::incoming_message_after_insert(db, message.id)
+        .await
+        .unwrap();
+    mk_signal_message_group(
+        db,
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(
+                fixture.alpha.signal_group.master_key.clone(),
+            )),
+            datasource_group_id: Set(Some(fixture.alpha.datasource_group.id)),
+            created_at: Set(date),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+}
+
+async fn assert_analytics_search_pages_3571(
+    fixture: &RerAnalysisFixture,
+    login: uuid::Uuid,
+    req: &InboxMessagesReq,
+) {
+    let sql =
+        crate::rer_importer::inbox::query::build_analytics_inbox_digest_query(
+            &login,
+            &fixture.env,
+            req,
+            &fixture.env.dbx,
+            90_000,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(sql.contains("signal_message.id=any(array("), "{sql}");
+    for newest_first in [false, true] {
+        let mut req = InboxMessagesReq {
+            newest_first: Some(newest_first),
+            ..req.clone()
+        };
+        for _ in 0..3 {
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &fixture.env.dbx, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected, "{req:?}");
+            if expected.is_empty() {
+                break;
+            }
+            if newest_first {
+                req.before_id_noninclusive = expected.last().copied();
+            } else {
+                req.since_id_noninclusive = expected.last().copied();
+            }
+        }
+    }
+}
+
 async fn seed_fresh_tail_search_messages_3780(
     fixture: &RerAnalysisFixture,
     unit_ids: [i64; 2],
