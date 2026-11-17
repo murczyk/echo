@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import shutil
+import time
 import uuid
 from pathlib import Path, PurePosixPath
 
@@ -13,6 +15,32 @@ from .pipeline import InputManifest
 
 class StoragePressureError(RuntimeError):
     pass
+
+
+class SpoolStorage:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._lock = asyncio.Lock()
+        self._sample: tuple[int, int] | None = None
+        self._measured_at = 0.0
+
+    async def usage(self, max_age: float = 0.0) -> tuple[int, int]:
+        earliest = time.monotonic() - max_age
+        async with self._lock:
+            if self._sample is None or self._measured_at < earliest:
+                started = time.monotonic()
+                sample = await asyncio.to_thread(self._measure)
+                self._sample = sample
+                self._measured_at = started
+            return self._sample
+
+    def _measure(self) -> tuple[int, int]:
+        self.path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return directory_size(self.path), shutil.disk_usage(self.path).free
+
+    async def ensure_capacity(self, max_bytes: int, min_free_bytes: int) -> None:
+        used, free = await self.usage()
+        _check_capacity(used, free, max_bytes, min_free_bytes)
 
 
 def safe_upload_name(value: str | None) -> str:
@@ -79,11 +107,15 @@ def ensure_capacity(spool_dir: Path, max_bytes: int, min_free_bytes: int) -> tup
     spool_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     used = directory_size(spool_dir)
     free = shutil.disk_usage(spool_dir).free
+    _check_capacity(used, free, max_bytes, min_free_bytes)
+    return used, free
+
+
+def _check_capacity(used: int, free: int, max_bytes: int, min_free_bytes: int) -> None:
     if used >= max_bytes:
         raise StoragePressureError("spool capacity limit reached")
     if free < min_free_bytes:
         raise StoragePressureError("spool filesystem free-space floor reached")
-    return used, free
 
 
 def remove_job_directory(spool_dir: Path, job_id: str) -> None:
