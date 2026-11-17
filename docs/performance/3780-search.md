@@ -439,15 +439,21 @@ The PostgreSQL unit-match breakdown reads only the requested filtered counts,
 without discarded overall totals. Requests without a unit-name filter reuse one
 count; aggregate-cache reads and recovery-conflict retries remain available.
 
-## Duty analytics search ID arrays (#3571)
+## Duty analytics search membership (#3571, #3751)
 
-Duty analytics pages and counts materialize fuzzy body, document, filename and
-audio matches as distinct message-ID arrays before applying membership. This
-keeps the membership predicate independent of the outer gateway join. Every
-source in an array carries the same message-ID range as the outer query;
+Duty analytics pages and counts use a separate `IN (SELECT ...)` set for fuzzy
+body, document, filename and audio matches, combined with `OR`. The gateway
+pushes these independent subqueries into ClickHouse without serializing their
+union as a scalar array. ClickHouse rejects scalar arrays with more than one
+million elements; a four-million-ID range can exceed that limit even when every
+source is bounded. Splitting the sources preserves complete membership without
+truncating matches or changing the page/count chunk size.
+
+Every source set carries the same message-ID range as the outer query;
 otherwise each chunk would collect matching IDs from the entire history.
-Quoted, Exact and Substring searches keep their direct body predicate and apply
-the same range to attachment/audio ID arrays. Closed ranges retain both bounds;
+Quoted, Exact and Substring predicates keep their direct body checks and use
+the same attachment/audio sets when built for analytics. Their source routing
+and PostgreSQL's literal-search array strategy are unchanged. Closed ranges retain both bounds;
 the last range of a recent scope retains only its lower bound so arriving
 messages remain eligible. Current document revisions, authorization, creation
 time, and cursor ordering remain authoritative.
@@ -465,8 +471,9 @@ state can match (the new filename after access removal), empty analytics pages
 and counts remain allowed, as does ordinary source fallback when analytics
 cannot resolve a message-ID scope.
 
-On 2026-11-17, a local PostgreSQL 14 synthetic check used 38.8 million indexed
-bigint IDs, a half-matching predicate, 32 MB work memory, no parallel workers,
+The previous scalar-array implementation was checked locally on 2026-11-17
+using PostgreSQL 14 with 38.8 million indexed bigint IDs, a half-matching
+predicate, 32 MB work memory, no parallel workers,
 and a 180-second statement timeout. `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
 SUMMARY ON)` of array cardinality showed an unbounded sequential scan collecting
 19.4 million IDs in 2,010 ms (171,682 local blocks read). Bounding the source to
@@ -483,9 +490,9 @@ change tracking enabled. Before rollout, inspect the actual prepared gateway
 plans for body, OR, negation and quoted searches: verify source range predicates,
 membership, ordering and limits are pushed down as intended. Compare broad and
 selective scopes, pages and counts, and concurrent gateway/native memory under
-the existing limits. Production performance remains a canary gate; a four-million
-ID chunk still permits a large array per term and concurrent requests multiply
-that cost. Deployment and real-environment mutations require separate approval.
+the existing limits. Production performance remains a canary gate; native sets
+still consume memory and concurrent requests multiply that cost. Deployment and
+real-environment mutations require separate approval.
 
 ## Analysis search modes
 
