@@ -302,11 +302,14 @@ export function useMessengerChat(args: Args) {
     }
   }, [jumpingToEnd, loadNewestPage, page]);
 
-  // "Go to unread": the page around `sentAt` (`around_sent_at`) replaces the window. Resolves to the messages of that page,
-  // oldest first, or to null when the request failed.
+  // "Go to unread", a date, a search hit: the page around a sent time (`around_sent_at`) or a message replaces the
+  // window. Resolves to the messages of that page, oldest first, or to null when the request failed. A message that is
+  // not there (404) resolves to an empty list and leaves the window as it was.
   const [jumpingToUnread, setJumpingToUnread] = useState(false);
-  const loadAroundSentAt = useCallback(
-    async (sentAt: number): Promise<MessengersMessageItem[] | null> => {
+  const loadAround = useCallback(
+    async (
+      around: { sentAt: number } | { messageId: string },
+    ): Promise<MessengersMessageItem[] | null> => {
       const signal = controllerRef.current?.signal;
       if (signal == null || jumpingToUnread) return null;
       setJumpingToUnread(true);
@@ -318,20 +321,24 @@ export function useMessengerChat(args: Args) {
             cursor: null,
             limit: MESSENGER_PAGE_SIZE,
             direction: null,
-            aroundMessageId: null,
-            aroundSentAt: sentAt,
+            aroundMessageId: 'messageId' in around ? around.messageId : null,
+            aroundSentAt: 'sentAt' in around ? around.sentAt : null,
             query: null,
             searchMode: null,
           },
           { signal },
         );
-        const page = aroundSentAtPage(rsp, sentAt, MESSENGER_PAGE_SIZE);
+        const page =
+          'messageId' in around
+            ? aroundPage(rsp, around.messageId, MESSENGER_PAGE_SIZE)
+            : aroundSentAtPage(rsp, around.sentAt, MESSENGER_PAGE_SIZE);
         epochRef.current += 1;
         setWindowKey((key) => key + 1);
         setPages([page]);
         setPagingError(null);
         return page.items;
       } catch (reason) {
+        if ('messageId' in around && isNotFound(reason)) return [];
         if (!isAbortError(reason)) setPagingError(toErrorMessage(reason));
         return null;
       } finally {
@@ -339,6 +346,11 @@ export function useMessengerChat(args: Args) {
       }
     },
     [accountId, chatId, jumpingToUnread, setPages],
+  );
+  const loadAroundSentAt = useCallback((sentAt: number) => loadAround({ sentAt }), [loadAround]);
+  const loadAroundMessage = useCallback(
+    (messageId: string) => loadAround({ messageId }),
+    [loadAround],
   );
 
   const retry = useCallback(() => {
@@ -399,6 +411,7 @@ export function useMessengerChat(args: Args) {
     landingId,
     windowKey,
     loadAroundSentAt,
+    loadAroundMessage,
     jumpingToUnread,
     retry,
   };

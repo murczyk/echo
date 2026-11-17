@@ -81,7 +81,8 @@ function MessengerMessageCardBase({
             outgoing ? BUBBLE_COLORS.outgoing : BUBBLE_COLORS.incoming
           }`}
         >
-          <div className="message-card-action-group float-right mb-1 ml-2">
+          {/* `relative z-[1]`: a float is under the box of the sender name that follows it, which took the clicks on the button. */}
+          <div className="message-card-action-group relative z-[1] float-right mb-1 ml-2">
             <button
               type="button"
               className="message-card-action-btn"

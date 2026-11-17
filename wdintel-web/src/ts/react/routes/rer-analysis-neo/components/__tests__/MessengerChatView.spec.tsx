@@ -1,11 +1,12 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, forwardRef } from 'react';
+import { act, forwardRef, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MessengersMessageItem } from '../../../../../../Bindings';
+import { HttpRequestError } from '../../../../services/api/client';
 import type { MessageFeedProps } from '../../../shared/message-feed';
 
 const apiMock = vi.hoisted(() => ({
@@ -30,7 +31,25 @@ vi.mock('../../../shared/message-feed', async (importOriginal) => ({
   }),
 }));
 
+// The bar has its own spec; here the test plays the reader's taps.
+const searchBar = vi.hoisted(() => ({ current: null as unknown, mounts: 0 }));
+vi.mock('../MessengerChatSearchBar', () => ({
+  MessengerChatSearchBar: (props: unknown) => {
+    searchBar.current = props;
+    useEffect(() => {
+      searchBar.mounts += 1;
+    }, []);
+    return <div data-search-bar-mock />;
+  },
+}));
+
 import { MessengerChatView } from '../MessengerChatView';
+
+const latestBar = () =>
+  searchBar.current as {
+    onOpenHit: (messageId: string) => void;
+    onJumpToDate: (dayStartMs: number, dayEndMs: number) => void;
+  };
 
 const latestFeed = () => feedProps.current as MessageFeedProps<MessengersMessageItem, string>;
 
@@ -71,6 +90,7 @@ describe('MessengerChatView', () => {
     initialAnchorId: string | null = null,
     openChat: typeof chat = chat,
     openAtUnread = false,
+    mobile = false,
   ) =>
     act(async () =>
       root.render(
@@ -80,6 +100,7 @@ describe('MessengerChatView', () => {
           title="Team"
           initialAnchorId={initialAnchorId}
           openAtUnread={openAtUnread}
+          mobile={mobile}
           onBack={() => undefined}
         />,
       ),
@@ -92,6 +113,7 @@ describe('MessengerChatView', () => {
       '/rer-analysis-neo?leftPanelTab=messenger&messengerAccount=a1',
     );
     feedProps.current = null;
+    searchBar.mounts = 0;
     snackbar.notify.mockReset();
     apiMock.listMessengersChatMembers.mockReset().mockResolvedValue({ items: [] });
     apiMock.listMessengersMessages.mockReset();
@@ -226,6 +248,159 @@ describe('MessengerChatView', () => {
       await settle();
       expect(window.location.search).toContain('messengerChat=c1');
       expect(window.location.search).not.toContain('messengerAnchor');
+    });
+  });
+
+  describe('search', () => {
+    const newest = () => ({
+      items: [message('m3', 300), message('m2', 200), message('m1', 100)],
+      olderCursor: null,
+      newerCursor: null,
+    });
+    const target = () => latestFeed().scrollOptions.navigationTarget;
+    const openSearch = () =>
+      act(async () =>
+        container
+          .querySelector('[data-messenger-chat-search-toggle]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+      );
+
+    it('has blue icon buttons for the search and for the unread jump, on a phone and on a desktop', async () => {
+      const unreadChat = { ...chat, oldestReadAt: 0, newestReadAt: 150, unreadCount: 3 };
+      apiMock.listMessengersMessages.mockResolvedValue(newest());
+      const buttons = () => ({
+        search: container.querySelector('[data-messenger-chat-search-toggle]'),
+        unread: container.querySelector('[data-messenger-go-to-unread]'),
+      });
+
+      for (const mobile of [true, false]) {
+        await mount(null, unreadChat, false, mobile);
+        expect(buttons().search?.textContent).toBe('');
+        expect(buttons().search?.getAttribute('aria-label')).toBe('Пошук');
+        expect(buttons().search?.className).toContain('MuiIconButton-colorPrimary');
+        expect(buttons().unread?.getAttribute('aria-label')).toBe('До непрочитаних (3)');
+        expect(buttons().unread?.className).toContain('MuiIconButton-colorPrimary');
+        expect(buttons().unread?.textContent).toBe('3');
+      }
+
+      // The badge shows the compact text as it is, not MUI's "99+".
+      await mount(null, { ...unreadChat, unreadCount: 137 }, false, true);
+      expect(buttons().unread?.textContent).toBe('137');
+      await mount(null, { ...unreadChat, unreadCount: 1234 }, false, true);
+      expect(buttons().unread?.textContent).toBe('1.2k');
+      expect(buttons().unread?.getAttribute('aria-label')).toBe('До непрочитаних (1.2k)');
+    });
+
+    it('mounts the search bar on the first press and then only hides and shows it, so its state survives', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(newest());
+      await mount();
+      const bar = () => container.querySelector('[data-search-bar-mock]');
+      const wrapper = () => bar()?.parentElement;
+      const toggle = () =>
+        container
+          .querySelector('[data-messenger-chat-search-toggle]')
+          ?.getAttribute('aria-pressed');
+      expect(bar()).toBeNull();
+      expect(toggle()).toBe('false');
+
+      await openSearch();
+      expect(wrapper()?.hidden).toBe(false);
+      expect(toggle()).toBe('true');
+
+      await openSearch();
+      expect(bar()).not.toBeNull();
+      expect(wrapper()?.hidden).toBe(true);
+      expect(toggle()).toBe('false');
+
+      await openSearch();
+      expect(wrapper()?.hidden).toBe(false);
+      // Never unmounted: a remount is what would drop the text and the hits.
+      expect(searchBar.mounts).toBe(1);
+    });
+
+    it('scrolls to a hit that is already loaded without asking the server', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(newest());
+      await mount();
+      await openSearch();
+      await act(async () => latestBar().onOpenHit('m1'));
+
+      expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+      expect(target()).toMatchObject({ messageId: 'm1' });
+    });
+
+    it('loads the page around a hit that is not loaded, then scrolls to it', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(newest()).mockResolvedValueOnce({
+        items: [message('old2', 20), message('far', 10)],
+        olderCursor: null,
+        newerCursor: 'n',
+      });
+      await mount();
+      await openSearch();
+      await act(async () => latestBar().onOpenHit('far'));
+
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ aroundMessageId: 'far', query: null }),
+        expect.anything(),
+      );
+      expect(latestFeed().items.map((item) => item.id)).toEqual(['far', 'old2']);
+      expect(target()).toMatchObject({ messageId: 'far' });
+    });
+
+    it('says so, and stays where it was, when the hit is gone', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(newest())
+        .mockRejectedValueOnce(new HttpRequestError(404, 'not found'));
+      await mount();
+      await openSearch();
+      await act(async () => latestBar().onOpenHit('gone'));
+
+      expect(snackbar.notify.mock.calls[0][0]).toMatchObject({ severity: 'warning' });
+      expect(latestFeed().items.map((item) => item.id)).toEqual(['m1', 'm2', 'm3']);
+      expect(target()).toBeNull();
+    });
+
+    it('lands on the first message of a day that has messages, with no notice', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(newest())
+        .mockResolvedValueOnce(newest());
+      await mount();
+      await openSearch();
+      await act(async () => latestBar().onJumpToDate(150, 250));
+
+      // `around_sent_at` splits after the millisecond before the day starts.
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ aroundSentAt: 149, aroundMessageId: null, query: null }),
+        expect.anything(),
+      );
+      expect(target()).toMatchObject({ messageId: 'm2' });
+      expect(snackbar.notify).not.toHaveBeenCalled();
+    });
+
+    it('lands on the nearest message and says so when the day has none', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(newest())
+        .mockResolvedValueOnce(newest());
+      await mount();
+      await openSearch();
+      // Between m1 and m2, nothing sent in it: the first message after it is where the reader would expect to be.
+      await act(async () => latestBar().onJumpToDate(120, 130));
+
+      expect(target()).toMatchObject({ messageId: 'm2' });
+      expect(snackbar.notify.mock.calls[0][0]).toMatchObject({ severity: 'info' });
+    });
+
+    it('lands on the newest message when the day is after the whole chat', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(newest()).mockResolvedValueOnce({
+        items: [message('m3', 300), message('m2', 200)],
+        olderCursor: 'o',
+        newerCursor: null,
+      });
+      await mount();
+      await openSearch();
+      await act(async () => latestBar().onJumpToDate(1000, 2000));
+
+      expect(target()).toMatchObject({ messageId: 'm3' });
+      expect(snackbar.notify).toHaveBeenCalledTimes(1);
     });
   });
 

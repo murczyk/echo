@@ -1,5 +1,7 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { Button, IconButton } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import MarkChatUnreadOutlinedIcon from '@mui/icons-material/MarkChatUnreadOutlined';
+import { Badge, IconButton, Tooltip } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react';
 
 import type { MessengersChatReadState, MessengersMessageItem } from '../../../../../Bindings';
@@ -13,6 +15,7 @@ import {
   type MessageFeedPolicy,
 } from '../../shared/message-feed';
 import { buildMessengerChatLink, replaceMessengerChatQueryInUrl } from '../helpers';
+import { isInRange, pickJumpTarget } from '../messenger-chat-search';
 import {
   buildPrivateChatCopyText,
   formatRelativeDateLabel,
@@ -29,6 +32,7 @@ import { senderName, useMessengerChat } from '../use-messenger-chat';
 import { useMessengerReadTracking } from '../use-messenger-read-tracking';
 import type { MessengerChat } from '../use-messenger-chats';
 import type { MessengerAccountItem } from './MessengerAccountList';
+import { MessengerChatSearchBar } from './MessengerChatSearchBar';
 import { MessengerMessageCard } from './MessengerMessageCard';
 
 type Props = {
@@ -101,6 +105,7 @@ export function MessengerChatView({
   });
   const { messages, memberById, loading, hasMoreAbove, hasMoreBelow } = chatState;
   const busy = loading || chatState.refreshing;
+  const unreadLabel = `До непрочитаних (${formatCompactCount(chat.unreadCount)})`;
   const { onVisibleMessages } = useMessengerReadTracking({
     accountId: account.id,
     chatId: chat.id,
@@ -148,18 +153,25 @@ export function MessengerChatView({
     }
   }, [anchorMissing, notify]);
 
-  // "Go to unread": the message to bring to the top. It waits for the message to be in the window and rendered, then aligns.
-  const [unreadTarget, setUnreadTarget] = useState<string | null>(null);
+  // "Go to unread", a date or a search hit: the message to bring to the top. It waits for the message to be in the window
+  // and rendered, then aligns, and flashes when asked to.
+  const [jumpTarget, setJumpTarget] = useState<{ id: string; highlight: boolean } | null>(null);
+  // The search bar is mounted by the first press of the button and then only hidden, so its text and hits survive closing it.
+  const [searchBar, setSearchBar] = useState<'never' | 'open' | 'hidden'>('never');
+  const searchOpen = searchBar === 'open';
   // A chat that opened at its first unread message lines it up once, when the first page is in.
   const { landingId } = chatState;
   const [landingAligned, setLandingAligned] = useState(false);
   const navigationTarget = useMemo(
     () =>
-      unreadTarget != null
+      jumpTarget != null
         ? {
-            messageId: unreadTarget,
+            messageId: jumpTarget.id,
             alignment: 'start' as const,
-            onAligned: () => setUnreadTarget(null),
+            onAligned: () => {
+              setJumpTarget(null);
+              if (jumpTarget.highlight) feedRef.current?.highlightLinkedMessage(jumpTarget.id);
+            },
           }
         : landingId != null && !landingAligned
           ? {
@@ -177,7 +189,7 @@ export function MessengerChatView({
                 },
               }
             : null,
-    [alignPending, initialAnchorId, landedOnAnchor, landingAligned, landingId, unreadTarget],
+    [alignPending, initialAnchorId, jumpTarget, landedOnAnchor, landingAligned, landingId],
   );
 
   // The URL keeps the first visible analysis messenger message, so a refresh or a shared link reopens the same spot.
@@ -251,9 +263,60 @@ export function MessengerChatView({
         target = items.filter((item) => item.sentAt < span.oldest).at(-1)?.id ?? null;
       }
     }
-    if (target != null) setUnreadTarget(target);
+    if (target != null) setJumpTarget({ id: target, highlight: false });
     else notify({ severity: 'info', message: 'Непрочитаних повідомлень не знайдено.' });
   }, [hasMoreAbove, hasMoreBelow, loadAroundSentAt, marks, messages, notify, span]);
+
+  // A search hit is opened in the chat: scrolled to when it is in the window, else the page around it is loaded.
+  const { loadAroundMessage } = chatState;
+  const openHit = useCallback(
+    async (messageId: string) => {
+      if (!messages.some((message) => message.id === messageId)) {
+        const items = await loadAroundMessage(messageId);
+        if (items == null) return;
+        if (!items.some((message) => message.id === messageId)) {
+          notify({
+            severity: 'warning',
+            message: 'Повідомлення не знайдено, можливо, його видалено.',
+          });
+          return;
+        }
+      }
+      setJumpTarget({ id: messageId, highlight: true });
+    },
+    [loadAroundMessage, messages, notify],
+  );
+
+  // A day: lands on its first message, or on the nearest one when there is none, and says so.
+  const jumpToDate = useCallback(
+    async (startMs: number, endMs: number) => {
+      const items = await loadAroundSentAt(startMs - 1);
+      if (items == null) return;
+      const target = pickJumpTarget(items, startMs);
+      if (target == null) {
+        notify({ severity: 'info', message: 'Повідомлень немає.' });
+        return;
+      }
+      setJumpTarget({ id: target.id, highlight: true });
+      if (!isInRange(target, startMs, endMs)) {
+        notify({
+          severity: 'info',
+          message: 'За цю дату повідомлень немає. Показано найближче.',
+        });
+      }
+    },
+    [loadAroundSentAt, notify],
+  );
+
+  const senderLabel = useCallback(
+    (message: MessengersMessageItem) => {
+      if (message.isOutgoing) return account.name;
+      const member =
+        message.senderChatMemberId == null ? undefined : memberById.get(message.senderChatMemberId);
+      return member == null ? '' : senderName(member);
+    },
+    [account.name, memberById],
+  );
 
   const privateChat = isPrivateChat(chat.chatType);
   const handleCopy = (event: ClipboardEvent<HTMLElement>) => {
@@ -333,23 +396,73 @@ export function MessengerChatView({
           {title}
         </h2>
         {span != null && chat.unreadCount > 0 ? (
-          <Button
-            size="small"
-            // On a phone the title is what gives way: the button is smaller (font, padding) and never wraps.
-            className="shrink-0 !whitespace-nowrap group-data-[mobile=true]/messenger:!min-w-0 group-data-[mobile=true]/messenger:!px-1 group-data-[mobile=true]/messenger:!text-[11px] group-data-[mobile=true]/messenger:!leading-4"
-            disabled={chatState.jumpingToUnread}
-            onClick={() => void goToUnread()}
-            data-messenger-go-to-unread
-          >
-            До непрочитаних ({formatCompactCount(chat.unreadCount)})
-          </Button>
+          <Tooltip title={unreadLabel} arrow>
+            {/* A span, so the tooltip still works while the button is disabled. */}
+            <span className="shrink-0">
+              <IconButton
+                size="small"
+                color="primary"
+                // The badge hangs out past the icon's right edge: the margin keeps it off the search button.
+                className="!mr-3"
+                aria-label={unreadLabel}
+                disabled={chatState.jumpingToUnread}
+                onClick={() => void goToUnread()}
+                data-messenger-go-to-unread
+              >
+                {/* `max` is lifted: a text is compared to 99 as a number, so "137" would show as "99+". */}
+                <Badge
+                  badgeContent={formatCompactCount(chat.unreadCount)}
+                  color="primary"
+                  max={Infinity}
+                  sx={{
+                    '& .MuiBadge-badge': {
+                      minWidth: 16,
+                      height: 16,
+                      px: 0.5,
+                      fontSize: 11,
+                      lineHeight: '16px',
+                      fontWeight: 600,
+                    },
+                  }}
+                >
+                  <MarkChatUnreadOutlinedIcon fontSize="small" />
+                </Badge>
+              </IconButton>
+            </span>
+          </Tooltip>
         ) : null}
         {copied ? (
           <span className="text-xs opacity-70" role="status">
             Посилання скопійовано
           </span>
         ) : null}
+        <Tooltip title="Пошук" arrow>
+          <IconButton
+            size="small"
+            color="primary"
+            sx={{ bgcolor: searchOpen ? 'action.selected' : undefined }}
+            aria-label="Пошук"
+            aria-pressed={searchOpen}
+            onClick={() => setSearchBar((bar) => (bar === 'open' ? 'hidden' : 'open'))}
+            data-messenger-chat-search-toggle
+          >
+            <SearchIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </header>
+      {searchBar === 'never' ? null : (
+        <div hidden={!searchOpen}>
+          <MessengerChatSearchBar
+            accountId={account.id}
+            chatId={chat.id}
+            senderLabel={senderLabel}
+            onOpenHit={(messageId) => void openHit(messageId)}
+            onJumpToDate={(startMs, endMs) => void jumpToDate(startMs, endMs)}
+            jumping={chatState.jumpingToUnread}
+            mobile={mobile}
+          />
+        </div>
+      )}
       {chatState.error != null ? (
         <div className="p-3">
           <PowerAlert
@@ -366,7 +479,10 @@ export function MessengerChatView({
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col" onCopy={handleCopy}>
           {dateLabel !== '' ? (
-            <div className="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-echo-pill bg-black/45 px-echo-md py-0.5 text-xs text-white">
+            <div
+              data-messenger-date-pill
+              className="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-echo-pill bg-black/45 px-echo-md py-0.5 text-xs text-white"
+            >
               {dateLabel}
             </div>
           ) : null}

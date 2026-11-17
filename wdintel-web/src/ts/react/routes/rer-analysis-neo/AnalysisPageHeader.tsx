@@ -171,7 +171,6 @@ export function AnalysisPageHeader({
     page.summaryLoading;
   const refresh = refreshAction(page);
   const showPagination = !isNarrowLayout && page.leftPanelTab !== LeftPanelTab.Messenger;
-  const showDateRange = page.leftPanelTab !== LeftPanelTab.Messenger;
   const isMessenger = page.leftPanelTab === LeftPanelTab.Messenger;
   const showReport = !isMessenger;
   return (
@@ -182,7 +181,6 @@ export function AnalysisPageHeader({
           <AnalysisHeaderControls
             queryState={page.queryState}
             updateQueryState={page.updateQueryState}
-            showDateRange={showDateRange}
           />
         )
       }
@@ -200,7 +198,6 @@ export function AnalysisPageHeader({
           <AnalysisHeaderControls
             queryState={page.queryState}
             updateQueryState={page.updateQueryState}
-            showDateRange={showDateRange}
             isCompactLayout
           />
         ) : undefined
