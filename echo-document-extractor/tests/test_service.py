@@ -700,3 +700,25 @@ def test_api_keeps_idle_connections_longer_than_echo_pool(
     monkeypatch.setattr(runtime.uvicorn, "run", lambda _app, **kwargs: captured.update(kwargs))
     runtime.api()
     assert captured["timeout_keep_alive"] > 90
+
+
+async def test_spool_usage_reuses_a_slow_scan_that_finished_while_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scans = 0
+
+    def slow_scan(_path: Path) -> int:
+        nonlocal scans
+        scans += 1
+        time.sleep(0.2)
+        return 0
+
+    monkeypatch.setattr(storage, "directory_size", slow_scan)
+    spool = storage.SpoolStorage(tmp_path)
+    first = asyncio.create_task(spool.usage(max_age=0.05))
+    await asyncio.sleep(0.1)
+    second = asyncio.create_task(spool.usage(max_age=0.05))
+    await asyncio.gather(first, second)
+    assert scans == 1
+    await spool.usage()
+    assert scans == 2
