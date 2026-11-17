@@ -20,10 +20,9 @@ from .job_queue import IdempotencyConflictError, Job, JobQueue, QueueFullError
 from .metrics import ServiceMetrics
 from .service_config import ADMISSION_RETRY_SECONDS, MULTIPART_OVERHEAD_BYTES, RuntimeConfig, ServiceSettings
 from .storage import (
+    SpoolStorage,
     StoragePressureError,
     count_pages,
-    directory_size,
-    ensure_capacity,
     parse_manifest,
     remove_job_directory,
     request_digest,
@@ -89,6 +88,7 @@ def create_app(config: RuntimeConfig, start_metrics: bool = False) -> FastAPI:
     metrics = ServiceMetrics("api")
     dependencies = DependencyChecker(config.extraction)
     token = service.bearer_token()
+    storage = SpoolStorage(service.spool_dir)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -137,8 +137,7 @@ def create_app(config: RuntimeConfig, start_metrics: bool = False) -> FastAPI:
     async def ready() -> JSONResponse:
         try:
             queue.counts()
-            ensure_capacity(
-                service.spool_dir,
+            await storage.ensure_capacity(
                 service.limits.max_spool_bytes,
                 service.limits.min_free_bytes,
             )
@@ -186,7 +185,9 @@ def create_app(config: RuntimeConfig, start_metrics: bool = False) -> FastAPI:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "at least one file is required")
             if manifest is not None and not isinstance(manifest, str):
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "manifest must be text")
-            return await _submit_files(service, queue, metrics, files, manifest, idempotency_key)
+            return await _submit_files(
+                service, storage, queue, metrics, files, manifest, idempotency_key
+            )
 
     @app.get("/v1/jobs/{job_id}", dependencies=[Depends(authenticate)])
     async def get_job(job_id: str) -> dict[str, object]:
@@ -227,8 +228,7 @@ def create_app(config: RuntimeConfig, start_metrics: bool = False) -> FastAPI:
         dependency_statuses = await dependencies.check_all()
         for dependency in dependency_statuses:
             metrics.dependency_up.labels(dependency=dependency.name).set(dependency.healthy)
-        used = directory_size(service.spool_dir)
-        free = shutil.disk_usage(service.spool_dir).free
+        used, free = await storage.usage(max_age=10.0)
         metrics.spool_bytes.set(used)
         metrics.spool_free_bytes.set(free)
         counts = queue.counts()
@@ -309,6 +309,7 @@ def _job_payload(job: Job | None) -> dict[str, object]:
 
 async def _submit_files(
     service: ServiceSettings,
+    storage: SpoolStorage,
     queue: JobQueue,
     metrics: ServiceMetrics,
     files: list[UploadFile],
@@ -316,8 +317,7 @@ async def _submit_files(
     idempotency_key: str,
 ) -> JSONResponse:
     try:
-        ensure_capacity(
-            service.spool_dir,
+        await storage.ensure_capacity(
             service.limits.max_spool_bytes,
             service.limits.min_free_bytes,
         )
@@ -340,8 +340,7 @@ async def _submit_files(
         )
         if total_pages > service.limits.max_pages or len(names) > service.limits.max_pages:
             raise ValueError("submission exceeds the 200 page/file limit")
-        ensure_capacity(
-            service.spool_dir,
+        await storage.ensure_capacity(
             service.limits.max_spool_bytes,
             service.limits.min_free_bytes,
         )

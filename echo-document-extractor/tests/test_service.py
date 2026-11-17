@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
 import sqlite3
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -13,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from echo_document_extractor import storage
 from echo_document_extractor.adapters import GEMMA_END_MARKER, GemmaAdapter, ModelRequest
 from echo_document_extractor.api import create_app
 from echo_document_extractor.config import EndpointConfig, ExtractionConfig, PaddleRuntimeConfig
@@ -158,6 +161,67 @@ def test_api_authentication_idempotency_and_cancellation(
         assert deleted.status_code == 204
 
 
+async def test_slow_spool_scan_does_not_block_live_or_duplicate_status_scans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+    started = threading.Event()
+    release = threading.Event()
+    scans = 0
+
+    def slow_scan(_path: Path) -> int:
+        nonlocal scans
+        scans += 1
+        started.set()
+        assert release.wait(5)
+        return 0
+
+    async def healthy_dependencies(_self: DependencyChecker) -> list:
+        return []
+
+    monkeypatch.setattr(storage, "directory_size", slow_scan)
+    monkeypatch.setattr(DependencyChecker, "check_all", healthy_dependencies)
+    app = create_app(runtime_config(tmp_path))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        first = asyncio.create_task(client.get("/v1/status", headers=auth()))
+        second = None
+        try:
+            assert await asyncio.to_thread(started.wait, 2)
+            second = asyncio.create_task(client.get("/v1/status", headers=auth()))
+            live = await asyncio.wait_for(client.get("/health/live"), timeout=1)
+            assert live.status_code == 200
+            assert not first.done()
+        finally:
+            release.set()
+            responses = await asyncio.gather(first, *([second] if second else []))
+        assert all(response.status_code == 200 for response in responses)
+        assert scans == 1
+
+
+async def test_admission_rechecks_capacity_after_cached_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+
+    async def healthy_dependencies(_self: DependencyChecker) -> list:
+        return []
+
+    monkeypatch.setattr(DependencyChecker, "check_all", healthy_dependencies)
+    config = runtime_config(tmp_path, max_spool_bytes=1024)
+    app = create_app(config)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        assert (await client.get("/v1/status", headers=auth())).json()["spool"]["bytes"] == 0
+        retained = config.service.spool_dir / "retained-result"
+        retained.write_bytes(b"x" * 2048)
+        assert (await client.get("/health/ready")).status_code == 503
+        response = await client.post(
+            "/v1/jobs", headers=auth(), files=[("files", ("page.png", png_bytes(), "image/png"))]
+        )
+        assert response.status_code == 507
+        assert retained.stat().st_size == 2048
+        assert app.state.queue.counts().get("queued", 0) == 0
+
+
 def test_api_rejects_limits_malformed_files_and_traversal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -188,6 +252,21 @@ def test_api_rejects_limits_malformed_files_and_traversal(
             files=[("files", ("bad.pdf", b"not a pdf", "application/pdf"))],
         )
         assert malformed.status_code == 422
+
+
+def test_api_rejects_images_over_the_pixel_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
+    app = create_app(runtime_config(tmp_path))
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/jobs", headers=auth(), files=[("files", ("page.png", png_bytes(), "image/png"))]
+        )
+        assert response.status_code == 422
+        assert "pixel limit" in response.json()["detail"]
+        assert app.state.queue.counts().get("queued", 0) == 0
 
 
 def test_manifest_requires_exact_safe_order() -> None:
@@ -531,8 +610,8 @@ def test_capacity_is_authenticated_and_does_not_touch_spool(
         def forbidden(*_args: object, **_kwargs: object) -> None:
             raise AssertionError("capacity must not inspect the spool or dependencies")
 
-        monkeypatch.setattr("echo_document_extractor.api.ensure_capacity", forbidden)
-        monkeypatch.setattr("echo_document_extractor.api.directory_size", forbidden)
+        monkeypatch.setattr("echo_document_extractor.storage.SpoolStorage.usage", forbidden)
+        monkeypatch.setattr("echo_document_extractor.storage.directory_size", forbidden)
         assert client.get("/v1/capacity").status_code == 401
         available = client.get("/v1/capacity", headers=auth())
         assert available.json() == {"limit": 1, "active": 0, "available": 1, "retry_after_seconds": 0}
