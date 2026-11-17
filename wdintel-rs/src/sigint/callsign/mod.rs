@@ -1276,34 +1276,11 @@ pub async fn delete_callsign(
     );
 
     let callsign = find_callsign(&env.dbx, *req).await.c(h!())?;
-    let callsign_json_old = sigint_callsign::Entity::find_by_id(callsign.id)
-        .into_json()
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::NotFound)?;
-    let mut callsign = callsign.into_active_model();
-    callsign.deleted = Set(true);
-    let callsign = callsign.update(&env.dbx).await.c(h!())?;
-    let callsign_json_new = sigint_callsign::Entity::find_by_id(callsign.id)
-        .into_json()
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::NotFound)?;
-    let _changelog = sigint_callsign_changelog::ActiveModel {
-        id: NotSet,
-        sigint_callsign_id: Set(callsign.id),
-        login_id: Set(login_id_from_identity(&user)?),
-        action: Set("delete".to_string()),
-        created_at: NotSet,
-        new_value: Set(Some(callsign_json_new)),
-        old_value: Set(Some(callsign_json_old)),
-        req: Set(None),
-        sigint_origin_id: NotSet,
-        original_id: NotSet,
-    }
-    .insert(&env.dbx)
+    let callsign = bl_soft_delete_catalog_callsign(
+        &env.dbx,
+        callsign,
+        login_id_from_identity(&user)?,
+    )
     .await
     .c(h!())?;
 

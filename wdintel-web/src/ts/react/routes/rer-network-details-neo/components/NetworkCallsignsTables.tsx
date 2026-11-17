@@ -167,6 +167,13 @@ export type Props = {
   inFlightAddIds: number[];
   inFlightUpdateIds: number[];
   inFlightDeleteIds: number[];
+  selectionMode: boolean;
+  selectedIds: number[];
+  onSelectedIdsChange: (ids: number[]) => void;
+  onEnterSelectionMode: () => void;
+  onExitSelectionMode: () => void;
+  onRequestBulkDelete: () => void;
+  bulkDeleteInFlight: boolean;
 };
 
 export function NetworkDetailsCallsignsPanel({
@@ -213,6 +220,13 @@ export function NetworkDetailsCallsignsPanel({
   inFlightAddIds,
   inFlightUpdateIds,
   inFlightDeleteIds,
+  selectionMode,
+  selectedIds,
+  onSelectedIdsChange,
+  onEnterSelectionMode,
+  onExitSelectionMode,
+  onRequestBulkDelete,
+  bulkDeleteInFlight,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const { firstTableRef, firstTableHeight } = useMeasuredFirstTableHeight(sectionMode);
@@ -458,6 +472,15 @@ export function NetworkDetailsCallsignsPanel({
               onReload={onReload}
               inFlightUpdateIds={inFlightUpdateIds}
               inFlightDeleteIds={inFlightDeleteIds}
+              selection={{
+                active: selectionMode,
+                selectedIds,
+                onSelectedIdsChange,
+                onEnter: onEnterSelectionMode,
+                onExit: onExitSelectionMode,
+                onRequestDelete: onRequestBulkDelete,
+                deleteInFlight: bulkDeleteInFlight,
+              }}
             />
           </Box>
         </Stack>

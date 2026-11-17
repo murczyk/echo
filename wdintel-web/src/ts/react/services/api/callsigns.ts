@@ -7,6 +7,8 @@ import type {
   CallsignUnitStatsRsp,
   CreateCallsignReq,
   CreateNetworkCallsignReq,
+  DeleteNetworkCallsignsReq,
+  DeleteNetworkCallsignsRsp,
   ListCallsignsReq,
   ListCallsignsRsp,
   ListNetworkCallsignsReq,
@@ -262,6 +264,16 @@ export async function updateNetworkCallsign(
 export async function deleteNetworkCallsign(callsignId: number): Promise<NetworkCallsign> {
   const raw = await postJson<unknown>('/api/sigint/network-callsign/delete', callsignId);
   return transformSnakeToCamel<NetworkCallsign>(raw);
+}
+
+export async function deleteNetworkCallsigns(
+  req: DeleteNetworkCallsignsReq,
+): Promise<DeleteNetworkCallsignsRsp> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/network-callsign/delete-many',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<DeleteNetworkCallsignsRsp>(raw);
 }
 
 export async function deleteCallsign(callsignId: number): Promise<Callsign> {

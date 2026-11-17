@@ -13247,6 +13247,36 @@ addAsKnownNetworkCallsignReqEncoder struct =
         ]
 
 
+type alias DeleteNetworkCallsignsReq =
+    { networkId : Int
+    , ids : List (Int)
+    , alsoDeleteFromCatalog : Bool
+    }
+
+
+deleteNetworkCallsignsReqEncoder : DeleteNetworkCallsignsReq -> Json.Encode.Value
+deleteNetworkCallsignsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "ids", (Json.Encode.list (Json.Encode.int)) struct.ids )
+        , ( "also_delete_from_catalog", (Json.Encode.bool) struct.alsoDeleteFromCatalog )
+        ]
+
+
+type alias DeleteNetworkCallsignsRsp =
+    { deletedIds : List (Int)
+    , deletedCatalogCallsignIds : List (Int)
+    }
+
+
+deleteNetworkCallsignsRspEncoder : DeleteNetworkCallsignsRsp -> Json.Encode.Value
+deleteNetworkCallsignsRspEncoder struct =
+    Json.Encode.object
+        [ ( "deleted_ids", (Json.Encode.list (Json.Encode.int)) struct.deletedIds )
+        , ( "deleted_catalog_callsign_ids", (Json.Encode.list (Json.Encode.int)) struct.deletedCatalogCallsignIds )
+        ]
+
+
 type alias Callsign =
     { id : Int
     , callsign : String
@@ -31040,6 +31070,21 @@ addAsKnownNetworkCallsignReqDecoder =
     Json.Decode.succeed AddAsKnownNetworkCallsignReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+deleteNetworkCallsignsReqDecoder : Json.Decode.Decoder DeleteNetworkCallsignsReq
+deleteNetworkCallsignsReqDecoder =
+    Json.Decode.succeed DeleteNetworkCallsignsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "also_delete_from_catalog" (Json.Decode.bool)))
+
+
+deleteNetworkCallsignsRspDecoder : Json.Decode.Decoder DeleteNetworkCallsignsRsp
+deleteNetworkCallsignsRspDecoder =
+    Json.Decode.succeed DeleteNetworkCallsignsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_catalog_callsign_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 callsignDecoder : Json.Decode.Decoder Callsign
