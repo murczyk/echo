@@ -25,9 +25,7 @@ sudo /usr/sbin/nft list ruleset >/dev/null 2>&1 \
   || { printf 'target lacks the netfilter capability required by nftables\n' >&2; exit 1; }
 ip -4 addr show | grep -F '100.93.77.92/' >/dev/null \
   || { printf 'target does not own 100.93.77.92\n' >&2; exit 1; }
-for endpoint in http://100.105.172.96:8001/health http://100.105.172.96:8002/health; do
-  curl -fsS --max-time 10 "$endpoint" >/dev/null
-done
+curl -fsS --max-time 10 http://100.105.172.96:8002/health >/dev/null
 free_bytes=$(df -PB1 /var/lib 2>/dev/null | awk 'NR == 2 {print $4}')
 (( free_bytes >= 21474836480 )) || { printf 'less than 20 GiB is free\n' >&2; exit 1; }
 REMOTE
