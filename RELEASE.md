@@ -115,8 +115,12 @@ Everything else still needs separate approval, including:
    ```
 
    The preview changes nothing. If it reports `Release ID contains different
-   bundle bytes`, `echo-ai-agent/` changed under an ID already on the VMs:
-   stop and bump the harness release ID on `main` before releasing.
+   bundle bytes`, `echo-ai-agent/` changed under an ID already on the VMs.
+   Stop and report it: the fix is a new harness release ID, which needs
+   approval like other harness changes. Bump it on the branch being released:
+   on `main` for a normal release, then restart Prepare from step 1; on
+   `stable` for a stable release, where it reaches `main` at the next normal
+   release's step 1.
    `Requires Echo build for <release>` is expected when the release brings a
    new ID; the canary deploy installs that build.
 
