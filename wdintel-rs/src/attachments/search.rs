@@ -242,6 +242,7 @@ fn search_predicates(
     let prefixes =
         crate::rer_importer::analysis::search::ts_prefix_query(&text_query)
             .is_some();
+    let materialize_ids = inline_tsquery && !correlated;
     let combined = if search_mode == AnalysisSearchMode::Fuzzy && !correlated {
         combined_or_predicate(
             &text_query,
@@ -250,6 +251,7 @@ fn search_predicates(
             prefixes,
             values,
             source_scope,
+            materialize_ids,
         )
     } else {
         None
@@ -285,6 +287,7 @@ fn search_predicates(
                 &format!("body_search.search_tsv @@ {tsquery}"),
                 correlated,
                 source_scope,
+                materialize_ids,
             )
         } else {
             message_literal_predicate(
@@ -351,6 +354,7 @@ fn combined_or_predicate(
     prefixes: bool,
     values: &mut Vec<Value>,
     source_scope: Option<&str>,
+    materialize_ids: bool,
 ) -> Option<String> {
     let mut terms = Vec::new();
     let mut expect_term = true;
@@ -393,6 +397,7 @@ fn combined_or_predicate(
         &format!("body_search.search_tsv @@ {tsquery}"),
         false,
         source_scope,
+        materialize_ids,
     ))
 }
 
@@ -544,7 +549,7 @@ fn message_literal_predicate(
             );
         }
     }
-    let matches = term_sources_predicate(message, sources, correlated);
+    let matches = term_sources_predicate(message, sources, correlated, false);
     match body {
         Some(body) => format!("({body} or {matches})"),
         None => matches,
@@ -559,6 +564,7 @@ fn exists_term(
     body: &str,
     correlated: bool,
     source_scope: Option<&str>,
+    materialize_ids: bool,
 ) -> String {
     let mut sources = Vec::new();
     if !matches!(scope, "attachments" | "document") {
@@ -576,7 +582,7 @@ fn exists_term(
         correlated,
         source_scope,
     ));
-    term_sources_predicate(message, sources, correlated)
+    term_sources_predicate(message, sources, correlated, materialize_ids)
 }
 
 fn attachment_term_sources(
@@ -618,6 +624,7 @@ fn term_sources_predicate(
     message: &str,
     sources: Vec<String>,
     correlated: bool,
+    materialize_ids: bool,
 ) -> String {
     if sources.is_empty() {
         "false".into()
@@ -630,6 +637,9 @@ fn term_sources_predicate(
                 .collect::<Vec<_>>()
                 .join(" or ")
         )
+    } else if materialize_ids {
+        // A scalar subplan keeps the ID filter inside pg_clickhouse (#3571).
+        format!("{message}=any(array({}))", sources.join(" union "))
     } else {
         format!("{message} in ({})", sources.join(" union "))
     }

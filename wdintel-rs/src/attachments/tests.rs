@@ -82,7 +82,7 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(actual, expected, "{query}");
         for (correlated, inline_tsquery) in
-            [(false, false), (true, false), (true, true)]
+            [(false, false), (false, true), (true, false), (true, true)]
         {
             let actual = signal_message::Entity::find()
                 .join(
