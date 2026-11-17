@@ -8,9 +8,9 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, TransactionTrait};
 fn assert_requires_source(result: anyhow::Result<()>) {
     let error = result.unwrap_err();
     assert!(
-        error
+        error.chain().any(|error| error
             .downcast_ref::<AttachmentSearchCoverageError>()
-            .is_some(),
+            .is_some()),
         "{error:#}"
     );
 }
@@ -400,7 +400,9 @@ async fn attachment_search_retains_former_owners_and_deleted_membership_3780() {
 #[serial_test::serial]
 async fn latest_inbox_probe_retains_attachment_change_guards_3780() {
     use crate::functest::tests::find_test_login;
-    use crate::rer_importer::inbox::query::load_analytics_inbox_candidates;
+    use crate::rer_importer::inbox::query::{
+        load_analytics_inbox_candidates, load_analytics_inbox_digest,
+    };
     use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
 
     let (env, _, message) = fixture().await;
@@ -435,25 +437,51 @@ async fn latest_inbox_probe_retains_attachment_change_guards_3780() {
             InboxMessagesSortBy::IMSTimestamp,
             InboxMessagesSortBy::IMSCreatedAt,
         ] {
-            for search in ["Береза", "-Береза"] {
+            for search in [
+                "Береза",
+                "-Береза",
+                "\"before-rename.txt\"",
+                "\"after-rename.txt\"",
+            ] {
                 let req = InboxMessagesReq {
                     load_latest: Some(true),
                     sort_by: Some(sort_by),
                     search: Some(search.into()),
                     ..Default::default()
                 };
-                let error = load_analytics_inbox_candidates(
-                    &login.id, &env, &req, &analytics, 90_000,
-                )
-                .await
-                .unwrap_err();
-                let error = anyhow::Error::from(error);
-                assert!(
-                    error.chain().any(|error| error
-                        .downcast_ref::<AttachmentSearchCoverageError>()
-                        .is_some()),
-                    "{error:#}"
-                );
+                for req in [
+                    req.clone(),
+                    InboxMessagesReq {
+                        load_latest: None,
+                        since_date_inclusive_ms: Some(0),
+                        sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                        ..req.clone()
+                    },
+                ] {
+                    let digest = load_analytics_inbox_digest(
+                        &login.id, &env, &req, &analytics, 90_000, None,
+                    )
+                    .await;
+                    let candidates = load_analytics_inbox_candidates(
+                        &login.id, &env, &req, &analytics, 90_000,
+                    )
+                    .await;
+                    if removed && search == "\"after-rename.txt\"" {
+                        assert_eq!(
+                            digest.unwrap().unwrap_or_default(),
+                            (0, None)
+                        );
+                        assert!(candidates
+                            .unwrap()
+                            .unwrap_or_default()
+                            .is_empty());
+                    } else {
+                        assert_requires_source(digest.map(|_| ()));
+                        assert_requires_source(
+                            candidates.map(|_| ()).map_err(Into::into),
+                        );
+                    }
+                }
             }
         }
     }
