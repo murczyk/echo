@@ -1,4 +1,6 @@
+use crate::attachments::search::{body_message_filter, search_headline_sql};
 use crate::config::{
+    MESSENGERS_HEADLINE_START, MESSENGERS_HEADLINE_STOP,
     MESSENGERS_MESSAGES_DEFAULT_LIMIT, MESSENGERS_MESSAGES_MAX_LIMIT,
 };
 use crate::entities::{sigint_chat_message, signal_message};
@@ -14,6 +16,7 @@ use crate::messengers::types::{
     MessengersAttachment, MessengersMessageItem, MessengersMessagesListReq,
     MessengersMessagesListRsp, MessengersTelegramMessageId,
 };
+use crate::rer_importer::types::AnalysisSearchMode;
 use crate::types::{Env, ShortContext};
 use chrono::{DateTime, Duration, NaiveDateTime};
 use sea_orm::sea_query::{Expr, SimpleExpr};
@@ -88,6 +91,7 @@ struct MessageRow {
     messenger_has_media: Option<bool>,
     id_uuid: Option<Uuid>,
     body: Option<String>,
+    headline: Option<String>,
 }
 
 impl MessageRow {
@@ -124,7 +128,19 @@ pub(crate) async fn list_messages(
     let chat = resolve_chat(&env.dbx, &account, &req.chat_id)
         .await
         .c(h!())?;
-    let page = load_page(&env.dbx, chat.id, page_request, limit)
+    let timeline = ChatTimeline {
+        chat_id: chat.id,
+        search: req
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+            .map(|query| ChatSearch {
+                query,
+                mode: req.search_mode.unwrap_or_default(),
+            }),
+    };
+    let page = load_page(&env.dbx, &timeline, page_request, limit)
         .await
         .c(h!())?;
     let items = message_items(env, scope, page.rows).await.c(h!())?;
@@ -174,44 +190,45 @@ fn page_request(
 
 async fn load_page(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     page_request: PageRequest,
     limit: u64,
 ) -> Result<MessagePage, AppError> {
     match page_request {
         PageRequest::Cursor(CursorPage::Latest) => {
-            load_older_page(dbx, chat_id, None, limit).await
+            load_older_page(dbx, timeline, None, limit).await
         }
         PageRequest::Cursor(CursorPage::Oldest) => {
-            load_oldest_page(dbx, chat_id, limit).await
+            load_oldest_page(dbx, timeline, limit).await
         }
         PageRequest::Cursor(CursorPage::Older(position)) => {
-            load_older_page(dbx, chat_id, Some(position), limit).await
+            load_older_page(dbx, timeline, Some(position), limit).await
         }
         PageRequest::Cursor(CursorPage::Newer(position)) => {
-            load_newer_page(dbx, chat_id, position, limit).await
+            load_newer_page(dbx, timeline, position, limit).await
         }
         PageRequest::AroundMessage(message_id) => {
-            let target = find_message_position(dbx, chat_id, message_id)
+            let target = find_message_position(dbx, timeline, message_id)
                 .await
                 .c(h!())?;
-            load_around_page(dbx, chat_id, target, limit).await
+            load_around_page(dbx, timeline, target, limit).await
         }
         PageRequest::AroundPosition(position) => {
-            load_around_page(dbx, chat_id, position, limit).await
+            load_around_page(dbx, timeline, position, limit).await
         }
     }
 }
 
 async fn load_older_page(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     before: Option<TimelinePosition>,
     limit: u64,
 ) -> Result<MessagePage, AppError> {
     let filter = before.map(|position| timeline_filter("<", position));
-    let (rows, older) =
-        load_older_rows(dbx, chat_id, filter, limit).await.c(h!())?;
+    let (rows, older) = load_older_rows(dbx, timeline, filter, limit)
+        .await
+        .c(h!())?;
     let newer = rows.first().map(MessageRow::position).or(before);
     Ok(MessagePage { rows, older, newer })
 }
@@ -219,10 +236,10 @@ async fn load_older_page(
 /// The start of the chat, so nothing is older than this page.
 async fn load_oldest_page(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     limit: u64,
 ) -> Result<MessagePage, AppError> {
-    let rows = load_newer_rows(dbx, chat_id, None, limit).await.c(h!())?;
+    let rows = load_newer_rows(dbx, timeline, None, limit).await.c(h!())?;
     let newer = rows.first().map(MessageRow::position);
     Ok(MessagePage {
         rows,
@@ -233,11 +250,11 @@ async fn load_oldest_page(
 
 async fn load_newer_page(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     after: TimelinePosition,
     limit: u64,
 ) -> Result<MessagePage, AppError> {
-    let rows = load_newer_rows(dbx, chat_id, Some(after), limit)
+    let rows = load_newer_rows(dbx, timeline, Some(after), limit)
         .await
         .c(h!())?;
     let older = rows.last().map(MessageRow::position).or(Some(after));
@@ -250,17 +267,17 @@ async fn load_newer_page(
 /// same as any other.
 async fn load_around_page(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     target: TimelinePosition,
     limit: u64,
 ) -> Result<MessagePage, AppError> {
     let newer_limit = limit / 2;
-    let mut rows = load_newer_rows(dbx, chat_id, Some(target), newer_limit)
+    let mut rows = load_newer_rows(dbx, timeline, Some(target), newer_limit)
         .await
         .c(h!())?;
     let filter = Some(timeline_filter("<=", target));
     let (older_rows, older) =
-        load_older_rows(dbx, chat_id, filter, limit - newer_limit)
+        load_older_rows(dbx, timeline, filter, limit - newer_limit)
             .await
             .c(h!())?;
     rows.extend(older_rows);
@@ -271,11 +288,11 @@ async fn load_around_page(
 /// Reads one row past the page to learn whether older messages remain.
 async fn load_older_rows(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     filter: Option<SimpleExpr>,
     limit: u64,
 ) -> Result<(Vec<MessageRow>, Option<TimelinePosition>), AppError> {
-    let mut query = visible_messages(chat_id);
+    let mut query = timeline.messages().c(h!())?;
     if let Some(filter) = filter {
         query = query.filter(filter);
     }
@@ -297,11 +314,11 @@ async fn load_older_rows(
 /// without it, newest first.
 async fn load_newer_rows(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     after: Option<TimelinePosition>,
     limit: u64,
 ) -> Result<Vec<MessageRow>, AppError> {
-    let mut query = visible_messages(chat_id);
+    let mut query = timeline.messages().c(h!())?;
     if let Some(after) = after {
         query = query.filter(timeline_filter(">", after));
     }
@@ -319,10 +336,12 @@ async fn load_newer_rows(
 
 async fn find_message_position(
     dbx: &DatabaseConnection,
-    chat_id: Uuid,
+    timeline: &ChatTimeline<'_>,
     message_id: Uuid,
 ) -> Result<TimelinePosition, AppError> {
-    let row = visible_messages(chat_id)
+    let row = timeline
+        .messages()
+        .c(h!())?
         .filter(signal_message::Column::IdUuid.eq(message_id))
         .into_model::<MessageRow>()
         .one(dbx)
@@ -332,27 +351,84 @@ async fn find_message_position(
     Ok(row.position())
 }
 
-fn visible_messages(chat_id: Uuid) -> Select<sigint_chat_message::Entity> {
-    let signal_message_relation =
-        sigint_chat_message::Entity::belongs_to(signal_message::Entity)
-            .from(sigint_chat_message::Column::Id)
-            .to(signal_message::Column::Id)
-            .into();
-    sigint_chat_message::Entity::find()
-        .select_only()
-        .columns([
-            sigint_chat_message::Column::Id,
-            sigint_chat_message::Column::MessengerExternalId,
-            sigint_chat_message::Column::MessengerSentAt,
-            sigint_chat_message::Column::TelegramMessageId,
-            sigint_chat_message::Column::MessengerSenderId,
-            sigint_chat_message::Column::MessengerIsOutgoing,
-            sigint_chat_message::Column::MessengerHasMedia,
-        ])
-        .columns([signal_message::Column::IdUuid, signal_message::Column::Body])
-        .join(JoinType::InnerJoin, signal_message_relation)
-        .filter(sigint_chat_message::Column::MessengerChatId.eq(chat_id))
-        .filter(signal_message::Column::Deleted.eq(false))
+/// The messages of one chat, all of them or only those matching a search.
+struct ChatTimeline<'a> {
+    chat_id: Uuid,
+    search: Option<ChatSearch<'a>>,
+}
+
+impl ChatTimeline<'_> {
+    fn messages(
+        &self,
+    ) -> Result<Select<sigint_chat_message::Entity>, AppError> {
+        let signal_message_relation =
+            sigint_chat_message::Entity::belongs_to(signal_message::Entity)
+                .from(sigint_chat_message::Column::Id)
+                .to(signal_message::Column::Id)
+                .into();
+        let query = sigint_chat_message::Entity::find()
+            .select_only()
+            .columns([
+                sigint_chat_message::Column::Id,
+                sigint_chat_message::Column::MessengerExternalId,
+                sigint_chat_message::Column::MessengerSentAt,
+                sigint_chat_message::Column::TelegramMessageId,
+                sigint_chat_message::Column::MessengerSenderId,
+                sigint_chat_message::Column::MessengerIsOutgoing,
+                sigint_chat_message::Column::MessengerHasMedia,
+            ])
+            .columns([
+                signal_message::Column::IdUuid,
+                signal_message::Column::Body,
+            ])
+            .join(JoinType::InnerJoin, signal_message_relation)
+            .filter(
+                sigint_chat_message::Column::MessengerChatId.eq(self.chat_id),
+            )
+            .filter(signal_message::Column::Deleted.eq(false));
+        Ok(match &self.search {
+            Some(search) => search.matching_messages(query).c(h!())?,
+            None => query.column_as(Expr::cust("null::text"), "headline"),
+        })
+    }
+}
+
+/// A search in a chat with the analysis search syntax and modes, over the
+/// text analysis searches (`sigint_inbox_item`, `sigint_search`).
+struct ChatSearch<'a> {
+    query: &'a str,
+    mode: AnalysisSearchMode,
+}
+
+impl ChatSearch<'_> {
+    /// Each term is an `exists` on the message id, which PostgreSQL turns
+    /// into a semi-join with the chat's range of
+    /// `sigint_chat_message_chat_timeline_idx`. The headline runs only on the
+    /// rows of the page.
+    fn matching_messages(
+        &self,
+        query: Select<sigint_chat_message::Entity>,
+    ) -> Result<Select<sigint_chat_message::Entity>, AppError> {
+        let filter =
+            body_message_filter(self.query, Some(self.mode)).c(h!())?;
+        let headline = self.headline().c(h!())?;
+        Ok(query.column_as(headline, "headline").filter(filter))
+    }
+
+    /// The whole text with every match between `MESSENGERS_HEADLINE_START`
+    /// and `MESSENGERS_HEADLINE_STOP`, as the inbox highlights a search.
+    fn headline(&self) -> Result<SimpleExpr, AppError> {
+        const BODY: &str = "coalesce(signal_message.body, '')";
+        let headline = search_headline_sql(
+            BODY,
+            self.query,
+            self.mode,
+            MESSENGERS_HEADLINE_START,
+            MESSENGERS_HEADLINE_STOP,
+        )
+        .c(h!())?;
+        Ok(headline.unwrap_or_else(|| Expr::cust(BODY)))
+    }
 }
 
 /// A row comparison, so PostgreSQL applies it as a single range on
@@ -403,6 +479,7 @@ fn message_item(
                 message_id: id.to_string(),
             }
         }),
+        headline: row.headline,
     })
 }
 
@@ -432,4 +509,310 @@ async fn load_attachments(
             .push(attachment);
     }
     Ok(attachments)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{
+        MESSENGER_INGEST_DATASOURCE_KIND, MESSENGER_INGEST_GROUP_KEY_PREFIX,
+    };
+    use crate::entities::datasource;
+    use crate::functest::tests::{cleanup, mk_datasource, mk_login};
+    use crate::messenger_ingest::access::IngestScope;
+    use crate::messenger_ingest::refs::{
+        MessengerIngestAccountRef, MessengerIngestChatRef,
+    };
+    use crate::messenger_ingest::types::{
+        MessengerIngestMessageInput, MessengerIngestMessagesSubmitReq,
+    };
+    use crate::messengers::attachments::tests::{sync_account, sync_chat};
+    use crate::messengers::types::MessengersMessagesListRsp;
+    use serial_test::serial;
+
+    struct Fixture {
+        env: Env,
+        scope: MessengersScope,
+        account_id: String,
+        chat_id: String,
+    }
+
+    /// `chat-1` has `m-1`..`m-4`, oldest first, with `m-4` deleted. The
+    /// other chat has one message with the same word.
+    async fn fixture() -> Fixture {
+        let env = (*cleanup().await.unwrap()).clone();
+        let login = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let datasource = mk_datasource(
+            &env.dbx,
+            datasource::ActiveModel {
+                kind: Set(MESSENGER_INGEST_DATASOURCE_KIND.to_string()),
+                api_login_id: Set(Some(login.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let ingest = IngestScope {
+            login_id: login.id,
+            datasource,
+        };
+        let account = sync_account(&env, &ingest).await;
+        let chat_1 = sync_chat(&env, &ingest, &account, "chat-1").await;
+        let chat_2 = sync_chat(&env, &ingest, &account, "chat-2").await;
+        submit(
+            &env,
+            &ingest,
+            &account,
+            &chat_1,
+            &[
+                ("m-1", 1_000, "танки идут к реке"),
+                ("m-2", 2_000, "погода сегодня хорошая"),
+                ("m-3", 3_000, "вчера видели танк у моста"),
+                ("m-4", 4_000, "танк уехал"),
+            ],
+        )
+        .await;
+        submit(
+            &env,
+            &ingest,
+            &account,
+            &chat_2,
+            &[("m-5", 5_000, "танк в другом чате")],
+        )
+        .await;
+        let deleted = sigint_chat_message::Entity::find()
+            .filter(
+                sigint_chat_message::Column::MessengerChatId
+                    .eq(Uuid::parse_str(&chat_1.id).unwrap()),
+            )
+            .filter(sigint_chat_message::Column::MessengerExternalId.eq("m-4"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(deleted.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let scope = MessengersScope {
+            login_id: login.id,
+            group_master_keys: vec![format!(
+                "{MESSENGER_INGEST_GROUP_KEY_PREFIX}{}",
+                account.id
+            )],
+        };
+        Fixture {
+            env,
+            scope,
+            account_id: account.id,
+            chat_id: chat_1.id,
+        }
+    }
+
+    async fn submit(
+        env: &Env,
+        ingest: &IngestScope,
+        account: &MessengerIngestAccountRef,
+        chat: &MessengerIngestChatRef,
+        messages: &[(&str, i64, &str)],
+    ) {
+        crate::messenger_ingest::messages::submit_messages(
+            env,
+            ingest,
+            MessengerIngestMessagesSubmitReq {
+                account: account.clone(),
+                chat: chat.clone(),
+                messages: messages
+                    .iter()
+                    .map(|(external_id, date, text)| {
+                        MessengerIngestMessageInput {
+                            external_id: (*external_id).to_owned(),
+                            date: 1_760_431_000_000 + date,
+                            text: Some((*text).to_owned()),
+                            is_outgoing: None,
+                            has_media: Some(false),
+                            sender: None,
+                            telegram: None,
+                        }
+                    })
+                    .collect(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn list(
+        fixture: &Fixture,
+        query: Option<&str>,
+        cursor: Option<String>,
+        limit: i64,
+    ) -> MessengersMessagesListRsp {
+        list_in_mode(fixture, query, None, cursor, limit).await
+    }
+
+    async fn list_in_mode(
+        fixture: &Fixture,
+        query: Option<&str>,
+        search_mode: Option<AnalysisSearchMode>,
+        cursor: Option<String>,
+        limit: i64,
+    ) -> MessengersMessagesListRsp {
+        list_messages(
+            &fixture.env,
+            &fixture.scope,
+            MessengersMessagesListReq {
+                account_id: fixture.account_id.clone(),
+                chat_id: fixture.chat_id.clone(),
+                cursor,
+                limit: Some(limit),
+                direction: None,
+                around_message_id: None,
+                around_sent_at: None,
+                query: query.map(str::to_owned),
+                search_mode,
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    fn external_ids(rsp: &MessengersMessagesListRsp) -> Vec<&str> {
+        rsp.items
+            .iter()
+            .map(|item| item.external_id.as_str())
+            .collect()
+    }
+
+    fn highlighted(word: &str) -> String {
+        format!("{MESSENGERS_HEADLINE_START}{word}{MESSENGERS_HEADLINE_STOP}")
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn search_lists_matches_of_the_chat_with_headlines() {
+        let fixture = fixture().await;
+        let rsp = list(&fixture, Some(" танк "), None, 50).await;
+        assert_eq!(external_ids(&rsp), ["m-3", "m-1"]);
+        assert_eq!(rsp.older_cursor, None);
+        let headlines = rsp
+            .items
+            .iter()
+            .map(|item| item.headline.clone().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            headlines,
+            [
+                format!("вчера видели {} у моста", highlighted("танк")),
+                format!("{} идут к реке", highlighted("танки")),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn fuzzy_search_highlights_prefix_matches() {
+        let fixture = fixture().await;
+        let (ids, headlines) =
+            search(&fixture, "тан", AnalysisSearchMode::Fuzzy).await;
+        assert_eq!(ids, ["m-3", "m-1"]);
+        assert_eq!(
+            headlines,
+            [
+                format!("вчера видели {} у моста", highlighted("танк")),
+                format!("{} идут к реке", highlighted("танки")),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn search_pages_through_matches_only() {
+        let fixture = fixture().await;
+        let first = list(&fixture, Some("танк"), None, 1).await;
+        assert_eq!(external_ids(&first), ["m-3"]);
+        let second =
+            list(&fixture, Some("танк"), first.older_cursor.clone(), 1).await;
+        assert_eq!(external_ids(&second), ["m-1"]);
+        assert_eq!(second.older_cursor, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn blank_query_lists_the_whole_chat_without_headlines() {
+        let fixture = fixture().await;
+        for query in [None, Some("  ")] {
+            let rsp = list(&fixture, query, None, 50).await;
+            assert_eq!(external_ids(&rsp), ["m-3", "m-2", "m-1"]);
+            assert!(rsp.items.iter().all(|item| item.headline.is_none()));
+        }
+    }
+
+    async fn search(
+        fixture: &Fixture,
+        query: &str,
+        search_mode: AnalysisSearchMode,
+    ) -> (Vec<String>, Vec<String>) {
+        let rsp =
+            list_in_mode(fixture, Some(query), Some(search_mode), None, 50)
+                .await;
+        let headlines = rsp
+            .items
+            .iter()
+            .map(|item| item.headline.clone().unwrap())
+            .collect();
+        (
+            external_ids(&rsp).into_iter().map(str::to_owned).collect(),
+            headlines,
+        )
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn exact_search_matches_whole_words_only() {
+        let fixture = fixture().await;
+        let (ids, headlines) =
+            search(&fixture, "ТАНК", AnalysisSearchMode::Exact).await;
+        assert_eq!(ids, ["m-3"]);
+        assert_eq!(
+            headlines,
+            [format!("вчера видели {} у моста", highlighted("танк"))]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn substring_search_matches_inside_words() {
+        let fixture = fixture().await;
+        let (ids, headlines) =
+            search(&fixture, "танк", AnalysisSearchMode::Substring).await;
+        assert_eq!(ids, ["m-3", "m-1"]);
+        assert_eq!(
+            headlines,
+            [
+                format!("вчера видели {} у моста", highlighted("танк")),
+                format!("{}и идут к реке", highlighted("танк")),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn literal_search_supports_analysis_syntax() {
+        let fixture = fixture().await;
+        let (ids, _) =
+            search(&fixture, "танк -моста", AnalysisSearchMode::Substring)
+                .await;
+        assert_eq!(ids, ["m-1"]);
+        let (ids, headlines) =
+            search(&fixture, "\"сегодня хорошая\"", AnalysisSearchMode::Exact)
+                .await;
+        assert_eq!(ids, ["m-2"]);
+        assert_eq!(
+            headlines,
+            [format!("погода {}", highlighted("сегодня хорошая"))]
+        );
+    }
 }

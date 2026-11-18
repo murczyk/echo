@@ -176,6 +176,12 @@ pub struct MessengersMessagesListReq {
     /// Epoch ms: the page around the end of that millisecond, e.g. a chat's
     /// `newest_read_at` to open it at the first unread message.
     pub around_sent_at: Option<i64>,
+    /// Search in the chat's message text with the analysis search syntax:
+    /// only matching messages, on the same timeline, cursors and paging.
+    /// Send it with every page. Blank is the same as none.
+    pub query: Option<String>,
+    /// How `query` matches, as in analysis search. Default `Fuzzy`.
+    pub search_mode: Option<crate::rer_importer::types::AnalysisSearchMode>,
 }
 
 #[derive(
@@ -207,6 +213,10 @@ pub struct MessengersMessageItem {
     pub sender_chat_member_id: Option<String>,
     pub attachments: Vec<MessengersAttachment>,
     pub telegram: Option<MessengersTelegramMessageId>,
+    /// With `query` only: the whole `text` with each match between
+    /// `MESSENGERS_HEADLINE_START` (U+E000) and `MESSENGERS_HEADLINE_STOP`
+    /// (U+E001), as the inbox highlights a search. Plain text, not HTML.
+    pub headline: Option<String>,
 }
 
 #[derive(

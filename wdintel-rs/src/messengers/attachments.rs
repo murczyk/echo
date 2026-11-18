@@ -504,7 +504,7 @@ async fn load_media_positions(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::config::{
         MESSENGER_INGEST_DATASOURCE_KIND, MESSENGER_INGEST_GROUP_KEY_PREFIX,
@@ -614,7 +614,7 @@ mod tests {
         }
     }
 
-    async fn sync_account(
+    pub(crate) async fn sync_account(
         env: &Env,
         ingest: &IngestScope,
     ) -> MessengerIngestAccountRef {
@@ -656,7 +656,7 @@ mod tests {
         }
     }
 
-    async fn sync_chat(
+    pub(crate) async fn sync_chat(
         env: &Env,
         ingest: &IngestScope,
         account: &MessengerIngestAccountRef,

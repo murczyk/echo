@@ -231,6 +231,31 @@ struct SearchPredicates {
     exclusions: Vec<String>,
 }
 
+/// The tokens the text search matches, and whether `Fuzzy` also matches
+/// each of them as a prefix.
+fn search_text_query(
+    parts: &crate::rer_importer::analysis::search::SearchParts,
+    structured: bool,
+) -> (String, bool) {
+    let text_query = if structured {
+        parts.ts_query.clone()
+    } else {
+        // Dedicated attachment queries retain dotted filenames and numeric cells.
+        parts
+            .ts_query
+            .split_whitespace()
+            .map(str::to_string)
+            .chain(parts.freq.iter().cloned())
+            .chain(parts.message_uids.iter().cloned())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let prefixes =
+        crate::rer_importer::analysis::search::ts_prefix_query(&text_query)
+            .is_some();
+    (text_query, prefixes)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn search_predicates(
     query: &str,
@@ -256,22 +281,7 @@ fn search_predicates(
     let parts =
         crate::rer_importer::analysis::search::parse_search_parts(query)
             .c(h!())?;
-    let text_query = if structured {
-        parts.ts_query.clone()
-    } else {
-        // Dedicated attachment queries retain dotted filenames and numeric cells.
-        parts
-            .ts_query
-            .split_whitespace()
-            .map(str::to_string)
-            .chain(parts.freq.iter().cloned())
-            .chain(parts.message_uids.iter().cloned())
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    let prefixes =
-        crate::rer_importer::analysis::search::ts_prefix_query(&text_query)
-            .is_some();
+    let (text_query, prefixes) = search_text_query(&parts, structured);
     let combined = if search_mode == AnalysisSearchMode::Fuzzy && !correlated {
         combined_or_predicate(
             &text_query,
@@ -500,6 +510,75 @@ pub(crate) fn message_headline_pattern(
     })
 }
 
+/// The `text` expression with every match of `query` between `start` and
+/// `stop`, for a search by `body_message_filter`: `ts_headline` with
+/// `HighlightAll=true` for `Fuzzy`, otherwise the literal patterns. The
+/// `Fuzzy` tsquery is the inbox's `websearch_to_tsquery` or'ed with each
+/// non-negated term as the filter matches it, so a prefix hit such as
+/// `тан` in `танки` is highlighted too. The query, pattern and markers are
+/// bound values; `None` when no term can be highlighted.
+pub(crate) fn search_headline_sql(
+    text: &'static str,
+    query: &str,
+    search_mode: AnalysisSearchMode,
+    start: &str,
+    stop: &str,
+) -> anyhow::Result<Option<SimpleExpr>> {
+    Ok(match search_mode {
+        AnalysisSearchMode::Fuzzy => {
+            let parts =
+                crate::rer_importer::analysis::search::parse_search_parts(
+                    query,
+                )
+                .c(h!())?;
+            // `false`: `body_message_filter` searches a non-structured query.
+            let (text_query, prefixes) = search_text_query(&parts, false);
+            let mut values = Vec::new();
+            let mut tsqueries = vec![format!(
+                "websearch_to_tsquery('russian', {})",
+                bind(&mut values, query)
+            )];
+            for token in text_query.split_whitespace() {
+                if !token.starts_with('-')
+                    && !token.eq_ignore_ascii_case("or")
+                    && !token.eq_ignore_ascii_case("and")
+                {
+                    tsqueries.push(term_tsquery(
+                        token,
+                        prefixes,
+                        &mut values,
+                        false,
+                    ));
+                }
+            }
+            let options = bind(
+                &mut values,
+                format!(
+                    "HighlightAll=true, StartSel=\"{start}\", StopSel=\"{stop}\""
+                ),
+            );
+            Some(Expr::cust_with_values(
+                format!(
+                    "ts_headline('russian', {text}, ({}), {options})",
+                    tsqueries.join(" || ")
+                ),
+                values,
+            ))
+        }
+        search_mode => message_headline_pattern(query, search_mode)
+            .c(h!())?
+            .map(|pattern| {
+                Expr::cust_with_values(
+                    format!("regexp_replace({text}, $1, $2, 'gi')"),
+                    [
+                        Value::from(pattern),
+                        Value::from(format!("{start}\\&{stop}")),
+                    ],
+                )
+            }),
+    })
+}
+
 fn literal_operator(
     pattern: &str,
     search_mode: AnalysisSearchMode,
@@ -711,6 +790,34 @@ pub(crate) fn message_filter_with_mode(
         search_mode,
         None,
         false,
+        SearchSourceScope::default(),
+    )
+    .c(h!())?;
+    Ok(Expr::cust_with_values(sql, values))
+}
+
+/// The analysis search over message text only, for messages a query has
+/// already narrowed, such as one chat: each term is an `exists` on
+/// `signal_message.id`. Every token is text, so a frequency or message uid
+/// matches the text rather than being left to other filters. The tsquery
+/// stays inline, not a `(select …)`, so the planner estimates each term from
+/// the `search_tsv` statistics to choose between `sigint_search_tsv_idx` and
+/// probing the narrowed messages by id.
+pub(crate) fn body_message_filter(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+) -> anyhow::Result<SimpleExpr> {
+    let mut values = Vec::new();
+    let sql = text_predicate_with_correlation(
+        query,
+        "signal_message.id",
+        "body",
+        false,
+        &mut values,
+        true,
+        search_mode,
+        None,
+        true,
         SearchSourceScope::default(),
     )
     .c(h!())?;

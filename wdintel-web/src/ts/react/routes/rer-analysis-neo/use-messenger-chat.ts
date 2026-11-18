@@ -51,6 +51,8 @@ async function loadFirstPages(args: Args, signal: AbortSignal): Promise<FirstPag
     limit: MESSENGER_PAGE_SIZE,
     direction: null,
     aroundSentAt: null,
+    query: null,
+    searchMode: null,
   };
   const newest = async () =>
     newestPage(await listMessengersMessages({ ...base, aroundMessageId: null }, { signal }));
@@ -118,7 +120,7 @@ export function useMessengerChat(args: Args) {
   const pagesRef = useRef<MessengerChatPage[] | null>(null);
   const busyRef = useRef({ above: false, below: false });
   const controllerRef = useRef<AbortController | null>(null);
-  // Bumped when the window is replaced, so a page request that was in flight is dropped.
+  // Bumped when a request to replace the window starts and again when it lands, so a request that is in flight is dropped.
   const epochRef = useRef(0);
   // The URL anchor only matters for the first load; later retries start from it as well.
   const initialArgs = useRef(args);
@@ -127,6 +129,31 @@ export function useMessengerChat(args: Args) {
     pagesRef.current = pages;
     setLoaded((current) => ({ pages, error: null, attempt: current?.attempt ?? 0 }));
   }, []);
+
+  // The request that is to replace the window (a jump, "go to start/end", a refresh). Claiming a new one aborts the previous
+  // one and makes it stale: its response must not put the feed back on a place the reader has left.
+  const replacementRef = useRef<AbortController | null>(null);
+  const claimReplacement = useCallback(() => {
+    const chatSignal = controllerRef.current?.signal;
+    if (chatSignal == null) return null;
+    replacementRef.current?.abort();
+    const controller = new AbortController();
+    replacementRef.current = controller;
+    return {
+      epoch: ++epochRef.current,
+      signal: AbortSignal.any([chatSignal, controller.signal]),
+    };
+  }, []);
+  // Bumps the epoch again: a page request that started on the old window after the claim is dropped too.
+  const replaceWindow = useCallback(
+    (page: MessengerChatPage) => {
+      epochRef.current += 1;
+      setWindowKey((key) => key + 1);
+      setPages([page]);
+      setPagingError(null);
+    },
+    [setPages],
+  );
 
   // Members only decorate messages, so their failure never blocks the feed.
   const loadMembers = useCallback(
@@ -180,6 +207,8 @@ export function useMessengerChat(args: Args) {
             direction: direction === 'above' ? 'Older' : 'Newer',
             aroundMessageId: null,
             aroundSentAt: null,
+            query: null,
+            searchMode: null,
           },
           { signal },
         );
@@ -213,8 +242,9 @@ export function useMessengerChat(args: Args) {
 
   // The newest page replaces the window. Resolves to false when the request failed.
   const loadNewestPage = useCallback(async (): Promise<boolean> => {
-    const signal = controllerRef.current?.signal;
-    if (signal == null) return false;
+    const claim = claimReplacement();
+    if (claim == null) return false;
+    const { epoch, signal } = claim;
     try {
       const rsp = await listMessengersMessages(
         {
@@ -225,24 +255,26 @@ export function useMessengerChat(args: Args) {
           direction: null,
           aroundMessageId: null,
           aroundSentAt: null,
+          query: null,
+          searchMode: null,
         },
         { signal },
       );
-      epochRef.current += 1;
-      setWindowKey((key) => key + 1);
-      setPages([newestPage(rsp)]);
-      setPagingError(null);
+      if (epoch !== epochRef.current) return false;
+      replaceWindow(newestPage(rsp));
       return true;
     } catch (reason) {
-      if (!isAbortError(reason)) setPagingError(toErrorMessage(reason));
+      if (!isAbortError(reason) && epoch === epochRef.current)
+        setPagingError(toErrorMessage(reason));
       return false;
     }
-  }, [accountId, chatId, setPages]);
+  }, [accountId, chatId, claimReplacement, replaceWindow]);
 
   // The first page of the chat replaces the window. Resolves to false when the request failed.
   const loadOldestPage = useCallback(async (): Promise<boolean> => {
-    const signal = controllerRef.current?.signal;
-    if (signal == null) return false;
+    const claim = claimReplacement();
+    if (claim == null) return false;
+    const { epoch, signal } = claim;
     try {
       const rsp = await listMessengersMessages(
         {
@@ -253,19 +285,20 @@ export function useMessengerChat(args: Args) {
           direction: 'Oldest',
           aroundMessageId: null,
           aroundSentAt: null,
+          query: null,
+          searchMode: null,
         },
         { signal },
       );
-      epochRef.current += 1;
-      setWindowKey((key) => key + 1);
-      setPages([oldestPage(rsp, MESSENGER_PAGE_SIZE)]);
-      setPagingError(null);
+      if (epoch !== epochRef.current) return false;
+      replaceWindow(oldestPage(rsp, MESSENGER_PAGE_SIZE));
       return true;
     } catch (reason) {
-      if (!isAbortError(reason)) setPagingError(toErrorMessage(reason));
+      if (!isAbortError(reason) && epoch === epochRef.current)
+        setPagingError(toErrorMessage(reason));
       return false;
     }
-  }, [accountId, chatId, setPages]);
+  }, [accountId, chatId, claimReplacement, replaceWindow]);
 
   // "Go to the start": jump to the first page, or, when it is already loaded, there is nothing to fetch.
   // Resolves to false when the request failed, so the view does not scroll to a stale start.
@@ -294,13 +327,18 @@ export function useMessengerChat(args: Args) {
     }
   }, [jumpingToEnd, loadNewestPage, page]);
 
-  // "Go to unread": the page around `sentAt` (`around_sent_at`) replaces the window. Resolves to the messages of that page,
-  // oldest first, or to null when the request failed.
+  // "Go to unread", a date, a search hit: the page around a sent time (`around_sent_at`) or a message replaces the
+  // window. Resolves to the messages of that page, oldest first, or to null when the request failed. A message that is
+  // not there (404) resolves to an empty list and leaves the window as it was.
   const [jumpingToUnread, setJumpingToUnread] = useState(false);
-  const loadAroundSentAt = useCallback(
-    async (sentAt: number): Promise<MessengersMessageItem[] | null> => {
-      const signal = controllerRef.current?.signal;
-      if (signal == null || jumpingToUnread) return null;
+  const loadAround = useCallback(
+    async (
+      around: { sentAt: number } | { messageId: string },
+    ): Promise<MessengersMessageItem[] | null> => {
+      // Not claimed while a jump runs: claiming aborts the one before.
+      const claim = jumpingToUnread ? null : claimReplacement();
+      if (claim == null) return null;
+      const { epoch, signal } = claim;
       setJumpingToUnread(true);
       try {
         const rsp = await listMessengersMessages(
@@ -310,25 +348,35 @@ export function useMessengerChat(args: Args) {
             cursor: null,
             limit: MESSENGER_PAGE_SIZE,
             direction: null,
-            aroundMessageId: null,
-            aroundSentAt: sentAt,
+            aroundMessageId: 'messageId' in around ? around.messageId : null,
+            aroundSentAt: 'sentAt' in around ? around.sentAt : null,
+            query: null,
+            searchMode: null,
           },
           { signal },
         );
-        const page = aroundSentAtPage(rsp, sentAt, MESSENGER_PAGE_SIZE);
-        epochRef.current += 1;
-        setWindowKey((key) => key + 1);
-        setPages([page]);
-        setPagingError(null);
+        if (epoch !== epochRef.current) return null;
+        const page =
+          'messageId' in around
+            ? aroundPage(rsp, around.messageId, MESSENGER_PAGE_SIZE)
+            : aroundSentAtPage(rsp, around.sentAt, MESSENGER_PAGE_SIZE);
+        replaceWindow(page);
         return page.items;
       } catch (reason) {
+        if (epoch !== epochRef.current) return null;
+        if ('messageId' in around && isNotFound(reason)) return [];
         if (!isAbortError(reason)) setPagingError(toErrorMessage(reason));
         return null;
       } finally {
         setJumpingToUnread(false);
       }
     },
-    [accountId, chatId, jumpingToUnread, setPages],
+    [accountId, chatId, claimReplacement, jumpingToUnread, replaceWindow],
+  );
+  const loadAroundSentAt = useCallback((sentAt: number) => loadAround({ sentAt }), [loadAround]);
+  const loadAroundMessage = useCallback(
+    (messageId: string) => loadAround({ messageId }),
+    [loadAround],
   );
 
   const retry = useCallback(() => {
@@ -389,6 +437,7 @@ export function useMessengerChat(args: Args) {
     landingId,
     windowKey,
     loadAroundSentAt,
+    loadAroundMessage,
     jumpingToUnread,
     retry,
   };

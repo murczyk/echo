@@ -381,6 +381,146 @@ describe('useMessengerChat', () => {
     });
   });
 
+  // The latest request that replaces the window wins, whatever order the responses come in.
+  describe('overlapping window replacements', () => {
+    const deferred = () => {
+      let resolve!: (value: MessengersMessagesListRsp) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<MessengersMessagesListRsp>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+    const signalOf = (call: number): AbortSignal =>
+      apiMock.listMessengersMessages.mock.calls[call][1].signal;
+
+    it('drops a jump that is answered after a newer go to the end', async () => {
+      const jump = deferred();
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockReturnValueOnce(jump.promise)
+        .mockResolvedValueOnce(rsp(['z', 'y'], 'o9', 'n9'));
+      await mount('m10');
+      let jumped!: Promise<MessengersMessageItem[] | null>;
+      await act(async () => {
+        jumped = latest.loadAroundMessage('j1');
+      });
+      await act(async () => void (await latest.goToEnd()));
+      expect(ids()).toEqual(['y', 'z']);
+      expect(signalOf(1).aborted).toBe(true);
+      await act(async () => jump.resolve(rsp(['j1'], 'o', 'n')));
+      expect(await jumped).toBeNull();
+      expect(ids()).toEqual(['y', 'z']);
+      expect(latest.jumpingToUnread).toBe(false);
+    });
+
+    it('drops a go to the start that is answered after a newer jump', async () => {
+      const start = deferred();
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['z', 'y'], 'o9', 'n9'))
+        .mockReturnValueOnce(start.promise)
+        .mockResolvedValueOnce(rsp(['j1', 'j0'], 'o', 'n'));
+      await mount();
+      let started!: Promise<boolean>;
+      await act(async () => {
+        started = latest.goToStart();
+      });
+      await act(async () => void (await latest.loadAroundMessage('j1')));
+      expect(ids()).toEqual(['j0', 'j1']);
+      await act(async () => start.resolve(rsp(fullPageIds(), null, 'n1')));
+      expect(await started).toBe(false);
+      expect(ids()).toEqual(['j0', 'j1']);
+      expect(latest.jumpingToStart).toBe(false);
+    });
+
+    it('drops a page request that started on the old window after the jump began', async () => {
+      const jump = deferred();
+      const older = deferred();
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockReturnValueOnce(jump.promise)
+        .mockReturnValueOnce(older.promise);
+      await mount('m10');
+      await act(async () => void latest.loadAroundMessage('j1'));
+      await act(async () => latest.loadOlder());
+      await act(async () => jump.resolve(rsp(['j1', 'j0'], 'p', 'q')));
+      expect(ids()).toEqual(['j0', 'j1']);
+      await act(async () => older.resolve(rsp(['stale'], null, 'n0')));
+      expect(ids()).toEqual(['j0', 'j1']);
+      expect(latest.loadingAbove).toBe(false);
+    });
+
+    it('does not report the error of a request that was replaced', async () => {
+      const jump = deferred();
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockReturnValueOnce(jump.promise)
+        .mockResolvedValueOnce(rsp(['z', 'y'], 'o9', 'n9'));
+      await mount('m10');
+      let jumped!: Promise<MessengersMessageItem[] | null>;
+      await act(async () => {
+        jumped = latest.loadAroundMessage('j1');
+      });
+      await act(async () => void (await latest.goToEnd()));
+      await act(async () => jump.reject(new Error('late')));
+      expect(await jumped).toBeNull();
+      expect(latest.pagingError).toBeNull();
+    });
+
+    it('aborts the request that was replaced', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockImplementationOnce(
+          (_req, { signal }: { signal: AbortSignal }) =>
+            new Promise((_, reject) =>
+              signal.addEventListener('abort', () =>
+                reject(new DOMException('aborted', 'AbortError')),
+              ),
+            ),
+        )
+        .mockResolvedValueOnce(rsp(['z', 'y'], 'o9', 'n9'));
+      await mount('m10');
+      let jumped!: Promise<MessengersMessageItem[] | null>;
+      await act(async () => {
+        jumped = latest.loadAroundMessage('j1');
+      });
+      await act(async () => void (await latest.goToEnd()));
+      expect(await jumped).toBeNull();
+      expect(latest.pagingError).toBeNull();
+      expect(ids()).toEqual(['y', 'z']);
+    });
+
+    it('keeps the old window when the newer request fails and the older one lands', async () => {
+      const jump = deferred();
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockReturnValueOnce(jump.promise)
+        .mockRejectedValueOnce(new Error('offline'));
+      await mount('m10');
+      const before = ids();
+      await act(async () => void latest.loadAroundMessage('j1'));
+      await act(async () => void (await latest.goToEnd()));
+      expect(latest.pagingError).toBe('offline');
+      await act(async () => jump.resolve(rsp(['j1'], 'o', 'n')));
+      expect(ids()).toEqual(before);
+      expect(latest.pagingError).toBe('offline');
+    });
+
+    it('lets a jump that nothing replaced replace the window', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockResolvedValueOnce(rsp(['j1', 'j0'], 'o', 'n'));
+      await mount('m10');
+      let items: MessengersMessageItem[] | null = null;
+      await act(async () => {
+        items = await latest.loadAroundMessage('j1');
+      });
+      expect(items!.map((m) => m.id)).toEqual(['j0', 'j1']);
+      expect(ids()).toEqual(['j0', 'j1']);
+    });
+  });
+
   describe('header refresh', () => {
     it('appends what arrived since and reloads the members when the chat end is loaded', async () => {
       apiMock.listMessengersMessages

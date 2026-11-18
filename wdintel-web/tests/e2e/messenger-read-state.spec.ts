@@ -296,10 +296,10 @@ test('@regression messenger go to unread reaches unread history above the read s
   await expect(view.getByText('Повідомлення 408', { exact: true })).not.toBeInViewport();
 });
 
-// "До непрочитаних (N)" -> N
+// The icon button's label "До непрочитаних (N)" -> N
 const buttonCount = async (view: Locator) =>
   Number(
-    (await view.getByRole('button', { name: /До непрочитаних/ }).textContent())?.match(
+    (await view.getByRole('button', { name: /До непрочитаних/ }).getAttribute('aria-label'))?.match(
       /\((\d+)\)/,
     )?.[1],
   );
@@ -537,7 +537,9 @@ test('@regression messenger rows name their counts for assistive tech', async ({
   ).toBeVisible();
 });
 
-test('@regression messenger header button stays inside the header on a phone', async ({ page }) => {
+test('@regression messenger header buttons stay inside the header on a phone, and the badge keeps off the search button', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 400, height: 800 });
   await openMessenger(
     page,
@@ -550,16 +552,22 @@ test('@regression messenger header button stays inside the header on a phone', a
   const view = page.locator('[data-messenger-chat-view]');
   const button = view.getByRole('button', { name: /До непрочитаних/ });
   await expect(button).toBeVisible();
-  const [header, box, title, font] = [
+  const badge = button.locator('.MuiBadge-badge');
+  await expect(badge).toHaveText('237');
+  const [header, box, search, badgeBox, title, font] = [
     await view.locator('header').boundingBox(),
     await button.boundingBox(),
+    await view.locator('[data-messenger-chat-search-toggle]').boundingBox(),
+    await badge.boundingBox(),
     await view.locator('header h2').boundingBox(),
-    await button.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+    await badge.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
   ];
-  // Smaller than the 13 px of a desktop button, inside the header, on one line...
+  // An icon button with a small badge (as the badges of the rail), inside the header, on one line...
   expect(font).toBeLessThanOrEqual(11);
   expect(box!.x + box!.width).toBeLessThanOrEqual(header!.x + header!.width + 1);
-  expect(box!.height).toBeLessThan(32);
+  expect(box!.height).toBeLessThan(48);
+  // ...the badge hangs past the icon but stays clear of the search button next to it...
+  expect(badgeBox!.x + badgeBox!.width).toBeLessThan(search!.x);
   // ...and the title keeps room to show something.
   expect(title!.width).toBeGreaterThan(60);
 });

@@ -973,6 +973,10 @@ pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
 pub const ROLE_CYBER_MESSENGERS: &str = "CyberMessengers";
 pub const MESSENGERS_MESSAGES_DEFAULT_LIMIT: i64 = 50;
 pub const MESSENGERS_MESSAGES_MAX_LIMIT: i64 = 100;
+/// Around each match in a `messages/list` search `headline`. Private-use
+/// characters, not HTML, as message text is untrusted.
+pub const MESSENGERS_HEADLINE_START: &str = "\u{E000}";
+pub const MESSENGERS_HEADLINE_STOP: &str = "\u{E001}";
 pub const MESSENGERS_ATTACHMENTS_DEFAULT_LIMIT: i64 = 50;
 pub const MESSENGERS_ATTACHMENTS_MAX_LIMIT: i64 = 100;
 pub const MESSENGERS_CONTACTS_DEFAULT_LIMIT: i64 = 100;
