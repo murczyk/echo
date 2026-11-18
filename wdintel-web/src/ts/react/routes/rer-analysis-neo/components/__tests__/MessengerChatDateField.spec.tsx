@@ -92,13 +92,15 @@ describe('MessengerChatDateField', () => {
       return event;
     };
     const calendarOpen = () => document.querySelector('button[role="gridcell"]') != null;
+    // The popover leaves the DOM when its exit transition ends, a timer tick after the day is tapped.
+    const calendarClosed = () => vi.waitFor(() => expect(calendarOpen()).toBe(false));
 
     await click(field());
     await click(day(1));
-    expect(calendarOpen()).toBe(false);
+    await calendarClosed();
 
     expect(press(cross()).defaultPrevented).toBe(false);
-    expect(calendarOpen()).toBe(false);
+    await calendarClosed();
 
     expect(press(field()).defaultPrevented).toBe(true);
     expect(calendarOpen()).toBe(true);
