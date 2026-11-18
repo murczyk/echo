@@ -713,6 +713,22 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn fuzzy_search_highlights_prefix_matches() {
+        let fixture = fixture().await;
+        let (ids, headlines) =
+            search(&fixture, "тан", AnalysisSearchMode::Fuzzy).await;
+        assert_eq!(ids, ["m-3", "m-1"]);
+        assert_eq!(
+            headlines,
+            [
+                format!("вчера видели {} у моста", highlighted("танк")),
+                format!("{} идут к реке", highlighted("танки")),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn search_pages_through_matches_only() {
         let fixture = fixture().await;
         let first = list(&fixture, Some("танк"), None, 1).await;
