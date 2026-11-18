@@ -16,7 +16,7 @@ EXTENSIONS = "mp4 webm jpg jpeg png mp3 gif svg ico"
 SOURCE_ROOTS = ("docs/releases", "docs/static")
 UPLOAD_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
 UPLOAD_REGION = "eu-central-003"
-UPLOAD_BUCKETS = ("echouastaging", "echouastoragecbr", "echouastorage")
+UPLOAD_BUCKETS = ("echouastaging", "echouastorage", "echouastoragecbr")
 
 
 def media_files(repository, only, extensions):
@@ -102,12 +102,13 @@ def upload_bucket(bucket, config, files, force):
 
 
 def bucket_configuration(bucket):
-    access_key = os.environ.get("AWS_ACCESS_KEY_ID")
-    secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    prefix = f"{bucket.upper()}_DOCS_AWS"
+    access_key = os.environ.get(f"{prefix}_ACCESS_KEY_ID", "").strip()
+    secret_key = os.environ.get(f"{prefix}_SECRET_ACCESS_KEY", "").strip()
     if not access_key or not secret_key:
         raise ValueError(
-            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required. "
-            f"Look for '{bucket}-lfs backblaze' in Bitwarden, as in goi/justfile."
+            f"{prefix}_ACCESS_KEY_ID and {prefix}_SECRET_ACCESS_KEY are required in .env. "
+            f"Look for '{bucket}-lfs backblaze' in Bitwarden."
         )
     return {
         "s3_bucket": bucket,
@@ -119,14 +120,16 @@ def bucket_configuration(bucket):
 
 
 def release(arguments):
-    config = bucket_configuration(arguments.bucket)
+    buckets = (arguments.bucket,) if arguments.bucket else UPLOAD_BUCKETS
+    configurations = [(bucket, bucket_configuration(bucket)) for bucket in buckets]
     if not shutil.which("s5cmd"):
         raise ValueError("required command is missing: s5cmd")
     files = media_files(REPOSITORY, arguments.only, arguments.extensions.split())
     if not files:
         raise ValueError("no documentation media selected")
-    if not upload_bucket(arguments.bucket, config, files, arguments.force):
-        raise ValueError(f"incomplete destination: {arguments.bucket}")
+    for bucket, config in configurations:
+        if not upload_bucket(bucket, config, files, arguments.force):
+            raise ValueError(f"incomplete destination: {bucket}")
 
 
 def download_roots(only):
@@ -238,8 +241,8 @@ def main():
     fetch.add_argument("--only")
     fetch.add_argument("--force", action="store_true")
     fetch.set_defaults(run=download)
-    for command in (publish, fetch):
-        command.add_argument("--bucket", required=True, choices=UPLOAD_BUCKETS)
+    publish.add_argument("--bucket", choices=UPLOAD_BUCKETS)
+    fetch.add_argument("--bucket", required=True, choices=UPLOAD_BUCKETS)
     package = commands.add_parser("prepare")
     package.add_argument("--dist")
     package.add_argument("--docs-public")
@@ -251,9 +254,6 @@ def main():
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         print(f"doc-media: {error if isinstance(error, ValueError) else 'operation failed'}", file=sys.stderr)
         return 1
-    finally:
-        if arguments.command == "release":
-            print("Reminder: upload documentation media to all three buckets: " + ", ".join(UPLOAD_BUCKETS))
     return 0
 
 

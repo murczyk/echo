@@ -1,4 +1,4 @@
-set positional-arguments
+set positional-arguments := true
 
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
@@ -160,30 +160,47 @@ dev-front:
 dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
-# Publish documentation media to the selected B2 bucket.
+# Publish documentation media to staging, storage, then CBR; optionally select one bucket.
 [arg('bucket', long='bucket')]
 [arg('force', long='force', value='true')]
 [arg('only', long='only')]
 release-doc-media bucket="" force="false" only="":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    args=(release --extensions "mp4 webm jpg jpeg png mp3 gif svg ico")
-    if [[ -n "$1" ]]; then args+=(--bucket "$1"); fi
-    if [[ "$2" == "true" ]]; then args+=(--force); fi
-    if [[ -n "$3" ]]; then args+=(--only "$3"); fi
-    python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
+    @just --justfile "{{ justfile_directory() }}/justfile" _doc-media release "$1" "$2" "$3"
 
 # Restore documentation media from the selected B2 bucket into this checkout.
 [arg('bucket', long='bucket')]
 [arg('force', long='force', value='true')]
 [arg('only', long='only')]
 download-doc-media bucket="" force="false" only="":
+    @just --justfile "{{ justfile_directory() }}/justfile" _doc-media download "$1" "$2" "$3"
+
+_doc-media command bucket force only:
     #!/usr/bin/env bash
     set -euo pipefail
-    args=(download)
-    if [[ -n "$1" ]]; then args+=(--bucket "$1"); fi
-    if [[ "$2" == "true" ]]; then args+=(--force); fi
-    if [[ -n "$3" ]]; then args+=(--only "$3"); fi
+
+    for key in "${!ECHOUA@}"; do
+        if [[ "$key" == *_DOCS_AWS_* ]]; then unset "$key"; fi
+    done
+    repository_env="{{ justfile_directory() }}/.env"
+    env_files=()
+    if common_dir=$(git -C "{{ justfile_directory() }}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+        main_env="$(dirname "$common_dir")/.env"
+        if [[ "$main_env" != "$repository_env" ]]; then env_files+=("$main_env"); fi
+    fi
+    env_files+=("$repository_env")
+    for env_file in "${env_files[@]}"; do
+        if [[ -f "$env_file" ]]; then
+            set -a
+            source "$env_file"
+            set +a
+        fi
+    done
+
+    args=("$1")
+    if [[ "$1" == "release" ]]; then args+=(--extensions "mp4 webm jpg jpeg png mp3 gif svg ico"); fi
+    if [[ -n "$2" ]]; then args+=(--bucket "$2"); fi
+    if [[ "$3" == "true" ]]; then args+=(--force); fi
+    if [[ -n "$4" ]]; then args+=(--only "$4"); fi
     python3 "{{ justfile_directory() }}/deploy/doc_media.py" "${args[@]}"
 
 build-front:

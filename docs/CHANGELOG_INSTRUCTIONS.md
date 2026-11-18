@@ -65,10 +65,13 @@ just build-front
 
 На `/updates` має бути видно новий реліз, текст і медіа.
 
-Медіа публікуються в одне B2-сховище командою
-`just release-doc-media --bucket echouastorage`; `--only` обирає каталог,
-`--force` замінює існуючі файли. Повторіть публікацію для всіх трьох сховищ,
-щоразу задаючи `AWS_ACCESS_KEY_ID` та `AWS_SECRET_ACCESS_KEY` з відповідної
-нотатки Bitwarden `<bucket>-lfs backblaze`. Наприкінці команда нагадує про всі
-три сховища. Публікація потребує погодження цільових B2-сховищ.
+Медіа публікуються послідовно в `echouastaging`, `echouastorage`,
+`echouastoragecbr` командою
+`just release-doc-media --only docs/releases/YYYY-MM-DD/media`.
+Команда читає окремі ключі кожного сховища з `.env` та перевіряє всі три пари
+до початку публікації. `--force` замінює існуючі файли; `--bucket` обмежує
+публікацію одним сховищем. Публікація потребує погодження цільових B2-сховищ.
+Запит агенту `upload release media for YYYY-MM-DD` погоджує публікацію нових
+файлів із каталогу цього релізу в усі три сховища за
+[процедурою публікації за датою](doc-media.md#uploading-release-media-by-date).
 Покрокова інструкція: [завантаження вкладень документації](doc-media.md#uploading-a-documentation-attachment).

@@ -86,6 +86,13 @@
   process in [RELEASE.md](./RELEASE.md). So do "prepare stable release", "make
   stable release", and "prepare and make stable release", which release what is
   on `stable` without merging `main`. Follow it.
+- An explicit `upload release media for YYYY-MM-DD` request approves uploading
+  new media from `docs/releases/YYYY-MM-DD/media/` to `echouastaging`,
+  `echouastorage`, then `echouastoragecbr`. Follow
+  [the dated media upload procedure](./docs/doc-media.md#uploading-release-media-by-date)
+  using `just release-doc-media --only docs/releases/YYYY-MM-DD/media`.
+  It does not approve `--force`, other paths, or application deployments;
+  quoted examples and workflow-edit requests do not approve uploads.
 
 ## Documentation scope
 

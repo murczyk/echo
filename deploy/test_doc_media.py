@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -21,9 +22,12 @@ class PublicationTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory(prefix="doc-media-3938-")
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
-        self.sources = tempfile.TemporaryDirectory(prefix="doc media 3938 ", dir=REPOSITORY / "docs/static")
-        self.addCleanup(self.sources.cleanup)
-        self.source = Path(self.sources.name)
+        self.checkout = self.root / "upload-checkout"
+        self.download_checkout = self.root / "checkout"
+        for checkout in (self.checkout, self.download_checkout):
+            self.prepare_checkout(checkout)
+        self.source = self.checkout / "docs/static/doc media 3938"
+        self.source.mkdir(parents=True)
         (self.source / "ланцюжки.mp4").write_bytes(b"original")
         (self.source / "picture.PNG").write_bytes(b"image")
         (self.source / "release.md").write_text("not media")
@@ -37,7 +41,9 @@ args = sys.argv[3:]
 if args[0] == "--json": args = args[1:]
 remote = args[-2] if args[0] == "cp" and args[-2].startswith("s3://") else args[-1]
 bucket, key = remote.removeprefix("s3://").split("/", 1)
-if os.environ["AWS_ACCESS_KEY_ID"] != bucket or bucket == os.environ.get("DOC_MEDIA_FAIL_SERVER"):
+if (os.environ["AWS_ACCESS_KEY_ID"] != bucket
+    or os.environ["AWS_SECRET_ACCESS_KEY"] != "fixture-" + bucket
+    or bucket == os.environ.get("DOC_MEDIA_FAIL_SERVER")):
     sys.exit(1)
 if args[0] == "ls":
     base = root / bucket / key.removesuffix("*")
@@ -65,14 +71,32 @@ else:
         binary.chmod(0o755)
         self.environment = os.environ | {
             "PATH": str(self.root) + os.pathsep + os.environ["PATH"],
-            "AWS_ACCESS_KEY_ID": UPLOAD_BUCKETS[0],
-            "AWS_SECRET_ACCESS_KEY": "fixture",
+            "AWS_ACCESS_KEY_ID": "wrong-ambient-key",
+            "AWS_SECRET_ACCESS_KEY": "wrong-ambient-secret",
             "DOC_MEDIA_FAKE_STORAGE": str(self.root),
         }
+        self.credentials = {
+            f"{bucket.upper()}_DOCS_AWS_{field}": value
+            for bucket in UPLOAD_BUCKETS
+            for field, value in (("ACCESS_KEY_ID", bucket), ("SECRET_ACCESS_KEY", f"fixture-{bucket}"))
+        }
+        self.environment.update(self.credentials)
+        self.write_credentials(self.credentials)
+
+    def prepare_checkout(self, checkout):
+        (checkout / "deploy").mkdir(parents=True)
+        shutil.copyfile(REPOSITORY / "justfile", checkout / "justfile")
+        shutil.copyfile(REPOSITORY / "deploy/doc_media.py", checkout / "deploy/doc_media.py")
+
+    def write_credentials(self, credentials):
+        for checkout in (self.checkout, self.download_checkout):
+            (checkout / ".env").write_text("".join(
+                f"{key}={shlex.quote(value)}\n" for key, value in credentials.items()
+            ))
 
     def publish(self, *arguments, bucket=UPLOAD_BUCKETS[0]):
         command = [
-            "just", "--justfile", str(REPOSITORY / "justfile"),
+            "just", "--justfile", str(self.checkout / "justfile"),
             "release-doc-media", "--only", str(self.source),
         ]
         if bucket is not None:
@@ -80,29 +104,22 @@ else:
         return subprocess.run(command + list(arguments), env=self.environment, capture_output=True, text=True)
 
     def stored(self, server, filename):
-        return self.root / self.buckets[server] / "doc-media" / self.source.relative_to(REPOSITORY) / filename
+        return self.root / self.buckets[server] / "doc-media" / self.source.relative_to(self.checkout) / filename
 
     def download(self, *arguments, bucket=UPLOAD_BUCKETS[0]):
-        checkout = self.root / "checkout"
-        if not (checkout / "justfile").exists():
-            (checkout / "deploy").mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPOSITORY / "justfile", checkout / "justfile")
-            shutil.copyfile(REPOSITORY / "deploy/doc_media.py", checkout / "deploy/doc_media.py")
         command = [
-            "just", "--justfile", str(checkout / "justfile"), "download-doc-media",
+            "just", "--justfile", str(self.download_checkout / "justfile"), "download-doc-media",
         ]
         if bucket is not None:
             command.extend(["--bucket", bucket])
         return subprocess.run(command + list(arguments), env=self.environment, capture_output=True, text=True)
 
     def downloaded(self, filename):
-        return self.root / "checkout" / self.source.relative_to(REPOSITORY) / filename
+        return self.download_checkout / self.source.relative_to(self.checkout) / filename
 
-    def test_transfers_require_a_known_bucket_before_accessing_credentials_or_storage(self):
-        self.environment.pop("AWS_ACCESS_KEY_ID")
-        self.environment.pop("AWS_SECRET_ACCESS_KEY")
+    def test_transfers_reject_unknown_buckets_and_download_requires_a_bucket(self):
         for transfer in (self.publish, self.download):
-            for bucket in (None, "", "unknown-bucket"):
+            for bucket in (("unknown-bucket",) if transfer == self.publish else (None, "", "unknown-bucket")):
                 with self.subTest(command=transfer.__name__, bucket=bucket):
                     result = transfer(bucket=bucket)
                     self.assertNotEqual(result.returncode, 0)
@@ -114,7 +131,10 @@ else:
 
     def test_download_uses_only_the_selected_buckets_credentials_and_objects(self):
         bucket = self.buckets["echo-b"]
-        self.environment["AWS_ACCESS_KEY_ID"] = bucket
+        self.write_credentials({
+            key: value for key, value in self.credentials.items()
+            if key.startswith(f"{bucket.upper()}_DOCS_AWS_")
+        })
         result = self.publish(bucket=bucket)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.stored("echo-b", "ланцюжки.mp4").write_bytes(b"selected bucket")
@@ -147,7 +167,7 @@ else:
     def test_download_force_replaces_only_the_selected_directory(self):
         result = self.publish()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        only = self.source.relative_to(REPOSITORY).as_posix()
+        only = self.source.relative_to(self.checkout).as_posix()
         result = self.download("--only", only)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         local = self.downloaded("ланцюжки.mp4")
@@ -215,28 +235,41 @@ else:
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(f"incomplete destination: {self.buckets['echo-a']}", result.stderr)
         self.assertFalse((self.root / "uploads").exists())
-        self.assertIn("Reminder: upload documentation media to all three buckets:", result.stdout)
-        self.environment["AWS_ACCESS_KEY_ID"] = self.buckets["echo-b"]
         result = self.publish(bucket=self.buckets["echo-b"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.stored("echo-b", "ланцюжки.mp4").read_bytes(), b"original")
         self.assertFalse(self.stored("echo-c", "ланцюжки.mp4").exists())
 
-    def test_each_invocation_uploads_once_to_one_bucket_and_reminds_about_all_three(self):
+    def test_uploads_all_buckets_in_order_with_their_own_credentials(self):
         expected = []
         for force in (False, True):
-            for bucket in UPLOAD_BUCKETS:
-                with self.subTest(bucket=bucket, force=force):
-                    self.environment["AWS_ACCESS_KEY_ID"] = bucket
-                    result = self.publish(*(["--force"] if force else []), bucket=bucket)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    expected.extend(
-                        f"s3://{bucket}/doc-media/{self.source.relative_to(REPOSITORY)}/{filename}"
-                        for filename in ("ланцюжки.mp4", "picture.PNG")
-                    )
-                    self.assertCountEqual((self.root / "uploads").read_text().splitlines(), expected)
-                    self.assertEqual(result.stdout.splitlines()[-1],
-                                     "Reminder: upload documentation media to all three buckets: " + ", ".join(UPLOAD_BUCKETS))
+            with self.subTest(force=force):
+                result = self.publish(*(["--force"] if force else []), bucket=None)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                expected.extend(
+                    f"s3://{bucket}/doc-media/{self.source.relative_to(self.checkout)}/{filename}"
+                    for bucket in ("echouastaging", "echouastorage", "echouastoragecbr")
+                    for filename in ("picture.PNG", "ланцюжки.mp4")
+                )
+                self.assertEqual((self.root / "uploads").read_text().splitlines(), expected)
+        result = self.publish(bucket=None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("uploaded=0 skipped=2 failed=0"), 3)
+        self.assertEqual((self.root / "uploads").read_text().splitlines(), expected)
+
+    def test_all_bucket_upload_stops_after_a_failed_destination_and_can_resume(self):
+        self.environment["DOC_MEDIA_FAIL_SERVER"] = "echouastorage"
+        result = self.publish("--force", bucket=None)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("incomplete destination: echouastorage", result.stderr)
+        self.assertTrue(self.stored("echo-a", "ланцюжки.mp4").exists())
+        self.assertFalse(self.stored("echo-b", "ланцюжки.mp4").exists())
+        self.assertFalse(self.stored("echo-c", "ланцюжки.mp4").exists())
+        del self.environment["DOC_MEDIA_FAIL_SERVER"]
+        result = self.publish(bucket=None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("echouastaging: selected=2 uploaded=0 skipped=2 failed=0", result.stdout)
+        self.assertEqual(len((self.root / "uploads").read_text().splitlines()), 6)
 
     def test_upload_destinations_are_independent_of_server_configurations(self):
         self.environment["DOC_MEDIA_CONFIG_DIR"] = str(self.root / "missing-server-configs")
@@ -244,20 +277,60 @@ else:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.stored("echo-a", "ланцюжки.mp4").read_bytes(), b"original")
 
-    def test_missing_environment_credentials_and_lfs_pointers_fail_before_any_upload(self):
-        environment = self.environment.copy()
-        for bucket in UPLOAD_BUCKETS:
-            for missing in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
-                with self.subTest(bucket=bucket, missing=missing):
-                    self.environment = environment | {"AWS_ACCESS_KEY_ID": bucket}
-                    self.environment.pop(missing)
-                    result = self.publish(bucket=bucket)
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required", result.stderr)
-                    self.assertIn(f"'{bucket}-lfs backblaze'", result.stderr)
-                    self.assertIn("goi/justfile", result.stderr)
-                    self.assertFalse((self.root / "operations").exists())
-        self.environment = environment
+    def test_all_upload_credentials_and_download_credentials_are_required_in_dotenv(self):
+        for key in self.credentials:
+            bucket = key.split("_")[0].lower()
+            for value in (None, "", "   "):
+                credentials = self.credentials | {key: value}
+                if value is None:
+                    del credentials[key]
+                self.write_credentials(credentials)
+                for transfer, target in ((self.publish, None), (self.publish, bucket), (self.download, bucket)):
+                    with self.subTest(key=key, value=value, command=transfer.__name__, bucket=target):
+                        result = transfer(bucket=target)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("required in .env", result.stderr)
+                        self.assertIn(key, result.stderr)
+                        self.assertIn(f"'{bucket}-lfs backblaze'", result.stderr)
+                        self.assertFalse((self.root / "operations").exists())
+
+    def test_missing_dotenv_fails_even_with_exported_credentials(self):
+        for checkout in (self.checkout, self.download_checkout):
+            (checkout / ".env").unlink()
+        for transfer in (self.publish, self.download):
+            result = transfer()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("required in .env", result.stderr)
+            self.assertFalse((self.root / "operations").exists())
+
+    def test_worktree_uses_main_dotenv_with_local_overrides(self):
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for arguments in (
+            ("init",),
+            ("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "-m", "fixture"),
+        ):
+            subprocess.run(["git", "-C", str(self.checkout), *arguments], check=True, capture_output=True)
+        worktree = self.root / "worktree"
+        subprocess.run(["git", "-C", str(self.checkout), "-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", str(worktree), "HEAD"], check=True, capture_output=True)
+        self.prepare_checkout(worktree)
+        self.download_checkout = worktree
+        result = self.download()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.downloaded("ланцюжки.mp4").read_bytes(), b"original")
+        with (self.checkout / ".env").open("a") as dotenv:
+            dotenv.write("ECHOUASTAGING_DOCS_AWS_ACCESS_KEY_ID=wrong-main-key\n")
+        (worktree / ".env").write_text("ECHOUASTAGING_DOCS_AWS_ACCESS_KEY_ID=echouastaging\n")
+        result = self.download("--force")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (worktree / ".env").write_text("ECHOUASTAGING_DOCS_AWS_ACCESS_KEY_ID=\n")
+        operations = (self.root / "operations").read_text()
+        result = self.download("--force")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required in .env", result.stderr)
+        self.assertEqual((self.root / "operations").read_text(), operations)
+
+    def test_lfs_pointers_fail_before_any_upload(self):
         (self.source / "ланцюжки.mp4").write_text("version https://git-lfs.github.com/spec/v1\n")
         result = self.publish()
         self.assertNotEqual(result.returncode, 0)
