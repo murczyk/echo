@@ -212,7 +212,7 @@ pub async fn bl_callsign_update(
     callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
     let callsign = callsign.update(txn).await.context(h!())?;
 
-    sync_callsign_additional_source_ids(
+    let additional_sources_changed = sync_callsign_additional_source_ids(
         txn,
         callsign.id,
         &req.callsign_additional_sources,
@@ -226,6 +226,10 @@ pub async fn bl_callsign_update(
         .await
         .context(h!())?
         .ok_or_else(|| AppError::NotFound)?;
+    if callsign_json_new == callsign_json_old && !additional_sources_changed {
+        return Ok(callsign);
+    }
+
     let _changelog = sigint_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
@@ -316,7 +320,7 @@ pub async fn sync_callsign_additional_source_ids(
     txn: &DatabaseTransaction,
     callsign_id: i64,
     source_ids_req: &[i64],
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let source_ids_req =
         normalize_callsign_additional_source_ids(source_ids_req);
     let source_ids_existing = callsign_additional_source::Entity::find()
@@ -335,6 +339,7 @@ pub async fn sync_callsign_additional_source_ids(
         source_ids_req.into_iter().collect::<HashSet<i64>>();
     let source_ids_existing_set =
         source_ids_existing.into_iter().collect::<HashSet<i64>>();
+    let changed = source_ids_req_set != source_ids_existing_set;
 
     let mut source_ids_to_insert = source_ids_req_set
         .difference(&source_ids_existing_set)
@@ -380,7 +385,7 @@ pub async fn sync_callsign_additional_source_ids(
             .context(h!())?;
     }
 
-    Ok(())
+    Ok(changed)
 }
 
 pub fn match_known_callsigns(
@@ -581,6 +586,10 @@ where
     let callsign = callsign.update(conn).await.c(h!())?;
     let callsign_json_new =
         find_callsign_json(conn, callsign.id).await.c(h!())?;
+    if callsign_json_new == callsign_json_old {
+        return Ok(callsign);
+    }
+
     sigint_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),

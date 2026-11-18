@@ -1532,6 +1532,26 @@ mod tests {
         .unwrap()
     }
 
+    fn callsign_update_req(
+        callsign: &sigint_callsign::Model,
+    ) -> UpdateCallsignReq {
+        UpdateCallsignReq {
+            id: callsign.id,
+            callsign: callsign.callsign.clone(),
+            position: callsign.position.clone(),
+            comment: callsign.comment.clone(),
+            full_name: Some(callsign.full_name.clone()),
+            full_name_is_missing: false,
+            unit_id: callsign.unit_id,
+            active: !callsign.deleted,
+            source_id: callsign.source_id,
+            callsign_additional_sources: vec![],
+            created_at: callsign.created_at.and_utc().timestamp_millis(),
+            developing: callsign.developing,
+            radio_freq: Some(callsign.radio_freq.clone()),
+        }
+    }
+
     fn list_req(
         after_id: Option<i64>,
         limit: Option<u64>,
@@ -1567,6 +1587,235 @@ mod tests {
             limit,
             sort_by: Some(vec![sort_by]),
         }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_callsign_update_skips_unchanged_revision() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let created_at = Utc::now().naive_utc() - Duration::days(180);
+        let callsign = insert_test_callsign_with_full_name(
+            &env.dbx,
+            unit.id,
+            "сокіл",
+            "Іваненко І.І.",
+            created_at,
+        )
+        .await;
+        let mut req = callsign_update_req(&callsign);
+        let txn = env.dbx.begin().await.unwrap();
+        assert_eq!(
+            bl_callsign_update(&req, &login.id, &txn).await.unwrap(),
+            callsign,
+        );
+
+        req.callsign = "  Сокіл  ".to_string();
+        req.full_name = None;
+        req.full_name_is_missing = true;
+        req.radio_freq = None;
+        req.created_at = Utc::now().timestamp_millis();
+        assert_eq!(
+            bl_callsign_update(&req, &login.id, &txn).await.unwrap(),
+            callsign,
+        );
+        txn.commit().await.unwrap();
+
+        assert_eq!(
+            sigint_callsign_changelog::Entity::find()
+                .filter(
+                    sigint_callsign_changelog::Column::SigintCallsignId
+                        .eq(callsign.id)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        let callsigns = list_callsigns_impl(
+            &env.dbx,
+            &list_req(None, None, ListCallsignsSortBy::CallsignCreatedAtDesc),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            callsigns[0].created_at,
+            created_at.and_utc().timestamp_millis()
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_callsign_update_records_meaningful_changes() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let callsign = insert_test_callsign_with_full_name(
+            &env.dbx,
+            unit.id,
+            "сокіл",
+            "Іваненко І.І.",
+            Utc::now().naive_utc(),
+        )
+        .await;
+        let mut req = callsign_update_req(&callsign);
+        let txn = env.dbx.begin().await.unwrap();
+        for (source_ids, full_name, comment, revision_count) in [
+            (vec![1, 3], "Іваненко І.І.", "comment", 1),
+            (vec![3, 1, 3, 0, -1], "Іваненко І.І.", "comment", 1),
+            (vec![3], "Іваненко І.І.", "comment", 2),
+            (vec![], "Іваненко І.І.", "comment", 3),
+            (vec![], "", "comment", 4),
+            (vec![], "", "updated comment", 5),
+            (vec![], "", "updated comment", 5),
+        ] {
+            req.callsign_additional_sources = source_ids.clone();
+            req.full_name = Some(full_name.to_string());
+            req.comment = comment.to_string();
+            let updated =
+                bl_callsign_update(&req, &login.id, &txn).await.unwrap();
+            assert_eq!(updated.full_name, full_name);
+            assert_eq!(updated.comment, comment);
+            assert_eq!(
+                list_callsign_additional_source_ids(&txn, callsign.id)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .collect::<BTreeSet<_>>(),
+                source_ids
+                    .into_iter()
+                    .filter(|id| *id > 0)
+                    .collect::<BTreeSet<_>>(),
+            );
+            assert_eq!(
+                sigint_callsign_changelog::Entity::find()
+                    .filter(
+                        sigint_callsign_changelog::Column::SigintCallsignId
+                            .eq(callsign.id)
+                    )
+                    .count(&txn)
+                    .await
+                    .unwrap(),
+                revision_count
+            );
+        }
+        let revision = sigint_callsign_changelog::Entity::find()
+            .filter(
+                sigint_callsign_changelog::Column::SigintCallsignId
+                    .eq(callsign.id),
+            )
+            .order_by_desc(sigint_callsign_changelog::Column::Id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(revision.action, "update");
+        assert_eq!(revision.old_value.unwrap()["comment"], "comment");
+        assert_eq!(revision.new_value.unwrap()["comment"], "updated comment");
+        for revision_count in [6, 6] {
+            let callsign = find_callsign(&txn, callsign.id).await.unwrap();
+            let callsign =
+                bl_soft_delete_catalog_callsign(&txn, callsign, login.id)
+                    .await
+                    .unwrap();
+            assert!(callsign.deleted);
+            assert_eq!(
+                sigint_callsign_changelog::Entity::find()
+                    .filter(
+                        sigint_callsign_changelog::Column::SigintCallsignId
+                            .eq(callsign.id),
+                    )
+                    .count(&txn)
+                    .await
+                    .unwrap(),
+                revision_count
+            );
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_callsign_update_skips_network_only_revision() {
+        use super::bl_network_callsign::{
+            bl_add_as_known_network_callsigns, bl_update_network_callsign,
+        };
+
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let callsign = insert_test_callsign(
+            &env.dbx,
+            unit.id,
+            "сокіл",
+            Utc::now().naive_utc(),
+            "",
+        )
+        .await;
+        let txn = env.dbx.begin().await.unwrap();
+        let network_callsign_ids = bl_add_as_known_network_callsigns(
+            network.id,
+            vec![callsign.id],
+            &login.id,
+            &txn,
+        )
+        .await
+        .unwrap();
+        let req = UpdateNetworkCallsignReq {
+            id: network_callsign_ids[0],
+            network_id: network.id,
+            callsign: callsign.callsign.clone(),
+            position: Some(callsign.position.clone()),
+            comment: Some(callsign.comment.clone()),
+            full_name: Some(callsign.full_name.clone()),
+            full_name_is_missing: false,
+            source_id: None,
+            radio_freq: None,
+            unit_id: Some(unit.id),
+            unit_developing: false,
+            developing: false,
+            main_radio_station: true,
+            command_control: false,
+        };
+        bl_update_network_callsign(&req, &login.id, &txn)
+            .await
+            .unwrap();
+        assert_eq!(
+            sigint_callsign_changelog::Entity::find()
+                .filter(
+                    sigint_callsign_changelog::Column::SigintCallsignId
+                        .eq(callsign.id)
+                )
+                .count(&txn)
+                .await
+                .unwrap(),
+            0
+        );
+        let network_callsign =
+            sigint_network_callsign::Entity::find_by_id(req.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(network_callsign.main_radio_station);
+        assert_eq!(
+            sigint_network_callsign_changelog::Entity::find()
+                .filter(
+                    sigint_network_callsign_changelog::Column::SigintNetworkCallsignId.eq(req.id),
+                )
+                .filter(
+                    sigint_network_callsign_changelog::Column::Action.eq("update"),
+                )
+                .count(&txn)
+                .await
+                .unwrap(),
+            1
+        );
+        txn.rollback().await.unwrap();
     }
 
     #[test]

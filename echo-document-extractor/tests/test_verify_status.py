@@ -47,6 +47,11 @@ def test_http_success_with_nuextract_outage_fails(ready_status: dict) -> None:
     assert "nuextract" in result.stderr
 
 
+def test_retired_ocr_gemma_outage_passes(ready_status: dict) -> None:
+    ready_status["routers"][1].update(healthy=False, served_models=[])
+    assert check_status(ready_status).returncode == 0
+
+
 @pytest.mark.parametrize("failure", ["worker", "paddle", "routers", "missing_router", "wrong_model"])
 def test_incomplete_readiness_fails(ready_status: dict, failure: str) -> None:
     if failure == "worker":

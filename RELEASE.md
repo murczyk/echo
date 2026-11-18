@@ -11,6 +11,9 @@ phases. "Prepare stable release", "make stable release", and "prepare and make
 stable release" release what is on `stable` without merging `main`; see
 [Stable release](#stable-release).
 
+Before starting either phase, check Mattermost availability as described in
+[Notifications](#notifications).
+
 ## Approval
 
 A user message asking for a phase approves exactly that phase's operations and
@@ -80,8 +83,9 @@ Everything else still needs separate approval, including:
 
 4. Right after that push, post this release's section to the #DEV Mattermost
    channel, so the team can say what needs more testing or blocks the release.
-   Post nothing if the release has no entries. Also list the section's `👷` and
-   `🚨` entries for the final report:
+   Post nothing if the release has no entries. If Mattermost was skipped under
+   [Notifications](#notifications), omit `just notify-dev` below. Always extract
+   the entries and list the section's `👷` and `🚨` entries for the final report:
 
    ```bash
    section=2026-11-14   # this release's heading, without "## "
@@ -101,7 +105,26 @@ Everything else still needs separate approval, including:
    Do not push yet: every `stable` push builds packages, so the merge and the
    bump should go out together.
 
-6. Bump the version and push. CI then builds the deb:
+6. Check that the harness bundle still matches its release ID on the agent
+   VMs. A canary reporting `current` does not prove this, because it compares
+   only the ID:
+
+   ```bash
+   release=$(python3 -c 'import json; print(json.load(open("echo-ai-agent/release.json"))["release"])')
+   just ai-control-panel upgrade --host echo-cbr-staging --release "$release" --dry-run
+   ```
+
+   The preview changes nothing. If it reports `Release ID contains different
+   bundle bytes`, `echo-ai-agent/` changed under an ID already on the VMs.
+   Stop and report it: the fix is a new harness release ID, which needs
+   approval like other harness changes. Bump it on the branch being released:
+   on `main` for a normal release, then restart Prepare from step 1; on
+   `stable` for a stable release, where it reaches `main` at the next normal
+   release's step 1.
+   `Requires Echo build for <release>` is expected when the release brings a
+   new ID; the canary deploy installs that build.
+
+   Then bump the version and push. CI then builds the deb:
 
    ```bash
    just bump-version-push
@@ -256,10 +279,30 @@ recovery without approval.
 `just notify` and `just notify-dev` read their webhooks from `.env`. In a
 worktree they also read the main checkout's `.env`, so it needs no copy.
 
-Run `just notify "<text>"` after each long successful step:
+Before starting a phase, check its effective webhook values without printing
+them or sending test messages. Prepare needs `MATTERMOST_DEV` and
+`MATTERMOST_NOTIFICATION_HOOK`; Make needs `MATTERMOST_NOTIFICATION_HOOK`.
+If a required value is missing or empty, including when `.env` is absent and
+no fallback supplies it, ask the user to choose:
+
+- **Continue without Mattermost**: skip all `just notify-dev` and `just notify`
+  calls for this run, including any requested follow-on Make phase.
+- **Wait for configuration**: wait for the user to configure the missing hooks,
+  then check them again before continuing.
+
+Wait for an explicit choice; do not treat silence as permission to skip.
+If the user already explicitly requested continuing without Mattermost for
+this run, use that choice without asking again. Keep collecting `👷`/`🚨`
+entries and reporting release results in the conversation, and state in the
+final report when Mattermost was skipped. This choice changes only Mattermost
+posting; all CI, deployment, harness and approval requirements still apply.
+
+When Mattermost is enabled, run `just notify "<text>"` after each long
+successful step:
 
 - the CI build finished;
 - each server is deployed and its logs are checked;
 - the phase is complete.
 
-Also send one when the rollout stops on a problem.
+Also send one when the rollout stops on a problem, unless Mattermost was
+skipped.

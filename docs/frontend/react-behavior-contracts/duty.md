@@ -22,9 +22,14 @@ search and its shared consumers retain their existing behavior.
 Keep only one search open across columns, with per-column query, mode, period
 and result-reading state retained until intentional clearing. Switching/closing
 search preserves the source feed's last reading position. Hidden searches do
-not refresh in the background; reopening restores their state and reconciles
-data. Active search refreshes on inbox-change events, not periodic search polling
-or browser focus. Avoid a second full message-card/media tree for results.
+not refresh in the background; reopening restores their cached state without
+refreshing results. Existing results refresh only through the refresh button;
+inbox-change events (including attachment/OCR updates), periodic feed polling
+and browser focus do not refresh results or counts.
+Query, mode, period and source-filter changes still initiate a new search.
+Resubmitting an unchanged query or mode preserves both an initial request in
+progress and cached results; it must not cancel loading or require manual refresh.
+Avoid a second full message-card/media tree for results.
 
 The feed continues normal live updates while search is open. Selecting a result
 uses the existing link/reply navigation to land at that message with surrounding
@@ -33,9 +38,9 @@ arrivals must not move a deliberately chosen reading position; normal newest
 arrow/scroll behavior remains available. Going to newest clears result selection.
 A visible search result alone does not mark the message read.
 
-At result-list top with no selection, new matches appear visibly at top and
-stale anchors are cleared. While reading historical/selected results, retain
-the visible row/offset and selection; buffer arrivals behind the new-results
+After manual refresh, at result-list top with no selection, new matches appear
+visibly at top and stale anchors are cleared. While reading historical/selected
+results, retain the visible row/offset and selection; buffer arrivals behind the new-results
 indicator until explicitly shown. Retain older-page cursors and deduplication.
 Merge sender profiles from initial, older and refresh/bridge responses into the
 existing cache; display available names rather than identifiers. Cancelled/stale
@@ -76,6 +81,8 @@ navigation-cancellation semantics.
 - Result count and previous/next controls live above the results, not as an
   obstructing bottom toolbar. No extra close X after those arrows, and no
   «Вся доступна історія» footer. Input X clears the query; the panel trigger closes it.
+- A circular refresh arrow precedes the previous/next arrows with the same size
+  and spacing. It is disabled for an empty query and while results are loading.
 - Search modes use the Analysis-style dropdown; explanation is behind a link at
   the bottom of that menu, not permanently displayed. Do not change Analysis.
 - Search refresh failures use the page snackbar/retry pattern and retain previous
@@ -92,7 +99,9 @@ navigation-cancellation semantics.
 `wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts`.
 Inspect the independent panel implementation and its regression coverage in
 the owning checkout; the legacy feed tests below do not establish these panel
-criteria. No direct default-suite test; behavior is preserved by this contract.
+criteria. Manual refresh regressions:
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutySearch.spec.tsx`,
+`wdintel-web/tests/e2e/rer-duty-search.spec.ts`.
 **Existing baseline tests (legacy feed behavior):**
 `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.search.spec.tsx`,
 `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`,

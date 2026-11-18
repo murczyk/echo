@@ -652,6 +652,10 @@ fn message_literal_predicate(
         if let Some(key) =
             direct_body_key.filter(|_| !correlated && !sources.is_empty())
         {
+            if source_scope.message_ids.is_some() {
+                let matches = term_sources_predicate(key, sources, false, true);
+                return format!("({body} or {matches})");
+            }
             return format!(
                 "({body} or {key}=any(array({})))",
                 sources.join(" union ")
@@ -737,7 +741,7 @@ fn term_sources_predicate(
     message: &str,
     sources: Vec<String>,
     correlated: bool,
-    materialize_ids: bool,
+    independent_sources: bool,
 ) -> String {
     if sources.is_empty() {
         "false".into()
@@ -750,9 +754,16 @@ fn term_sources_predicate(
                 .collect::<Vec<_>>()
                 .join(" or ")
         )
-    } else if materialize_ids {
-        // A scalar subplan keeps the ID filter inside pg_clickhouse (#3571).
-        format!("{message}=any(array({}))", sources.join(" union "))
+    } else if independent_sources {
+        // Separate sets push down without ClickHouse's scalar array limit (#3751).
+        format!(
+            "({})",
+            sources
+                .into_iter()
+                .map(|source| format!("{message} in ({source})"))
+                .collect::<Vec<_>>()
+                .join(" or ")
+        )
     } else {
         format!("{message} in ({})", sources.join(" union "))
     }

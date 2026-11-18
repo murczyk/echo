@@ -379,14 +379,11 @@ async fn submit_job(
             }
             return Ok(());
         }
-        retry_job(
-            env,
-            job,
-            format!("OCR submission returned HTTP {status}: {error}"),
-            false,
-        )
-        .await
-        .context(h!())?;
+        let error = format!("OCR submission returned HTTP {status}: {error}");
+        if status == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return mark_failed(env, job, error, None).await.context(h!());
+        }
+        retry_job(env, job, error, false).await.context(h!())?;
         return Ok(());
     }
     let response: ExtractorJobRsp = response.json().await.context(h!())?;

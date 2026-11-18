@@ -3452,7 +3452,8 @@ async fn assert_analytics_search_pages_3571(
         .await
         .unwrap()
         .unwrap();
-    assert!(sql.contains("signal_message.id=any(array("), "{sql}");
+    // #3751: broad matches exceed ClickHouse's one-million-element scalar limit.
+    assert!(!sql.contains("any(array("), "{sql}");
     for newest_first in [false, true] {
         let mut req = InboxMessagesReq {
             newest_first: Some(newest_first),
